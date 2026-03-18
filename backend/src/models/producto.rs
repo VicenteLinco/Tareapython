@@ -1,0 +1,20 @@
+use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
+use serde::Serialize;
+use uuid::Uuid;
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct Producto {
+    pub id: Uuid,
+    pub codigo_interno: String,
+    pub nombre: String,
+    pub descripcion: Option<String>,
+    pub categoria_id: Option<i32>,
+    pub unidad_base_id: i32,
+    pub proveedor_id: Option<i32>,
+    pub stock_minimo: Decimal,
+    pub activo: bool,
+    pub version: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}

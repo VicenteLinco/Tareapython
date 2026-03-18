@@ -1,0 +1,165 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark;
+  root: ":root";
+}
+
+@plugin "daisyui/theme" {
+  name: "light";
+  default: true;
+  prefersdark: false;
+  color-scheme: "light";
+  --color-base-100: oklch(100% 0 0);
+  --color-base-200: oklch(98% 0 0);
+  --color-base-300: oklch(95% 0 0);
+  --color-base-content: oklch(21% 0.006 285.885);
+  --color-primary: oklch(45% 0.24 277.023);
+  --color-primary-content: oklch(93% 0.034 272.788);
+  --color-secondary: oklch(65% 0.241 354.308);
+  --color-secondary-content: oklch(94% 0.028 342.258);
+  --color-accent: oklch(77% 0.152 181.912);
+  --color-accent-content: oklch(38% 0.063 188.416);
+  --color-neutral: oklch(14% 0.005 285.823);
+  --color-neutral-content: oklch(92% 0.004 286.32);
+  --color-info: oklch(74% 0.16 232.661);
+  --color-info-content: oklch(29% 0.066 243.157);
+  --color-success: oklch(76% 0.177 163.223);
+  --color-success-content: oklch(37% 0.077 168.94);
+  --color-warning: oklch(82% 0.189 84.429);
+  --color-warning-content: oklch(41% 0.112 45.904);
+  --color-error: oklch(71% 0.194 13.428);
+  --color-error-content: oklch(27% 0.105 12.094);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+  name: "dark";
+  default: false;
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: oklch(30% 0.016 252.42);
+  --color-base-200: oklch(28% 0.014 253.1);
+  --color-base-300: oklch(25% 0.012 254.09);
+  --color-base-content: oklch(97.807% 0.029 256.847);
+  --color-primary: oklch(58% 0.233 277.117);
+  --color-primary-content: oklch(96% 0.018 272.314);
+  --color-secondary: oklch(65% 0.241 354.308);
+  --color-secondary-content: oklch(94% 0.028 342.258);
+  --color-accent: oklch(77% 0.152 181.912);
+  --color-accent-content: oklch(38% 0.063 188.416);
+  --color-neutral: oklch(14% 0.005 285.823);
+  --color-neutral-content: oklch(92% 0.004 286.32);
+  --color-info: oklch(74% 0.16 232.661);
+  --color-info-content: oklch(29% 0.066 243.157);
+  --color-success: oklch(76% 0.177 163.223);
+  --color-success-content: oklch(37% 0.077 168.94);
+  --color-warning: oklch(82% 0.189 84.429);
+  --color-warning-content: oklch(41% 0.112 45.904);
+  --color-error: oklch(71% 0.194 13.428);
+  --color-error-content: oklch(27% 0.105 12.094);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@layer base {
+  body {
+    font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Fix: DaisyUI v5 changed .label to inline-flex and removed form-control.
+     Restore block-level stacking so labels don't overlap inputs. */
+  .form-control {
+    display: flex;
+    flex-direction: column;
+  }
+  .form-control > .label {
+    display: flex;
+    width: 100%;
+  }
+
+  /* Smoother scrollbars */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: oklch(0.7 0 0 / 0.3);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.6 0 0 / 0.5);
+  }
+}
+
+@keyframes scan-flash {
+  0%, 15% { background-color: oklch(76% 0.177 163.223 / 0.18); }
+  100%     { background-color: transparent; }
+}
+
+.scan-flash {
+  animation: scan-flash 0.7s ease-out;
+}
+
+@layer components {
+  /* Glass morphism header */
+  .glass-header {
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+  }
+
+  /* Modern stat card hover */
+  .stat-card {
+    transition: all 0.2s ease;
+  }
+  .stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -5px oklch(0 0 0 / 0.08), 0 4px 10px -6px oklch(0 0 0 / 0.05);
+  }
+
+  /* Sidebar link active glow */
+  .sidebar-link-active {
+    box-shadow: 0 0 12px oklch(0.45 0.24 277 / 0.3);
+  }
+
+  /* Table row hover slide */
+  .table-row-interactive {
+    transition: all 0.15s ease;
+  }
+  .table-row-interactive:hover {
+    background: oklch(0.95 0.005 240);
+  }
+  [data-theme="dark"] .table-row-interactive:hover {
+    background: oklch(0.25 0.01 240);
+  }
+
+  /* Smooth sheet slide */
+  .sheet-panel {
+    transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  /* Alert item hover */
+  .alert-item {
+    transition: all 0.15s ease;
+  }
+  .alert-item:hover {
+    transform: translateX(4px);
+  }
+}

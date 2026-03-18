@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: inventario_lab
+      POSTGRES_USER: lab_user
+      POSTGRES_PASSWORD: lab_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lab_user -d inventario_lab"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      DATABASE_URL: postgres://lab_user:lab_password@db:5432/inventario_lab
+      JWT_SECRET: dev-secret-change-in-production-must-be-at-least-32-chars
+      RUST_LOG: info
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

@@ -1,0 +1,1182 @@
+import { useState, useRef, useEffect } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Plus, Pencil, Trash2, Search, Eye, Package, Tag, FileText, Camera } from 'lucide-react'
+import { DataTable } from '@/components/ui/data-table'
+import { Badge } from '@/components/ui/badge'
+import { Pagination } from '@/components/ui/pagination'
+import { Dialog } from '@/components/ui/dialog'
+import { Sheet } from '@/components/ui/sheet'
+import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select'
+import api from '@/lib/api'
+import { toast } from 'sonner'
+import { getPresFormatos } from '@/lib/pres-formatos'
+import type {
+  PaginatedResponse,
+  Producto,
+  Categoria,
+  UnidadBasica,
+  Area,
+  Proveedor,
+  Presentacion,
+  CreateProducto,
+  UpdateProducto,
+} from '@/types'
+
+// Matches actual backend response for the list endpoint
+interface ProductoListItem {
+  id: string
+  codigo_interno: string | null
+  nombre: string
+  categoria: { id: number; nombre: string } | null
+  unidad_base: { id: number; nombre: string }
+  proveedor: { id: number; nombre: string; icono: string | null } | null
+  area: { id: number; nombre: string } | null
+  stock_minimo: string
+  activo: boolean
+}
+
+export default function ProductosTab() {
+  const queryClient = useQueryClient()
+  const [search, setSearch] = useState('')
+  const [categoriaId, setCategoriaId] = useState('')
+  const [areaId, setAreaId] = useState('')
+  const [proveedorId, setProveedorId] = useState('')
+  const [page, setPage] = useState(1)
+
+  const [createOpen, setCreateOpen] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [detailId, setDetailId] = useState<string | null>(null)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['productos', { search, categoriaId, areaId, proveedorId, page }],
+    queryFn: () =>
+      api.get<PaginatedResponse<ProductoListItem>>('/productos', {
+        params: {
+          q: search || undefined,
+          categoria_id: categoriaId || undefined,
+          area_id: areaId || undefined,
+          proveedor_id: proveedorId || undefined,
+          page,
+          per_page: 20,
+        },
+      }).then((r) => r.data),
+  })
+
+  const { data: categorias } = useQuery({
+    queryKey: ['categorias'],
+    queryFn: () => api.get<Categoria[]>('/categorias').then((r) => r.data),
+  })
+
+  const { data: unidades } = useQuery({
+    queryKey: ['unidades-basicas'],
+    queryFn: () => api.get<UnidadBasica[]>('/unidades-basicas').then((r) => r.data),
+  })
+
+  const { data: areas } = useQuery({
+    queryKey: ['areas'],
+    queryFn: () => api.get<Area[]>('/areas').then((r) => r.data),
+  })
+
+  const { data: proveedores } = useQuery({
+    queryKey: ['proveedores'],
+    queryFn: () => api.get<Proveedor[]>('/proveedores').then((r) => r.data),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => api.delete(`/productos/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['productos'] })
+      toast.success('Producto desactivado')
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error?.message ?? 'No se puede desactivar: tiene stock activo'),
+  })
+
+  function handleDelete(p: ProductoListItem) {
+    if (confirm(`¿Desactivar el producto "${p.nombre}"?`)) {
+      deleteMut.mutate(p.id)
+    }
+  }
+
+  const columns = [
+    {
+      key: 'nombre',
+      header: 'Nombre completo',
+      render: (item: ProductoListItem) => (
+        <div>
+          <p className="font-medium text-sm">{item.nombre}</p>
+          {item.codigo_interno && (
+            <p className="text-[11px] font-mono opacity-35">{item.codigo_interno}</p>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'categoria',
+      header: 'Categoría',
+      className: 'hidden md:table-cell',
+      render: (item: ProductoListItem) => (
+        <span className="text-sm opacity-50">{item.categoria?.nombre || '--'}</span>
+      ),
+    },
+    {
+      key: 'proveedor',
+      header: 'Proveedor',
+      className: 'hidden md:table-cell',
+      render: (item: ProductoListItem) => (
+        item.proveedor ? (
+          <div className="flex items-center gap-1.5">
+            <ProveedorIcon proveedor={item.proveedor} className="h-4 w-4" />
+            <span className="text-sm">{item.proveedor.nombre}</span>
+          </div>
+        ) : (
+          <span className="text-sm opacity-30">--</span>
+        )
+      ),
+    },
+    {
+      key: 'area',
+      header: 'Área / Sección',
+      className: 'hidden lg:table-cell',
+      render: (item: ProductoListItem) => (
+        item.area
+          ? <Badge variant="secondary">{item.area.nombre}</Badge>
+          : <span className="text-sm opacity-30">--</span>
+      ),
+    },
+    {
+      key: 'unidad_base',
+      header: 'Unidad',
+      render: (item: ProductoListItem) => (
+        <span className="font-mono text-sm bg-base-200 px-2 py-0.5 rounded">{item.unidad_base.nombre}</span>
+      ),
+    },
+    {
+      key: 'stock_minimo',
+      header: 'Mín.',
+      className: 'hidden lg:table-cell',
+      render: (item: ProductoListItem) => (
+        <span className="text-sm font-mono opacity-50">{Math.round(Number(item.stock_minimo))}</span>
+      ),
+    },
+    {
+      key: 'activo',
+      header: 'Estado',
+      render: (item: ProductoListItem) => (
+        item.activo
+          ? <Badge variant="success">Activo</Badge>
+          : <Badge variant="outline">Inactivo</Badge>
+      ),
+    },
+    {
+      key: 'acciones',
+      header: '',
+      className: 'w-28',
+      render: (item: ProductoListItem) => (
+        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+          <button className="btn btn-ghost btn-xs btn-square" onClick={() => setDetailId(item.id)}>
+            <Eye className="h-3.5 w-3.5 opacity-50" />
+          </button>
+          <button className="btn btn-ghost btn-xs btn-square" onClick={() => setEditId(item.id)}>
+            <Pencil className="h-3.5 w-3.5 opacity-50" />
+          </button>
+          <button className="btn btn-ghost btn-xs btn-square" onClick={() => handleDelete(item)}>
+            <Trash2 className="h-3.5 w-3.5 opacity-50 hover:text-error" />
+          </button>
+        </div>
+      ),
+    },
+  ]
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2.5 justify-between">
+        <div className="flex flex-wrap gap-2.5 flex-1">
+          <label className="input input-bordered input-sm flex items-center gap-2 flex-1 min-w-[200px] max-w-sm h-9">
+            <Search className="h-3.5 w-3.5 opacity-35" />
+            <input
+              type="text"
+              className="grow text-sm"
+              placeholder="Buscar producto..."
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+            />
+          </label>
+          <select
+            className="select select-bordered select-sm h-9 w-44 text-sm"
+            value={categoriaId}
+            onChange={(e) => { setCategoriaId(e.target.value); setPage(1) }}
+          >
+            <option value="">Categoría</option>
+            {categorias?.map((c) => (
+              <option key={c.id} value={c.id}>{c.nombre}</option>
+            ))}
+          </select>
+          <select
+            className="select select-bordered select-sm h-9 w-44 text-sm"
+            value={areaId}
+            onChange={(e) => { setAreaId(e.target.value); setPage(1) }}
+          >
+            <option value="">Área / Sección</option>
+            {areas?.map((a) => (
+              <option key={a.id} value={a.id}>{a.nombre}</option>
+            ))}
+          </select>
+          <ProveedorSelect
+            value={proveedorId}
+            onChange={(v) => { setProveedorId(v); setPage(1) }}
+            proveedores={proveedores ?? []}
+            allLabel="Todos los proveedores"
+            className="w-52"
+          />
+        </div>
+        <button className="btn btn-primary btn-sm gap-1.5" onClick={() => setCreateOpen(true)}>
+          <Plus className="h-4 w-4" />
+          Nuevo producto
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-1.5">
+          {[1, 2, 3, 4, 5].map((i) => <div key={i} className="skeleton h-14 w-full rounded-lg" />)}
+        </div>
+      ) : (
+        <>
+          <DataTable
+            columns={columns}
+            data={(data?.data ?? []) as unknown as Record<string, unknown>[]}
+            emptyMessage="No hay productos registrados"
+          />
+          <Pagination page={data?.page ?? 1} totalPages={data?.total_pages ?? 1} onPageChange={setPage} />
+        </>
+      )}
+
+      <CreateProductoDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        categorias={categorias ?? []}
+        unidades={unidades ?? []}
+        areas={areas ?? []}
+        proveedores={proveedores ?? []}
+      />
+
+      {editId && (
+        <EditProductoDialog
+          open={!!editId}
+          onClose={() => setEditId(null)}
+          productoId={editId}
+          categorias={categorias ?? []}
+          unidades={unidades ?? []}
+          areas={areas ?? []}
+          proveedores={proveedores ?? []}
+        />
+      )}
+
+      <Sheet open={!!detailId} onClose={() => setDetailId(null)} title="Detalle de producto">
+        {detailId && <ProductoDetail id={detailId} />}
+      </Sheet>
+    </div>
+  )
+}
+
+// ── Quick-create mini forms ──────────────────────────────────
+
+function QuickCreateCategoria({
+  open, onClose, onCreated,
+}: { open: boolean; onClose: () => void; onCreated: (c: Categoria) => void }) {
+  const queryClient = useQueryClient()
+  const [nombre, setNombre] = useState('')
+  const mut = useMutation({
+    mutationFn: () => api.post<Categoria>('/categorias', { nombre: nombre.trim() }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['categorias'] })
+      toast.success('Categoría creada')
+      onCreated(res.data)
+      setNombre('')
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error?.message ?? 'Error al crear categoría'),
+  })
+  return (
+    <Dialog open={open} onClose={onClose} title="Nueva categoría">
+      <form onSubmit={(e) => { e.preventDefault(); if (nombre.trim()) mut.mutate() }} className="space-y-4">
+        <div className="form-control">
+          <label className="label"><span className="label-text text-sm font-medium">Nombre *</span></label>
+          <input type="text" className="input input-bordered input-sm h-9" value={nombre}
+            onChange={(e) => setNombre(e.target.value)} placeholder="Ej: Reactivos" autoFocus required />
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Cancelar</button>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={mut.isPending}>
+            {mut.isPending ? <span className="loading loading-spinner loading-xs" /> : 'Crear'}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  )
+}
+
+function QuickCreateUnidad({
+  open, onClose, onCreated,
+}: { open: boolean; onClose: () => void; onCreated: (u: UnidadBasica) => void }) {
+  const queryClient = useQueryClient()
+  const [f, setF] = useState({ nombre: '', nombre_plural: '' })
+  const mut = useMutation({
+    mutationFn: () => api.post<UnidadBasica>('/unidades-basicas', {
+      nombre: f.nombre.trim(), nombre_plural: f.nombre_plural.trim(),
+    }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['unidades-basicas'] })
+      toast.success('Unidad creada')
+      onCreated(res.data)
+      setF({ nombre: '', nombre_plural: '' })
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error?.message ?? 'Error al crear unidad'),
+  })
+  return (
+    <Dialog open={open} onClose={onClose} title="Nueva unidad básica">
+      <form onSubmit={(e) => { e.preventDefault(); if (f.nombre.trim() && f.nombre_plural.trim()) mut.mutate() }} className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="form-control">
+            <label className="label"><span className="label-text text-sm font-medium">Singular *</span></label>
+            <input type="text" className="input input-bordered input-sm h-9" value={f.nombre}
+              onChange={(e) => setF((p) => ({ ...p, nombre: e.target.value }))} placeholder="Ej: placa" autoFocus required />
+          </div>
+          <div className="form-control">
+            <label className="label"><span className="label-text text-sm font-medium">Plural *</span></label>
+            <input type="text" className="input input-bordered input-sm h-9" value={f.nombre_plural}
+              onChange={(e) => setF((p) => ({ ...p, nombre_plural: e.target.value }))} placeholder="Ej: placas" required />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Cancelar</button>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={mut.isPending}>
+            {mut.isPending ? <span className="loading loading-spinner loading-xs" /> : 'Crear'}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  )
+}
+
+function QuickCreateArea({
+  open, onClose, onCreated,
+}: { open: boolean; onClose: () => void; onCreated: (a: Area) => void }) {
+  const queryClient = useQueryClient()
+  const [nombre, setNombre] = useState('')
+  const mut = useMutation({
+    mutationFn: () => api.post<Area>('/areas', { nombre: nombre.trim() }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['areas'] })
+      toast.success('Área creada')
+      onCreated(res.data)
+      setNombre('')
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error?.message ?? 'Error al crear área'),
+  })
+  return (
+    <Dialog open={open} onClose={onClose} title="Nueva área">
+      <form onSubmit={(e) => { e.preventDefault(); if (nombre.trim()) mut.mutate() }} className="space-y-4">
+        <div className="form-control">
+          <label className="label"><span className="label-text text-sm font-medium">Nombre *</span></label>
+          <input type="text" className="input input-bordered input-sm h-9" value={nombre}
+            onChange={(e) => setNombre(e.target.value)} placeholder="Ej: PCR" autoFocus required />
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Cancelar</button>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={mut.isPending}>
+            {mut.isPending ? <span className="loading loading-spinner loading-xs" /> : 'Crear'}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  )
+}
+
+// ── Barcode Scanner ──────────────────────────────────────────
+
+function BarcodeScanner({ onScan, onClose }: { onScan: (code: string) => void; onClose: () => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const [error, setError] = useState<string | null>(null)
+  const animRef = useRef<number>(0)
+  const streamRef = useRef<MediaStream | null>(null)
+
+  useEffect(() => {
+    if (!('BarcodeDetector' in window)) {
+      setError('Tu navegador no soporta el lector de cámara. Escribe el código manualmente.')
+      return
+    }
+    let active = true
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      .then(async (stream) => {
+        if (!active) { stream.getTracks().forEach((t) => t.stop()); return }
+        streamRef.current = stream
+        const video = videoRef.current!
+        video.srcObject = stream
+        await video.play()
+        const detector = new (window as any).BarcodeDetector({
+          formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'],
+        })
+        function tick() {
+          detector.detect(video).then((codes: any[]) => {
+            if (!active) return
+            if (codes.length > 0) { onScan(codes[0].rawValue) }
+            else { animRef.current = requestAnimationFrame(tick) }
+          }).catch(() => { if (active) animRef.current = requestAnimationFrame(tick) })
+        }
+        animRef.current = requestAnimationFrame(tick)
+      })
+      .catch(() => { if (active) setError('No se pudo acceder a la cámara. Verifica los permisos.') })
+    return () => {
+      active = false
+      cancelAnimationFrame(animRef.current)
+      streamRef.current?.getTracks().forEach((t) => t.stop())
+    }
+  }, [])
+
+  return (
+    <div className="space-y-3">
+      {error
+        ? <p className="text-sm text-warning py-6 text-center">{error}</p>
+        : (
+          <>
+            <p className="text-xs text-base-content/50 text-center">Apunta la cámara al código de barras</p>
+            <video ref={videoRef} className="w-full rounded-lg" style={{ maxHeight: 220 }} muted playsInline />
+          </>
+        )
+      }
+      <div className="flex justify-end">
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Cerrar</button>
+      </div>
+    </div>
+  )
+}
+
+// ── Create Dialog ────────────────────────────────────────────
+
+function CreateProductoDialog({
+  open, onClose, categorias, unidades, areas, proveedores,
+}: {
+  open: boolean
+  onClose: () => void
+  categorias: Categoria[]
+  unidades: UnidadBasica[]
+  areas: Area[]
+  proveedores: Proveedor[]
+}) {
+  const queryClient = useQueryClient()
+  const [presFormatos] = useState<string[]>(() => getPresFormatos())
+  const [form, setForm] = useState({
+    nombre: '',
+    descripcion: '',
+    categoria_id: '',
+    unidad_base_id: '',
+    area_id: '',
+    proveedor_id: '',
+    pres_nombre: '',
+    pres_factor: '',
+    pres_codigo_barras: '',
+  })
+
+  const [newCatOpen, setNewCatOpen] = useState(false)
+  const [newUnidadOpen, setNewUnidadOpen] = useState(false)
+  const [newAreaOpen, setNewAreaOpen] = useState(false)
+  const [scannerOpen, setScannerOpen] = useState(false)
+
+  const createMut = useMutation({
+    mutationFn: (data: CreateProducto) => api.post('/productos', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['productos'] })
+      toast.success('Producto creado')
+      handleClose()
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error?.message ?? 'Error al crear producto'),
+  })
+
+  function handleClose() {
+    onClose()
+    setForm({
+      nombre: '', descripcion: '', categoria_id: '', unidad_base_id: '',
+      area_id: '', proveedor_id: '', pres_nombre: '', pres_factor: '', pres_codigo_barras: '',
+    })
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!form.nombre.trim()) { toast.error('El nombre del producto es requerido'); return }
+    if (!form.unidad_base_id) { toast.error('Selecciona una unidad base'); return }
+    if (!form.area_id) { toast.error('Selecciona un área'); return }
+    const presentaciones =
+      form.pres_nombre && form.pres_factor
+        ? [{ nombre: form.pres_nombre, factor_conversion: Number(form.pres_factor), codigo_barras: form.pres_codigo_barras.trim() || undefined }]
+        : undefined
+    createMut.mutate({
+      nombre: form.nombre.trim(),
+      descripcion: form.descripcion.trim() || undefined,
+      categoria_id: form.categoria_id ? Number(form.categoria_id) : undefined,
+      unidad_base_id: Number(form.unidad_base_id),
+      proveedor_id: form.proveedor_id ? Number(form.proveedor_id) : undefined,
+      area_ids: [Number(form.area_id)],
+      presentaciones,
+    })
+  }
+
+  function handleCategoriaChange(value: string) {
+    if (value === '__new__') { setNewCatOpen(true); return }
+    setForm((f) => ({ ...f, categoria_id: value }))
+  }
+
+  function handleUnidadChange(value: string) {
+    if (value === '__new__') { setNewUnidadOpen(true); return }
+    setForm((f) => ({ ...f, unidad_base_id: value }))
+  }
+
+  function handleAreaChange(value: string) {
+    if (value === '__new__') { setNewAreaOpen(true); return }
+    setForm((f) => ({ ...f, area_id: value }))
+  }
+
+  return (
+    <>
+      <Dialog open={open} onClose={handleClose} title="Nuevo producto" className="max-w-2xl">
+        <form onSubmit={handleSubmit} className="space-y-4">
+
+          {/* ── Identificación ── */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-1.5">
+              <Tag className="h-3.5 w-3.5 text-primary/50" />
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Identificación</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="form-control col-span-2">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Nombre</span>
+                  <span className="label-text-alt text-error text-[10px]">requerido</span>
+                </label>
+                <input
+                  type="text"
+                  className="input input-bordered input-sm h-9"
+                  value={form.nombre}
+                  onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
+                  placeholder="Nombre del producto"
+                  autoFocus
+                />
+              </div>
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Unidad base</span>
+                  <span className="label-text-alt text-error text-[10px]">requerido</span>
+                </label>
+                <select
+                  className="select select-bordered select-sm h-9 text-sm"
+                  value={form.unidad_base_id}
+                  onChange={(e) => handleUnidadChange(e.target.value)}
+                >
+                  <option value="">Seleccionar...</option>
+                  {unidades.map((u) => (
+                    <option key={u.id} value={u.id}>{u.nombre} / {u.nombre_plural}</option>
+                  ))}
+                  <option value="__new__">＋ Crear nueva unidad...</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Tipo / Categoría</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                </label>
+                <select
+                  className="select select-bordered select-sm h-9 text-sm"
+                  value={form.categoria_id}
+                  onChange={(e) => handleCategoriaChange(e.target.value)}
+                >
+                  <option value="">Sin categoría</option>
+                  {categorias.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nombre}</option>
+                  ))}
+                  <option value="__new__">＋ Crear nueva categoría...</option>
+                </select>
+              </div>
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Sección / Área</span>
+                  <span className="label-text-alt text-error text-[10px]">requerido</span>
+                </label>
+                <select
+                  className="select select-bordered select-sm h-9 text-sm"
+                  value={form.area_id}
+                  onChange={(e) => handleAreaChange(e.target.value)}
+                >
+                  <option value="">Seleccionar área...</option>
+                  {areas.map((a) => (
+                    <option key={a.id} value={a.id}>{a.nombre}</option>
+                  ))}
+                  <option value="__new__">＋ Crear nueva área...</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="form-control">
+              <label className="label py-0.5">
+                <span className="label-text text-sm font-medium">Proveedor</span>
+                <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+              </label>
+              <ProveedorSelect
+                value={form.proveedor_id}
+                onChange={(v) => setForm((f) => ({ ...f, proveedor_id: v }))}
+                proveedores={proveedores}
+                placeholder="Sin proveedor"
+                allLabel="Sin proveedor"
+              />
+            </div>
+          </div>
+
+          <div className="divider my-0" />
+
+          {/* ── Presentación ── */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-1.5">
+              <Package className="h-3.5 w-3.5 text-base-content/30" />
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Presentación</span>
+            </div>
+
+            <div className="bg-base-200/60 rounded-lg p-3 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-control">
+                  <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Formato / presentación</span>
+                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                  </label>
+                  <select
+                    className="select select-bordered select-sm h-9 text-sm"
+                    value={form.pres_nombre}
+                    onChange={(e) => setForm((f) => ({ ...f, pres_nombre: e.target.value }))}
+                  >
+                    <option value="">Sin presentación</option>
+                    {presFormatos.map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-control">
+                  <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Unidades por formato / presentación</span>
+                  </label>
+                  <input
+                    type="number"
+                    className="input input-bordered input-sm h-9"
+                    value={form.pres_factor}
+                    onChange={(e) => setForm((f) => ({ ...f, pres_factor: e.target.value }))}
+                    placeholder="Ej: 20"
+                    min="1"
+                    step="1"
+                    disabled={!form.pres_nombre}
+                  />
+                </div>
+              </div>
+
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Código de barras</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                </label>
+                <div className="flex gap-1">
+                  <input
+                    type="text"
+                    className="input input-bordered input-sm h-9 font-mono tracking-wider flex-1 min-w-0"
+                    value={form.pres_codigo_barras}
+                    onChange={(e) => setForm((f) => ({ ...f, pres_codigo_barras: e.target.value }))}
+                    placeholder="EAN / UPC"
+                    disabled={!form.pres_nombre}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm btn-square h-9 w-9 shrink-0"
+                    onClick={() => setScannerOpen(true)}
+                    title="Escanear con cámara"
+                    disabled={!form.pres_nombre}
+                  >
+                    <Camera className="h-4 w-4 opacity-60" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="divider my-0" />
+
+          {/* ── Información adicional ── */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-1.5">
+              <FileText className="h-3.5 w-3.5 text-base-content/30" />
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Información adicional</span>
+            </div>
+            <div className="form-control">
+              <input
+                type="text"
+                className="input input-bordered input-sm h-9"
+                value={form.descripcion}
+                onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))}
+                placeholder="Especificaciones técnicas, observaciones... (opcional)"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-base-300">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={handleClose}>Cancelar</button>
+            <button type="submit" className="btn btn-primary btn-sm" disabled={createMut.isPending}>
+              {createMut.isPending ? <span className="loading loading-spinner loading-xs" /> : 'Crear producto'}
+            </button>
+          </div>
+        </form>
+      </Dialog>
+
+      {/* Quick-create sub-dialogs */}
+      <QuickCreateCategoria
+        open={newCatOpen}
+        onClose={() => setNewCatOpen(false)}
+        onCreated={(c) => { setForm((f) => ({ ...f, categoria_id: String(c.id) })); setNewCatOpen(false) }}
+      />
+      <QuickCreateUnidad
+        open={newUnidadOpen}
+        onClose={() => setNewUnidadOpen(false)}
+        onCreated={(u) => { setForm((f) => ({ ...f, unidad_base_id: String(u.id) })); setNewUnidadOpen(false) }}
+      />
+      <QuickCreateArea
+        open={newAreaOpen}
+        onClose={() => setNewAreaOpen(false)}
+        onCreated={(a) => { setForm((f) => ({ ...f, area_id: String(a.id) })); setNewAreaOpen(false) }}
+      />
+      <Dialog open={scannerOpen} onClose={() => setScannerOpen(false)} title="Escanear código de barras">
+        <BarcodeScanner
+          onScan={(code) => { setForm((f) => ({ ...f, pres_codigo_barras: code })); setScannerOpen(false) }}
+          onClose={() => setScannerOpen(false)}
+        />
+      </Dialog>
+    </>
+  )
+}
+
+// ── Edit Dialog ──────────────────────────────────────────────
+
+function EditProductoDialog({
+  open, onClose, productoId, categorias, unidades, areas, proveedores,
+}: {
+  open: boolean
+  onClose: () => void
+  productoId: string
+  categorias: Categoria[]
+  unidades: UnidadBasica[]
+  areas: Area[]
+  proveedores: Proveedor[]
+}) {
+  const queryClient = useQueryClient()
+  const [presFormatos] = useState<string[]>(() => getPresFormatos())
+  const [newAreaOpen, setNewAreaOpen] = useState(false)
+  const [scannerOpen, setScannerOpen] = useState(false)
+
+  const { data: producto, isLoading } = useQuery({
+    queryKey: ['producto-detail', productoId],
+    queryFn: () => api.get<any>(`/productos/${productoId}`).then((r) => r.data),
+    enabled: open,
+  })
+
+  const [form, setForm] = useState({
+    nombre: '',
+    descripcion: '',
+    categoria_id: '',
+    area_id: '',
+    proveedor_id: '',
+    stock_minimo: '0',
+    pres_nombre: '',
+    pres_factor: '',
+    pres_codigo_barras: '',
+  })
+
+  useEffect(() => {
+    if (producto) {
+      const catId = producto.categoria?.id ?? producto.categoria_id
+      const areaId = producto.areas?.[0]?.id ?? ''
+      const provId = producto.proveedor?.id ?? ''
+      setForm({
+        nombre: producto.nombre,
+        descripcion: producto.descripcion ?? '',
+        categoria_id: catId ? String(catId) : '',
+        area_id: areaId ? String(areaId) : '',
+        proveedor_id: provId ? String(provId) : '',
+        stock_minimo: String(Math.round(Number(producto.stock_minimo))),
+        pres_nombre: '',
+        pres_factor: '',
+        pres_codigo_barras: '',
+      })
+    }
+  }, [producto])
+
+  const updateMut = useMutation({
+    mutationFn: (data: UpdateProducto) => api.put(`/productos/${productoId}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['productos'] })
+      queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
+      toast.success('Producto actualizado')
+      onClose()
+    },
+    onError: (err: any) => {
+      if (err.response?.status === 409) {
+        toast.error('Conflicto de versión: recarga la página')
+      } else {
+        toast.error(err.response?.data?.error?.message ?? 'Error al actualizar producto')
+      }
+    },
+  })
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!producto) return
+
+    // Build new presentacion if filled
+    const hasNewPres = form.pres_nombre && form.pres_factor
+    const payload: UpdateProducto & { nueva_presentacion?: any } = {
+      nombre: form.nombre.trim() || undefined,
+      descripcion: form.descripcion.trim() || undefined,
+      categoria_id: form.categoria_id ? Number(form.categoria_id) : undefined,
+      proveedor_id: form.proveedor_id ? Number(form.proveedor_id) : undefined,
+      stock_minimo: Number(form.stock_minimo),
+      area_ids: form.area_id ? [Number(form.area_id)] : undefined,
+      version: producto.version,
+    }
+
+    updateMut.mutate(payload)
+
+    // If there's a new presentation, create it separately after the product update
+    if (hasNewPres) {
+      api.post('/presentaciones', {
+        producto_id: productoId,
+        nombre: form.pres_nombre,
+        factor_conversion: Number(form.pres_factor),
+        codigo_barras: form.pres_codigo_barras.trim() || undefined,
+      }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
+        toast.success('Presentación agregada')
+      }).catch(() => toast.error('Error al agregar presentación'))
+    }
+  }
+
+  function handleAreaChange(value: string) {
+    if (value === '__new__') { setNewAreaOpen(true); return }
+    setForm((f) => ({ ...f, area_id: value }))
+  }
+
+  return (
+    <>
+      <Dialog open={open} onClose={onClose} title="Editar producto" className="max-w-2xl">
+        {isLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => <div key={i} className="skeleton h-10 w-full rounded" />)}
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+
+            {/* ── Identificación ── */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-1.5">
+                <Tag className="h-3.5 w-3.5 text-primary/50" />
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Identificación</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="form-control col-span-2">
+                  <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Nombre</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="input input-bordered input-sm h-9"
+                    value={form.nombre}
+                    onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
+                    autoFocus
+                  />
+                </div>
+                <div className="form-control">
+                  <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Unidad base</span>
+                  </label>
+                  <div className="input input-bordered input-sm h-9 flex items-center font-mono text-sm opacity-60 bg-base-200 cursor-not-allowed">
+                    {producto?.unidad_base?.nombre ?? '--'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-control">
+                  <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Tipo / Categoría</span>
+                  </label>
+                  <select
+                    className="select select-bordered select-sm h-9 text-sm"
+                    value={form.categoria_id}
+                    onChange={(e) => setForm((f) => ({ ...f, categoria_id: e.target.value }))}
+                  >
+                    <option value="">Sin categoría</option>
+                    {categorias.map((c) => (
+                      <option key={c.id} value={String(c.id)}>{c.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-control">
+                  <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Sección / Área</span>
+                  </label>
+                  <select
+                    className="select select-bordered select-sm h-9 text-sm"
+                    value={form.area_id}
+                    onChange={(e) => handleAreaChange(e.target.value)}
+                  >
+                    <option value="">Sin área</option>
+                    {areas.map((a) => (
+                      <option key={a.id} value={String(a.id)}>{a.nombre}</option>
+                    ))}
+                    <option value="__new__">＋ Crear nueva área...</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Proveedor</span>
+                </label>
+                <ProveedorSelect
+                  value={form.proveedor_id}
+                  onChange={(v) => setForm((f) => ({ ...f, proveedor_id: v }))}
+                  proveedores={proveedores}
+                  placeholder="Sin proveedor"
+                  allLabel="Sin proveedor"
+                />
+              </div>
+
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Stock mínimo</span>
+                </label>
+                <input
+                  type="number"
+                  className="input input-bordered input-sm h-9 w-32"
+                  value={form.stock_minimo}
+                  onChange={(e) => setForm((f) => ({ ...f, stock_minimo: e.target.value }))}
+                  min="0"
+                  step="1"
+                />
+              </div>
+            </div>
+
+            <div className="divider my-0" />
+
+            {/* ── Presentaciones existentes ── */}
+            {producto?.presentaciones && producto.presentaciones.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Package className="h-3.5 w-3.5 text-base-content/30" />
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Presentaciones actuales</span>
+                </div>
+                <div className="space-y-1.5">
+                  {producto.presentaciones.map((p: Presentacion) => (
+                    <div key={p.id} className="flex items-center justify-between bg-base-200/50 rounded-lg px-3 py-2">
+                      <span className="text-sm font-medium">{p.nombre}</span>
+                      <span className="text-xs font-mono opacity-50">x{Math.round(p.factor_conversion)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Agregar presentación ── */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-1.5">
+                <Package className="h-3.5 w-3.5 text-base-content/30" />
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
+                  {producto?.presentaciones?.length > 0 ? 'Agregar presentación' : 'Presentación'}
+                </span>
+              </div>
+              <div className="bg-base-200/60 rounded-lg p-3 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="form-control">
+                    <label className="label py-0.5">
+                      <span className="label-text text-sm font-medium">Formato / presentación</span>
+                      <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                    </label>
+                    <select
+                      className="select select-bordered select-sm h-9 text-sm"
+                      value={form.pres_nombre}
+                      onChange={(e) => setForm((f) => ({ ...f, pres_nombre: e.target.value }))}
+                    >
+                      <option value="">Sin presentación</option>
+                      {presFormatos.map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-control">
+                    <label className="label py-0.5">
+                      <span className="label-text text-sm font-medium">Unidades por formato</span>
+                    </label>
+                    <input
+                      type="number"
+                      className="input input-bordered input-sm h-9"
+                      value={form.pres_factor}
+                      onChange={(e) => setForm((f) => ({ ...f, pres_factor: e.target.value }))}
+                      placeholder="Ej: 20"
+                      min="1"
+                      step="1"
+                      disabled={!form.pres_nombre}
+                    />
+                  </div>
+                </div>
+                <div className="form-control">
+                  <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Código de barras</span>
+                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                  </label>
+                  <div className="flex gap-1">
+                    <input
+                      type="text"
+                      className="input input-bordered input-sm h-9 font-mono tracking-wider flex-1 min-w-0"
+                      value={form.pres_codigo_barras}
+                      onChange={(e) => setForm((f) => ({ ...f, pres_codigo_barras: e.target.value }))}
+                      placeholder="EAN / UPC"
+                      disabled={!form.pres_nombre}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm btn-square h-9 w-9 shrink-0"
+                      onClick={() => setScannerOpen(true)}
+                      title="Escanear con cámara"
+                      disabled={!form.pres_nombre}
+                    >
+                      <Camera className="h-4 w-4 opacity-60" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="divider my-0" />
+
+            {/* ── Descripción ── */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-1.5">
+                <FileText className="h-3.5 w-3.5 text-base-content/30" />
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Información adicional</span>
+              </div>
+              <div className="form-control">
+                <input
+                  type="text"
+                  className="input input-bordered input-sm h-9"
+                  value={form.descripcion}
+                  onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))}
+                  placeholder="Especificaciones técnicas, observaciones... (opcional)"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-base-300">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Cancelar</button>
+              <button type="submit" className="btn btn-primary btn-sm" disabled={updateMut.isPending}>
+                {updateMut.isPending ? <span className="loading loading-spinner loading-xs" /> : 'Guardar'}
+              </button>
+            </div>
+          </form>
+        )}
+      </Dialog>
+
+      <QuickCreateArea
+        open={newAreaOpen}
+        onClose={() => setNewAreaOpen(false)}
+        onCreated={(a) => { setForm((f) => ({ ...f, area_id: String(a.id) })); setNewAreaOpen(false) }}
+      />
+      <Dialog open={scannerOpen} onClose={() => setScannerOpen(false)} title="Escanear código de barras">
+        <BarcodeScanner
+          onScan={(code) => { setForm((f) => ({ ...f, pres_codigo_barras: code })); setScannerOpen(false) }}
+          onClose={() => setScannerOpen(false)}
+        />
+      </Dialog>
+    </>
+  )
+}
+
+// ── Detail Panel ─────────────────────────────────────────────
+
+function ProductoDetail({ id }: { id: string }) {
+  const { data: producto, isLoading } = useQuery({
+    queryKey: ['producto-detail', id],
+    queryFn: () => api.get<any>(`/productos/${id}`).then((r) => r.data),
+  })
+
+  if (isLoading) {
+    return <div className="space-y-3">{[1, 2, 3].map((i) => <div key={i} className="skeleton h-6 w-full" />)}</div>
+  }
+
+  if (!producto) return <p className="text-sm opacity-40">No encontrado</p>
+
+  const categoriaNombre =
+    producto.categoria?.nombre ?? producto.categoria_nombre ?? '--'
+
+  return (
+    <div className="space-y-5">
+      <div className="space-y-3">
+        <DetailRow label="Código" value={producto.codigo_interno ?? '--'} mono />
+        <DetailRow label="Nombre" value={producto.nombre} />
+        {producto.descripcion && (
+          <DetailRow label="Descripción" value={producto.descripcion} />
+        )}
+        <DetailRow label="Categoría" value={categoriaNombre} />
+        <DetailRow label="Unidad base" value={producto.unidad_base?.nombre ?? '--'} />
+        <DetailRow label="Stock mínimo" value={String(Math.round(Number(producto.stock_minimo)))} mono />
+        <DetailRow label="Estado" value={producto.activo ? 'Activo' : 'Inactivo'} />
+
+        {producto.proveedor && (
+          <div className="flex justify-between items-center">
+            <span className="text-xs opacity-40">Proveedor</span>
+            <div className="flex items-center gap-1.5">
+              <ProveedorIcon proveedor={producto.proveedor} className="h-4 w-4" />
+              <span className="text-sm">{producto.proveedor.nombre}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {producto.presentaciones && producto.presentaciones.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold uppercase tracking-wider opacity-40 mb-2">Presentaciones</h4>
+          <div className="space-y-1.5">
+            {producto.presentaciones.map((p: Presentacion) => (
+              <div key={p.id} className="flex items-center justify-between bg-base-200/50 rounded-lg px-3 py-2">
+                <span className="text-sm font-medium">{p.nombre}</span>
+                <span className="text-xs font-mono opacity-50">x{Math.round(p.factor_conversion)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {producto.areas && producto.areas.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold uppercase tracking-wider opacity-40 mb-2">Área / Sección</h4>
+          <div className="flex flex-wrap gap-1.5">
+            {producto.areas.map((a: { id: number; nombre: string }) => (
+              <Badge key={a.id} variant="secondary">{a.nombre}</Badge>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-xs opacity-40">{label}</span>
+      <span className={`text-sm ${mono ? 'font-mono' : ''}`}>{value}</span>
+    </div>
+  )
+}

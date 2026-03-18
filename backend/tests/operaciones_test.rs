@@ -1,0 +1,616 @@
+mod common;
+
+use axum::http::StatusCode;
+use sqlx::PgPool;
+use uuid::Uuid;
+
+/// Helper: crea un producto, proveedor, presentación, y hace una recepción para tener stock
+async fn setup_stock(
+    pool: &PgPool,
+    token: &str,
+    app: &axum::Router,
+    area_id: i32,
+    cantidad: f64,
+) -> (Uuid, String) {
+    // Crear proveedor
+    let (_, prov_json) = common::post_json(
+        app,
+        "/api/v1/proveedores",
+        token,
+        serde_json::json!({
+            "nombre": "Proveedor Test"
+        }),
+    )
+    .await;
+    let proveedor_id = prov_json["id"].as_i64().unwrap();
+
+    // Crear producto
+    let (_, prod_json) = common::post_json(
+        app,
+        "/api/v1/productos",
+        token,
+        serde_json::json!({
+            "nombre": format!("Producto Test {}", Uuid::new_v4()),
+            "unidad_base_id": 1,
+            "stock_minimo": 100,
+            "presentaciones": [
+                { "nombre": "Unitario", "factor_conversion": 1 }
+            ]
+        }),
+    )
+    .await;
+    let producto_id = prod_json["id"].as_str().unwrap().to_string();
+    let producto_uuid: Uuid = producto_id.parse().unwrap();
+
+    // Obtener presentación
+    let pres_id: i32 =
+        sqlx::query_scalar("SELECT id FROM presentaciones WHERE producto_id = $1 LIMIT 1")
+            .bind(producto_uuid)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+
+    // Crear recepción para generar stock
+    let idem_key = Uuid::new_v4().to_string();
+    let (status, _) = common::post_json_idempotent(
+        app,
+        "/api/v1/recepciones",
+        token,
+        serde_json::json!({
+            "proveedor_id": proveedor_id,
+            "estado": "completa",
+            "fecha_recepcion": "2026-03-15T10:00:00Z",
+            "detalle": [{
+                "producto_id": producto_id,
+                "numero_lote": format!("LOT-TEST-{}", Uuid::new_v4().to_string()[..8].to_uppercase()),
+                "fecha_vencimiento": "2027-06-15",
+                "presentacion_id": pres_id,
+                "cantidad_presentaciones": cantidad,
+                "area_destino_id": area_id,
+            }]
+        }),
+        &idem_key,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "Recepción debería crear stock");
+
+    (producto_uuid, producto_id)
+}
+
+// ==========================================
+// RECEPCIONES
+// ==========================================
+
+#[sqlx::test(migrations = "./migrations")]
+async fn recepcion_completa_genera_stock(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (producto_uuid, _) = setup_stock(&pool, &token, &app, 1, 100.0).await;
+
+    // Verificar stock
+    let stock: Option<rust_decimal::Decimal> = sqlx::query_scalar(
+        r#"SELECT SUM(s.cantidad) FROM stock s
+           JOIN lotes l ON l.id = s.lote_id
+           WHERE l.producto_id = $1 AND s.area_id = 1"#,
+    )
+    .bind(producto_uuid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(stock.unwrap().to_string(), "100.00");
+
+    // Verificar movimiento INGRESO
+    let mov_count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM movimientos m JOIN lotes l ON l.id = m.lote_id WHERE l.producto_id = $1 AND m.tipo = 'INGRESO'",
+    )
+    .bind(producto_uuid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(mov_count.0, 1);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn recepcion_borrador_no_genera_stock(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    // Crear proveedor y producto
+    let (_, prov) = common::post_json(
+        &app,
+        "/api/v1/proveedores",
+        &token,
+        serde_json::json!({"nombre": "Prov Draft"}),
+    )
+    .await;
+    let (_, prod) = common::post_json(
+        &app,
+        "/api/v1/productos",
+        &token,
+        serde_json::json!({
+            "nombre": "Prod Draft",
+            "unidad_base_id": 1,
+            "presentaciones": [{"nombre": "U", "factor_conversion": 1}]
+        }),
+    )
+    .await;
+    let prod_id = prod["id"].as_str().unwrap();
+    let pres_id: i32 = sqlx::query_scalar(
+        "SELECT id FROM presentaciones WHERE producto_id = $1 LIMIT 1",
+    )
+    .bind(prod_id.parse::<Uuid>().unwrap())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    // Crear recepción como borrador (no necesita idempotency)
+    let (status, json) = common::post_json(
+        &app,
+        "/api/v1/recepciones",
+        &token,
+        serde_json::json!({
+            "proveedor_id": prov["id"].as_i64().unwrap(),
+            "estado": "borrador",
+            "fecha_recepcion": "2026-03-15T10:00:00Z",
+            "detalle": [{
+                "producto_id": prod_id,
+                "numero_lote": "DRAFT-LOT",
+                "fecha_vencimiento": "2027-06-15",
+                "presentacion_id": pres_id,
+                "cantidad_presentaciones": 50,
+                "area_destino_id": 1,
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(json["estado"], "borrador");
+
+    // No debería haber stock
+    let stock: Option<rust_decimal::Decimal> = sqlx::query_scalar(
+        "SELECT SUM(s.cantidad) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = $1",
+    )
+    .bind(prod_id.parse::<Uuid>().unwrap())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert!(stock.is_none() || stock.unwrap() == rust_decimal::Decimal::ZERO);
+}
+
+// ==========================================
+// CONSUMOS
+// ==========================================
+
+#[sqlx::test(migrations = "./migrations")]
+async fn consumo_individual_fefo(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (_, producto_id) = setup_stock(&pool, &token, &app, 1, 200.0).await;
+
+    // Consumir 50
+    let idem_key = Uuid::new_v4().to_string();
+    let (status, json) = common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos",
+        &token,
+        serde_json::json!({
+            "producto_id": producto_id,
+            "area_id": 1,
+            "cantidad": 50,
+            "unidad": "base",
+            "nota": "Test consumo"
+        }),
+        &idem_key,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(json["grupo_movimiento"].is_string());
+    // Decimal se serializa como string
+    assert_eq!(json["stock_restante_area"].as_str().unwrap(), "150.00");
+    assert_eq!(json["movimientos"].as_array().unwrap().len(), 1);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn consumo_stock_insuficiente(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (_, producto_id) = setup_stock(&pool, &token, &app, 1, 30.0).await;
+
+    let idem_key = Uuid::new_v4().to_string();
+    let (status, _) = common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos",
+        &token,
+        serde_json::json!({
+            "producto_id": producto_id,
+            "area_id": 1,
+            "cantidad": 50,
+            "unidad": "base",
+        }),
+        &idem_key,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn consumo_idempotente(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (_, producto_id) = setup_stock(&pool, &token, &app, 1, 200.0).await;
+
+    let idem_key = Uuid::new_v4().to_string();
+    let body = serde_json::json!({
+        "producto_id": producto_id,
+        "area_id": 1,
+        "cantidad": 50,
+        "unidad": "base",
+    });
+
+    // Primera vez
+    let (s1, j1) = common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos",
+        &token,
+        body.clone(),
+        &idem_key,
+    )
+    .await;
+    assert_eq!(s1, StatusCode::CREATED);
+
+    // Segunda vez con misma key → misma respuesta, no se descuenta más
+    let (s2, j2) = common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos",
+        &token,
+        body,
+        &idem_key,
+    )
+    .await;
+    assert_eq!(s2, StatusCode::CREATED);
+    assert_eq!(j1["grupo_movimiento"], j2["grupo_movimiento"]);
+
+    // Verificar que solo se descontó una vez
+    let (stock,): (Option<rust_decimal::Decimal>,) = sqlx::query_as(
+        r#"SELECT SUM(s.cantidad) FROM stock s
+           JOIN lotes l ON l.id = s.lote_id
+           WHERE l.producto_id = $1 AND s.area_id = 1"#,
+    )
+    .bind(producto_id.parse::<Uuid>().unwrap())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(stock.unwrap().to_string(), "150.00");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn consumo_batch(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (_, prod_id_1) = setup_stock(&pool, &token, &app, 1, 100.0).await;
+    let (_, prod_id_2) = setup_stock(&pool, &token, &app, 1, 200.0).await;
+
+    let idem_key = Uuid::new_v4().to_string();
+    let (status, json) = common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos/batch",
+        &token,
+        serde_json::json!({
+            "area_id": 1,
+            "items": [
+                { "producto_id": prod_id_1, "cantidad": 30, "unidad": "base" },
+                { "producto_id": prod_id_2, "cantidad": 50, "unidad": "base" },
+            ],
+            "nota": "Batch test"
+        }),
+        &idem_key,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(json["movimientos_generados"].as_u64().unwrap() >= 2);
+    assert_eq!(json["resumen"].as_array().unwrap().len(), 2);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn consumo_batch_rollback_si_un_item_falla(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (_, prod_id_1) = setup_stock(&pool, &token, &app, 1, 100.0).await;
+    let (_, prod_id_2) = setup_stock(&pool, &token, &app, 1, 10.0).await; // solo 10
+
+    let idem_key = Uuid::new_v4().to_string();
+    let (status, _) = common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos/batch",
+        &token,
+        serde_json::json!({
+            "area_id": 1,
+            "items": [
+                { "producto_id": prod_id_1, "cantidad": 30, "unidad": "base" },
+                { "producto_id": prod_id_2, "cantidad": 50, "unidad": "base" }, // insuficiente
+            ],
+        }),
+        &idem_key,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Verificar que el primer producto NO se descontó (rollback total)
+    let (stock,): (Option<rust_decimal::Decimal>,) = sqlx::query_as(
+        r#"SELECT SUM(s.cantidad) FROM stock s
+           JOIN lotes l ON l.id = s.lote_id
+           WHERE l.producto_id = $1 AND s.area_id = 1"#,
+    )
+    .bind(prod_id_1.parse::<Uuid>().unwrap())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(stock.unwrap().to_string(), "100.00"); // sin cambios
+}
+
+// ==========================================
+// TRANSFERENCIAS
+// ==========================================
+
+#[sqlx::test(migrations = "./migrations")]
+async fn transferencia_entre_areas(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (producto_uuid, producto_id) = setup_stock(&pool, &token, &app, 1, 200.0).await;
+
+    // Transferir 80 del área 1 al área 2
+    let idem_key = Uuid::new_v4().to_string();
+    let (status, json) = common::post_json_idempotent(
+        &app,
+        "/api/v1/transferencias",
+        &token,
+        serde_json::json!({
+            "producto_id": producto_id,
+            "area_origen_id": 1,
+            "area_destino_id": 2,
+            "cantidad": 80,
+            "nota": "Reposición"
+        }),
+        &idem_key,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(json["grupo_movimiento"].is_string());
+
+    // Verificar stock en origen (200 - 80 = 120)
+    let (stock_origen,): (Option<rust_decimal::Decimal>,) = sqlx::query_as(
+        "SELECT SUM(s.cantidad) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = $1 AND s.area_id = 1",
+    )
+    .bind(producto_uuid)
+    .fetch_one(&pool)
+    .await.unwrap();
+    assert_eq!(stock_origen.unwrap().to_string(), "120.00");
+
+    // Verificar stock en destino (80)
+    let (stock_destino,): (Option<rust_decimal::Decimal>,) = sqlx::query_as(
+        "SELECT SUM(s.cantidad) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = $1 AND s.area_id = 2",
+    )
+    .bind(producto_uuid)
+    .fetch_one(&pool)
+    .await.unwrap();
+    assert_eq!(stock_destino.unwrap().to_string(), "80.00");
+}
+
+// ==========================================
+// DESCARTES
+// ==========================================
+
+#[sqlx::test(migrations = "./migrations")]
+async fn descarte_vencido(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (producto_uuid, _) = setup_stock(&pool, &token, &app, 1, 100.0).await;
+
+    // Obtener lote_id
+    let lote_id: Uuid = sqlx::query_scalar(
+        "SELECT l.id FROM lotes l WHERE l.producto_id = $1 LIMIT 1",
+    )
+    .bind(producto_uuid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let idem_key = Uuid::new_v4().to_string();
+    let (status, json) = common::post_json_idempotent(
+        &app,
+        "/api/v1/descartes",
+        &token,
+        serde_json::json!({
+            "items": [{
+                "lote_id": lote_id,
+                "area_id": 1,
+                "cantidad": 40,
+                "tipo": "DESCARTE_VENCIDO",
+                "nota": "Lote vencido"
+            }]
+        }),
+        &idem_key,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(json["grupo_movimiento"].is_string());
+
+    // Verificar stock (100 - 40 = 60)
+    let (stock,): (Option<rust_decimal::Decimal>,) = sqlx::query_as(
+        "SELECT SUM(s.cantidad) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = $1",
+    )
+    .bind(producto_uuid)
+    .fetch_one(&pool)
+    .await.unwrap();
+    assert_eq!(stock.unwrap().to_string(), "60.00");
+}
+
+// ==========================================
+// STOCK Y ALERTAS
+// ==========================================
+
+#[sqlx::test(migrations = "./migrations")]
+async fn consultar_stock(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    setup_stock(&pool, &token, &app, 1, 500.0).await;
+
+    let (status, json) = common::get_json(&app, "/api/v1/stock?area_id=1", &token).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(json["data"].as_array().unwrap().len() >= 1);
+    assert!(json["resumen"]["total_productos_con_stock"].as_i64().unwrap() >= 1);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn consultar_stock_por_area(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    setup_stock(&pool, &token, &app, 1, 300.0).await;
+
+    let (status, json) = common::get_json(&app, "/api/v1/stock/area/1", &token).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["area"]["id"], 1);
+    assert!(json["productos"].as_array().unwrap().len() >= 1);
+
+    // Cada producto tiene lotes
+    let producto = &json["productos"][0];
+    assert!(producto["lotes"].as_array().unwrap().len() >= 1);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn alertas_stock(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool);
+
+    let (status, json) = common::get_json(&app, "/api/v1/stock/alertas", &token).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(json["bajo_minimo"].is_array());
+    assert!(json["por_vencer_30d"].is_array());
+    assert!(json["por_vencer_90d"].is_array());
+    assert!(json["vencidos"].is_array());
+}
+
+// ==========================================
+// MOVIMIENTOS
+// ==========================================
+
+#[sqlx::test(migrations = "./migrations")]
+async fn listar_movimientos(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    // Crear stock y consumir para generar movimientos
+    let (_, producto_id) = setup_stock(&pool, &token, &app, 1, 100.0).await;
+
+    let idem_key = Uuid::new_v4().to_string();
+    common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos",
+        &token,
+        serde_json::json!({
+            "producto_id": producto_id,
+            "area_id": 1,
+            "cantidad": 10,
+            "unidad": "base",
+        }),
+        &idem_key,
+    )
+    .await;
+
+    let (status, json) = common::get_json(
+        &app,
+        "/api/v1/movimientos?tipo=CONSUMO",
+        &token,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(json["data"].as_array().unwrap().len() >= 1);
+    assert_eq!(json["data"][0]["tipo"], "CONSUMO");
+}
+
+// ==========================================
+// LOTES
+// ==========================================
+
+#[sqlx::test(migrations = "./migrations")]
+async fn buscar_lote_por_codigo(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    setup_stock(&pool, &token, &app, 1, 100.0).await;
+
+    // Obtener código interno del lote
+    let codigo: String = sqlx::query_scalar("SELECT codigo_interno FROM lotes LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let (status, json) = common::get_json(
+        &app,
+        &format!("/api/v1/lotes/buscar-codigo/{}", codigo),
+        &token,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["resultados"].as_array().unwrap().len(), 1);
+    assert_eq!(json["resultados"][0]["tipo"], "lote_interno");
+}
+
+// ==========================================
+// VALIDACIÓN DE ACCESO POR ÁREA
+// ==========================================
+
+#[sqlx::test(migrations = "./migrations")]
+async fn tecnologo_sin_acceso_a_area_recibe_403(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (_, producto_id) = setup_stock(&pool, &token, &app, 1, 100.0).await;
+
+    // Crear tecnólogo con acceso solo a área 2
+    let tec_token = common::create_tecnologo_token(&pool, &[2]).await;
+
+    // Intentar consumir en área 1 → 403
+    let idem_key = Uuid::new_v4().to_string();
+    let (status, _) = common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos",
+        &tec_token,
+        serde_json::json!({
+            "producto_id": producto_id,
+            "area_id": 1,
+            "cantidad": 10,
+            "unidad": "base",
+        }),
+        &idem_key,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}

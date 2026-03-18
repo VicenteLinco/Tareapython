@@ -1,0 +1,11 @@
+pub mod area;
+pub mod categoria;
+pub mod lote;
+pub mod movimiento;
+pub mod presentacion;
+pub mod producto;
+pub mod proveedor;
+pub mod recepcion;
+pub mod stock;
+pub mod unidad_medida;
+pub mod usuario;

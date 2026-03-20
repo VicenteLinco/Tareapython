@@ -8,8 +8,10 @@ import StockPage from '@/pages/stock'
 import ConsumosPage from '@/pages/consumos'
 import RecepcionesPage from '@/pages/recepciones'
 import NuevaRecepcionPage from '@/pages/recepciones/nueva'
+import RecepcionDetallePage from '@/pages/recepciones/detalle'
 import MovimientosPage from '@/pages/movimientos'
 import CatalogosPage from '@/pages/catalogos'
+import ConfiguracionPage from '@/pages/configuracion'
 import PlaceholderPage from '@/pages/placeholder'
 
 const queryClient = new QueryClient({
@@ -33,9 +35,11 @@ export default function App() {
             <Route path="/consumos" element={<ConsumosPage />} />
             <Route path="/recepciones" element={<RecepcionesPage />} />
             <Route path="/recepciones/nueva" element={<NuevaRecepcionPage />} />
+            <Route path="/recepciones/:id" element={<RecepcionDetallePage />} />
             <Route path="/movimientos" element={<MovimientosPage />} />
 <Route path="/descartes" element={<PlaceholderPage title="Descartes" />} />
             <Route path="/catalogos" element={<CatalogosPage />} />
+            <Route path="/configuracion" element={<ConfiguracionPage />} />
             <Route path="/usuarios" element={<PlaceholderPage title="Usuarios" />} />
             <Route path="/audit-log" element={<PlaceholderPage title="Audit Log" />} />
             <Route path="/setup" element={<PlaceholderPage title="Setup Inicial" />} />

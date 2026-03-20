@@ -12,6 +12,8 @@ pub struct Producto {
     pub categoria_id: Option<i32>,
     pub unidad_base_id: i32,
     pub proveedor_id: Option<i32>,
+    pub codigo_proveedor: Option<String>,
+    pub codigo_maestro: Option<String>,
     pub stock_minimo: Decimal,
     pub activo: bool,
     pub version: i32,

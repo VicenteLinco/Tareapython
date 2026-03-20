@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FlaskConical, ArrowRight } from 'lucide-react'
-import fondoLogin from '@/assets/fondo-login.jpg'
+import fondoLogin from '@/assets/fondo-login.gif'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import api from '@/lib/api'
 import type { LoginResponse, MeResponse } from '@/types'
@@ -51,9 +51,9 @@ export default function LoginPage() {
           <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm mb-6">
             <FlaskConical className="h-8 w-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold mb-3">Lab Inventario</h1>
+          <h1 className="text-3xl font-bold mb-3">Labstock Mini </h1>
           <p className="text-sm text-white/70 max-w-xs mx-auto leading-relaxed">
-            Sistema de gestión de inventario para laboratorio clínico. Control de stock, trazabilidad y FEFO automático.
+            
           </p>
         </div>
       </div>

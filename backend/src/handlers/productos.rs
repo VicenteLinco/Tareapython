@@ -31,6 +31,8 @@ struct ProductoListItem {
     id: Uuid,
     codigo_interno: String,
     nombre: String,
+    codigo_proveedor: Option<String>,
+    codigo_maestro: Option<String>,
     categoria: Option<CategoriaRef>,
     unidad_base: UnidadRef,
     proveedor: Option<ProveedorRef>,
@@ -72,6 +74,8 @@ struct CreateProducto {
     categoria_id: Option<i32>,
     unidad_base_id: i32,
     proveedor_id: Option<i32>,
+    codigo_proveedor: Option<String>,
+    codigo_maestro: Option<String>,
     stock_minimo: Option<Decimal>,
     presentaciones: Option<Vec<CreatePresentacionInline>>,
     area_ids: Option<Vec<i32>>,
@@ -90,6 +94,8 @@ struct UpdateProducto {
     descripcion: Option<String>,
     categoria_id: Option<i32>,
     proveedor_id: Option<i32>,
+    codigo_proveedor: Option<String>,
+    codigo_maestro: Option<String>,
     stock_minimo: Option<Decimal>,
     area_ids: Option<Vec<i32>>,
     version: i32,
@@ -102,6 +108,8 @@ struct ProductoRow {
     id: Uuid,
     codigo_interno: String,
     nombre: String,
+    codigo_proveedor: Option<String>,
+    codigo_maestro: Option<String>,
     stock_minimo: Decimal,
     activo: bool,
     cat_id: Option<i32>,
@@ -132,7 +140,7 @@ async fn listar(
 
     if params.q.is_some() {
         conditions.push(format!(
-            "(p.nombre ILIKE ${0} OR p.codigo_interno ILIKE ${0})",
+            "(p.nombre ILIKE ${0} OR p.codigo_interno ILIKE ${0} OR p.codigo_proveedor ILIKE ${0} OR p.codigo_maestro ILIKE ${0})",
             param_idx
         ));
         param_idx += 1;
@@ -160,7 +168,8 @@ async fn listar(
         where_clause
     );
     let data_sql = format!(
-        r#"SELECT p.id, p.codigo_interno, p.nombre, p.stock_minimo, p.activo,
+        r#"SELECT p.id, p.codigo_interno, p.nombre, p.codigo_proveedor, p.codigo_maestro,
+                  p.stock_minimo, p.activo,
                   c.id as cat_id, c.nombre as cat_nombre,
                   um.id as um_id, um.nombre as um_nombre, um.nombre_plural as um_nombre_plural,
                   pr.id as prov_id, pr.nombre as prov_nombre, pr.icono as prov_icono,
@@ -208,6 +217,8 @@ async fn listar(
             id: r.id,
             codigo_interno: r.codigo_interno,
             nombre: r.nombre,
+            codigo_proveedor: r.codigo_proveedor,
+            codigo_maestro: r.codigo_maestro,
             categoria: r.cat_id.map(|id| CategoriaRef {
                 id,
                 nombre: r.cat_nombre.unwrap_or_default(),
@@ -302,6 +313,8 @@ async fn obtener(
         "codigo_interno": producto.codigo_interno,
         "nombre": producto.nombre,
         "descripcion": producto.descripcion,
+        "codigo_proveedor": producto.codigo_proveedor,
+        "codigo_maestro": producto.codigo_maestro,
         "categoria": categoria,
         "unidad_base": unidad,
         "proveedor": proveedor,
@@ -339,8 +352,8 @@ async fn crear(
             .await?;
 
     let producto = sqlx::query_as::<_, Producto>(
-        r#"INSERT INTO productos (codigo_interno, nombre, descripcion, categoria_id, unidad_base_id, proveedor_id, stock_minimo)
-           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *"#,
+        r#"INSERT INTO productos (codigo_interno, nombre, descripcion, categoria_id, unidad_base_id, proveedor_id, codigo_proveedor, codigo_maestro, stock_minimo)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *"#,
     )
     .bind(&codigo)
     .bind(&nombre)
@@ -348,6 +361,8 @@ async fn crear(
     .bind(req.categoria_id)
     .bind(req.unidad_base_id)
     .bind(req.proveedor_id)
+    .bind(&req.codigo_proveedor)
+    .bind(&req.codigo_maestro)
     .bind(req.stock_minimo.unwrap_or(Decimal::ZERO))
     .fetch_one(&mut *tx)
     .await
@@ -435,8 +450,9 @@ async fn actualizar(
     let producto = sqlx::query_as::<_, Producto>(
         r#"UPDATE productos
            SET nombre = $1, descripcion = $2, categoria_id = $3, proveedor_id = $4, stock_minimo = $5,
+               codigo_proveedor = $6, codigo_maestro = $7,
                version = version + 1, updated_at = NOW()
-           WHERE id = $6
+           WHERE id = $8
            RETURNING *"#,
     )
     .bind(nombre)
@@ -444,6 +460,8 @@ async fn actualizar(
     .bind(req.categoria_id.or(anterior.categoria_id))
     .bind(new_proveedor_id)
     .bind(req.stock_minimo.unwrap_or(anterior.stock_minimo))
+    .bind(req.codigo_proveedor.as_deref().or(anterior.codigo_proveedor.as_deref()))
+    .bind(req.codigo_maestro.as_deref().or(anterior.codigo_maestro.as_deref()))
     .bind(id)
     .fetch_one(&mut *tx)
     .await?;

@@ -29,9 +29,9 @@ export default function CatalogosPage() {
       </div>
 
       {/* Support catalogs — compact accessory row */}
-      <div className="flex items-center gap-3 pb-4">
+      <div className="flex flex-wrap items-center gap-3 pb-4">
         <span className="text-xs text-base-content/40 shrink-0">Gestión de listas desplegables</span>
-        <div className="join">
+        <div className="join flex-wrap">
           {cards.map(({ id, label, icon: Icon, desc }) => (
             <div key={id} className="tooltip tooltip-bottom" data-tip={desc}>
               <button

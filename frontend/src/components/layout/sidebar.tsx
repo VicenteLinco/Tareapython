@@ -9,6 +9,7 @@ import {
   Trash2,
   History,
   Settings,
+  SlidersHorizontal,
   Users,
   FileText,
   Rocket,
@@ -31,6 +32,7 @@ const navItems = [
 
 const adminItems = [
   { to: '/catalogos', icon: Settings, label: 'Creador de Productos' },
+  { to: '/configuracion', icon: SlidersHorizontal, label: 'Configuración' },
   { to: '/usuarios', icon: Users, label: 'Usuarios' },
   { to: '/audit-log', icon: FileText, label: 'Audit Log' },
   { to: '/setup', icon: Rocket, label: 'Setup' },

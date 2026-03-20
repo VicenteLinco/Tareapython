@@ -5,6 +5,7 @@ interface Column<T> {
   header: string
   className?: string
   render?: (item: T) => React.ReactNode
+  filter?: React.ReactNode
 }
 
 interface DataTableProps<T> {
@@ -26,6 +27,7 @@ export function DataTable<T extends Record<string, unknown>>({
   emptyMessage = 'No hay datos',
   className,
 }: DataTableProps<T>) {
+  const hasFilters = columns.some((c) => c.filter)
   return (
     <div className={cn('overflow-x-auto rounded-xl border border-base-200 bg-base-100', className)}>
       <table className="table table-sm">
@@ -37,6 +39,15 @@ export function DataTable<T extends Record<string, unknown>>({
               </th>
             ))}
           </tr>
+          {hasFilters && (
+            <tr className="border-b border-base-200">
+              {columns.map((col) => (
+                <th key={col.key} className={cn('py-1 px-2 bg-base-100 font-normal', col.className)}>
+                  {col.filter ?? null}
+                </th>
+              ))}
+            </tr>
+          )}
         </thead>
         <tbody>
           {data.length === 0 ? (

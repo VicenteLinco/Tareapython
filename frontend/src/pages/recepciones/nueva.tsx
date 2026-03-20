@@ -22,7 +22,7 @@ interface RecepcionPayload {
     producto_id: string       // UUID
     numero_lote: string
     fecha_vencimiento: string // YYYY-MM-DD
-    presentacion_id?: number  // null = unidad base
+    presentacion_id?: number | null  // null = unidad base
     cantidad_presentaciones: number
     area_destino_id: number
   }[]
@@ -174,32 +174,45 @@ export default function NuevaRecepcionPage() {
   }, [])
 
   // ── Mutations ────────────────────────────────────────────────────────────
+  const uploadFoto = async (recepcionId: string) => {
+    if (!fotoPreview) return
+    try {
+      await api.put(`/recepciones/${recepcionId}/foto`, { data_url: fotoPreview })
+    } catch {
+      toast.warning('Recepción guardada, pero no se pudo adjuntar la foto')
+    }
+  }
+
   const confirmarMutation = useMutation({
     mutationFn: (data: RecepcionPayload) =>
       api.post('/recepciones', data, { headers: { 'X-Idempotency-Key': uuidv4() } }),
-    onSuccess: () => {
+    onSuccess: async (response) => {
       queryClient.invalidateQueries({ queryKey: ['recepciones'] })
       queryClient.invalidateQueries({ queryKey: ['stock'] })
+      await uploadFoto(response.data.id)
       toast.success('Recepción confirmada')
       navigate('/recepciones')
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message ?? err?.response?.data?.error ?? err?.message ?? 'Error al crear recepción'
-      toast.error(msg)
+      const d = err?.response?.data
+      const msg = d?.error?.message ?? d?.message ?? err?.message ?? 'Error al crear recepción'
+      toast.error(String(msg))
     },
   })
 
   const borradorMutation = useMutation({
     mutationFn: (data: RecepcionPayload) =>
       api.post('/recepciones', { ...data, estado: 'borrador' }),
-    onSuccess: () => {
+    onSuccess: async (response) => {
       queryClient.invalidateQueries({ queryKey: ['recepciones'] })
+      await uploadFoto(response.data.id)
       toast.success('Borrador guardado')
       navigate('/recepciones')
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.message ?? err?.response?.data?.error ?? err?.message ?? 'Error al guardar borrador'
-      toast.error(msg)
+      const d = err?.response?.data
+      const msg = d?.error?.message ?? d?.message ?? err?.message ?? 'Error al guardar borrador'
+      toast.error(String(msg))
     },
   })
 
@@ -214,46 +227,54 @@ export default function NuevaRecepcionPage() {
 
   // ── Agregar producto a la lista — fetcha detalles completos (presentaciones + unidad) ─
   const addProductoDirecto = useCallback(async (prod: Producto) => {
-    const defaultArea = areas?.find((a) => a.id === areaGlobalId)
-    const defaultAreaNombre = defaultArea?.nombre ?? ''
-
-    // Fetch full product to get presentaciones and unidad_base.nombre_plural
-    let fullProd: any = prod
     try {
-      const res = await api.get(`/productos/${prod.id}`)
-      fullProd = res.data
-    } catch { /* fallback to list data */ }
+      const defaultArea = areas?.find((a) => a.id === areaGlobalId)
+      const defaultAreaNombre = defaultArea?.nombre ?? ''
 
-    const presentaciones: Presentacion[] = fullProd.presentaciones ?? []
-    const pres = presentaciones[0] ?? null
-    const unidad_base_nombre: string = fullProd.unidad_base?.nombre ?? ''
-    const unidad_base_nombre_plural: string = fullProd.unidad_base?.nombre_plural ?? unidad_base_nombre
+      // Fetch full product to get presentaciones and unidad_base.nombre_plural
+      let fullProd: any = prod
+      try {
+        const res = await api.get(`/productos/${prod.id}`)
+        fullProd = res.data
+      } catch { /* fallback to list data */ }
 
-    const line: DetalleLineUI = {
-      id: uuidv4(),
-      producto_id: String(prod.id),
-      producto_nombre: prod.nombre,
-      presentacion_id: pres?.id ?? null,
-      presentacion_nombre: pres?.nombre ?? '',
-      cantidad_presentacion: 1,
-      factor_conversion: pres?.factor_conversion ?? 1,
-      unidad_base_nombre,
-      unidad_base_nombre_plural,
-      codigo_lote: '',
-      fecha_vencimiento: '',
-      area_destino_id: areaGlobalId,
-      area_destino_nombre: defaultAreaNombre,
-      presentaciones,
+      const presentaciones: Presentacion[] = Array.isArray(fullProd.presentaciones)
+        ? fullProd.presentaciones
+        : []
+      const pres = presentaciones[0] ?? null
+      const unidad_base_nombre: string = fullProd.unidad_base?.nombre ?? (fullProd as any).unidad_base_nombre ?? ''
+      const unidad_base_nombre_plural: string = fullProd.unidad_base?.nombre_plural ?? unidad_base_nombre
+
+      const line: DetalleLineUI = {
+        id: uuidv4(),
+        producto_id: String(prod.id),
+        producto_nombre: prod.nombre,
+        presentacion_id: pres?.id ?? null,
+        presentacion_nombre: pres?.nombre ?? '',
+        cantidad_presentacion: 1,
+        // serde-with-str serializes Decimal as string — convert to number
+        factor_conversion: Number(pres?.factor_conversion ?? 1),
+        unidad_base_nombre,
+        unidad_base_nombre_plural,
+        codigo_lote: '',
+        fecha_vencimiento: '',
+        area_destino_id: areaGlobalId,
+        area_destino_nombre: defaultAreaNombre,
+        presentaciones,
+      }
+
+      setDetalles((prev) => [line, ...prev])
+      setLastAddedId(line.id)
+      setScanCode('')
+      setScanNotFound(false)
+      setSuggestions([])
+      setShowSuggestions(false)
+      toast.success(`${prod.nombre} agregado`)
+      setTimeout(() => scanInputRef.current?.focus(), 300)
+    } catch (err) {
+      console.error('Error al agregar producto:', err)
+      toast.error('No se pudo agregar el producto. Intente nuevamente.')
     }
-
-    setDetalles((prev) => [line, ...prev])
-    setLastAddedId(line.id)
-    setScanCode('')
-    setScanNotFound(false)
-    setSuggestions([])
-    setShowSuggestions(false)
-    toast.success(`${prod.nombre} agregado`)
-    setTimeout(() => scanInputRef.current?.focus(), 300)
   }, [areas, areaGlobalId])
 
   // Mantener la referencia actualizada para el callback de cámara
@@ -297,8 +318,8 @@ export default function NuevaRecepcionPage() {
         if (d.id !== id) return d
         const updated = { ...d, ...updates }
         if (updates.presentacion_id !== undefined) {
-          const pres = updated.presentaciones.find((p) => p.id === updates.presentacion_id)
-          updated.factor_conversion = pres?.factor_conversion ?? 1
+          const pres = (updated.presentaciones ?? []).find((p) => p.id === updates.presentacion_id)
+          updated.factor_conversion = Number(pres?.factor_conversion ?? 1)
           updated.presentacion_nombre = pres?.nombre ?? ''
         }
         if (updates.area_destino_id !== undefined) {
@@ -382,7 +403,7 @@ export default function NuevaRecepcionPage() {
         producto_id: String(d.producto_id),           // UUID como string
         numero_lote: d.codigo_lote,                   // renombrado
         fecha_vencimiento: d.fecha_vencimiento,
-        presentacion_id: d.presentacion_id ?? undefined, // null → undefined → omitido
+        presentacion_id: d.presentacion_id, // null se serializa como null → backend lo recibe como None
         cantidad_presentaciones: d.cantidad_presentacion, // renombrado
         area_destino_id: d.area_destino_id!,
       })),
@@ -504,12 +525,12 @@ export default function NuevaRecepcionPage() {
 
               <fieldset className="fieldset">
                 <legend className="fieldset-legend">
-                  Foto de Factura <span className="font-normal opacity-50">(opcional)</span>
+                  Foto de Guía de Despacho <span className="font-normal opacity-50">(opcional)</span>
                 </legend>
                 <div className="flex items-center gap-3">
                   <label className="btn btn-outline btn-sm cursor-pointer gap-2">
                     <Camera className="h-4 w-4" />
-                    {fotoPreview ? 'Cambiar foto' : 'Agregar foto'}
+                    {fotoPreview ? 'Cambiar foto' : 'Adjuntar foto'}
                     <input type="file" accept="image/*" className="hidden" onChange={handleFotoChange} />
                   </label>
                   {fotoPreview && (
@@ -622,7 +643,7 @@ export default function NuevaRecepcionPage() {
                   </form>
 
                   {showSuggestions && (
-                    <div className="absolute left-0 right-0 top-full z-30 mt-1 rounded-box border border-base-300 bg-base-100 shadow-lg overflow-hidden">
+                    <div className="absolute left-0 right-0 top-full z-30 mt-1 rounded-box border border-base-300 bg-base-100 shadow-xl ring-1 ring-base-content/10 overflow-hidden">
                       {suggestions.map((prod) => (
                         <button key={prod.id} type="button"
                           className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-base-200 transition-colors"
@@ -707,26 +728,29 @@ export default function NuevaRecepcionPage() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold leading-snug truncate">{group.producto_nombre}</p>
                         <p className="mt-0.5 text-xs text-base-content/60">
-                          {isCollapsed && !multiLot ? (
-                            <>
-                              <span className="text-success font-semibold">Recibido · </span>
-                              <span className="font-semibold text-base-content/80">
-                                {firstItem.presentacion_id
-                                  ? `${firstItem.cantidad_presentacion} ${pluralizar(firstItem.presentacion_nombre, firstItem.presentacion_nombre + 's', firstItem.cantidad_presentacion)}`
-                                  : `${totalBase} ${pluralizar(ubNombre, ubPlural, totalBase)}`
-                                }
-                              </span>
-                            </>
+                          {isCollapsed ? (
+                            !multiLot ? (
+                              <>
+                                <span className="text-success font-semibold">Recibido · </span>
+                                <span className="font-semibold text-base-content/80">
+                                  {firstItem.presentacion_id
+                                    ? `${firstItem.cantidad_presentacion} ${pluralizar(firstItem.presentacion_nombre, firstItem.presentacion_nombre + 's', firstItem.cantidad_presentacion)}`
+                                    : `${totalBase} ${pluralizar(ubNombre, ubPlural, totalBase)}`
+                                  }
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="font-semibold text-base-content/80">
+                                  {totalBase} {pluralizar(ubNombre, ubPlural, totalBase)}
+                                </span>
+                                <span className="ml-2 opacity-60">· {group.items.length} lotes</span>
+                              </>
+                            )
                           ) : (
-                            <>
-                              Recibiendo{' '}
-                              <span className="font-semibold text-primary">
-                                {totalBase} {pluralizar(ubNombre, ubPlural, totalBase)}
-                              </span>
-                              {multiLot && (
-                                <span className="ml-2 opacity-70">· {group.items.length} lotes</span>
-                              )}
-                            </>
+                            multiLot
+                              ? <span className="opacity-60">{group.items.length} lotes</span>
+                              : null
                           )}
                         </p>
                       </div>
@@ -764,61 +788,63 @@ export default function NuevaRecepcionPage() {
                                 )}
 
                                 {/* Selector de presentación */}
-                                <span className="text-xs font-medium text-base-content/50 shrink-0">Recibir por</span>
-                                {d.presentaciones.length > 0 ? (
+                                {(d.presentaciones?.length ?? 0) > 0 && (
                                   <select
-                                    className="select select-sm select-bordered flex-1 min-w-[160px] max-w-[220px]"
+                                    className="select select-sm select-bordered flex-1 min-w-[150px] max-w-[210px]"
                                     value={d.presentacion_id ?? ''}
                                     onChange={(e) => updateLine(d.id, { presentacion_id: e.target.value ? Number(e.target.value) : null })}
                                   >
                                     <option value="">
                                       {ubNombre ? `Unidad base (${ubNombre})` : 'Unidad base'}
                                     </option>
-                                    {d.presentaciones.map((p) => (
+                                    {(d.presentaciones ?? []).map((p) => (
                                       <option key={p.id} value={p.id}>
-                                        {p.nombre} · {Math.round(p.factor_conversion)} {ubPlural}
+                                        {p.nombre} · {Math.round(Number(p.factor_conversion))} {ubPlural}
                                       </option>
                                     ))}
                                   </select>
-                                ) : (
-                                  <span className="text-sm text-base-content/50 flex-1">{ubNombre || 'unidad base'}</span>
                                 )}
 
-                                {/* Cantidad +/- con nombre de formato */}
-                                <div className="flex items-center gap-1.5 shrink-0">
+                                {/* Cantidad +/- con unidad dentro del input */}
+                                <div className="flex items-center gap-1 shrink-0">
                                   <button className="btn btn-outline btn-sm btn-square"
                                     disabled={d.cantidad_presentacion <= 1}
                                     onClick={() => updateLine(d.id, { cantidad_presentacion: Math.max(1, d.cantidad_presentacion - 1) })}>
                                     <Minus className="h-3.5 w-3.5" />
                                   </button>
-                                  <input
-                                    type="number"
-                                    min={1}
-                                    className="input input-sm input-bordered w-16 text-center font-bold tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                    value={d.cantidad_presentacion}
-                                    onChange={(e) => {
-                                      const v = parseInt(e.target.value, 10)
-                                      if (!isNaN(v) && v >= 1) updateLine(d.id, { cantidad_presentacion: v })
-                                    }}
-                                  />
+                                  <label className="input input-sm input-bordered flex items-center gap-0 px-2 cursor-text min-w-0">
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      className="w-10 text-center font-bold tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none bg-transparent outline-none min-w-0"
+                                      value={d.cantidad_presentacion}
+                                      onChange={(e) => {
+                                        const v = parseInt(e.target.value, 10)
+                                        if (!isNaN(v) && v >= 1) updateLine(d.id, { cantidad_presentacion: v })
+                                      }}
+                                    />
+                                    <span className="text-xs text-base-content/40 shrink-0 whitespace-nowrap border-l border-base-300 pl-1.5 ml-1">
+                                      {d.presentacion_id
+                                        ? pluralizar(d.presentacion_nombre, d.presentacion_nombre + 's', d.cantidad_presentacion)
+                                        : pluralizar(d.unidad_base_nombre, d.unidad_base_nombre_plural || d.unidad_base_nombre, d.cantidad_presentacion)
+                                      }
+                                    </span>
+                                  </label>
                                   <button className="btn btn-outline btn-sm btn-square"
                                     onClick={() => updateLine(d.id, { cantidad_presentacion: d.cantidad_presentacion + 1 })}>
                                     <Plus className="h-3.5 w-3.5" />
                                   </button>
-                                  {d.presentacion_nombre && (
-                                    <span className="text-sm text-base-content/50 ml-0.5">
-                                      {pluralizar(d.presentacion_nombre, d.presentacion_nombre + 's', d.cantidad_presentacion)}
-                                    </span>
-                                  )}
                                 </div>
 
-                                {/* Flecha → total unidades base */}
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className="text-base-content/30 text-sm">→</span>
-                                  <span className="text-sm font-semibold text-primary whitespace-nowrap">
-                                    {baseUnits} {pluralizar(ubNombre, ubPlural, baseUnits)}
-                                  </span>
-                                </div>
+                                {/* Flecha → total unidades base (solo cuando hay presentación activa) */}
+                                {d.presentacion_id && (
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <span className="text-base-content/30 text-sm">→</span>
+                                    <span className="text-sm font-semibold text-primary whitespace-nowrap">
+                                      {baseUnits} {pluralizar(ubNombre, ubPlural, baseUnits)}
+                                    </span>
+                                  </div>
+                                )}
 
                                 <button className="btn btn-ghost btn-sm btn-square text-error hover:bg-error/10 shrink-0 ml-auto"
                                   onClick={() => setDetalles((prev) => prev.filter((x) => x.id !== d.id))}>
@@ -843,6 +869,7 @@ export default function NuevaRecepcionPage() {
 
                                 <div className="flex items-center gap-1.5">
                                   <CalendarDays className="h-3.5 w-3.5 shrink-0 text-base-content/30" />
+                                  <span className="text-xs text-base-content/40 shrink-0">Fecha venc.</span>
                                   <input
                                     type="date"
                                     className={`input input-sm input-bordered w-36 ${!d.fecha_vencimiento ? 'input-warning' : ''}`}

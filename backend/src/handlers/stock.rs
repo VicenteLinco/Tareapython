@@ -17,6 +17,7 @@ struct StockQuery {
     area_id: Option<i32>,
     q: Option<String>,
     categoria_id: Option<i32>,
+    proveedor_id: Option<i32>,
     stock_bajo: Option<bool>,
     page: Option<i64>,
     per_page: Option<i64>,
@@ -29,9 +30,12 @@ struct StockItem {
     producto_nombre: String,
     categoria: Option<String>,
     unidad: String,
+    unidad_plural: Option<String>,
     stock_total: Option<Decimal>,
     stock_minimo: Decimal,
     proximo_vencimiento: Option<NaiveDate>,
+    proveedor_nombre: Option<String>,
+    proveedor_icono: Option<String>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -99,6 +103,10 @@ async fn listar(
         param_idx += 1;
         conditions.push(format!("p.categoria_id = ${}", param_idx));
     }
+    if params.proveedor_id.is_some() {
+        param_idx += 1;
+        conditions.push(format!("l.proveedor_id = ${}", param_idx));
+    }
     if params.stock_bajo == Some(true) {
         conditions.push("p.stock_minimo > 0".to_string());
     }
@@ -109,7 +117,16 @@ async fn listar(
         JOIN lotes l ON l.id = s.lote_id
         JOIN productos p ON p.id = l.producto_id
         JOIN unidades_basicas um ON um.id = p.unidad_base_id
-        LEFT JOIN categorias c ON c.id = p.categoria_id"#;
+        LEFT JOIN categorias c ON c.id = p.categoria_id
+        LEFT JOIN LATERAL (
+            SELECT pv.nombre, pv.icono
+            FROM lotes l2
+            JOIN stock s2 ON s2.lote_id = l2.id
+            JOIN proveedores pv ON pv.id = l2.proveedor_id
+            WHERE l2.producto_id = p.id AND s2.cantidad > 0
+            ORDER BY l2.fecha_vencimiento ASC
+            LIMIT 1
+        ) fefo_prov ON true"#;
 
     let count_sql = format!(
         "SELECT COUNT(DISTINCT p.id) {} WHERE {}",
@@ -117,11 +134,12 @@ async fn listar(
     );
     let data_sql = format!(
         r#"SELECT p.id as producto_id, p.codigo_interno, p.nombre as producto_nombre,
-                  c.nombre as categoria, um.nombre as unidad,
+                  c.nombre as categoria, um.nombre as unidad, um.nombre_plural as unidad_plural,
                   SUM(s.cantidad) as stock_total, p.stock_minimo,
-                  MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0) as proximo_vencimiento
+                  MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0) as proximo_vencimiento,
+                  fefo_prov.nombre as proveedor_nombre, fefo_prov.icono as proveedor_icono
            {} WHERE {}
-           GROUP BY p.id, p.codigo_interno, p.nombre, c.nombre, um.nombre, p.stock_minimo
+           GROUP BY p.id, p.codigo_interno, p.nombre, c.nombre, um.nombre, um.nombre_plural, p.stock_minimo, fefo_prov.nombre, fefo_prov.icono
            {}
            ORDER BY p.nombre
            LIMIT ${} OFFSET ${}"#,
@@ -151,6 +169,10 @@ async fn listar(
     if let Some(cat_id) = params.categoria_id {
         count_query = count_query.bind(cat_id);
         data_query = data_query.bind(cat_id);
+    }
+    if let Some(prov_id) = params.proveedor_id {
+        count_query = count_query.bind(prov_id);
+        data_query = data_query.bind(prov_id);
     }
 
     data_query = data_query.bind(limit).bind(offset);
@@ -186,11 +208,14 @@ async fn listar(
     .fetch_one(&state.pool)
     .await?;
 
+    let total_pages = if limit > 0 { (total + limit - 1) / limit } else { 1 };
+
     Ok(Json(serde_json::json!({
         "data": data,
         "total": total,
         "page": pagination.page(),
         "per_page": limit,
+        "total_pages": total_pages,
         "resumen": {
             "total_productos_con_stock": resumen_total.0,
             "productos_bajo_minimo": bajo_minimo.0,

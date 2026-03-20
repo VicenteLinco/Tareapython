@@ -41,6 +41,8 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
         // Ledger y audit (lectura)
         .nest("/movimientos", handlers::movimientos::routes())
         .nest("/audit-log", handlers::audit_log::routes())
+        // Configuración del sistema
+        .nest("/configuracion", handlers::configuracion::routes())
         // Setup (carga inicial)
         .nest("/setup", handlers::setup::routes())
         // Middleware de auth

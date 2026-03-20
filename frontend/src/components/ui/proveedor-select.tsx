@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Truck, ChevronDown, Check } from 'lucide-react'
 import type { Proveedor } from '@/types'
 
-// Reusable icon: truck fallback + logo
+// Reusable icon: emoji, logo URL, or truck fallback
 export function ProveedorIcon({
   proveedor,
   className = 'h-5 w-5',
@@ -11,20 +11,33 @@ export function ProveedorIcon({
   className?: string
 }) {
   const [imgError, setImgError] = useState(false)
-  const showLogo = proveedor?.icono && !imgError
+  const icono = proveedor?.icono
+  const isUrl = !!icono && (icono.startsWith('http') || icono.startsWith('data:') || icono.startsWith('/'))
 
-  return (
-    <div className={`relative shrink-0 flex items-center justify-center ${className}`}>
-      {!showLogo && <Truck className="h-full w-full opacity-20" />}
-      {proveedor?.icono && (
+  if (isUrl && !imgError) {
+    return (
+      <div className={`relative shrink-0 flex items-center justify-center ${className}`}>
         <img
-          src={proveedor.icono}
+          src={icono!}
           alt=""
-          className="absolute inset-0 h-full w-full rounded object-contain"
-          style={{ mixBlendMode: 'multiply' }}
+          className="h-full w-full rounded object-contain"
           onError={() => setImgError(true)}
         />
-      )}
+      </div>
+    )
+  }
+
+  if (icono && !isUrl) {
+    return (
+      <span className={`shrink-0 flex items-center justify-center text-base leading-none ${className}`}>
+        {icono}
+      </span>
+    )
+  }
+
+  return (
+    <div className={`shrink-0 flex items-center justify-center ${className}`}>
+      <Truck className="h-full w-full opacity-20" />
     </div>
   )
 }
@@ -87,7 +100,7 @@ export function ProveedorSelect({
       </button>
 
       {open && (
-        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-base-100 border border-base-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-base-100 border border-base-300 rounded-lg shadow-xl ring-1 ring-base-content/10 max-h-60 overflow-y-auto">
           {allLabel !== undefined && (
             <div
               className={`flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-200 text-sm text-base-content/40 ${!value ? 'bg-base-200' : ''}`}

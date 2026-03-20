@@ -100,15 +100,17 @@ export interface Lote {
 }
 
 export interface StockItem {
-  producto_id: number
+  producto_id: string
+  codigo_interno: string
   producto_nombre: string
-  producto_codigo: string | null
-  categoria_nombre: string
-  unidad_base_nombre: string
-  stock_total: number
+  categoria: string | null
+  unidad: string
+  unidad_plural: string | null
+  stock_total: number | null
   stock_minimo: number
-  lotes_activos: number
-  vencimiento_proximo: string | null
+  proximo_vencimiento: string | null
+  proveedor_nombre: string | null
+  proveedor_icono: string | null
 }
 
 export interface StockPorArea {
@@ -308,6 +310,8 @@ export interface CreateProducto {
   categoria_id?: number
   unidad_base_id: number
   proveedor_id?: number
+  codigo_proveedor?: string
+  codigo_maestro?: string
   presentaciones?: { nombre: string; factor_conversion: number; codigo_barras?: string }[]
   area_ids?: number[]
 }
@@ -317,6 +321,8 @@ export interface UpdateProducto {
   descripcion?: string
   categoria_id?: number
   proveedor_id?: number
+  codigo_proveedor?: string
+  codigo_maestro?: string
   stock_minimo?: number
   area_ids?: number[]
   version: number

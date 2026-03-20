@@ -471,6 +471,8 @@ function CreateProductoDialog({
     unidad_base_id: '',
     area_id: '',
     proveedor_id: '',
+    codigo_proveedor: '',
+    codigo_maestro: '',
     pres_nombre: '',
     pres_factor: '',
     pres_codigo_barras: '',
@@ -495,7 +497,8 @@ function CreateProductoDialog({
     onClose()
     setForm({
       nombre: '', descripcion: '', categoria_id: '', unidad_base_id: '',
-      area_id: '', proveedor_id: '', pres_nombre: '', pres_factor: '', pres_codigo_barras: '',
+      area_id: '', proveedor_id: '', codigo_proveedor: '', codigo_maestro: '',
+      pres_nombre: '', pres_factor: '', pres_codigo_barras: '',
     })
   }
 
@@ -504,6 +507,7 @@ function CreateProductoDialog({
     if (!form.nombre.trim()) { toast.error('El nombre del producto es requerido'); return }
     if (!form.unidad_base_id) { toast.error('Selecciona una unidad base'); return }
     if (!form.area_id) { toast.error('Selecciona un área'); return }
+    if (!form.proveedor_id) { toast.error('Selecciona un proveedor'); return }
     const presentaciones =
       form.pres_nombre && form.pres_factor
         ? [{ nombre: form.pres_nombre, factor_conversion: Number(form.pres_factor), codigo_barras: form.pres_codigo_barras.trim() || undefined }]
@@ -514,6 +518,8 @@ function CreateProductoDialog({
       categoria_id: form.categoria_id ? Number(form.categoria_id) : undefined,
       unidad_base_id: Number(form.unidad_base_id),
       proveedor_id: form.proveedor_id ? Number(form.proveedor_id) : undefined,
+      codigo_proveedor: form.codigo_proveedor.trim() || undefined,
+      codigo_maestro: form.codigo_maestro.trim() || undefined,
       area_ids: [Number(form.area_id)],
       presentaciones,
     })
@@ -620,15 +626,45 @@ function CreateProductoDialog({
             <div className="form-control">
               <label className="label py-0.5">
                 <span className="label-text text-sm font-medium">Proveedor</span>
-                <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
               </label>
               <ProveedorSelect
                 value={form.proveedor_id}
                 onChange={(v) => setForm((f) => ({ ...f, proveedor_id: v }))}
                 proveedores={proveedores}
-                placeholder="Sin proveedor"
+                placeholder="Seleccionar proveedor..."
                 allLabel="Sin proveedor"
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Código proveedor</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                </label>
+                <input
+                  type="text"
+                  className="input input-bordered input-sm h-9 font-mono"
+                  value={form.codigo_proveedor}
+                  onChange={(e) => setForm((f) => ({ ...f, codigo_proveedor: e.target.value }))}
+                  placeholder="Ref. en guía de despacho"
+                />
+                <p className="text-[10px] text-base-content/40 mt-0.5">Referencia del proveedor (viene en la guía)</p>
+              </div>
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Código maestro bodega</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                </label>
+                <input
+                  type="text"
+                  className="input input-bordered input-sm h-9 font-mono"
+                  value={form.codigo_maestro}
+                  onChange={(e) => setForm((f) => ({ ...f, codigo_maestro: e.target.value }))}
+                  placeholder="Cód. interno de bodega"
+                />
+                <p className="text-[10px] text-base-content/40 mt-0.5">Código interno maestro del laboratorio</p>
+              </div>
             </div>
           </div>
 
@@ -653,15 +689,20 @@ function CreateProductoDialog({
                     value={form.pres_nombre}
                     onChange={(e) => setForm((f) => ({ ...f, pres_nombre: e.target.value }))}
                   >
-                    <option value="">Sin presentación</option>
+                    <option value="">— Solo unidad base —</option>
                     {presFormatos.map((n) => (
                       <option key={n} value={n}>{n}</option>
                     ))}
                   </select>
+                  {!form.pres_nombre && (
+                    <p className="text-[10px] text-base-content/40 mt-1">El insumo ingresa y se contabiliza en su unidad base directamente.</p>
+                  )}
                 </div>
                 <div className="form-control">
                   <label className="label py-0.5">
-                    <span className="label-text text-sm font-medium">Unidades por formato / presentación</span>
+                    <span className="label-text text-sm font-medium">
+                      {form.pres_nombre ? `Unidades por ${form.pres_nombre}` : 'Unidades por formato'}
+                    </span>
                   </label>
                   <input
                     type="number"
@@ -688,14 +729,12 @@ function CreateProductoDialog({
                     value={form.pres_codigo_barras}
                     onChange={(e) => setForm((f) => ({ ...f, pres_codigo_barras: e.target.value }))}
                     placeholder="EAN / UPC"
-                    disabled={!form.pres_nombre}
                   />
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm btn-square h-9 w-9 shrink-0"
                     onClick={() => setScannerOpen(true)}
                     title="Escanear con cámara"
-                    disabled={!form.pres_nombre}
                   >
                     <Camera className="h-4 w-4 opacity-60" />
                   </button>
@@ -788,7 +827,11 @@ function EditProductoDialog({
     categoria_id: '',
     area_id: '',
     proveedor_id: '',
+    codigo_proveedor: '',
+    codigo_maestro: '',
     stock_minimo: '0',
+    pres_id: '',
+    pres_version: 0,
     pres_nombre: '',
     pres_factor: '',
     pres_codigo_barras: '',
@@ -799,16 +842,23 @@ function EditProductoDialog({
       const catId = producto.categoria?.id ?? producto.categoria_id
       const areaId = producto.areas?.[0]?.id ?? ''
       const provId = producto.proveedor?.id ?? ''
+      // Pre-populate presentation only when there is exactly one
+      const presCount = producto.presentaciones?.length ?? 0
+      const firstPres = presCount === 1 ? producto.presentaciones[0] : null
       setForm({
         nombre: producto.nombre,
         descripcion: producto.descripcion ?? '',
         categoria_id: catId ? String(catId) : '',
         area_id: areaId ? String(areaId) : '',
         proveedor_id: provId ? String(provId) : '',
+        codigo_proveedor: producto.codigo_proveedor ?? '',
+        codigo_maestro: producto.codigo_maestro ?? '',
         stock_minimo: String(Math.round(Number(producto.stock_minimo))),
-        pres_nombre: '',
-        pres_factor: '',
-        pres_codigo_barras: '',
+        pres_id: firstPres ? String(firstPres.id) : '',
+        pres_version: firstPres?.version ?? 0,
+        pres_nombre: firstPres?.nombre ?? '',
+        pres_factor: firstPres ? String(Math.round(Number(firstPres.factor_conversion))) : '',
+        pres_codigo_barras: (firstPres as any)?.codigo_barras ?? '',
       })
     }
   }, [producto])
@@ -833,6 +883,7 @@ function EditProductoDialog({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!producto) return
+    if (!form.proveedor_id) { toast.error('Selecciona un proveedor'); return }
 
     // Build new presentacion if filled
     const hasNewPres = form.pres_nombre && form.pres_factor
@@ -841,6 +892,8 @@ function EditProductoDialog({
       descripcion: form.descripcion.trim() || undefined,
       categoria_id: form.categoria_id ? Number(form.categoria_id) : undefined,
       proveedor_id: form.proveedor_id ? Number(form.proveedor_id) : undefined,
+      codigo_proveedor: form.codigo_proveedor.trim() || undefined,
+      codigo_maestro: form.codigo_maestro.trim() || undefined,
       stock_minimo: Number(form.stock_minimo),
       area_ids: form.area_id ? [Number(form.area_id)] : undefined,
       version: producto.version,
@@ -848,10 +901,22 @@ function EditProductoDialog({
 
     updateMut.mutate(payload)
 
-    // If there's a new presentation, create it separately after the product update
-    if (hasNewPres) {
-      api.post('/presentaciones', {
-        producto_id: productoId,
+    if (form.pres_id && hasNewPres) {
+      // Update existing presentation
+      api.put(`/presentaciones/${form.pres_id}`, {
+        nombre: form.pres_nombre,
+        factor_conversion: Number(form.pres_factor),
+        codigo_barras: form.pres_codigo_barras.trim() || undefined,
+        version: form.pres_version,
+      }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
+        toast.success('Presentación actualizada')
+      }).catch((err: any) => {
+        toast.error(err.response?.data?.error?.message ?? 'Error al actualizar presentación')
+      })
+    } else if (!form.pres_id && hasNewPres) {
+      // Create new presentation
+      api.post(`/productos/${productoId}/presentaciones`, {
         nombre: form.pres_nombre,
         factor_conversion: Number(form.pres_factor),
         codigo_barras: form.pres_codigo_barras.trim() || undefined,
@@ -949,9 +1014,40 @@ function EditProductoDialog({
                   value={form.proveedor_id}
                   onChange={(v) => setForm((f) => ({ ...f, proveedor_id: v }))}
                   proveedores={proveedores}
-                  placeholder="Sin proveedor"
+                  placeholder="Seleccionar proveedor..."
                   allLabel="Sin proveedor"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-control">
+                  <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Código proveedor</span>
+                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="input input-bordered input-sm h-9 font-mono"
+                    value={form.codigo_proveedor}
+                    onChange={(e) => setForm((f) => ({ ...f, codigo_proveedor: e.target.value }))}
+                    placeholder="Ref. en guía de despacho"
+                  />
+                  <p className="text-[10px] text-base-content/40 mt-0.5">Viene en la guía de despacho</p>
+                </div>
+                <div className="form-control">
+                  <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Código maestro bodega</span>
+                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="input input-bordered input-sm h-9 font-mono"
+                    value={form.codigo_maestro}
+                    onChange={(e) => setForm((f) => ({ ...f, codigo_maestro: e.target.value }))}
+                    placeholder="Cód. interno de bodega"
+                  />
+                  <p className="text-[10px] text-base-content/40 mt-0.5">Código interno maestro del laboratorio</p>
+                </div>
               </div>
 
               <div className="form-control">
@@ -971,8 +1067,8 @@ function EditProductoDialog({
 
             <div className="divider my-0" />
 
-            {/* ── Presentaciones existentes ── */}
-            {producto?.presentaciones && producto.presentaciones.length > 0 && (
+            {/* ── Presentaciones existentes (solo cuando hay 2 o más) ── */}
+            {producto?.presentaciones && producto.presentaciones.length > 1 && (
               <div className="space-y-2">
                 <div className="flex items-center gap-1.5">
                   <Package className="h-3.5 w-3.5 text-base-content/30" />
@@ -989,12 +1085,12 @@ function EditProductoDialog({
               </div>
             )}
 
-            {/* ── Agregar presentación ── */}
+            {/* ── Presentación / Agregar ── */}
             <div className="space-y-3">
               <div className="flex items-center gap-1.5">
                 <Package className="h-3.5 w-3.5 text-base-content/30" />
                 <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
-                  {producto?.presentaciones?.length > 0 ? 'Agregar presentación' : 'Presentación'}
+                  {form.pres_id ? 'Presentación asignada' : (producto?.presentaciones?.length > 1 ? 'Agregar presentación' : 'Presentación')}
                 </span>
               </div>
               <div className="bg-base-200/60 rounded-lg p-3 space-y-3">
@@ -1009,7 +1105,7 @@ function EditProductoDialog({
                       value={form.pres_nombre}
                       onChange={(e) => setForm((f) => ({ ...f, pres_nombre: e.target.value }))}
                     >
-                      <option value="">Sin presentación</option>
+                      <option value="">{form.pres_id ? '— Solo unidad base —' : 'Seleccionar formato...'}</option>
                       {presFormatos.map((n) => (
                         <option key={n} value={n}>{n}</option>
                       ))}
@@ -1017,7 +1113,9 @@ function EditProductoDialog({
                   </div>
                   <div className="form-control">
                     <label className="label py-0.5">
-                      <span className="label-text text-sm font-medium">Unidades por formato</span>
+                      <span className="label-text text-sm font-medium">
+                        {form.pres_nombre ? `Unidades por ${form.pres_nombre}` : 'Unidades por formato'}
+                      </span>
                     </label>
                     <input
                       type="number"
@@ -1123,7 +1221,13 @@ function ProductoDetail({ id }: { id: string }) {
   return (
     <div className="space-y-5">
       <div className="space-y-3">
-        <DetailRow label="Código" value={producto.codigo_interno ?? '--'} mono />
+        <DetailRow label="Código sistema" value={producto.codigo_interno ?? '--'} mono />
+        {producto.codigo_maestro && (
+          <DetailRow label="Cód. maestro bodega" value={producto.codigo_maestro} mono />
+        )}
+        {producto.codigo_proveedor && (
+          <DetailRow label="Cód. proveedor" value={producto.codigo_proveedor} mono />
+        )}
         <DetailRow label="Nombre" value={producto.nombre} />
         {producto.descripcion && (
           <DetailRow label="Descripción" value={producto.descripcion} />

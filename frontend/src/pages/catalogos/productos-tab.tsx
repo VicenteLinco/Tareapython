@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Search, Eye, Package, Tag, FileText, Camera } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Eye, Package, Tag, FileText, Camera, RotateCcw } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/pagination'
@@ -9,6 +9,7 @@ import { Sheet } from '@/components/ui/sheet'
 import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
 import { toast } from 'sonner'
+import { autoPlural } from '@/lib/utils'
 import { getPresFormatos } from '@/lib/pres-formatos'
 import type {
   PaginatedResponse,
@@ -41,6 +42,7 @@ export default function ProductosTab() {
   const [categoriaId, setCategoriaId] = useState('')
   const [areaId, setAreaId] = useState('')
   const [proveedorId, setProveedorId] = useState('')
+  const [verInactivos, setVerInactivos] = useState(false)
   const [page, setPage] = useState(1)
 
   const [createOpen, setCreateOpen] = useState(false)
@@ -48,7 +50,7 @@ export default function ProductosTab() {
   const [detailId, setDetailId] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['productos', { search, categoriaId, areaId, proveedorId, page }],
+    queryKey: ['productos', { search, categoriaId, areaId, proveedorId, page, activo: !verInactivos }],
     queryFn: () =>
       api.get<PaginatedResponse<ProductoListItem>>('/productos', {
         params: {
@@ -56,6 +58,7 @@ export default function ProductosTab() {
           categoria_id: categoriaId || undefined,
           area_id: areaId || undefined,
           proveedor_id: proveedorId || undefined,
+          activo: !verInactivos,
           page,
           per_page: 20,
         },
@@ -91,6 +94,15 @@ export default function ProductosTab() {
     onError: (err: any) => toast.error(err.response?.data?.error?.message ?? 'No se puede desactivar: tiene stock activo'),
   })
 
+  const reactivarMut = useMutation({
+    mutationFn: (id: string) => api.post(`/productos/${id}/reactivar`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['productos'] })
+      toast.success('Producto reactivado')
+    },
+    onError: () => toast.error('Error al reactivar producto'),
+  })
+
   function handleDelete(p: ProductoListItem) {
     if (confirm(`¿Desactivar el producto "${p.nombre}"?`)) {
       deleteMut.mutate(p.id)
@@ -101,11 +113,12 @@ export default function ProductosTab() {
     {
       key: 'nombre',
       header: 'Nombre completo',
+      width: '320px',
       render: (item: ProductoListItem) => (
-        <div>
-          <p className="font-medium text-sm">{item.nombre}</p>
+        <div className={`flex flex-col min-w-0 w-full overflow-hidden ${!item.activo ? 'opacity-50' : ''}`} title={item.nombre}>
+          <p className="font-medium text-sm truncate">{item.nombre}</p>
           {item.codigo_interno && (
-            <p className="text-[11px] font-mono opacity-35">{item.codigo_interno}</p>
+            <p className="text-[10px] font-mono opacity-35 truncate">{item.codigo_interno}</p>
           )}
         </div>
       ),
@@ -115,7 +128,7 @@ export default function ProductosTab() {
       header: 'Categoría',
       className: 'hidden md:table-cell',
       render: (item: ProductoListItem) => (
-        <span className="text-sm opacity-50">{item.categoria?.nombre || '--'}</span>
+        <span className={`text-sm opacity-50 ${!item.activo ? 'opacity-30' : ''}`}>{item.categoria?.nombre || '--'}</span>
       ),
     },
     {
@@ -124,7 +137,7 @@ export default function ProductosTab() {
       className: 'hidden md:table-cell',
       render: (item: ProductoListItem) => (
         item.proveedor ? (
-          <div className="flex items-center gap-1.5">
+          <div className={`flex items-center gap-1.5 ${!item.activo ? 'opacity-50' : ''}`}>
             <ProveedorIcon proveedor={item.proveedor} className="h-4 w-4" />
             <span className="text-sm">{item.proveedor.nombre}</span>
           </div>
@@ -139,7 +152,7 @@ export default function ProductosTab() {
       className: 'hidden lg:table-cell',
       render: (item: ProductoListItem) => (
         item.area
-          ? <Badge variant="secondary">{item.area.nombre}</Badge>
+          ? <Badge variant="secondary" className={!item.activo ? 'opacity-50' : ''}>{item.area.nombre}</Badge>
           : <span className="text-sm opacity-30">--</span>
       ),
     },
@@ -147,7 +160,7 @@ export default function ProductosTab() {
       key: 'unidad_base',
       header: 'Unidad',
       render: (item: ProductoListItem) => (
-        <span className="font-mono text-sm bg-base-200 px-2 py-0.5 rounded">{item.unidad_base.nombre}</span>
+        <span className={`font-mono text-sm bg-base-200 px-2 py-0.5 rounded ${!item.activo ? 'opacity-50' : ''}`}>{item.unidad_base.nombre}</span>
       ),
     },
     {
@@ -172,16 +185,26 @@ export default function ProductosTab() {
       header: '',
       className: 'w-28',
       render: (item: ProductoListItem) => (
-        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-          <button className="btn btn-ghost btn-xs btn-square" onClick={() => setDetailId(item.id)}>
-            <Eye className="h-3.5 w-3.5 opacity-50" />
-          </button>
-          <button className="btn btn-ghost btn-xs btn-square" onClick={() => setEditId(item.id)}>
-            <Pencil className="h-3.5 w-3.5 opacity-50" />
-          </button>
-          <button className="btn btn-ghost btn-xs btn-square" onClick={() => handleDelete(item)}>
-            <Trash2 className="h-3.5 w-3.5 opacity-50 hover:text-error" />
-          </button>
+        <div className="flex gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
+          {item.activo ? (
+            <>
+              <button className="btn btn-ghost btn-xs btn-square" onClick={() => setDetailId(item.id)}>
+                <Eye className="h-3.5 w-3.5 opacity-50" />
+              </button>
+              <button className="btn btn-ghost btn-xs btn-square" onClick={() => setEditId(item.id)}>
+                <Pencil className="h-3.5 w-3.5 opacity-50" />
+              </button>
+              <button className="btn btn-ghost btn-xs btn-square" onClick={() => handleDelete(item)}>
+                <Trash2 className="h-3.5 w-3.5 opacity-50 hover:text-error" />
+              </button>
+            </>
+          ) : (
+            <button className="btn btn-ghost btn-xs btn-square" title="Reactivar" onClick={() => {
+              if (confirm(`¿Reactivar producto "${item.nombre}"?`)) reactivarMut.mutate(item.id)
+            }}>
+              <RotateCcw className="h-3.5 w-3.5 opacity-60 text-primary" />
+            </button>
+          )}
         </div>
       ),
     },
@@ -202,23 +225,23 @@ export default function ProductosTab() {
             />
           </label>
           <select
-            className="select select-bordered select-sm h-9 w-44 text-sm"
+            className="select select-bordered select-sm h-9 w-40 text-sm"
             value={categoriaId}
             onChange={(e) => { setCategoriaId(e.target.value); setPage(1) }}
           >
             <option value="">Categoría</option>
             {categorias?.map((c) => (
-              <option key={c.id} value={c.id}>{c.nombre}</option>
+              <option key={c.id} value={String(c.id)}>{c.nombre}</option>
             ))}
           </select>
           <select
-            className="select select-bordered select-sm h-9 w-44 text-sm"
+            className="select select-bordered select-sm h-9 w-40 text-sm"
             value={areaId}
             onChange={(e) => { setAreaId(e.target.value); setPage(1) }}
           >
             <option value="">Área / Sección</option>
             {areas?.map((a) => (
-              <option key={a.id} value={a.id}>{a.nombre}</option>
+              <option key={a.id} value={String(a.id)}>{a.nombre}</option>
             ))}
           </select>
           <ProveedorSelect
@@ -226,8 +249,17 @@ export default function ProductosTab() {
             onChange={(v) => { setProveedorId(v); setPage(1) }}
             proveedores={proveedores ?? []}
             allLabel="Todos los proveedores"
-            className="w-52"
+            className="w-48"
           />
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input 
+              type="checkbox" 
+              className="checkbox checkbox-xs checkbox-primary" 
+              checked={verInactivos}
+              onChange={(e) => { setVerInactivos(e.target.checked); setPage(1) }}
+            />
+            <span className="text-xs opacity-60">Ver inactivos</span>
+          </label>
         </div>
         <button className="btn btn-primary btn-sm gap-1.5" onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4" />
@@ -474,6 +506,7 @@ function CreateProductoDialog({
     codigo_proveedor: '',
     codigo_maestro: '',
     pres_nombre: '',
+    pres_nombre_plural: '',
     pres_factor: '',
     pres_codigo_barras: '',
   })
@@ -498,7 +531,7 @@ function CreateProductoDialog({
     setForm({
       nombre: '', descripcion: '', categoria_id: '', unidad_base_id: '',
       area_id: '', proveedor_id: '', codigo_proveedor: '', codigo_maestro: '',
-      pres_nombre: '', pres_factor: '', pres_codigo_barras: '',
+      pres_nombre: '', pres_nombre_plural: '', pres_factor: '', pres_codigo_barras: '',
     })
   }
 
@@ -510,7 +543,12 @@ function CreateProductoDialog({
     if (!form.proveedor_id) { toast.error('Selecciona un proveedor'); return }
     const presentaciones =
       form.pres_nombre && form.pres_factor
-        ? [{ nombre: form.pres_nombre, factor_conversion: Number(form.pres_factor), codigo_barras: form.pres_codigo_barras.trim() || undefined }]
+        ? [{
+            nombre: form.pres_nombre,
+            nombre_plural: form.pres_nombre_plural || autoPlural(form.pres_nombre),
+            factor_conversion: Number(form.pres_factor),
+            codigo_barras: form.pres_codigo_barras.trim() || undefined,
+          }]
         : undefined
     createMut.mutate({
       nombre: form.nombre.trim(),
@@ -719,6 +757,21 @@ function CreateProductoDialog({
 
               <div className="form-control">
                 <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Plural del formato</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">ej: Cajas</span>
+                </label>
+                <input
+                  type="text"
+                  className="input input-bordered input-sm h-9"
+                  value={form.pres_nombre_plural}
+                  onChange={(e) => setForm((f) => ({ ...f, pres_nombre_plural: e.target.value }))}
+                  placeholder={form.pres_nombre ? autoPlural(form.pres_nombre) : 'Ej: Cajas'}
+                  disabled={!form.pres_nombre}
+                />
+              </div>
+
+              <div className="form-control">
+                <label className="label py-0.5">
                   <span className="label-text text-sm font-medium">Código de barras</span>
                   <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
                 </label>
@@ -833,6 +886,7 @@ function EditProductoDialog({
     pres_id: '',
     pres_version: 0,
     pres_nombre: '',
+    pres_nombre_plural: '',
     pres_factor: '',
     pres_codigo_barras: '',
   })
@@ -857,6 +911,7 @@ function EditProductoDialog({
         pres_id: firstPres ? String(firstPres.id) : '',
         pres_version: firstPres?.version ?? 0,
         pres_nombre: firstPres?.nombre ?? '',
+        pres_nombre_plural: (firstPres as any)?.nombre_plural ?? '',
         pres_factor: firstPres ? String(Math.round(Number(firstPres.factor_conversion))) : '',
         pres_codigo_barras: (firstPres as any)?.codigo_barras ?? '',
       })
@@ -905,6 +960,7 @@ function EditProductoDialog({
       // Update existing presentation
       api.put(`/presentaciones/${form.pres_id}`, {
         nombre: form.pres_nombre,
+        nombre_plural: form.pres_nombre_plural || autoPlural(form.pres_nombre),
         factor_conversion: Number(form.pres_factor),
         codigo_barras: form.pres_codigo_barras.trim() || undefined,
         version: form.pres_version,
@@ -918,6 +974,7 @@ function EditProductoDialog({
       // Create new presentation
       api.post(`/productos/${productoId}/presentaciones`, {
         nombre: form.pres_nombre,
+        nombre_plural: form.pres_nombre_plural || autoPlural(form.pres_nombre),
         factor_conversion: Number(form.pres_factor),
         codigo_barras: form.pres_codigo_barras.trim() || undefined,
       }).then(() => {
@@ -1131,6 +1188,20 @@ function EditProductoDialog({
                 </div>
                 <div className="form-control">
                   <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Plural del formato</span>
+                    <span className="label-text-alt text-base-content/40 text-[10px]">ej: Cajas</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="input input-bordered input-sm h-9"
+                    value={form.pres_nombre_plural}
+                    onChange={(e) => setForm((f) => ({ ...f, pres_nombre_plural: e.target.value }))}
+                    placeholder={form.pres_nombre ? autoPlural(form.pres_nombre) : 'Ej: Cajas'}
+                    disabled={!form.pres_nombre}
+                  />
+                </div>
+                <div className="form-control">
+                  <label className="label py-0.5">
                     <span className="label-text text-sm font-medium">Código de barras</span>
                     <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
                   </label>
@@ -1278,9 +1349,18 @@ function ProductoDetail({ id }: { id: string }) {
 
 function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="flex justify-between items-center">
-      <span className="text-xs opacity-40">{label}</span>
-      <span className={`text-sm ${mono ? 'font-mono' : ''}`}>{value}</span>
+    <div className="flex justify-between items-start gap-3 border-b border-base-200/40 pb-1.5 last:border-none">
+      <span className="text-[11px] opacity-40 shrink-0 font-medium uppercase tracking-wider">{label}</span>
+      <span className={cn(
+        'text-sm text-right min-w-0 max-w-[70%] break-words',
+        mono ? 'font-mono' : ''
+      )}>
+        {value}
+      </span>
     </div>
   )
+}
+
+function cn(...classes: string[]) {
+  return classes.filter(Boolean).join(' ')
 }

@@ -11,7 +11,7 @@ import { useAreaStore } from '@/hooks/use-area-store'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import api from '@/lib/api'
 import type { PaginatedResponse, StockItem, Categoria, Area, Proveedor } from '@/types'
-import { daysUntil, formatDate, pluralize } from '@/lib/utils'
+import { daysUntil, formatDate, autoPlural } from '@/lib/utils'
 import { exportarStockPDF } from '@/lib/stock-pdf'
 import { StockDetail } from './stock-detail'
 
@@ -110,10 +110,10 @@ export default function StockPage() {
         </label>
       ),
       render: (item: StockItem) => (
-        <div>
-          <p className="font-medium text-sm">{item.producto_nombre}</p>
+        <div className="flex flex-col min-w-0" title={item.producto_nombre}>
+          <p className="font-medium text-sm truncate">{item.producto_nombre}</p>
           {item.codigo_interno && (
-            <p className="text-[11px] font-mono opacity-35">{item.codigo_interno}</p>
+            <p className="text-[11px] font-mono opacity-35 truncate">{item.codigo_interno}</p>
           )}
         </div>
       ),
@@ -172,7 +172,7 @@ export default function StockPage() {
         return (
           <div className="font-mono">
             <span className="font-semibold">{qty}</span>
-            <span className="text-xs opacity-35 ml-1">{pluralize(item.unidad, qty, item.unidad_plural)}</span>
+            <span className="text-xs opacity-35 ml-1">{qty === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}</span>
           </div>
         )
       },

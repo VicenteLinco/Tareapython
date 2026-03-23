@@ -292,23 +292,24 @@ async fn actualizar_items(
 ) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
 
+    let mut tx = state.pool.begin().await?;
+
     let estado: Option<String> =
-        sqlx::query_scalar("SELECT estado FROM sesiones_conteo WHERE id = $1")
+        sqlx::query_scalar("SELECT estado FROM sesiones_conteo WHERE id = $1 FOR UPDATE")
             .bind(id)
-            .fetch_optional(&state.pool)
+            .fetch_optional(&mut *tx)
             .await?
             .ok_or(AppError::NotFound("Sesión no encontrada".into()))?;
 
     let estado = estado.ok_or(AppError::NotFound("Sesión no encontrada".into()))?;
 
     if estado == "confirmado" || estado == "cancelado" {
+        tx.rollback().await?;
         return Err(AppError::BusinessLogic(
             "No se puede modificar una sesión confirmada o cancelada".into(),
             "ESTADO_INVALIDO".into(),
         ));
     }
-
-    let mut tx = state.pool.begin().await?;
 
     let mut updated = 0i32;
     let mut conflictos: Vec<String> = Vec::new();
@@ -472,30 +473,20 @@ async fn confirmar(
             ("AJUSTE_NEGATIVO", diferencia.abs())
         };
 
-        if tipo == "AJUSTE_POSITIVO" {
-            sqlx::query(
-                r#"INSERT INTO stock (lote_id, area_id, cantidad)
-                   VALUES ($1, $2, $3)
-                   ON CONFLICT (lote_id, area_id)
-                   DO UPDATE SET cantidad = stock.cantidad + $3, updated_at = NOW()"#,
-            )
-            .bind(item.lote_id)
-            .bind(item.area_id)
-            .bind(cantidad_abs)
-            .execute(&mut *tx)
-            .await?;
-        } else {
-            sqlx::query(
-                r#"UPDATE stock SET cantidad = GREATEST(0, cantidad - $1), updated_at = NOW()
-                   WHERE lote_id = $2 AND area_id = $3"#,
-            )
-            .bind(cantidad_abs)
-            .bind(item.lote_id)
-            .bind(item.area_id)
-            .execute(&mut *tx)
-            .await?;
-        }
+        // Set stock to the counted value (physical count = ground truth)
+        sqlx::query(
+            r#"INSERT INTO stock (lote_id, area_id, cantidad)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (lote_id, area_id)
+               DO UPDATE SET cantidad = $3, updated_at = NOW()"#,
+        )
+        .bind(item.lote_id)
+        .bind(item.area_id)
+        .bind(item.cantidad_contada)
+        .execute(&mut *tx)
+        .await?;
 
+        // Record the movement using cantidad_abs from snapshot difference
         sqlx::query(
             r#"INSERT INTO movimientos (grupo_movimiento, lote_id, area_id, tipo, cantidad, cantidad_resultante, usuario_id, origen, nota)
                SELECT $1, $2, $3, $4, $5, s.cantidad, $6, 'conteo', $7

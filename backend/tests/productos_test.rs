@@ -19,8 +19,8 @@ async fn crear_producto_con_presentaciones(pool: PgPool) {
             "unidad_base_id": 1,
             "stock_minimo": 500,
             "presentaciones": [
-                { "nombre": "Frasco 500ml", "factor_conversion": 500 },
-                { "nombre": "Caja x10", "factor_conversion": 10 }
+                { "nombre": "Frasco 500ml", "nombre_plural": "Frascos 500ml", "factor_conversion": 500 },
+                { "nombre": "Caja x10", "nombre_plural": "Cajas x10", "factor_conversion": 10 }
             ],
             "area_ids": [1, 2]
         }),
@@ -111,7 +111,7 @@ async fn obtener_detalle_producto(pool: PgPool) {
             "nombre": "Test Detalle",
             "unidad_base_id": 1,
             "presentaciones": [
-                { "nombre": "Unitario", "factor_conversion": 1 }
+                { "nombre": "Unitario", "nombre_plural": "Unitarios", "factor_conversion": 1 }
             ]
         }),
     )
@@ -203,6 +203,7 @@ async fn crear_presentacion_para_producto(pool: PgPool) {
         &token,
         serde_json::json!({
             "nombre": "Caja x20",
+            "nombre_plural": "Cajas x20",
             "factor_conversion": 20,
             "codigo_barras": "7891234567890"
         }),

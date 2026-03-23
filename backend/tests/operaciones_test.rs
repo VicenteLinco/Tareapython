@@ -34,7 +34,7 @@ async fn setup_stock(
             "unidad_base_id": 1,
             "stock_minimo": 100,
             "presentaciones": [
-                { "nombre": "Unitario", "factor_conversion": 1 }
+                { "nombre": "Unitario", "nombre_plural": "Unitarios", "factor_conversion": 1 }
             ]
         }),
     )
@@ -133,7 +133,7 @@ async fn recepcion_borrador_no_genera_stock(pool: PgPool) {
         serde_json::json!({
             "nombre": "Prod Draft",
             "unidad_base_id": 1,
-            "presentaciones": [{"nombre": "U", "factor_conversion": 1}]
+            "presentaciones": [{"nombre": "U", "nombre_plural": "Us", "factor_conversion": 1}]
         }),
     )
     .await;
@@ -543,14 +543,14 @@ async fn listar_movimientos(pool: PgPool) {
 
     let (status, json) = common::get_json(
         &app,
-        "/api/v1/movimientos?tipo=CONSUMO",
+        "/api/v1/movimientos?tipo=salida",
         &token,
     )
     .await;
 
     assert_eq!(status, StatusCode::OK);
     assert!(json["data"].as_array().unwrap().len() >= 1);
-    assert_eq!(json["data"][0]["tipo"], "CONSUMO");
+    assert_eq!(json["data"][0]["tipo"], "salida");
 }
 
 // ==========================================

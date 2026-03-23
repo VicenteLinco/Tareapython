@@ -55,6 +55,7 @@ struct ConteoItemRow {
     producto_id: Uuid,
     producto_nombre: String,
     unidad_base_nombre: String,
+    unidad_base_nombre_plural: String,
     stock_sistema: Decimal,
     cantidad_contada: Option<Decimal>,
     estado_item: String,
@@ -192,6 +193,7 @@ async fn obtener(
         r#"SELECT ci.id, ci.lote_id, l.numero_lote, l.fecha_vencimiento,
                   p.id as producto_id, p.nombre as producto_nombre,
                   ub.nombre as unidad_base_nombre,
+                  ub.nombre_plural as unidad_base_nombre_plural,
                   ci.stock_sistema, ci.cantidad_contada, ci.estado_item, ci.version
            FROM conteo_items ci
            JOIN lotes l ON l.id = ci.lote_id

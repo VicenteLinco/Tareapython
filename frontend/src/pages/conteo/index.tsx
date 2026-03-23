@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, ClipboardCheck, ChevronRight, CheckCircle2, Clock, XCircle, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
-import { useAuthStore } from '@/hooks/use-auth-store'
 import type { PaginatedSesiones, SesionConteo, Area } from '@/types'
 import { formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -19,7 +18,6 @@ const ESTADO_CONFIG = {
 export default function ConteoPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const usuario = useAuthStore((s) => s.usuario)
   const [showModal, setShowModal] = useState(false)
   const [areaId, setAreaId] = useState('')
   const [filterEstado, setFilterEstado] = useState('')

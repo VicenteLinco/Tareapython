@@ -36,7 +36,7 @@ export default function ConteoDetallePage() {
   const [nota, setNota] = useState('')
   const [colapsados, setColapsados] = useState<Record<string, boolean>>({})
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['conteo-detalle', id],
     queryFn: () =>
       api.get<ConteoDetalle>(`/conteo/${id}`).then((r) => r.data),
@@ -166,6 +166,12 @@ export default function ConteoDetallePage() {
       </div>
     )
   }
+
+  if (isError) return (
+    <div className="flex justify-center items-center min-h-screen">
+      <div className="alert alert-error max-w-sm">Error al cargar la sesión</div>
+    </div>
+  )
 
   if (!sesion) return null
 
@@ -326,7 +332,7 @@ function LoteRow({
 }: {
   item: ConteoItem
   localEdit?: { cantidad: string; estado: string }
-  editable: boolean | undefined
+  editable: boolean
   onCantidadChange: (v: string) => void
   onNoContado: () => void
 }) {
@@ -399,8 +405,8 @@ function LoteRow({
 
 function DifBadge({ diferencia }: { diferencia: number }) {
   if (Math.abs(diferencia) < 0.001) return <span className="badge badge-success badge-sm">±0</span>
-  if (diferencia > 0) return <span className="badge badge-info badge-sm">+{diferencia}</span>
-  return <span className="badge badge-error badge-sm">{diferencia}</span>
+  if (diferencia > 0) return <span className="badge badge-info badge-sm">+{diferencia.toFixed(2)}</span>
+  return <span className="badge badge-error badge-sm">{diferencia.toFixed(2)}</span>
 }
 
 function ResumenRow({ label, value, className, icon }: { label: string; value: number; className?: string; icon: string }) {

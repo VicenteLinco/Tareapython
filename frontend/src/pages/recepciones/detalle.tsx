@@ -8,7 +8,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
-import { formatDate, daysUntil, cn } from '@/lib/utils'
+import { formatDate, daysUntil, cn, formatCantidad } from '@/lib/utils'
 import { toast } from 'sonner'
 
 interface RecepcionHeader {
@@ -45,13 +45,6 @@ interface RecepcionDetalleResponse {
   detalle: DetalleItem[]
 }
 
-function fmtQty(n: number) {
-  return Number.isInteger(n) ? String(n) : n.toFixed(2)
-}
-
-function unidadLabel(nombre: string, nombrePlural: string, cantidad: number) {
-  return cantidad === 1 ? nombre : (nombrePlural || nombre + 's')
-}
 
 export default function RecepcionDetallePage() {
   const { id } = useParams<{ id: string }>()
@@ -101,13 +94,11 @@ export default function RecepcionDetallePage() {
       const qty = parseFloat(item.cantidad_unidades_base)
       const qtyPres = parseFloat(item.cantidad_presentaciones)
       const factor = parseFloat(item.factor_conversion_usado)
-      const qtyPresStr = fmtQty(qtyPres)
-      const qtyBaseStr = fmtQty(qty)
-      const uNombre = unidadLabel(item.unidad_base_nombre, item.unidad_base_nombre_plural, qty)
+      const qtyPresStr = qtyPres % 1 === 0 ? Math.floor(qtyPres) : parseFloat(qtyPres.toFixed(2))
       const cantidadCell = factor !== 1
         ? `<div style="font-weight:600">${qtyPresStr} ${item.presentacion_nombre}</div>
-           <div style="color:#6b7280;font-size:11px;margin-top:1px">= ${qtyBaseStr} ${uNombre}</div>`
-        : `<div style="font-weight:600">${qtyBaseStr} ${uNombre}</div>`
+           <div style="color:#6b7280;font-size:11px;margin-top:1px">= ${formatCantidad(qty, item.unidad_base_nombre, item.unidad_base_nombre_plural)}</div>`
+        : `<div style="font-weight:600">${formatCantidad(qty, item.unidad_base_nombre, item.unidad_base_nombre_plural)}</div>`
       return `
         <tr>
           <td>${item.producto_nombre}</td>
@@ -416,9 +407,7 @@ export default function RecepcionDetallePage() {
                   const qty = parseFloat(item.cantidad_unidades_base)
                   const qtyPres = parseFloat(item.cantidad_presentaciones)
                   const factor = parseFloat(item.factor_conversion_usado)
-                  const qtyPresStr = fmtQty(qtyPres)
-                  const qtyBaseStr = fmtQty(qty)
-                  const uNombre = unidadLabel(item.unidad_base_nombre, item.unidad_base_nombre_plural, qty)
+                  const qtyPresStr = qtyPres % 1 === 0 ? Math.floor(qtyPres) : parseFloat(qtyPres.toFixed(2))
                   const tienePresent = factor !== 1
 
                   return (
@@ -441,12 +430,12 @@ export default function RecepcionDetallePage() {
                               {qtyPresStr} {item.presentacion_nombre}
                             </span>
                             <span className="text-[11px] text-base-content/40 font-mono">
-                              = {qtyBaseStr} {uNombre}
+                              = {formatCantidad(qty, item.unidad_base_nombre, item.unidad_base_nombre_plural)}
                             </span>
                           </div>
                         ) : (
                           <span className="font-mono font-semibold text-sm">
-                            {qtyBaseStr} {uNombre}
+                            {formatCantidad(qty, item.unidad_base_nombre, item.unidad_base_nombre_plural)}
                           </span>
                         )}
                       </td>

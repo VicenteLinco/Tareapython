@@ -10,6 +10,7 @@ import {
 import { Html5Qrcode } from 'html5-qrcode'
 import api from '@/lib/api'
 import type { Proveedor, Producto, Presentacion, Area } from '@/types'
+import { formatCantidad, autoPlural } from '@/lib/utils'
 
 // Payload que coincide exactamente con el struct Rust del backend
 interface RecepcionPayload {
@@ -37,6 +38,7 @@ interface DetalleLineUI {
   producto_nombre: string
   presentacion_id: number | null
   presentacion_nombre: string
+  presentacion_nombre_plural: string
   cantidad_presentacion: number
   factor_conversion: number
   unidad_base_nombre: string
@@ -48,10 +50,6 @@ interface DetalleLineUI {
   presentaciones: Presentacion[]
 }
 
-// Pluralización simple para español
-function pluralizar(singular: string, plural: string, cantidad: number): string {
-  return cantidad === 1 ? singular : plural
-}
 
 const now = new Date()
 const TODAY = now.toISOString().split('T')[0]
@@ -251,6 +249,7 @@ export default function NuevaRecepcionPage() {
         producto_nombre: prod.nombre,
         presentacion_id: pres?.id ?? null,
         presentacion_nombre: pres?.nombre ?? '',
+        presentacion_nombre_plural: pres?.nombre_plural ?? (pres ? autoPlural(pres.nombre) : ''),
         cantidad_presentacion: 1,
         // serde-with-str serializes Decimal as string — convert to number
         factor_conversion: Number(pres?.factor_conversion ?? 1),
@@ -321,6 +320,7 @@ export default function NuevaRecepcionPage() {
           const pres = (updated.presentaciones ?? []).find((p) => p.id === updates.presentacion_id)
           updated.factor_conversion = Number(pres?.factor_conversion ?? 1)
           updated.presentacion_nombre = pres?.nombre ?? ''
+          updated.presentacion_nombre_plural = pres?.nombre_plural ?? (pres ? autoPlural(pres.nombre) : '')
         }
         if (updates.area_destino_id !== undefined) {
           const area = areas?.find((a) => a.id === updates.area_destino_id)
@@ -734,15 +734,15 @@ export default function NuevaRecepcionPage() {
                                 <span className="text-success font-semibold">Recibido · </span>
                                 <span className="font-semibold text-base-content/80">
                                   {firstItem.presentacion_id
-                                    ? `${firstItem.cantidad_presentacion} ${pluralizar(firstItem.presentacion_nombre, firstItem.presentacion_nombre + 's', firstItem.cantidad_presentacion)}`
-                                    : `${totalBase} ${pluralizar(ubNombre, ubPlural, totalBase)}`
+                                    ? `${firstItem.cantidad_presentacion} ${firstItem.cantidad_presentacion === 1 ? firstItem.presentacion_nombre : (firstItem.presentacion_nombre_plural || autoPlural(firstItem.presentacion_nombre))}`
+                                    : formatCantidad(totalBase, ubNombre, ubPlural)
                                   }
                                 </span>
                               </>
                             ) : (
                               <>
                                 <span className="font-semibold text-base-content/80">
-                                  {totalBase} {pluralizar(ubNombre, ubPlural, totalBase)}
+                                  {formatCantidad(totalBase, ubNombre, ubPlural)}
                                 </span>
                                 <span className="ml-2 opacity-60">· {group.items.length} lotes</span>
                               </>
@@ -825,8 +825,8 @@ export default function NuevaRecepcionPage() {
                                     />
                                     <span className="text-xs text-base-content/40 shrink-0 whitespace-nowrap border-l border-base-300 pl-1.5 ml-1">
                                       {d.presentacion_id
-                                        ? pluralizar(d.presentacion_nombre, d.presentacion_nombre + 's', d.cantidad_presentacion)
-                                        : pluralizar(d.unidad_base_nombre, d.unidad_base_nombre_plural || d.unidad_base_nombre, d.cantidad_presentacion)
+                                        ? (d.cantidad_presentacion === 1 ? d.presentacion_nombre : (d.presentacion_nombre_plural || autoPlural(d.presentacion_nombre)))
+                                        : (d.cantidad_presentacion === 1 ? d.unidad_base_nombre : (d.unidad_base_nombre_plural || autoPlural(d.unidad_base_nombre)))
                                       }
                                     </span>
                                   </label>
@@ -841,7 +841,7 @@ export default function NuevaRecepcionPage() {
                                   <div className="flex items-center gap-1.5 shrink-0">
                                     <span className="text-base-content/30 text-sm">→</span>
                                     <span className="text-sm font-semibold text-primary whitespace-nowrap">
-                                      {baseUnits} {pluralizar(ubNombre, ubPlural, baseUnits)}
+                                      {formatCantidad(baseUnits, ubNombre, ubPlural)}
                                     </span>
                                   </div>
                                 )}

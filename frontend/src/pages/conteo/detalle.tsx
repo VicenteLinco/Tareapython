@@ -6,8 +6,7 @@ import { toast } from 'sonner'
 import api from '@/lib/api'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import type { ConteoDetalle, ConteoItem } from '@/types'
-import { cn } from '@/lib/utils'
-import { formatDate } from '@/lib/utils'
+import { cn, formatDate, formatCantidad } from '@/lib/utils'
 import { v4 as uuidv4 } from 'uuid'
 
 // Agrupa items por producto
@@ -355,7 +354,7 @@ function LoteRow({
         <div>
           <p className="text-xs font-mono opacity-60">{item.numero_lote}</p>
           <p className="text-xs opacity-50">
-            Vence: {item.fecha_vencimiento.slice(0, 7)} · Sistema: {item.stock_sistema} {item.unidad_base_nombre}
+            Vence: {item.fecha_vencimiento.slice(0, 7)} · Sistema: {formatCantidad(Number(item.stock_sistema), item.unidad_base_nombre, item.unidad_base_nombre_plural)}
           </p>
         </div>
         {diferencia !== null && (
@@ -396,7 +395,11 @@ function LoteRow({
           <span className="text-xl font-bold">
             {item.cantidad_contada !== null ? item.cantidad_contada : '—'}
           </span>
-          <span className="text-sm opacity-50">{item.unidad_base_nombre}</span>
+          <span className="text-sm opacity-50">
+            {item.cantidad_contada !== null
+              ? (Number(item.cantidad_contada) === 1 ? item.unidad_base_nombre : item.unidad_base_nombre_plural)
+              : item.unidad_base_nombre}
+          </span>
         </div>
       )}
     </div>

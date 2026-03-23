@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { StockItem, Area } from '@/types'
-import { daysUntil, formatDate, pluralize } from '@/lib/utils'
+import { daysUntil, formatDate, formatCantidad } from '@/lib/utils'
 import api from '@/lib/api'
 
 // Paleta de colores
@@ -270,7 +270,7 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
     doc.setFontSize(7)
     doc.setTextColor(...C.gray)
     doc.text(
-      itemsBajo.length === 0 ? 'Sin alertas' : `${itemsBajo.length} ${pluralize('producto', itemsBajo.length)}`,
+      itemsBajo.length === 0 ? 'Sin alertas' : formatCantidad(itemsBajo.length, 'producto'),
       COL_LEFT + doc.getTextWidth('STOCK BAJO MINIMO') + 3,
       y
     )
@@ -284,7 +284,7 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
     doc.setFontSize(7)
     doc.setTextColor(...C.gray)
     doc.text(
-      itemsVencer.length === 0 ? 'Sin alertas' : `${itemsVencer.length} ${pluralize('producto', itemsVencer.length)}`,
+      itemsVencer.length === 0 ? 'Sin alertas' : formatCantidad(itemsVencer.length, 'producto'),
       COL_RIGHT + doc.getTextWidth('POR VENCER EN 30 DIAS') + 3,
       y
     )
@@ -351,7 +351,7 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
         const min   = Math.round(item.stock_minimo)
         drawAlertRow(
           item.producto_nombre,
-          `${stock} / ${min} ${pluralize(item.unidad, stock, item.unidad_plural)}`,
+          `${formatCantidad(stock, item.unidad, item.unidad_plural)} / ${min}`,
           COL_LEFT, y + idx * 6,
           idx % 2 === 1,
           C.redDark
@@ -373,7 +373,7 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
     } else {
       itemsVencer.slice(0, MAX_ROWS).forEach((item, idx) => {
         const d = daysUntil(item.proximo_vencimiento!)
-        const label = d === 0 ? 'hoy' : `${d} ${pluralize('dia', d)}`
+        const label = d === 0 ? 'hoy' : formatCantidad(d, 'día')
         drawAlertRow(
           item.producto_nombre,
           label,
@@ -406,7 +406,7 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
       const vencStr = item.proximo_vencimiento
         ? (() => {
             const d = daysUntil(item.proximo_vencimiento)
-            const label = d <= 0 ? 'Vencido' : `${d} ${pluralize('dia', d)}`
+            const label = d <= 0 ? 'Vencido' : formatCantidad(d, 'día')
             return `${formatDate(item.proximo_vencimiento)} (${label})`
           })()
         : '-'
@@ -414,7 +414,7 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
         item.producto_nombre,
         item.codigo_interno ?? '-',
         item.categoria ?? '-',
-        `${stock} ${pluralize(item.unidad, stock, item.unidad_plural)}`,
+        formatCantidad(stock, item.unidad, item.unidad_plural),
         vencStr,
       ]
     })
@@ -486,7 +486,7 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
           doc.setFontSize(7.5)
           doc.setTextColor(...C.gray)
           doc.text(
-            `${items.length} ${pluralize('producto', items.length)}`,
+            formatCantidad(items.length, 'producto'),
             W - 8, secY, { align: 'right' }
           )
         }

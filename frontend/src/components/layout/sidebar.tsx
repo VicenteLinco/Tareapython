@@ -18,6 +18,7 @@ import {
   FlaskConical,
   Sun,
   Moon,
+  ClipboardCheck,
 } from 'lucide-react'
 import { useAuthStore } from '@/hooks/use-auth-store'
 
@@ -26,6 +27,7 @@ const navItems = [
   { to: '/stock', icon: Package, label: 'Inventario' },
   { to: '/consumos', icon: ClipboardList, label: 'Consumos' },
   { to: '/recepciones', icon: ArrowDownToLine, label: 'Recepciones' },
+  { to: '/conteo', icon: ClipboardCheck, label: 'Conteo' },
   { to: '/descartes', icon: Trash2, label: 'Descartes' },
   { to: '/movimientos', icon: History, label: 'Movimientos' },
 ]

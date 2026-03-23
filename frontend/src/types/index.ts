@@ -122,13 +122,17 @@ export interface StockPorArea {
   area_id: number
   cantidad: number
   unidad_base_nombre: string
+  unidad_base_nombre_plural: string
 }
 
 export interface Alerta {
-  tipo: 'bajo_minimo' | 'por_vencer_30d' | 'por_vencer_90d' | 'vencido'
+  tipo: 'bajo_minimo' | 'vence_30d' | 'vence_90d' | 'vencido'
   producto_id: number
   producto_nombre: string
   detalle: string
+  total?: number
+  unidad?: string
+  unidad_plural?: string
 }
 
 export interface AlertasResponse {
@@ -149,6 +153,7 @@ export interface Movimiento {
   area_nombre?: string
   cantidad: number
   unidad_base_nombre?: string
+  unidad_base_nombre_plural?: string
   referencia: string | null
   numero_documento: string | null
   grupo_movimiento: string | null
@@ -326,4 +331,45 @@ export interface UpdateProducto {
   stock_minimo?: number
   area_ids?: number[]
   version: number
+}
+
+// --- Conteo de Inventario ---
+export interface SesionConteo {
+  id: string
+  area_id: number
+  area_nombre: string
+  estado: 'borrador' | 'en_progreso' | 'confirmado' | 'cancelado'
+  usuario_creador_nombre: string
+  created_at: string
+  confirmed_at: string | null
+  total_items: number
+  items_contados: number
+}
+
+export interface ConteoItem {
+  id: string
+  lote_id: string
+  numero_lote: string
+  fecha_vencimiento: string
+  producto_id: string
+  producto_nombre: string
+  unidad_base_nombre: string
+  stock_sistema: number
+  cantidad_contada: number | null
+  estado_item: 'pendiente' | 'contado' | 'no_contado'
+  version: number
+}
+
+export interface ConteoDetalle {
+  sesion: SesionConteo
+  nota: string | null
+  items: ConteoItem[]
+}
+
+export interface PaginatedSesiones {
+  data: SesionConteo[]
+  total: number
+  page: number
+  per_page: number
+  total_pages: number
 }

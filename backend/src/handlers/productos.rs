@@ -84,6 +84,7 @@ struct CreateProducto {
 #[derive(Debug, Deserialize)]
 struct CreatePresentacionInline {
     nombre: String,
+    nombre_plural: String,
     factor_conversion: Decimal,
     codigo_barras: Option<String>,
 }
@@ -376,10 +377,11 @@ async fn crear(
     if let Some(presentaciones) = &req.presentaciones {
         for pres in presentaciones {
             sqlx::query(
-                "INSERT INTO presentaciones (producto_id, nombre, factor_conversion, codigo_barras) VALUES ($1, $2, $3, $4)",
+                "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras) VALUES ($1, $2, $3, $4, $5)",
             )
             .bind(producto.id)
             .bind(pres.nombre.trim())
+            .bind(pres.nombre_plural.trim())
             .bind(pres.factor_conversion)
             .bind(&pres.codigo_barras)
             .execute(&mut *tx)
@@ -538,8 +540,35 @@ async fn eliminar(
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
+async fn reactivar(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Producto>, AppError> {
+    crate::auth::middleware::require_role(&["admin"])(&claims)?;
+
+    let producto = sqlx::query_as::<_, Producto>(
+        "UPDATE productos SET activo = true, updated_at = NOW() WHERE id = $1 RETURNING *",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::NotFound("Producto no encontrado".into()))?;
+
+    sqlx::query(
+        "INSERT INTO audit_log (tabla, registro_id, accion, usuario_id) VALUES ('productos', $1, 'UPDATE', $2)",
+    )
+    .bind(id.to_string())
+    .bind(claims.sub)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(Json(producto))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
         .route("/{id}", get(obtener).put(actualizar).delete(eliminar))
+        .route("/{id}/reactivar", axum::routing::post(reactivar))
 }

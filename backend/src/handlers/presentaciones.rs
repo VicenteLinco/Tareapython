@@ -14,6 +14,7 @@ use crate::models::presentacion::Presentacion;
 #[derive(Debug, Deserialize)]
 struct CreatePresentacion {
     nombre: String,
+    nombre_plural: String,
     factor_conversion: Decimal,
     codigo_barras: Option<String>,
 }
@@ -21,6 +22,7 @@ struct CreatePresentacion {
 #[derive(Debug, Deserialize)]
 struct UpdatePresentacion {
     nombre: Option<String>,
+    nombre_plural: Option<String>,
     factor_conversion: Option<Decimal>,
     codigo_barras: Option<String>,
     version: i32,
@@ -52,6 +54,11 @@ async fn crear(
         return Err(AppError::Validation("El nombre es requerido".into()));
     }
     validate_text_length(&nombre, "nombre", 255)?;
+    let nombre_plural = req.nombre_plural.trim().to_string();
+    if nombre_plural.is_empty() {
+        return Err(AppError::Validation("El plural es requerido".into()));
+    }
+    validate_text_length(&nombre_plural, "nombre_plural", 100)?;
     if let Some(ref cb) = req.codigo_barras {
         validate_text_length(cb, "codigo_barras", 100)?;
     }
@@ -72,10 +79,11 @@ async fn crear(
     }
 
     let presentacion = sqlx::query_as::<_, Presentacion>(
-        "INSERT INTO presentaciones (producto_id, nombre, factor_conversion, codigo_barras) VALUES ($1, $2, $3, $4) RETURNING *",
+        "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras) VALUES ($1, $2, $3, $4, $5) RETURNING *",
     )
     .bind(producto_id)
     .bind(&nombre)
+    .bind(&nombre_plural)
     .bind(req.factor_conversion)
     .bind(&req.codigo_barras)
     .fetch_one(&state.pool)
@@ -135,17 +143,23 @@ async fn actualizar(
     }
 
     let nombre = req.nombre.as_deref().map(str::trim).unwrap_or(&anterior.nombre);
+    let nombre_plural = req.nombre_plural.as_deref().map(str::trim).unwrap_or(&anterior.nombre_plural);
     let factor = req.factor_conversion.unwrap_or(anterior.factor_conversion);
 
     let presentacion = sqlx::query_as::<_, Presentacion>(
-        "UPDATE presentaciones SET nombre = $1, factor_conversion = $2, codigo_barras = $3, version = version + 1 WHERE id = $4 RETURNING *",
+        "UPDATE presentaciones SET nombre = $1, nombre_plural = $2, factor_conversion = $3, codigo_barras = $4, version = version + 1 WHERE id = $5 AND version = $6 RETURNING *",
     )
     .bind(nombre)
+    .bind(nombre_plural)
     .bind(factor)
     .bind(req.codigo_barras.as_deref().or(anterior.codigo_barras.as_deref()))
     .bind(id)
-    .fetch_one(&state.pool)
-    .await?;
+    .bind(req.version)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::Conflict(
+        "El registro fue modificado por otro usuario. Recarga e intenta de nuevo.".into(),
+    ))?;
 
     sqlx::query(
         "INSERT INTO audit_log (tabla, registro_id, accion, datos_anteriores, datos_nuevos, usuario_id) VALUES ('presentaciones', $1, 'UPDATE', $2, $3, $4)",

@@ -246,11 +246,13 @@ async fn importar_productos(
                 } else {
                     Some(codigo_barras)
                 };
+                let pres_plural = format!("{}s", pres_nombre);
                 sqlx::query(
-                    "INSERT INTO presentaciones (producto_id, nombre, factor_conversion, codigo_barras) VALUES ($1, $2, $3, $4)",
+                    "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras) VALUES ($1, $2, $3, $4, $5)",
                 )
                 .bind(producto_id)
                 .bind(pres_nombre)
+                .bind(&pres_plural)
                 .bind(factor)
                 .bind(cb)
                 .execute(&state.pool)

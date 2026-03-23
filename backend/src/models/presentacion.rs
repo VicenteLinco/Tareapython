@@ -8,6 +8,7 @@ pub struct Presentacion {
     pub id: i32,
     pub producto_id: Uuid,
     pub nombre: String,
+    pub nombre_plural: String,
     pub factor_conversion: Decimal,
     pub codigo_barras: Option<String>,
     pub activa: bool,

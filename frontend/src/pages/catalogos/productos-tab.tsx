@@ -911,9 +911,9 @@ function EditProductoDialog({
         pres_id: firstPres ? String(firstPres.id) : '',
         pres_version: firstPres?.version ?? 0,
         pres_nombre: firstPres?.nombre ?? '',
-        pres_nombre_plural: (firstPres as any)?.nombre_plural ?? '',
+        pres_nombre_plural: firstPres?.nombre_plural ?? '',
         pres_factor: firstPres ? String(Math.round(Number(firstPres.factor_conversion))) : '',
-        pres_codigo_barras: (firstPres as any)?.codigo_barras ?? '',
+        pres_codigo_barras: firstPres?.codigo_barras ?? '',
       })
     }
   }, [producto])

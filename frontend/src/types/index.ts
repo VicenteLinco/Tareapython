@@ -83,6 +83,7 @@ export interface Presentacion {
   factor_conversion: number
   unidad_medida_id: number
   unidad_medida_nombre?: string
+  codigo_barras?: string | null
   version: number
 }
 

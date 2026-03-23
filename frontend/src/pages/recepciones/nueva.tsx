@@ -734,7 +734,7 @@ export default function NuevaRecepcionPage() {
                                 <span className="text-success font-semibold">Recibido · </span>
                                 <span className="font-semibold text-base-content/80">
                                   {firstItem.presentacion_id
-                                    ? `${firstItem.cantidad_presentacion} ${firstItem.cantidad_presentacion === 1 ? firstItem.presentacion_nombre : (firstItem.presentacion_nombre_plural || autoPlural(firstItem.presentacion_nombre))}`
+                                    ? formatCantidad(firstItem.cantidad_presentacion, firstItem.presentacion_nombre, firstItem.presentacion_nombre_plural)
                                     : formatCantidad(totalBase, ubNombre, ubPlural)
                                   }
                                 </span>

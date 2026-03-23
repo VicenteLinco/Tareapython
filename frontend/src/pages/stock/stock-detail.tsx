@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
-import { formatDate, daysUntil, cn, pluralize } from '@/lib/utils'
+import { formatDate, daysUntil, cn, autoPlural } from '@/lib/utils'
 import type { StockItem } from '@/types'
 
 interface LoteSummary {
@@ -29,8 +29,6 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
   const stockTotal = Math.round(item.stock_total ?? 0)
   const isLow = stockTotal > 0 && stockTotal <= item.stock_minimo
   const minimoLabel = Math.round(item.stock_minimo)
-
-  const unidadLabel = (qty: number) => pluralize(item.unidad, qty, item.unidad_plural)
 
   // total from loaded lotes (used for percentages)
   const totalLotes = lotes?.reduce((s, l) => s + Math.round(l.stock_total ?? 0), 0) ?? stockTotal
@@ -75,10 +73,10 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
         <p className="text-xs font-medium opacity-40 mb-1">Stock Total</p>
         <div className="flex items-baseline gap-2">
           <span className="text-4xl font-bold tabular-nums">{stockTotal}</span>
-          <span className="text-sm opacity-40">{unidadLabel(stockTotal)}</span>
+          <span className="text-sm opacity-40">{stockTotal === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}</span>
         </div>
         <p className="text-xs opacity-35 mt-2">
-          Mínimo: {minimoLabel} {unidadLabel(minimoLabel)}
+          Mínimo: {minimoLabel} {minimoLabel === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}
         </p>
         {isLow && (
           <div className="mt-3 rounded-lg bg-warning/10 border border-warning/20 px-3 py-2 text-xs font-medium text-warning">
@@ -127,7 +125,7 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
                     <div className="text-right flex-shrink-0">
                       <div className="flex items-baseline gap-1 justify-end">
                         <span className="font-mono font-bold text-sm">{qty}</span>
-                        <span className="text-xs opacity-40">{unidadLabel(qty)}</span>
+                        <span className="text-xs opacity-40">{qty === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}</span>
                         <span className="text-[11px] opacity-50 ml-1">({pct}%)</span>
                       </div>
                       <div className="flex items-center gap-1 justify-end mt-0.5">

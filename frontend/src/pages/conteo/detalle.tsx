@@ -226,7 +226,7 @@ export default function ConteoDetallePage() {
             >
               <span className="font-semibold text-sm">{grupo.producto_nombre}</span>
               <div className="flex items-center gap-2">
-                <span className="text-xs opacity-40">{grupo.items.length} lote{grupo.items.length !== 1 ? 's' : ''}</span>
+                <span className="text-xs opacity-40">{formatCantidad(grupo.items.length, 'lote')}</span>
                 {colapsados[productoId]
                   ? <ChevronDown className="h-4 w-4 opacity-40" />
                   : <ChevronUp className="h-4 w-4 opacity-40" />
@@ -393,7 +393,9 @@ function LoteRow({
       {!editable && (
         <div className="flex items-center gap-2">
           <span className="text-xl font-bold">
-            {item.cantidad_contada !== null ? item.cantidad_contada : '—'}
+            {item.cantidad_contada !== null
+              ? (Number(item.cantidad_contada) % 1 === 0 ? Math.floor(Number(item.cantidad_contada)) : Number(item.cantidad_contada))
+              : '—'}
           </span>
           <span className="text-sm opacity-50">
             {item.cantidad_contada !== null

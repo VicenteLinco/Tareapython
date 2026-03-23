@@ -79,6 +79,7 @@ export interface Presentacion {
   id: number
   producto_id: number
   nombre: string
+  nombre_plural: string
   factor_conversion: number
   unidad_medida_id: number
   unidad_medida_nombre?: string
@@ -317,7 +318,7 @@ export interface CreateProducto {
   proveedor_id?: number
   codigo_proveedor?: string
   codigo_maestro?: string
-  presentaciones?: { nombre: string; factor_conversion: number; codigo_barras?: string }[]
+  presentaciones?: { nombre: string; nombre_plural: string; factor_conversion: number; codigo_barras?: string }[]
   area_ids?: number[]
 }
 
@@ -354,6 +355,7 @@ export interface ConteoItem {
   producto_id: string
   producto_nombre: string
   unidad_base_nombre: string
+  unidad_base_nombre_plural: string
   stock_sistema: number
   cantidad_contada: number | null
   estado_item: 'pendiente' | 'contado' | 'no_contado'

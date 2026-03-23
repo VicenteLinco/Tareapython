@@ -29,11 +29,21 @@ export function daysUntil(date: string | Date): number {
   return Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
 }
 
-/** Devuelve singular o plural. Si no hay plural explícito, aplica regla básica española. */
-export function pluralize(singular: string, qty: number, plural?: string | null): string {
-  if (qty === 1) return singular
-  if (plural) return plural
-  const last = singular.slice(-1).toLowerCase()
-  const vowels = ['a', 'e', 'i', 'o', 'u']
-  return vowels.includes(last) ? singular + 's' : singular + 'es'
+/** Plural automático para español: vocal final → +s, consonante → +es. */
+export function autoPlural(s: string): string {
+  const last = s.slice(-1).toLowerCase()
+  return 'aeiouáéíóú'.includes(last) ? s + 's' : s + 'es'
+}
+
+/**
+ * Formatea una cantidad con su unidad usando singular o plural.
+ * - Si qty === 1 → singular
+ * - Si qty !== 1 → plural (usa autoPlural si no se provee)
+ * - Enteros se muestran sin decimales (5 no 5.0)
+ * - No-enteros con hasta 2 decimales significativos
+ */
+export function formatCantidad(qty: number, singular: string, plural?: string | null): string {
+  const num = qty % 1 === 0 ? Math.floor(qty) : parseFloat(qty.toFixed(2))
+  const unit = qty === 1 ? singular : (plural ?? autoPlural(singular))
+  return `${num} ${unit}`
 }

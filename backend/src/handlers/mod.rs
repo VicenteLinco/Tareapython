@@ -2,6 +2,7 @@ pub mod areas;
 pub mod audit_log;
 pub mod auth_handler;
 pub mod categorias;
+pub mod conteo;
 pub mod configuracion;
 pub mod consumos;
 pub mod descartes;

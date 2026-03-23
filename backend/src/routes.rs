@@ -38,6 +38,7 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
         .nest("/recepciones", handlers::recepciones::routes())
         .nest("/transferencias", handlers::transferencias::routes())
         .nest("/descartes", handlers::descartes::routes())
+        .nest("/conteo", handlers::conteo::routes())
         // Ledger y audit (lectura)
         .nest("/movimientos", handlers::movimientos::routes())
         .nest("/audit-log", handlers::audit_log::routes())

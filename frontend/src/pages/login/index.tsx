@@ -1,16 +1,19 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FlaskConical, ArrowRight } from 'lucide-react'
+import { FlaskConical, ArrowRight, Monitor, ScanLine, LayoutDashboard } from 'lucide-react'
 import fondoLogin from '@/assets/fondo-login.gif'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import api from '@/lib/api'
 import type { LoginResponse, MeResponse } from '@/types'
+import { setDeviceMode, type DeviceMode } from '@/lib/device-mode'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [selectedMode, setSelectedMode] = useState<DeviceMode>('normal')
+  const [persistent, setPersistent] = useState(false)
   const { setTokens, setUsuario } = useAuthStore()
   const navigate = useNavigate()
 
@@ -28,7 +31,11 @@ export default function LoginPage() {
         headers: { Authorization: `Bearer ${access_token}` },
       })
       setUsuario(meRes.data)
-      navigate('/', { replace: true })
+      setDeviceMode(selectedMode, persistent)
+      const target =
+        selectedMode === 'kiosk' ? '/kiosk' :
+        selectedMode === 'qr'    ? '/qr'    : '/'
+      navigate(target, { replace: true })
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number } }
       if (axiosErr.response?.status === 401) {
@@ -71,6 +78,44 @@ export default function LoginPage() {
           <div className="mb-8">
             <h2 className="text-2xl font-bold">Iniciar sesión</h2>
             <p className="text-sm opacity-50 mt-1">Ingrese sus credenciales para continuar</p>
+          </div>
+
+          {/* Selector de modo */}
+          <div className="mb-6 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider opacity-40">Modo de entrada</p>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { mode: 'normal' as DeviceMode, icon: LayoutDashboard, label: 'Normal' },
+                { mode: 'kiosk'  as DeviceMode, icon: Monitor,         label: 'Kiosko' },
+                { mode: 'qr'     as DeviceMode, icon: ScanLine,        label: 'Modo QR' },
+              ] as const).map(({ mode, icon: Icon, label }) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => { setSelectedMode(mode); if (mode === 'normal') setPersistent(false) }}
+                  className={`flex flex-col items-center gap-1.5 rounded-xl border-2 py-3 px-2 text-xs font-semibold transition-all ${
+                    selectedMode === mode
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-base-200 opacity-50 hover:opacity-80'
+                  }`}
+                >
+                  <Icon className="h-5 w-5" />
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {selectedMode !== 'normal' && (
+              <label className="flex items-center gap-2.5 cursor-pointer mt-2 select-none">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-sm checkbox-primary"
+                  checked={persistent}
+                  onChange={(e) => setPersistent(e.target.checked)}
+                />
+                <span className="text-sm opacity-60">Recordar en este dispositivo</span>
+              </label>
+            )}
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">

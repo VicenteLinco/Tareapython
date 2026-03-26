@@ -7,8 +7,9 @@ use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::errors::AppError;
 
+// What GET /configuracion returns — pin_kiosko intentionally excluded
 #[derive(Debug, Serialize)]
-struct Configuracion {
+struct ConfiguracionResponse {
     nombre_laboratorio: String,
     logo_base64: String,
 }
@@ -17,12 +18,18 @@ struct Configuracion {
 struct UpdateConfiguracion {
     nombre_laboratorio: Option<String>,
     logo_base64: Option<String>,
+    pin_kiosko: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct VerificarPinInput {
+    pin: String,
 }
 
 /// GET /api/v1/configuracion — Obtener configuración del sistema
 async fn obtener(
     State(state): State<AppState>,
-) -> Result<Json<Configuracion>, AppError> {
+) -> Result<Json<ConfiguracionResponse>, AppError> {
     let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT clave, valor FROM configuracion WHERE clave IN ('nombre_laboratorio', 'logo_base64')",
     )
@@ -40,7 +47,7 @@ async fn obtener(
         }
     }
 
-    Ok(Json(Configuracion { nombre_laboratorio, logo_base64 }))
+    Ok(Json(ConfiguracionResponse { nombre_laboratorio, logo_base64 }))
 }
 
 /// PUT /api/v1/configuracion — Actualizar configuración (solo admin)
@@ -48,7 +55,7 @@ async fn actualizar(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     Json(body): Json<UpdateConfiguracion>,
-) -> Result<Json<Configuracion>, AppError> {
+) -> Result<Json<ConfiguracionResponse>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
     if let Some(nombre) = &body.nombre_laboratorio {
@@ -71,9 +78,43 @@ async fn actualizar(
         .await?;
     }
 
+    if let Some(pin) = &body.pin_kiosko {
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor) VALUES ('pin_kiosko', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor",
+        )
+        .bind(pin)
+        .execute(&state.pool)
+        .await?;
+    }
+
     obtener(State(state)).await
 }
 
+/// POST /api/v1/configuracion/verificar-pin
+/// Verifica el PIN de salida de modo kiosko/QR. No requiere auth.
+/// (Intranet only — rate limiting not needed for this deployment)
+async fn verificar_pin(
+    State(state): State<AppState>,
+    Json(body): Json<VerificarPinInput>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let stored: Option<String> = sqlx::query_scalar(
+        "SELECT valor FROM configuracion WHERE clave = 'pin_kiosko'",
+    )
+    .fetch_optional(&state.pool)
+    .await?;
+
+    // Si no hay PIN configurado, siempre válido (setup inicial)
+    let valido = match stored.as_deref() {
+        None | Some("") => true,
+        Some(pin) => pin == body.pin.trim(),
+    };
+
+    Ok(Json(serde_json::json!({ "valido": valido })))
+}
+
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/", get(obtener).put(actualizar))
+    Router::new()
+        .route("/", get(obtener).put(actualizar))
+        .route("/verificar-pin", axum::routing::post(verificar_pin))
 }

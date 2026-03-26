@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Upload, Save, X, Building2 } from 'lucide-react'
+import { Upload, Save, X, Building2, Lock, Eye, EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 
@@ -21,6 +21,8 @@ export default function ConfiguracionPage() {
   const [nombre, setNombre] = useState('')
   const [logo, setLogo] = useState('')
   const [preview, setPreview] = useState('')
+  const [pinKiosko, setPinKiosko] = useState('')
+  const [showPin, setShowPin] = useState(false)
 
   // Sync con datos cargados
   const initialized = useRef(false)
@@ -32,7 +34,7 @@ export default function ConfiguracionPage() {
   }
 
   const mutation = useMutation({
-    mutationFn: (payload: { nombre_laboratorio: string; logo_base64: string }) =>
+    mutationFn: (payload: { nombre_laboratorio: string; logo_base64: string; pin_kiosko: string }) =>
       api.put<Configuracion>('/configuracion', payload).then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['configuracion'] })
@@ -69,7 +71,7 @@ export default function ConfiguracionPage() {
       toast.error('El nombre del laboratorio es requerido')
       return
     }
-    mutation.mutate({ nombre_laboratorio: nombre.trim(), logo_base64: logo })
+    mutation.mutate({ nombre_laboratorio: nombre.trim(), logo_base64: logo, pin_kiosko: pinKiosko.trim() })
   }
 
   if (isLoading) {
@@ -148,6 +150,32 @@ export default function ConfiguracionPage() {
               Seleccionar imagen
             </button>
           )}
+        </div>
+
+        {/* PIN de salida de modo kiosko */}
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium">PIN de salida (Modo Kiosko/QR)</label>
+          <p className="text-xs opacity-50">
+            Se pide para salir del modo kiosko o QR. Deje vacío para salir sin PIN.
+          </p>
+          <label className="input input-bordered flex items-center gap-2 w-full max-w-xs">
+            <Lock className="h-4 w-4 opacity-40 shrink-0" />
+            <input
+              type={showPin ? 'text' : 'password'}
+              className="grow font-mono"
+              placeholder="Ej: 1234"
+              maxLength={8}
+              value={pinKiosko}
+              onChange={(e) => setPinKiosko(e.target.value.replace(/\D/g, ''))}
+            />
+            <button
+              type="button"
+              className="opacity-40 hover:opacity-80"
+              onClick={() => setShowPin((v) => !v)}
+            >
+              {showPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </label>
         </div>
 
         <button type="submit" className="btn btn-primary" disabled={mutation.isPending}>

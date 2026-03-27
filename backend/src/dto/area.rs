@@ -10,4 +10,5 @@ pub struct CreateArea {
 pub struct UpdateArea {
     pub nombre: Option<String>,
     pub es_bodega: Option<bool>,
+    pub conteo_frecuencia_dias: Option<i32>,
 }

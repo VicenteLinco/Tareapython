@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
 import { toast } from 'sonner'
+import { X } from 'lucide-react'
 import QRCode from 'qrcode'
 import api from '@/lib/api'
 import { useAuthStore } from '@/hooks/use-auth-store'
@@ -233,17 +234,17 @@ export default function KioskPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              className="btn btn-ghost btn-sm opacity-30 hover:opacity-70"
+              className="btn btn-ghost btn-sm text-primary font-bold"
               onClick={() => { setAreaId(null); sessionStorage.removeItem('kiosk-area-id') }}
             >
               Cambiar área
             </button>
             <button
-              className="btn btn-ghost btn-xs opacity-20 hover:opacity-60"
+              className="btn btn-ghost btn-sm text-error font-bold gap-1"
               onClick={() => { resetInactivity(); setShowExit(true) }}
-              title="Salir del modo kiosko"
             >
-              ⚙
+              <X className="h-4 w-4" />
+              Salir
             </button>
           </div>
         </div>
@@ -492,10 +493,9 @@ function KioskHeader({
       {onExit && (
         <button
           onClick={onExit}
-          className="btn btn-ghost btn-xs opacity-20 hover:opacity-60"
-          title="Salir del modo kiosko"
+          className="btn btn-ghost btn-sm text-error font-bold"
         >
-          ⚙
+          Salir
         </button>
       )}
     </div>

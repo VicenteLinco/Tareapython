@@ -508,10 +508,9 @@ async fn alertas_stock(pool: PgPool) {
     let (status, json) = common::get_json(&app, "/api/v1/stock/alertas", &token).await;
 
     assert_eq!(status, StatusCode::OK);
-    assert!(json["bajo_minimo"].is_array());
-    assert!(json["por_vencer_30d"].is_array());
-    assert!(json["por_vencer_90d"].is_array());
-    assert!(json["vencidos"].is_array());
+    assert!(json["data"].is_array());
+    assert!(json["total"].is_number());
+    assert!(json["page"].is_number());
 }
 
 // ==========================================

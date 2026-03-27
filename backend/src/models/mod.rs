@@ -7,5 +7,5 @@ pub mod producto;
 pub mod proveedor;
 pub mod recepcion;
 pub mod stock;
-pub mod unidad_medida;
+pub mod unidad_basica;
 pub mod usuario;

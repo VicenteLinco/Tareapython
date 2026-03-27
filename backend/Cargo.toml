@@ -2,6 +2,7 @@
 name = "inventario-lab-backend"
 version = "0.1.0"
 edition = "2024"
+default-run = "inventario-lab-backend"
 
 [dependencies]
 # Web framework
@@ -31,12 +32,11 @@ dotenvy = "0.15"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Validation
-validator = { version = "0.19", features = ["derive"] }
-
 # Utilities
 thiserror = "2"
 csv = "1"
+base64 = "0.22"
+regex = "1"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

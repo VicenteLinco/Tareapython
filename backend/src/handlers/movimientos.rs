@@ -35,6 +35,8 @@ struct MovimientoListItem {
     producto_nombre: String,
     area_nombre: String,
     usuario_nombre: String,
+    unidad_base_nombre: String,
+    unidad_base_nombre_plural: String,
     nota: Option<String>,
     created_at: DateTime<Utc>,
 }
@@ -65,7 +67,7 @@ async fn listar(
     }
     if params.tipo.is_some() {
         param_idx += 1;
-        conditions.push(format!("m.tipo = ${}", param_idx));
+        conditions.push(format!("m.tipo = ANY(${})", param_idx));
     }
     if params.desde.is_some() {
         param_idx += 1;
@@ -94,12 +96,14 @@ async fn listar(
                   m.cantidad, m.cantidad_resultante,
                   l.numero_lote as lote_numero, p.nombre as producto_nombre,
                   a.nombre as area_nombre, u.nombre as usuario_nombre,
+                  um.nombre as unidad_base_nombre, um.nombre_plural as unidad_base_nombre_plural,
                   m.nota, m.created_at
            FROM movimientos m
            JOIN lotes l ON l.id = m.lote_id
            JOIN productos p ON p.id = l.producto_id
            JOIN areas a ON a.id = m.area_id
            JOIN usuarios u ON u.id = m.usuario_id
+           JOIN unidades_basicas um ON um.id = p.unidad_base_id
            WHERE {}
            ORDER BY m.created_at DESC
            LIMIT ${} OFFSET ${}"#,
@@ -124,9 +128,20 @@ async fn listar(
         count_query = count_query.bind(v);
         data_query = data_query.bind(v);
     }
-    if let Some(v) = &params.tipo {
-        count_query = count_query.bind(v);
-        data_query = data_query.bind(v);
+    if let Some(ref t) = params.tipo {
+        let mapped = match t.as_str() {
+            "entrada" => vec!["INGRESO", "CARGA_INICIAL"],
+            "salida" => vec!["CONSUMO"],
+            "transferencia_entrada" => vec!["TRANSFERENCIA_ENTRADA"],
+            "transferencia_salida" => vec!["TRANSFERENCIA_SALIDA"],
+            "descarte" => vec!["DESCARTE_VENCIDO", "DESCARTE_DAÑADO"],
+            "ajuste" => vec!["AJUSTE_POSITIVO", "AJUSTE_NEGATIVO"],
+            "ajuste_pos" => vec!["AJUSTE_POSITIVO"],
+            "ajuste_neg" => vec!["AJUSTE_NEGATIVO"],
+            _ => vec![t.as_str()],
+        };
+        count_query = count_query.bind(mapped.clone());
+        data_query = data_query.bind(mapped);
     }
     if let Some(v) = params.desde {
         count_query = count_query.bind(v);
@@ -144,7 +159,21 @@ async fn listar(
     data_query = data_query.bind(limit).bind(offset);
 
     let total = count_query.fetch_one(&state.pool).await?;
-    let data = data_query.fetch_all(&state.pool).await?;
+    let mut data = data_query.fetch_all(&state.pool).await?;
+
+    // Normalizar tipos para el frontend
+    for item in &mut data {
+        item.tipo = match item.tipo.as_str() {
+            "INGRESO" | "CARGA_INICIAL" => "entrada".to_string(),
+            "CONSUMO" => "salida".to_string(),
+            "TRANSFERENCIA_ENTRADA" => "transferencia_entrada".to_string(),
+            "TRANSFERENCIA_SALIDA" => "transferencia_salida".to_string(),
+            "DESCARTE_VENCIDO" | "DESCARTE_DAÑADO" => "descarte".to_string(),
+            "AJUSTE_POSITIVO" => "ajuste_pos".to_string(),
+            "AJUSTE_NEGATIVO" => "ajuste_neg".to_string(),
+            other => other.to_lowercase(),
+        };
+    }
 
     Ok(Json(PaginatedResponse {
         data,
@@ -159,23 +188,37 @@ async fn obtener(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let mov = sqlx::query_as::<_, MovimientoListItem>(
+    let mut mov = sqlx::query_as::<_, MovimientoListItem>(
         r#"SELECT m.id, m.numero_documento, m.grupo_movimiento, m.tipo,
                   m.cantidad, m.cantidad_resultante,
                   l.numero_lote as lote_numero, p.nombre as producto_nombre,
                   a.nombre as area_nombre, u.nombre as usuario_nombre,
+                  um.nombre as unidad_base_nombre, um.nombre_plural as unidad_base_nombre_plural,
                   m.nota, m.created_at
            FROM movimientos m
            JOIN lotes l ON l.id = m.lote_id
            JOIN productos p ON p.id = l.producto_id
            JOIN areas a ON a.id = m.area_id
            JOIN usuarios u ON u.id = m.usuario_id
+           JOIN unidades_basicas um ON um.id = p.unidad_base_id
            WHERE m.id = $1"#,
     )
     .bind(id)
     .fetch_optional(&state.pool)
     .await?
     .ok_or(AppError::NotFound("Movimiento no encontrado".into()))?;
+
+    // Normalizar tipo
+    mov.tipo = match mov.tipo.as_str() {
+        "INGRESO" | "CARGA_INICIAL" => "entrada".to_string(),
+        "CONSUMO" => "salida".to_string(),
+        "TRANSFERENCIA_ENTRADA" => "transferencia_entrada".to_string(),
+        "TRANSFERENCIA_SALIDA" => "transferencia_salida".to_string(),
+        "DESCARTE_VENCIDO" | "DESCARTE_DAÑADO" => "descarte".to_string(),
+        "AJUSTE_POSITIVO" => "ajuste_pos".to_string(),
+        "AJUSTE_NEGATIVO" => "ajuste_neg".to_string(),
+        other => other.to_lowercase(),
+    };
 
     Ok(Json(serde_json::json!(mov)))
 }

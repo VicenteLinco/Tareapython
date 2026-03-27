@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::errors::AppError;
 
 #[derive(Debug, Deserialize)]
 pub struct PaginationParams {
@@ -17,6 +18,18 @@ impl PaginationParams {
 
     pub fn offset(&self) -> i64 {
         (self.page() - 1) * self.per_page()
+    }
+
+    pub fn validated(self) -> Result<Self, AppError> {
+        if let Some(pp) = self.per_page {
+            if pp < 1 {
+                return Err(AppError::Validation("per_page debe ser >= 1".into()));
+            }
+            if pp > 200 {
+                return Err(AppError::Validation("per_page no puede superar 200".into()));
+            }
+        }
+        Ok(self)
     }
 }
 

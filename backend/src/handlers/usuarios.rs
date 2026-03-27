@@ -291,8 +291,50 @@ async fn eliminar(
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
+#[derive(Debug, Deserialize)]
+struct ResetPasswordRequest {
+    password_nueva: String,
+}
+
+/// POST /api/v1/usuarios/:id/reset-password — Admin resetea contraseña de otro usuario
+async fn reset_password(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<ResetPasswordRequest>,
+) -> Result<axum::http::StatusCode, AppError> {
+    crate::auth::middleware::require_role(&["admin"])(&claims)?;
+
+    if req.password_nueva.len() < 8 {
+        return Err(AppError::Validation(
+            "La contraseña debe tener al menos 8 caracteres".into(),
+        ));
+    }
+
+    let salt = SaltString::generate(&mut OsRng);
+    let new_hash = Argon2::default()
+        .hash_password(req.password_nueva.as_bytes(), &salt)
+        .map_err(|e| AppError::Internal(format!("Error hasheando password: {}", e)))?
+        .to_string();
+
+    let result = sqlx::query(
+        "UPDATE usuarios SET password_hash = $1, updated_at = NOW() WHERE id = $2",
+    )
+    .bind(&new_hash)
+    .bind(id)
+    .execute(&state.pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Usuario no encontrado".into()));
+    }
+
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
         .route("/{id}", get(obtener).put(actualizar).delete(eliminar))
+        .route("/{id}/reset-password", axum::routing::post(reset_password))
 }

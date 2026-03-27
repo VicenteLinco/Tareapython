@@ -6,9 +6,13 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use axum::Extension;
+
+use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::dto::pagination::PaginationParams;
 use crate::errors::AppError;
+use crate::services::stock_ops;
 
 // === DTOs ===
 
@@ -38,50 +42,25 @@ struct StockItem {
     proveedor_icono: Option<String>,
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
-struct StockAreaProducto {
-    producto_id: Uuid,
-    codigo_interno: String,
-    nombre: String,
-    unidad: String,
-    stock: Option<Decimal>,
-}
-
-#[derive(Debug, Serialize, sqlx::FromRow)]
-struct LoteEnArea {
-    lote_id: Uuid,
-    numero_lote: String,
-    stock: Decimal,
-    fecha_vencimiento: NaiveDate,
-}
-
-#[derive(Debug, Serialize, sqlx::FromRow)]
-struct AlertaBajoMinimo {
-    producto_id: Uuid,
-    producto: String,
-    stock_actual: Option<Decimal>,
-    stock_minimo: Decimal,
-    unidad: String,
-}
-
-#[derive(Debug, Serialize, sqlx::FromRow)]
-struct AlertaVencimiento {
-    producto_id: Uuid,
-    producto: String,
-    numero_lote: String,
-    fecha_vencimiento: NaiveDate,
-    stock: Decimal,
-    area: String,
-}
-
 // === Handlers ===
 
 /// GET /api/v1/stock — Vista principal de stock
 async fn listar(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Query(params): Query<StockQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let pagination = PaginationParams { page: params.page, per_page: params.per_page };
+    // Si se filtra por área, validar acceso
+    if let Some(aid) = params.area_id {
+        stock_ops::validar_acceso_area(&state.pool, claims.sub, aid, &claims.rol).await?;
+    }
+
+    let pagination = PaginationParams {
+        page: params.page,
+        per_page: params.per_page,
+    }
+    .validated()?;
+
     let limit = pagination.per_page();
     let offset = pagination.offset();
 
@@ -227,9 +206,11 @@ async fn listar(
 /// GET /api/v1/stock/area/:area_id — Stock de un área específica
 async fn stock_por_area(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Path(area_id): Path<i32>,
     Query(params): Query<StockQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    stock_ops::validar_acceso_area(&state.pool, claims.sub, area_id, &claims.rol).await?;
     let area = sqlx::query_as::<_, AreaRef>(
         "SELECT id, nombre FROM areas WHERE id = $1",
     )
@@ -242,65 +223,77 @@ async fn stock_por_area(
     let limit = pagination.per_page();
     let offset = pagination.offset();
 
-    let mut conditions = vec![
-        "s.cantidad > 0".to_string(),
-        "s.area_id = $1".to_string(),
-    ];
-
-    if params.q.is_some() {
-        conditions.push("(p.nombre ILIKE $2 OR p.codigo_interno ILIKE $2)".to_string());
-    }
-
-    let where_clause = conditions.join(" AND ");
-
-    let sql = format!(
-        r#"SELECT p.id as producto_id, p.codigo_interno, p.nombre,
-                  um.nombre as unidad, SUM(s.cantidad) as stock
+    // Query unificada: productos + lotes en una sola round-trip con JSON aggregation
+    let data_sql = format!(
+        r#"SELECT
+               p.id as producto_id,
+               p.codigo_interno,
+               p.nombre,
+               um.nombre as unidad,
+               um.nombre_plural as unidad_plural,
+               p.stock_minimo,
+               COALESCE(SUM(s.cantidad), 0) AS stock,
+               JSON_AGG(
+                   JSON_BUILD_OBJECT(
+                       'lote_id',          s.lote_id,
+                       'numero_lote',      l.numero_lote,
+                       'stock',            s.cantidad,
+                       'fecha_vencimiento', l.fecha_vencimiento
+                   ) ORDER BY l.fecha_vencimiento ASC NULLS LAST
+               ) FILTER (WHERE s.cantidad > 0) AS lotes
            FROM stock s
            JOIN lotes l ON l.id = s.lote_id
            JOIN productos p ON p.id = l.producto_id
            JOIN unidades_basicas um ON um.id = p.unidad_base_id
-           WHERE {}
-           GROUP BY p.id, p.codigo_interno, p.nombre, um.nombre
+           WHERE s.area_id = $1 AND s.cantidad > 0
+           {}
+           GROUP BY p.id, p.codigo_interno, p.nombre, um.nombre, um.nombre_plural, p.stock_minimo
            ORDER BY p.nombre
            LIMIT ${} OFFSET ${}"#,
-        where_clause,
+        if params.q.is_some() {
+            "AND (p.nombre ILIKE $2 OR p.codigo_interno ILIKE $2)"
+        } else {
+            ""
+        },
         if params.q.is_some() { 3 } else { 2 },
         if params.q.is_some() { 4 } else { 3 },
     );
 
-    let mut query = sqlx::query_as::<_, StockAreaProducto>(&sql).bind(area_id);
+    #[derive(sqlx::FromRow)]
+    struct StockAreaRow {
+        producto_id: Uuid,
+        codigo_interno: String,
+        nombre: String,
+        unidad: String,
+        unidad_plural: String,
+        stock_minimo: Option<Decimal>,
+        stock: Decimal,
+        lotes: Option<serde_json::Value>,
+    }
+
+    let mut query = sqlx::query_as::<_, StockAreaRow>(&data_sql).bind(area_id);
     if let Some(q) = &params.q {
         query = query.bind(format!("%{}%", q));
     }
     query = query.bind(limit).bind(offset);
 
-    let productos = query.fetch_all(&state.pool).await?;
+    let filas = query.fetch_all(&state.pool).await?;
 
-    // Para cada producto, obtener sus lotes en esta área
-    let mut productos_con_lotes = Vec::new();
-    for prod in &productos {
-        let lotes = sqlx::query_as::<_, LoteEnArea>(
-            r#"SELECT s.lote_id, l.numero_lote, s.cantidad as stock, l.fecha_vencimiento
-               FROM stock s
-               JOIN lotes l ON l.id = s.lote_id
-               WHERE l.producto_id = $1 AND s.area_id = $2 AND s.cantidad > 0
-               ORDER BY l.fecha_vencimiento ASC"#,
-        )
-        .bind(prod.producto_id)
-        .bind(area_id)
-        .fetch_all(&state.pool)
-        .await?;
-
-        productos_con_lotes.push(serde_json::json!({
-            "producto_id": prod.producto_id,
-            "codigo_interno": prod.codigo_interno,
-            "nombre": prod.nombre,
-            "unidad": prod.unidad,
-            "stock": prod.stock,
-            "lotes": lotes,
-        }));
-    }
+    let productos_con_lotes: Vec<serde_json::Value> = filas
+        .into_iter()
+        .map(|row| {
+            serde_json::json!({
+                "producto_id": row.producto_id,
+                "codigo_interno": row.codigo_interno,
+                "nombre": row.nombre,
+                "unidad": row.unidad,
+                "unidad_plural": row.unidad_plural,
+                "stock_minimo": row.stock_minimo,
+                "stock": row.stock,
+                "lotes": row.lotes.unwrap_or(serde_json::json!([])),
+            })
+        })
+        .collect();
 
     Ok(Json(serde_json::json!({
         "area": area,
@@ -314,73 +307,113 @@ struct AreaRef {
     nombre: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct AlertasParams {
+    #[serde(default = "default_page")]
+    page: i64,
+    #[serde(default = "default_per_page")]
+    per_page: i64,
+}
+
+fn default_page() -> i64 { 1 }
+fn default_per_page() -> i64 { 50 }
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+struct AlertaRow {
+    producto_id: Uuid,
+    nombre: String,
+    total: Decimal,
+    unidad: String,
+    unidad_plural: String,
+    proxima_fecha_venc: Option<NaiveDate>,
+    stock_minimo: Option<Decimal>,
+    tipo_alerta: Option<String>,
+}
+
 /// GET /api/v1/stock/alertas — Productos que necesitan atención
 async fn alertas(
     State(state): State<AppState>,
+    Query(params): Query<AlertasParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let bajo_minimo = sqlx::query_as::<_, AlertaBajoMinimo>(
-        r#"SELECT p.id as producto_id, p.nombre as producto, SUM(s.cantidad) as stock_actual,
-                  p.stock_minimo, um.nombre as unidad
-           FROM stock s
-           JOIN lotes l ON l.id = s.lote_id
-           JOIN productos p ON p.id = l.producto_id
-           JOIN unidades_basicas um ON um.id = p.unidad_base_id
-           WHERE s.cantidad > 0 AND p.stock_minimo > 0 AND p.activo = true
-           GROUP BY p.id, p.nombre, p.stock_minimo, um.nombre
-           HAVING SUM(s.cantidad) < p.stock_minimo
-           ORDER BY SUM(s.cantidad) / p.stock_minimo ASC"#,
+    let per_page = params.per_page.clamp(1, 100);
+    let page = params.page.max(1);
+    let offset = (page - 1) * per_page;
+
+    let total: i64 = sqlx::query_scalar(
+        r#"WITH stock_producto AS (
+               SELECT l.producto_id, p.stock_minimo,
+                   SUM(s.cantidad) AS total,
+                   MIN(CASE WHEN l.fecha_vencimiento IS NOT NULL THEN l.fecha_vencimiento END) AS proxima_fecha_venc
+               FROM stock s
+               JOIN lotes l ON l.id = s.lote_id
+               JOIN productos p ON p.id = l.producto_id
+               WHERE s.cantidad > 0 AND p.activo = true
+               GROUP BY l.producto_id, p.stock_minimo
+           )
+           SELECT COUNT(*) FROM stock_producto
+           WHERE (stock_minimo > 0 AND total < stock_minimo)
+              OR proxima_fecha_venc <= CURRENT_DATE + 90"#,
     )
+    .fetch_one(&state.pool)
+    .await?;
+
+    let alertas = sqlx::query_as::<_, AlertaRow>(
+        r#"WITH stock_producto AS (
+               SELECT
+                   l.producto_id,
+                   p.nombre,
+                   p.stock_minimo,
+                   ub.nombre AS unidad,
+                   ub.nombre_plural AS unidad_plural,
+                   SUM(s.cantidad) AS total,
+                   MIN(CASE WHEN l.fecha_vencimiento IS NOT NULL
+                       THEN l.fecha_vencimiento END) AS proxima_fecha_venc
+               FROM stock s
+               JOIN lotes l ON l.id = s.lote_id
+               JOIN productos p ON p.id = l.producto_id
+               JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
+               WHERE s.cantidad > 0 AND p.activo = true
+               GROUP BY l.producto_id, p.nombre, p.stock_minimo, ub.nombre, ub.nombre_plural
+           )
+           SELECT
+               producto_id,
+               nombre,
+               total,
+               unidad,
+               unidad_plural,
+               proxima_fecha_venc,
+               stock_minimo,
+               CASE
+                   WHEN proxima_fecha_venc < CURRENT_DATE THEN 'vencido'
+                   WHEN proxima_fecha_venc <= CURRENT_DATE + 30 THEN 'vence_30d'
+                   WHEN proxima_fecha_venc <= CURRENT_DATE + 90 THEN 'vence_90d'
+                   WHEN stock_minimo > 0 AND total < stock_minimo THEN 'bajo_minimo'
+               END AS tipo_alerta
+           FROM stock_producto
+           WHERE (stock_minimo > 0 AND total < stock_minimo)
+              OR proxima_fecha_venc <= CURRENT_DATE + 90
+           ORDER BY
+               CASE WHEN proxima_fecha_venc < CURRENT_DATE THEN 0
+                    WHEN proxima_fecha_venc <= CURRENT_DATE + 30 THEN 1
+                    WHEN stock_minimo > 0 AND total < stock_minimo THEN 2
+                    ELSE 3 END,
+               proxima_fecha_venc ASC NULLS LAST,
+               nombre ASC
+           LIMIT $1 OFFSET $2"#,
+    )
+    .bind(per_page)
+    .bind(offset)
     .fetch_all(&state.pool)
     .await?;
 
-    let por_vencer_30d = sqlx::query_as::<_, AlertaVencimiento>(
-        r#"SELECT p.id as producto_id, p.nombre as producto, l.numero_lote,
-                  l.fecha_vencimiento, s.cantidad as stock, a.nombre as area
-           FROM stock s
-           JOIN lotes l ON l.id = s.lote_id
-           JOIN productos p ON p.id = l.producto_id
-           JOIN areas a ON a.id = s.area_id
-           WHERE s.cantidad > 0
-             AND l.fecha_vencimiento <= CURRENT_DATE + INTERVAL '30 days'
-             AND l.fecha_vencimiento > CURRENT_DATE
-           ORDER BY l.fecha_vencimiento ASC"#,
-    )
-    .fetch_all(&state.pool)
-    .await?;
-
-    let por_vencer_90d = sqlx::query_as::<_, AlertaVencimiento>(
-        r#"SELECT p.id as producto_id, p.nombre as producto, l.numero_lote,
-                  l.fecha_vencimiento, s.cantidad as stock, a.nombre as area
-           FROM stock s
-           JOIN lotes l ON l.id = s.lote_id
-           JOIN productos p ON p.id = l.producto_id
-           JOIN areas a ON a.id = s.area_id
-           WHERE s.cantidad > 0
-             AND l.fecha_vencimiento > CURRENT_DATE + INTERVAL '30 days'
-             AND l.fecha_vencimiento <= CURRENT_DATE + INTERVAL '90 days'
-           ORDER BY l.fecha_vencimiento ASC"#,
-    )
-    .fetch_all(&state.pool)
-    .await?;
-
-    let vencidos = sqlx::query_as::<_, AlertaVencimiento>(
-        r#"SELECT p.id as producto_id, p.nombre as producto, l.numero_lote,
-                  l.fecha_vencimiento, s.cantidad as stock, a.nombre as area
-           FROM stock s
-           JOIN lotes l ON l.id = s.lote_id
-           JOIN productos p ON p.id = l.producto_id
-           JOIN areas a ON a.id = s.area_id
-           WHERE s.cantidad > 0 AND l.fecha_vencimiento <= CURRENT_DATE
-           ORDER BY l.fecha_vencimiento ASC"#,
-    )
-    .fetch_all(&state.pool)
-    .await?;
+    let total_pages = (total + per_page - 1) / per_page;
 
     Ok(Json(serde_json::json!({
-        "bajo_minimo": bajo_minimo,
-        "por_vencer_30d": por_vencer_30d,
-        "por_vencer_90d": por_vencer_90d,
-        "vencidos": vencidos,
+        "data": alertas,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
     })))
 }
 

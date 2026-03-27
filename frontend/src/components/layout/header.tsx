@@ -1,14 +1,12 @@
 import { LogOut } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/hooks/use-auth-store'
-import { useAreaStore } from '@/hooks/use-area-store'
 import { useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
 import type { Area } from '@/types'
 
 export function Header() {
   const { usuario, logout } = useAuthStore()
-  const { selectedAreaId, setSelectedArea } = useAreaStore()
   const navigate = useNavigate()
 
   const { data: areas } = useQuery({
@@ -26,18 +24,6 @@ export function Header() {
   return (
     <header className="glass-header sticky top-0 z-20 flex h-[60px] items-center justify-between border-b border-base-200 bg-base-100/80 px-6">
       <div className="flex items-center gap-3">
-        {userAreas.length > 1 && (
-          <select
-            className="select select-sm select-ghost font-medium w-auto"
-            value={selectedAreaId ?? ''}
-            onChange={(e) => setSelectedArea(e.target.value ? Number(e.target.value) : null)}
-          >
-            <option value="">Todas las áreas</option>
-            {userAreas.map((a) => (
-              <option key={a.id} value={a.id}>{a.nombre}</option>
-            ))}
-          </select>
-        )}
         {userAreas.length === 1 && (
           <span className="text-sm font-medium opacity-50">{userAreas[0].nombre}</span>
         )}

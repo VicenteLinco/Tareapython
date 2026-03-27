@@ -3,6 +3,7 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 use uuid::Uuid;
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct Recepcion {
     pub id: Uuid,
@@ -17,6 +18,7 @@ pub struct Recepcion {
     pub created_at: DateTime<Utc>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct RecepcionDetalle {
     pub id: i32,

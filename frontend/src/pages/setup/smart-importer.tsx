@@ -1,0 +1,344 @@
+import { useState, useRef } from 'react'
+import { 
+  FileUp, ArrowRight, CheckCircle2, 
+  AlertCircle, Table as TableIcon, 
+  ChevronLeft, ChevronRight, X,
+  Database, Info
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import api from '@/lib/api'
+
+interface SmartImporterProps {
+  onComplete: () => void
+  onCancel: () => void
+}
+
+type Step = 'UPLOAD' | 'MAP' | 'PREVIEW'
+
+export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
+  const [step, setStep] = useState<Step>('UPLOAD')
+  const [file, setFile] = useState<File | null>(null)
+  const [headers, setHeaders] = useState<string[]>([])
+  const [mapping, setMapping] = useState<Record<string, string>>({
+    nombre: '',
+    descripcion: '',
+    unidad: '',
+    stock_minimo: ''
+  })
+  const [previewData, setPreviewData] = useState<any[]>([])
+  const [errors, setErrors] = useState<any[]>([])
+  const [isValidating, setIsValidating] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+
+  // Campos que requiere el sistema
+  const systemFields = [
+    { key: 'nombre', label: 'Nombre del Producto', required: true, desc: 'Identificador principal' },
+    { key: 'unidad', label: 'Unidad de Medida', required: true, desc: 'Debe coincidir con las creadas' },
+    { key: 'descripcion', label: 'Descripción', required: false, desc: 'Detalles adicionales' },
+    { key: 'stock_minimo', label: 'Stock Mínimo', required: false, desc: 'Valor numérico' },
+  ]
+
+  // --- Lógica de Procesamiento ---
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0]
+    if (!selectedFile) return
+    
+    if (!selectedFile.name.endsWith('.csv')) {
+      toast.error('Por favor, sube un archivo CSV válido')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const text = event.target?.result as string
+      const firstLine = text.split('\n')[0]
+      const cols = firstLine.split(',').map(c => c.trim().replace(/^"|"$/g, ''))
+      setHeaders(cols)
+      setFile(selectedFile)
+      
+      // Auto-mapeo inteligente por nombre
+      const newMap = { ...mapping }
+      cols.forEach(col => {
+        const lower = col.toLowerCase()
+        if (lower.includes('nom') || lower.includes('prd')) newMap.nombre = col
+        if (lower.includes('uni') || lower.includes('med')) newMap.unidad = col
+        if (lower.includes('desc')) newMap.descripcion = col
+        if (lower.includes('min') || lower.includes('stock')) newMap.stock_minimo = col
+      })
+      setMapping(newMap)
+      setStep('MAP')
+    }
+    reader.readAsText(selectedFile)
+  }
+
+  const validateMapping = async () => {
+    if (!mapping.nombre || !mapping.unidad) {
+      toast.error('Debes mapear al menos el Nombre y la Unidad')
+      return
+    }
+
+    setIsValidating(true)
+    const formData = new FormData()
+    formData.append('file', file!)
+    formData.append('config', JSON.stringify({
+      mapping,
+      dry_run: true
+    }))
+
+    try {
+      const res = await api.post('/setup/importar-productos', formData)
+      setPreviewData(res.data.preview || [])
+      setErrors(res.data.errores || [])
+      setStep('PREVIEW')
+    } catch (err) {
+      toast.error('Error al validar el archivo')
+    } finally {
+      setIsValidating(false)
+    }
+  }
+
+  const runImport = async () => {
+    setIsImporting(true)
+    const formData = new FormData()
+    formData.append('file', file!)
+    formData.append('config', JSON.stringify({
+      mapping,
+      dry_run: false
+    }))
+
+    try {
+      const res = await api.post('/setup/importar-productos', formData)
+      if (res.data.valido) {
+        toast.success('Importación completada con éxito')
+        onComplete()
+      } else {
+        toast.error('Hubo errores durante la importación real')
+        setErrors(res.data.errores)
+      }
+    } catch (err) {
+      toast.error('Error crítico en el servidor')
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
+  // --- Renderizado ---
+
+  return (
+    <div className="fixed inset-0 bg-base-100 z-[60] flex flex-col animate-in fade-in duration-300">
+      
+      {/* Header Wizard */}
+      <header className="px-8 py-6 border-b border-base-200 flex items-center justify-between bg-base-100/80 backdrop-blur-md sticky top-0 z-10">
+        <div className="flex items-center gap-4">
+          <div className="p-2 bg-primary/10 rounded-2xl">
+            <Database className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-xl font-black tracking-tight">Importador Inteligente</h1>
+            <p className="text-xs opacity-50 font-bold uppercase tracking-widest">Carga de Productos v2.0</p>
+          </div>
+        </div>
+        <button onClick={onCancel} className="btn btn-circle btn-ghost btn-sm">
+          <X className="h-6 w-6" />
+        </button>
+      </header>
+
+      {/* Progress Stepper */}
+      <div className="bg-base-200/50 px-8 py-4 flex justify-center border-b border-base-200">
+        <div className="flex items-center gap-8 max-w-2xl w-full">
+          {[
+            { id: 'UPLOAD', label: 'Cargar Archivo' },
+            { id: 'MAP', label: 'Mapear Columnas' },
+            { id: 'PREVIEW', label: 'Previsualizar' }
+          ].map((s, i) => (
+            <div key={s.id} className="flex items-center gap-3">
+              <div className={cn(
+                "w-8 h-8 rounded-full flex items-center justify-center font-black text-xs transition-all",
+                step === s.id ? "bg-primary text-primary-content scale-110 shadow-lg shadow-primary/20" : 
+                (i < ['UPLOAD', 'MAP', 'PREVIEW'].indexOf(step) ? "bg-success text-success-content" : "bg-base-300 opacity-50")
+              )}>
+                {i < ['UPLOAD', 'MAP', 'PREVIEW'].indexOf(step) ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
+              </div>
+              <span className={cn("text-xs font-bold uppercase tracking-widest", step === s.id ? "opacity-100" : "opacity-30")}>
+                {s.label}
+              </span>
+              {i < 2 && <ArrowRight className="h-4 w-4 opacity-10" />}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <main className="flex-1 overflow-y-auto p-8 flex justify-center">
+        <div className="max-w-4xl w-full">
+          
+          {/* STEP 1: UPLOAD */}
+          {step === 'UPLOAD' && (
+            <div className="h-[60vh] flex flex-col items-center justify-center border-2 border-dashed border-base-300 rounded-[3rem] bg-base-200/30 hover:bg-base-200/50 transition-all group relative">
+              <input 
+                type="file" 
+                accept=".csv" 
+                onChange={handleFileChange}
+                className="absolute inset-0 opacity-0 cursor-pointer"
+              />
+              <div className="p-8 bg-primary/10 rounded-full mb-6 group-hover:scale-110 transition-transform">
+                <FileUp className="h-16 w-16 text-primary" />
+              </div>
+              <h3 className="text-2xl font-black mb-2">Suelte su archivo aquí</h3>
+              <p className="text-sm opacity-40 font-medium mb-8">O haga clic para buscar en su ordenador (CSV)</p>
+              <div className="flex gap-4">
+                <div className="badge badge-outline h-8 px-4 opacity-40 font-bold">Máximo 5MB</div>
+                <div className="badge badge-outline h-8 px-4 opacity-40 font-bold">Codificación UTF-8</div>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 2: MAPPING */}
+          {step === 'MAP' && (
+            <div className="space-y-8 animate-in slide-in-from-bottom duration-500">
+              <div className="flex items-center gap-3 p-4 bg-info/10 text-info rounded-3xl border border-info/20 mb-8">
+                <Info className="h-5 w-5 flex-shrink-0" />
+                <p className="text-sm font-medium">Relaciona las columnas de tu archivo con los campos que requiere el sistema.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {systemFields.map(field => (
+                  <div key={field.key} className="p-6 bg-base-200/50 rounded-3xl border border-base-200 flex flex-col gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-black text-sm uppercase tracking-tight">{field.label}</span>
+                        {field.required && <span className="badge badge-error badge-xs">Obligatorio</span>}
+                      </div>
+                      <p className="text-[10px] opacity-40 font-bold uppercase tracking-widest">{field.desc}</p>
+                    </div>
+                    
+                    <select 
+                      className={cn(
+                        "select select-bordered w-full rounded-2xl bg-base-100 font-bold",
+                        !mapping[field.key] && field.required ? "select-error" : ""
+                      )}
+                      value={mapping[field.key]}
+                      onChange={(e) => setMapping({ ...mapping, [field.key]: e.target.value })}
+                    >
+                      <option value="">-- Ignorar este campo --</option>
+                      {headers.map(h => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-between items-center mt-12 pt-8 border-t border-base-200">
+                <button onClick={() => setStep('UPLOAD')} className="btn btn-ghost rounded-2xl px-8 gap-2">
+                  <ChevronLeft className="h-5 w-5" /> Cambiar Archivo
+                </button>
+                <button 
+                  onClick={validateMapping} 
+                  disabled={!mapping.nombre || !mapping.unidad || isValidating}
+                  className="btn btn-primary rounded-2xl px-12 gap-2 h-14 shadow-lg shadow-primary/20"
+                >
+                  {isValidating ? <span className="loading loading-spinner" /> : <><TableIcon className="h-5 w-5" /> Validar Datos</>}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: PREVIEW & ERRORS */}
+          {step === 'PREVIEW' && (
+            <div className="space-y-8 animate-in slide-in-from-bottom duration-500 pb-20">
+              
+              {/* Resumen de Salud */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-6 bg-base-200 rounded-[2rem] border border-base-300">
+                  <span className="text-[10px] font-black opacity-40 uppercase tracking-widest">Filas Totales</span>
+                  <div className="text-3xl font-black">{previewData.length + errors.length}</div>
+                </div>
+                <div className={cn(
+                  "p-6 rounded-[2rem] border",
+                  errors.length > 0 ? "bg-error/10 border-error/20" : "bg-success/10 border-success/20"
+                )}>
+                  <span className="text-[10px] font-black opacity-40 uppercase tracking-widest">Errores Detectados</span>
+                  <div className={cn("text-3xl font-black", errors.length > 0 ? "text-error" : "text-success")}>
+                    {errors.length}
+                  </div>
+                </div>
+                <div className="p-6 bg-primary/10 rounded-[2rem] border border-primary/20">
+                  <span className="text-[10px] font-black opacity-40 uppercase tracking-widest">Estado</span>
+                  <div className="text-xl font-black text-primary mt-1">
+                    {errors.length > 0 ? 'Requiere Corrección' : 'Listo para Importar'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Lista de Errores (Si los hay) */}
+              {errors.length > 0 && (
+                <div className="p-6 bg-error/5 border border-error/20 rounded-[2.5rem] space-y-4">
+                  <div className="flex items-center gap-2 text-error mb-2">
+                    <AlertCircle className="h-5 w-5" />
+                    <h4 className="font-black uppercase tracking-tight">Detalle de Errores</h4>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
+                    {errors.map((err, i) => (
+                      <div key={i} className="flex gap-4 text-xs font-bold p-3 bg-base-100 rounded-xl">
+                        <span className="text-error w-16">Fila {err.fila}</span>
+                        <span className="opacity-60">{err.mensaje}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] opacity-40 font-bold text-center mt-4">Corrige los errores en tu archivo CSV y vuelve al paso de carga.</p>
+                </div>
+              )}
+
+              {/* Vista Previa de Datos */}
+              <div className="rounded-[2.5rem] border border-base-200 overflow-hidden bg-base-100 shadow-sm">
+                <div className="px-8 py-4 bg-base-200/50 border-b border-base-200">
+                  <h4 className="font-black text-sm uppercase tracking-tight">Vista Previa (Primeras 50 filas)</h4>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="table table-zebra">
+                    <thead>
+                      <tr className="text-[10px] uppercase tracking-widest opacity-40">
+                        <th className="pl-8">Fila</th>
+                        <th>Nombre</th>
+                        <th>Unidad</th>
+                        <th>Stock Mín.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewData.map((row, i) => (
+                        <tr key={i}>
+                          <td className="pl-8 font-mono text-[10px] opacity-30">{row.fila}</td>
+                          <td className="font-bold text-sm">{row.nombre}</td>
+                          <td><span className="badge badge-ghost font-bold text-[10px] uppercase tracking-tighter">{row.unidad}</span></td>
+                          <td className="font-mono text-sm">{row.stock_minimo}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Footer Acciones */}
+              <div className="flex justify-between items-center mt-12">
+                <button onClick={() => setStep('MAP')} className="btn btn-ghost rounded-2xl px-8">
+                  <ChevronLeft className="h-5 w-5" /> Volver al Mapeo
+                </button>
+                <button 
+                  onClick={runImport} 
+                  disabled={errors.length > 0 || isImporting}
+                  className="btn btn-primary rounded-2xl px-12 gap-2 h-16 shadow-xl shadow-primary/30"
+                >
+                  {isImporting ? <span className="loading loading-spinner" /> : <><CheckCircle2 className="h-6 w-6" /> Confirmar e Importar Ahora</>}
+                </button>
+              </div>
+
+            </div>
+          )}
+
+        </div>
+      </main>
+    </div>
+  )
+}

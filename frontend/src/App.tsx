@@ -11,13 +11,15 @@ import RecepcionesPage from '@/pages/recepciones'
 import NuevaRecepcionPage from '@/pages/recepciones/nueva'
 import RecepcionDetallePage from '@/pages/recepciones/detalle'
 import MovimientosPage from '@/pages/movimientos'
-import CatalogosPage from '@/pages/catalogos'
+import CreadorProductosPage from '@/pages/creador-productos'
 import ConfiguracionPage from '@/pages/configuracion'
 import PlaceholderPage from '@/pages/placeholder'
 import SetupPage from '@/pages/setup'
 import UsuariosPage from '@/pages/usuarios'
 import ConteoPage from '@/pages/conteo/index'
 import ConteoDetallePage from '@/pages/conteo/detalle'
+import KioskPage from '@/pages/kiosk'
+import ModoQrPage from '@/pages/modo-qr'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -46,12 +48,15 @@ export default function App() {
             <Route path="/conteo/:id" element={<ConteoDetallePage />} />
             <Route path="/movimientos" element={<MovimientosPage />} />
 <Route path="/descartes" element={<PlaceholderPage title="Descartes" />} />
-            <Route path="/catalogos" element={<CatalogosPage />} />
+            <Route path="/creador-productos" element={<CreadorProductosPage />} />
             <Route path="/configuracion" element={<ConfiguracionPage />} />
             <Route path="/usuarios" element={<UsuariosPage />} />
             <Route path="/audit-log" element={<PlaceholderPage title="Audit Log" />} />
             <Route path="/setup" element={<SetupPage />} />
           </Route>
+          {/* Standalone routes (no sidebar/header) */}
+          <Route path="/kiosk" element={<KioskPage />} />
+          <Route path="/qr" element={<ModoQrPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

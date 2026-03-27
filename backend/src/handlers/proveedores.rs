@@ -98,13 +98,6 @@ async fn actualizar(
         .await?
         .ok_or(AppError::NotFound("Proveedor no encontrado".into()))?;
 
-    // Optimistic locking
-    if req.version != anterior.version {
-        return Err(AppError::Conflict(
-            "El registro fue modificado por otro usuario".into(),
-        ));
-    }
-
     let nombre = req
         .nombre
         .as_deref()
@@ -119,7 +112,7 @@ async fn actualizar(
            SET nombre = $1, contacto = $2, telefono = $3, email = $4,
                icono = $5, dias_despacho_aereo = $6, dias_despacho_tierra = $7,
                version = version + 1
-           WHERE id = $8
+           WHERE id = $8 AND version = $9
            RETURNING *"#,
     )
     .bind(nombre)
@@ -130,8 +123,12 @@ async fn actualizar(
     .bind(req.dias_despacho_aereo.or(anterior.dias_despacho_aereo))
     .bind(req.dias_despacho_tierra.or(anterior.dias_despacho_tierra))
     .bind(id)
-    .fetch_one(&state.pool)
-    .await?;
+    .bind(req.version)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::Conflict(
+        "El registro fue modificado por otro usuario. Recarga e intenta de nuevo.".into(),
+    ))?;
 
     sqlx::query(
         "INSERT INTO audit_log (tabla, registro_id, accion, datos_anteriores, datos_nuevos, usuario_id) VALUES ('proveedores', $1, 'UPDATE', $2, $3, $4)",
@@ -175,8 +172,35 @@ async fn eliminar(
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
+async fn reactivar(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<i32>,
+) -> Result<Json<Proveedor>, AppError> {
+    crate::auth::middleware::require_role(&["admin"])(&claims)?;
+
+    let proveedor = sqlx::query_as::<_, Proveedor>(
+        "UPDATE proveedores SET activo = true WHERE id = $1 RETURNING *",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::NotFound("Proveedor no encontrado".into()))?;
+
+    sqlx::query(
+        "INSERT INTO audit_log (tabla, registro_id, accion, usuario_id) VALUES ('proveedores', $1, 'UPDATE', $2)",
+    )
+    .bind(id.to_string())
+    .bind(claims.sub)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(Json(proveedor))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
         .route("/{id}", put(actualizar).delete(eliminar))
+        .route("/{id}/reactivar", axum::routing::post(reactivar))
 }

@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
 import { DataTable } from '@/components/ui/data-table'
 import { Pagination } from '@/components/ui/pagination'
 import api from '@/lib/api'
-import type { PaginatedResponse, Movimiento } from '@/types'
+import type { PaginatedResponse, Movimiento, Area } from '@/types'
 import { formatDateTime } from '@/lib/utils'
+import { useAreaStore } from '@/hooks/use-area-store'
 
 const tipoConfig: Record<string, { label: string; variant: 'success' | 'destructive' | 'info' | 'warning' | 'secondary' }> = {
   entrada: { label: 'Entrada', variant: 'success' },
@@ -13,20 +14,34 @@ const tipoConfig: Record<string, { label: string; variant: 'success' | 'destruct
   transferencia_entrada: { label: 'Transf. In', variant: 'info' },
   transferencia_salida: { label: 'Transf. Out', variant: 'warning' },
   descarte: { label: 'Descarte', variant: 'destructive' },
-  ajuste: { label: 'Ajuste', variant: 'secondary' },
+  ajuste_pos: { label: 'Ajuste (+)', variant: 'success' },
+  ajuste_neg: { label: 'Ajuste (-)', variant: 'destructive' },
 }
 
 export default function MovimientosPage() {
+  const selectedAreaId = useAreaStore((s) => s.selectedAreaId)
+  const setSelectedArea = useAreaStore((s) => s.setSelectedArea)
   const [tipo, setTipo] = useState('')
   const [desde, setDesde] = useState('')
   const [hasta, setHasta] = useState('')
+  const [areaId, setAreaId] = useState(selectedAreaId ? String(selectedAreaId) : '')
   const [page, setPage] = useState(1)
 
+  useEffect(() => {
+    setAreaId(selectedAreaId ? String(selectedAreaId) : '')
+    setPage(1)
+  }, [selectedAreaId])
+
+  const { data: areas } = useQuery({
+    queryKey: ['areas'],
+    queryFn: () => api.get<Area[]>('/areas').then((r) => r.data),
+  })
+
   const { data, isLoading } = useQuery({
-    queryKey: ['movimientos', { tipo, desde, hasta, page }],
+    queryKey: ['movimientos', { tipo, desde, hasta, areaId, page }],
     queryFn: () =>
       api.get<PaginatedResponse<Movimiento>>('/movimientos', {
-        params: { tipo: tipo || undefined, desde: desde || undefined, hasta: hasta || undefined, page, per_page: 30 },
+        params: { tipo: tipo || undefined, desde: desde || undefined, hasta: hasta || undefined, area_id: areaId || undefined, page, per_page: 30 },
       }).then((r) => r.data),
   })
 
@@ -53,11 +68,14 @@ export default function MovimientosPage() {
     {
       key: 'cantidad', header: 'Cantidad',
       render: (item: Movimiento) => {
-        const neg = ['salida', 'transferencia_salida', 'descarte'].includes(item.tipo)
+        const neg = ['salida', 'transferencia_salida', 'descarte', 'ajuste_neg'].includes(item.tipo)
+        const cantidadEntera = Math.round(item.cantidad)
         return (
           <span className={`font-mono font-semibold text-sm ${neg ? 'text-error' : 'text-success'}`}>
-            {neg ? '-' : '+'}{item.cantidad}
-            <span className="text-[10px] opacity-40 ml-0.5">{item.unidad_base_nombre}</span>
+            {neg ? '-' : '+'}{cantidadEntera}
+            <span className="text-[10px] opacity-40 ml-0.5">
+              {cantidadEntera === 1 ? item.unidad_base_nombre : item.unidad_base_nombre_plural}
+            </span>
           </span>
         )
       },
@@ -80,6 +98,21 @@ export default function MovimientosPage() {
       </div>
 
       <div className="flex flex-wrap gap-2.5">
+        <select
+          className="select select-bordered select-sm h-9 w-40"
+          value={areaId}
+          onChange={(e) => {
+            const val = e.target.value;
+            setAreaId(val);
+            setSelectedArea(val ? Number(val) : null);
+            setPage(1);
+          }}
+        >
+          <option value="">Todas las áreas</option>
+          {(areas ?? []).map((a) => (
+            <option key={a.id} value={a.id}>{a.nombre}</option>
+          ))}
+        </select>
         <select className="select select-bordered select-sm h-9 w-40" value={tipo}
           onChange={(e) => { setTipo(e.target.value); setPage(1) }}>
           <option value="">Todos los tipos</option>

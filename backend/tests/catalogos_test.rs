@@ -42,12 +42,12 @@ async fn crear_categoria_duplicada_retorna_409(pool: PgPool) {
     let token = common::admin_access_token(&pool).await;
     let app = common::test_app(pool);
 
-    // "Reactivos Hematología" ya existe en seed
+    // "Reactivo" ya existe en seed
     let (status, _) = common::post_json(
         &app,
         "/api/v1/categorias",
         &token,
-        serde_json::json!({ "nombre": "Reactivos Hematología" }),
+        serde_json::json!({ "nombre": "Reactivo" }),
     )
     .await;
 
@@ -91,7 +91,7 @@ async fn listar_unidades(pool: PgPool) {
     let token = common::admin_access_token(&pool).await;
     let app = common::test_app(pool);
 
-    let (status, json) = common::get_json(&app, "/api/v1/unidades-medida", &token).await;
+    let (status, json) = common::get_json(&app, "/api/v1/unidades-basicas", &token).await;
 
     assert_eq!(status, StatusCode::OK);
     assert!(json.as_array().unwrap().len() >= 6); // 6 del seed
@@ -104,23 +104,23 @@ async fn crear_unidad(pool: PgPool) {
 
     let (status, json) = common::post_json(
         &app,
-        "/api/v1/unidades-medida",
+        "/api/v1/unidades-basicas",
         &token,
-        serde_json::json!({ "nombre": "microlitro", "abreviatura": "µl" }),
+        serde_json::json!({ "nombre": "microlitro", "nombre_plural": "microlitros" }),
     )
     .await;
 
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(json["abreviatura"], "µl");
+    assert_eq!(json["nombre"], "microlitro");
 }
 
 #[sqlx::test(migrations = "./migrations")]
 async fn eliminar_unidad_con_productos_falla(pool: PgPool) {
     let token = common::admin_access_token(&pool).await;
 
-    // Crear un producto que use la unidad "u" (id=1)
+    // Crear un producto que use la unidad "unidad" (id=1)
     let unidad_id: i32 =
-        sqlx::query_scalar("SELECT id FROM unidades_medida WHERE abreviatura = 'u'")
+        sqlx::query_scalar("SELECT id FROM unidades_basicas WHERE nombre = 'unidad'")
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -134,7 +134,7 @@ async fn eliminar_unidad_con_productos_falla(pool: PgPool) {
     let app = common::test_app(pool);
     let (status, _) = common::delete_req(
         &app,
-        &format!("/api/v1/unidades-medida/{}", unidad_id),
+        &format!("/api/v1/unidades-basicas/{}", unidad_id),
         &token,
     )
     .await;

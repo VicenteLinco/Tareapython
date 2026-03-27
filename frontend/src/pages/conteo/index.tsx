@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Plus, ClipboardCheck, ChevronRight, CheckCircle2, Clock, XCircle, AlertCircle } from 'lucide-react'
+import { Plus, ClipboardCheck, ChevronRight, CheckCircle2, Clock, XCircle, AlertCircle, CalendarClock, MapPin } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 import type { PaginatedSesiones, SesionConteo, Area } from '@/types'
 import { formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import { useAreaStore } from '@/hooks/use-area-store'
 
 const ESTADO_CONFIG = {
   borrador:     { label: 'Borrador',     icon: AlertCircle,   className: 'badge-warning' },
@@ -15,20 +16,37 @@ const ESTADO_CONFIG = {
   cancelado:    { label: 'Cancelado',    icon: XCircle,       className: 'badge-ghost' },
 } as const
 
+interface AreaPendiente {
+  area_id: number
+  area_nombre: string
+  frecuencia_dias: number
+  ultimo_conteo_confirmado: string | null
+  dias_desde_ultimo: number | null
+}
+
 export default function ConteoPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const selectedAreaId = useAreaStore((s) => s.selectedAreaId)
+  const setSelectedAreaId = useAreaStore((s) => s.setSelectedArea)
   const [showModal, setShowModal] = useState(false)
-  const [areaId, setAreaId] = useState('')
+  const [areaIdModal, setAreaIdModal] = useState('')
   const [filterEstado, setFilterEstado] = useState('')
+  const [areaId, setAreaId] = useState<number | null>(selectedAreaId)
   const [page, setPage] = useState(1)
 
+  useEffect(() => {
+    setAreaId(selectedAreaId)
+    setPage(1)
+  }, [selectedAreaId])
+
   const { data, isLoading } = useQuery({
-    queryKey: ['conteo', { filterEstado, page }],
+    queryKey: ['conteo', { filterEstado, page, areaId }],
     queryFn: () =>
       api.get<PaginatedSesiones>('/conteo', {
         params: {
           estado: filterEstado || undefined,
+          area_id: areaId || undefined,
           page,
           per_page: 20,
         },
@@ -40,21 +58,32 @@ export default function ConteoPage() {
     queryFn: () => api.get<Area[]>('/areas').then((r) => r.data),
   })
 
+  const { data: pendientes } = useQuery({
+    queryKey: ['conteo-pendientes'],
+    queryFn: () => api.get<AreaPendiente[]>('/conteo/pendientes').then((r) => r.data),
+    staleTime: 60000,
+  })
+
   const crearMutation = useMutation({
     mutationFn: (area_id: number) =>
       api.post<{ id: string; total_items: number }>('/conteo', { area_id }).then((r) => r.data),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['conteo'] })
+      queryClient.invalidateQueries({ queryKey: ['conteo-pendientes'] })
       setShowModal(false)
-      setAreaId('')
+      setAreaIdModal('')
+      if (data.total_items === 0) {
+        toast.warning('Esta área no tiene insumos en stock. El conteo se creó vacío.')
+      }
       navigate(`/conteo/${data.id}`)
     },
     onError: () => toast.error('Error al crear sesión de conteo'),
   })
 
-  const handleCrear = () => {
-    if (!areaId) return
-    crearMutation.mutate(Number(areaId))
+  const handleCrear = (overrideAreaId?: number) => {
+    const id = overrideAreaId ?? (areaIdModal ? Number(areaIdModal) : null)
+    if (!id) return
+    crearMutation.mutate(id)
   }
 
   return (
@@ -68,20 +97,74 @@ export default function ConteoPage() {
         </div>
       </div>
 
-      {/* Filtro estado */}
-      <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-        {(['', 'borrador', 'en_progreso', 'confirmado', 'cancelado'] as const).map((e) => (
-          <button
-            key={e}
-            onClick={() => { setFilterEstado(e); setPage(1) }}
-            className={cn(
-              'btn btn-sm whitespace-nowrap',
-              filterEstado === e ? 'btn-primary' : 'btn-ghost'
-            )}
-          >
-            {e === '' ? 'Todas' : ESTADO_CONFIG[e].label}
-          </button>
-        ))}
+      {/* Áreas pendientes */}
+      {pendientes && pendientes.length > 0 && (
+        <div className="mb-5 bg-warning/10 border border-warning/30 rounded-xl p-3">
+          <div className="flex items-center gap-2 mb-2.5">
+            <CalendarClock className="h-4 w-4 text-warning" />
+            <span className="text-sm font-semibold text-warning">
+              {pendientes.length} área{pendientes.length !== 1 ? 's' : ''} pendiente{pendientes.length !== 1 ? 's' : ''} de contar
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {pendientes.map((p) => (
+              <div
+                key={p.area_id}
+                className="flex items-center justify-between bg-base-100 rounded-lg px-3 py-2"
+              >
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-3.5 w-3.5 opacity-40" />
+                  <span className="text-sm font-medium">{p.area_nombre}</span>
+                  <span className="text-xs opacity-40">
+                    {p.dias_desde_ultimo !== null
+                      ? `hace ${Math.round(p.dias_desde_ultimo)} días`
+                      : 'nunca contada'}
+                  </span>
+                </div>
+                <button
+                  className="btn btn-xs btn-warning"
+                  disabled={crearMutation.isPending}
+                  onClick={() => handleCrear(p.area_id)}
+                >
+                  Contar
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Filtros */}
+      <div className="flex flex-col gap-2 mb-4">
+        <select
+          className="select select-bordered select-sm w-48"
+          value={areaId ?? ''}
+          onChange={(e) => {
+            const val = e.target.value;
+            setAreaId(val ? Number(val) : null);
+            setSelectedAreaId(val ? Number(val) : null);
+            setPage(1);
+          }}
+        >
+          <option value="">Todas las áreas</option>
+          {(areas ?? []).filter((a) => a.activa).map((a) => (
+            <option key={a.id} value={a.id}>{a.nombre}</option>
+          ))}
+        </select>
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {(['', 'borrador', 'en_progreso', 'confirmado', 'cancelado'] as const).map((e) => (
+            <button
+              key={e}
+              onClick={() => { setFilterEstado(e); setPage(1) }}
+              className={cn(
+                'btn btn-sm whitespace-nowrap',
+                filterEstado === e ? 'btn-primary' : 'btn-ghost'
+              )}
+            >
+              {e === '' ? 'Todos los estados' : ESTADO_CONFIG[e].label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Lista */}
@@ -150,8 +233,8 @@ export default function ConteoPage() {
               </label>
               <select
                 className="select select-bordered w-full"
-                value={areaId}
-                onChange={(e) => setAreaId(e.target.value)}
+                value={areaIdModal}
+                onChange={(e) => setAreaIdModal(e.target.value)}
               >
                 <option value="">Seleccionar área...</option>
                 {(areas ?? []).filter((a) => a.activa).map((a) => (
@@ -162,14 +245,14 @@ export default function ConteoPage() {
             <div className="modal-action">
               <button
                 className="btn btn-ghost"
-                onClick={() => { setShowModal(false); setAreaId('') }}
+                onClick={() => { setShowModal(false); setAreaIdModal('') }}
               >
                 Cancelar
               </button>
               <button
                 className="btn btn-primary"
-                disabled={!areaId || crearMutation.isPending}
-                onClick={handleCrear}
+                disabled={!areaIdModal || crearMutation.isPending}
+                onClick={() => handleCrear()}
               >
                 {crearMutation.isPending
                   ? <span className="loading loading-spinner loading-sm" />

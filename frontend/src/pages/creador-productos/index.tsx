@@ -10,7 +10,7 @@ import PresentacionesFormatosTab from './presentaciones-formatos-tab'
 
 type ModalId = 'categorias' | 'unidades' | 'areas' | 'proveedores' | 'presentaciones' | null
 
-export default function CatalogosPage() {
+export default function CreadorProductosPage() {
   const [modal, setModal] = useState<ModalId>(null)
 
   const cards = [

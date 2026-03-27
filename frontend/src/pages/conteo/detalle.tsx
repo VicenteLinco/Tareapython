@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, PackageOpen } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 import { useAuthStore } from '@/hooks/use-auth-store'
@@ -217,6 +217,16 @@ export default function ConteoDetallePage() {
 
       {/* Lista de ítems */}
       <div className="flex-1 px-3 py-3 space-y-2 pb-32">
+        {grupos.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 text-center opacity-50">
+            <PackageOpen className="h-14 w-14 mb-4" />
+            <p className="font-semibold text-base">Área sin insumos en stock</p>
+            <p className="text-sm mt-1 max-w-xs">
+              No hay lotes con cantidad mayor a cero registrados en esta área.
+              {editable && isAdmin && ' Puedes confirmar el conteo como área vacía.'}
+            </p>
+          </div>
+        )}
         {grupos.map(([productoId, grupo]) => (
           <div key={productoId} className="bg-base-100 rounded-xl overflow-hidden border border-base-200">
             {/* Header de producto */}

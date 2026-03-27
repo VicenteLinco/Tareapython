@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Search, MapPin, Package, AlertTriangle, Clock, FileDown } from 'lucide-react'
+import { Search, MapPin, Package, AlertTriangle, Clock, FileDown, LayoutGrid, ListFilter, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import { DataTable } from '@/components/ui/data-table'
 import { Badge } from '@/components/ui/badge'
@@ -11,7 +11,7 @@ import { useAreaStore } from '@/hooks/use-area-store'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import api from '@/lib/api'
 import type { PaginatedResponse, StockItem, Categoria, Area, Proveedor } from '@/types'
-import { daysUntil, formatDate, autoPlural } from '@/lib/utils'
+import { daysUntil, formatDate, autoPlural, cn } from '@/lib/utils'
 import { exportarStockPDF } from '@/lib/stock-pdf'
 import { StockDetail } from './stock-detail'
 
@@ -27,8 +27,15 @@ interface StockResponse extends PaginatedResponse<StockItem> {
 
 export default function StockPage() {
   const globalAreaId = useAreaStore((s) => s.selectedAreaId)
+  const setSelectedArea = useAreaStore((s) => s.setSelectedArea)
   const usuario = useAuthStore((s) => s.usuario)
   const [areaId, setAreaId] = useState(globalAreaId ? String(globalAreaId) : '')
+
+  // Sync with global area filter
+  useEffect(() => {
+    setAreaId(globalAreaId ? String(globalAreaId) : '')
+    setPage(1)
+  }, [globalAreaId])
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [categoriaId, setCategoriaId] = useState('')
@@ -78,7 +85,6 @@ export default function StockPage() {
     queryFn: () => api.get<Proveedor[]>('/proveedores').then((r) => r.data),
   })
 
-  // Filtro de estado en cliente (los estados son calculados, el backend solo distingue stock_bajo)
   const rows = (data?.data ?? []).filter((item) => {
     if (!estadoFiltro) return true
     const stock = item.stock_total ?? 0
@@ -111,9 +117,9 @@ export default function StockPage() {
       ),
       render: (item: StockItem) => (
         <div className="flex flex-col min-w-0" title={item.producto_nombre}>
-          <p className="font-medium text-sm truncate">{item.producto_nombre}</p>
+          <p className="font-medium text-sm truncate leading-tight">{item.producto_nombre}</p>
           {item.codigo_interno && (
-            <p className="text-[11px] font-mono opacity-35 truncate">{item.codigo_interno}</p>
+            <p className="text-[10px] font-mono opacity-40 truncate">{item.codigo_interno}</p>
           )}
         </div>
       ),
@@ -121,7 +127,7 @@ export default function StockPage() {
     {
       key: 'categoria',
       header: 'Categoría',
-      className: 'hidden md:table-cell',
+      className: 'hidden md:table-cell w-32',
       filter: (
         <select
           className="select select-bordered select-xs w-full"
@@ -135,44 +141,42 @@ export default function StockPage() {
         </select>
       ),
       render: (item: StockItem) => (
-        <span className="text-sm opacity-60">{item.categoria ?? '--'}</span>
+        <span className="text-xs opacity-60 truncate block">{item.categoria ?? '--'}</span>
       ),
-    },
-    {
-      key: 'proveedor',
-      header: 'Proveedor',
-      className: 'hidden lg:table-cell',
-      filter: (
-        <select
-          className="select select-bordered select-xs w-full"
-          value={proveedorId}
-          onChange={(e) => { setProveedorId(e.target.value); setPage(1) }}
-        >
-          <option value="">Todos</option>
-          {proveedores?.map((p) => (
-            <option key={p.id} value={p.id}>{p.nombre}</option>
-          ))}
-        </select>
-      ),
-      render: (item: StockItem) =>
-        item.proveedor_nombre ? (
-          <div className="flex items-center gap-2">
-            <ProveedorIcon proveedor={{ nombre: item.proveedor_nombre, icono: item.proveedor_icono }} className="h-5 w-5" />
-            <span className="text-xs opacity-70 max-w-[120px] truncate">{item.proveedor_nombre}</span>
-          </div>
-        ) : (
-          <span className="text-xs opacity-20">--</span>
-        ),
     },
     {
       key: 'stock_total',
-      header: 'Stock',
+      header: 'Disponibilidad',
       render: (item: StockItem) => {
-        const qty = Math.round(item.stock_total ?? 0)
+        const qty = item.stock_total ?? 0
+        const min = item.stock_minimo ?? 0
+        // Cálculo de "salud" del stock: 0-100%
+        // Rojo: <= mínimo
+        // Amarillo: <= 2 * mínimo
+        // Verde: > 2 * mínimo
+        const pct = min > 0 ? (qty / (min * 2)) * 100 : 100
+        const colorClass = qty <= 0 ? 'progress-error' :
+                          qty <= min ? 'progress-error' :
+                          qty <= min * 2 ? 'progress-warning' : 'progress-success'
+
         return (
-          <div className="font-mono">
-            <span className="font-semibold">{qty}</span>
-            <span className="text-xs opacity-35 ml-1">{qty === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}</span>
+          <div className="flex flex-col gap-1 w-32 sm:w-40">
+            <div className="flex justify-between items-end">
+              <span className="font-mono text-sm font-bold">
+                {Math.round(qty)}
+                <span className="text-[10px] font-normal opacity-40 ml-1">
+                  {qty === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}
+                </span>
+              </span>
+              {min > 0 && (
+                <span className="text-[10px] opacity-30">mín: {Math.round(min)}</span>
+              )}
+            </div>
+            <progress
+              className={cn("progress h-1.5 w-full", colorClass)}
+              value={Math.min(pct, 100)}
+              max="100"
+            />
           </div>
         )
       },
@@ -180,6 +184,7 @@ export default function StockPage() {
     {
       key: 'estado',
       header: 'Estado',
+      className: 'w-28',
       filter: (
         <select
           className="select select-bordered select-xs w-full"
@@ -187,10 +192,10 @@ export default function StockPage() {
           onChange={(e) => { setEstadoFiltro(e.target.value); setPage(1) }}
         >
           <option value="">Todos</option>
-          <option value="ok">OK</option>
+          <option value="ok">Saludable</option>
           <option value="bajo">Bajo mínimo</option>
           <option value="agotado">Agotado</option>
-          <option value="por_vencer">Por vencer</option>
+          <option value="por_vencer">Cercano a vencer</option>
           <option value="vencido">Vencido</option>
         </select>
       ),
@@ -198,17 +203,28 @@ export default function StockPage() {
     },
     {
       key: 'proximo_vencimiento',
-      header: 'Próx. vencimiento',
-      className: 'hidden lg:table-cell',
+      header: 'Vencimiento FEFO',
+      className: 'hidden lg:table-cell w-40',
       render: (item: StockItem) => {
-        if (!item.proximo_vencimiento) return <span className="text-xs opacity-20">--</span>
+        if (!item.proximo_vencimiento) return <span className="text-xs opacity-20 italic">Sin vencimiento</span>
         const days = daysUntil(item.proximo_vencimiento)
         return (
-          <div>
-            <p className="text-xs font-medium">{formatDate(item.proximo_vencimiento)}</p>
-            <p className={`text-[11px] font-medium ${days <= 0 ? 'text-error' : days <= 30 ? 'text-warning' : 'opacity-35'}`}>
-              {days <= 0 ? 'Vencido' : days === 1 ? 'mañana' : `en ${days} días`}
-            </p>
+          <div className="flex items-center gap-2">
+            <div className={cn(
+              "p-1.5 rounded-lg shrink-0",
+              days <= 0 ? "bg-error/10 text-error" : days <= 30 ? "bg-warning/10 text-warning" : "bg-base-200 text-base-content/40"
+            )}>
+              <Clock className="h-3.5 w-3.5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium truncate">{formatDate(item.proximo_vencimiento)}</p>
+              <p className={cn(
+                "text-[10px] font-semibold uppercase tracking-wider",
+                days <= 0 ? "text-error" : days <= 30 ? "text-warning" : "opacity-30"
+              )}>
+                {days <= 0 ? 'Expirado' : days === 1 ? 'mañana' : `en ${days} días`}
+              </p>
+            </div>
           </div>
         )
       },
@@ -216,87 +232,146 @@ export default function StockPage() {
   ]
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
 
-      {/* Cabecera */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Inventario</h1>
-          <p className="text-sm opacity-50 mt-0.5">Stock actual por producto</p>
+      {/* Cabecera Estratégica */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-primary">
+            <Package className="h-6 w-6" />
+            <h1 className="text-2xl font-black tracking-tight uppercase">Control de Stock</h1>
+          </div>
+          <p className="text-sm text-base-content/60 font-medium">
+            Supervisión proactiva de reactivos e insumos médicos.
+          </p>
         </div>
-        <div className="flex items-center gap-3">
+
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="join bg-base-200 p-1 rounded-xl">
+            <button
+              className={cn("join-item btn btn-sm border-none shadow-none", !areaId ? "btn-primary" : "btn-ghost")}
+              onClick={() => { setAreaId(''); setSelectedArea(null); setPage(1) }}
+            >
+              <LayoutGrid className="h-4 w-4 mr-1.5" />
+              Global
+            </button>
+            <div className="dropdown dropdown-end join-item">
+              <div tabIndex={0} role="button" className={cn("btn btn-sm border-none shadow-none", areaId ? "btn-primary" : "btn-ghost")}>
+                <MapPin className="h-4 w-4 mr-1.5" />
+                {areaId ? areas?.find(a => String(a.id) === areaId)?.nombre : 'Por Área'}
+              </div>
+              <ul tabIndex={0} className="dropdown-content z-[10] menu p-2 shadow-xl bg-base-100 rounded-box w-52 mt-2 border border-base-200">
+                {areas?.map((a) => (
+                  <li key={a.id}>
+                    <button onClick={() => { setAreaId(String(a.id)); setSelectedArea(a.id); setPage(1) }}>
+                      {a.nombre}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
           <button
-            className="btn btn-sm btn-ghost gap-1.5"
+            className="btn btn-sm btn-outline gap-2"
             onClick={() => setShowPdfModal(true)}
           >
             <FileDown className="h-4 w-4" />
-            Exportar PDF
+            <span className="hidden sm:inline">Exportar Reporte</span>
           </button>
-          <label className="flex items-center gap-2">
-            <MapPin className="h-4 w-4 opacity-40 shrink-0" />
-            <select
-              className="select select-bordered w-56"
-              value={areaId}
-              onChange={(e) => { setAreaId(e.target.value); setPage(1) }}
-            >
-              <option value="">Todas las secciones</option>
-              {areas?.map((a) => (
-                <option key={a.id} value={a.id}>{a.nombre}</option>
-              ))}
-            </select>
-          </label>
         </div>
       </div>
 
-      {/* Chips de resumen */}
+      {/* Dashboard de Indicadores (DaisyUI Stats) */}
       {resumen && (
-        <div className="flex flex-wrap gap-2">
-          <button
-            className={`badge badge-lg gap-1.5 border cursor-pointer transition-colors ${!estadoFiltro ? 'badge-neutral' : 'badge-ghost'}`}
-            onClick={() => { setEstadoFiltro(''); setPage(1) }}
+        <div className="stats stats-vertical lg:stats-horizontal shadow-sm bg-base-100 border border-base-200 w-full overflow-hidden">
+          <div className="stat">
+            <div className="stat-figure text-primary opacity-30">
+              <Package className="w-8 h-8" />
+            </div>
+            <div className="stat-title text-xs font-bold uppercase tracking-wider opacity-60">Total Insumos</div>
+            <div className="stat-value text-primary text-2xl">{resumen.total_productos_con_stock}</div>
+            <div className="stat-desc font-medium">Ítems activos en estantería</div>
+          </div>
+
+          <div
+            className={cn(
+              "stat cursor-pointer transition-colors hover:bg-base-200",
+              estadoFiltro === 'bajo' && "bg-warning/10"
+            )}
+            onClick={() => { setEstadoFiltro(estadoFiltro === 'bajo' ? '' : 'bajo'); setPage(1) }}
           >
-            <Package className="h-3.5 w-3.5" />
-            {resumen.total_productos_con_stock} productos
-          </button>
-          {resumen.productos_bajo_minimo > 0 && (
-            <button
-              className={`badge badge-lg gap-1.5 border cursor-pointer transition-colors ${estadoFiltro === 'bajo' ? 'badge-warning' : 'badge-ghost'}`}
-              onClick={() => { setEstadoFiltro(estadoFiltro === 'bajo' ? '' : 'bajo'); setPage(1) }}
-            >
-              <AlertTriangle className="h-3.5 w-3.5" />
-              {resumen.productos_bajo_minimo} bajo mínimo
-            </button>
-          )}
-          {resumen.productos_por_vencer_90d > 0 && (
-            <button
-              className={`badge badge-lg gap-1.5 border cursor-pointer transition-colors ${estadoFiltro === 'por_vencer' ? 'badge-error' : 'badge-ghost'}`}
-              onClick={() => { setEstadoFiltro(estadoFiltro === 'por_vencer' ? '' : 'por_vencer'); setPage(1) }}
-            >
-              <Clock className="h-3.5 w-3.5" />
-              {resumen.productos_por_vencer_90d} por vencer (90 d)
-            </button>
-          )}
+            <div className="stat-figure text-warning">
+              <AlertTriangle className="w-8 h-8" />
+            </div>
+            <div className="stat-title text-xs font-bold uppercase tracking-wider opacity-60">Bajo Mínimo</div>
+            <div className="stat-value text-warning text-2xl">{resumen.productos_bajo_minimo}</div>
+            <div className="stat-desc font-bold text-warning/80">Acción de compra requerida</div>
+          </div>
+
+          <div
+            className={cn(
+              "stat cursor-pointer transition-colors hover:bg-base-200",
+              estadoFiltro === 'por_vencer' && "bg-error/10"
+            )}
+            onClick={() => { setEstadoFiltro(estadoFiltro === 'por_vencer' ? '' : 'por_vencer'); setPage(1) }}
+          >
+            <div className="stat-figure text-error">
+              <Clock className="w-8 h-8" />
+            </div>
+            <div className="stat-title text-xs font-bold uppercase tracking-wider opacity-60">Riesgo Vencimiento</div>
+            <div className="stat-value text-error text-2xl">{resumen.productos_por_vencer_90d}</div>
+            <div className="stat-desc font-bold text-error/80">Lotes próximos a expirar</div>
+          </div>
         </div>
       )}
 
-      {/* Tabla */}
-      {isLoading ? (
-        <div className="space-y-1.5">
-          {[1, 2, 3, 4, 5].map((i) => <div key={i} className="skeleton h-14 w-full rounded-lg" />)}
+      {/* Info Tooltip si hay filtros */}
+      {(search || categoriaId || proveedorId || estadoFiltro) && (
+        <div className="alert bg-base-200 border-none py-2 px-4 flex items-center gap-3">
+          <ListFilter className="h-4 w-4 text-primary shrink-0" />
+          <div className="flex-1 flex flex-wrap gap-2 items-center text-xs font-medium">
+            <span>Filtros activos:</span>
+            {search && <span className="badge badge-sm badge-outline">{search}</span>}
+            {categoriaId && <span className="badge badge-sm badge-outline">Categoría: {categorias?.find(c => String(c.id) === categoriaId)?.nombre}</span>}
+            {estadoFiltro && <span className="badge badge-sm badge-primary uppercase">{estadoFiltro.replace('_', ' ')}</span>}
+            <button
+              className="btn btn-xs btn-link text-primary no-underline p-0 h-auto min-h-0 ml-auto"
+              onClick={() => {
+                setSearchInput(''); setSearch(''); setCategoriaId(''); setProveedorId(''); setEstadoFiltro(''); setPage(1);
+              }}
+            >
+              Limpiar todo
+            </button>
+          </div>
         </div>
-      ) : (
-        <>
-          <DataTable
-            columns={columns}
-            data={rows as unknown as Record<string, unknown>[]}
-            onRowClick={(item) => setSelectedProducto(item as unknown as StockItem)}
-            selectedId={selectedProducto?.producto_id as unknown as number}
-            keyField="producto_id"
-            emptyMessage="No se encontraron productos"
-          />
-          <Pagination page={data?.page ?? 1} totalPages={data?.total_pages ?? 1} onPageChange={setPage} />
-        </>
       )}
+
+      {/* Tabla Pro */}
+      <div className="bg-base-100 rounded-2xl border border-base-200 overflow-hidden shadow-sm">
+        {isLoading ? (
+          <div className="p-6 space-y-4">
+            <div className="skeleton h-8 w-full opacity-50" />
+            <div className="skeleton h-12 w-full opacity-50" />
+            <div className="skeleton h-12 w-full opacity-50" />
+            <div className="skeleton h-12 w-full opacity-50" />
+          </div>
+        ) : (
+          <>
+            <DataTable
+              columns={columns}
+              data={rows as unknown as Record<string, unknown>[]}
+              onRowClick={(item) => setSelectedProducto(item as unknown as StockItem)}
+              selectedId={selectedProducto?.producto_id as unknown as number}
+              keyField="producto_id"
+              emptyMessage="No se encontraron productos con los criterios actuales"
+            />
+            <div className="p-4 border-t border-base-200 bg-base-50/50">
+              <Pagination page={data?.page ?? 1} totalPages={data?.total_pages ?? 1} onPageChange={setPage} />
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Panel lateral de detalle */}
       <Sheet
@@ -340,14 +415,20 @@ export default function StockPage() {
 
 function StockBadge({ item }: { item: StockItem }) {
   const stock = item.stock_total ?? 0
-  if (stock <= 0) return <Badge variant="outline">Agotado</Badge>
-  if (stock <= item.stock_minimo) return <Badge variant="destructive">Bajo mínimo</Badge>
+  const min = item.stock_minimo ?? 0
+
+  if (stock <= 0) return <div className="badge badge-error badge-outline gap-1 text-[10px] font-bold uppercase px-2"><Info className="h-3 w-3" /> Agotado</div>
+  if (stock <= min) return <div className="badge badge-error gap-1 text-[10px] font-bold uppercase px-2"><AlertTriangle className="h-3 w-3" /> Crítico</div>
+
   if (item.proximo_vencimiento) {
     const days = daysUntil(item.proximo_vencimiento)
-    if (days <= 0) return <Badge variant="destructive">Vencido</Badge>
-    if (days <= 30) return <Badge variant="warning">Por vencer</Badge>
+    if (days <= 0) return <div className="badge badge-error gap-1 text-[10px] font-bold uppercase px-2">Vencido</div>
+    if (days <= 30) return <div className="badge badge-warning gap-1 text-[10px] font-bold uppercase px-2">Riesgo</div>
   }
-  return <Badge variant="success">OK</Badge>
+
+  if (stock <= min * 2) return <div className="badge badge-warning badge-outline text-[10px] font-bold uppercase px-2">Atención</div>
+
+  return <div className="badge badge-success badge-outline text-[10px] font-bold uppercase px-2">Saludable</div>
 }
 
 function PdfExportModal({
@@ -388,83 +469,78 @@ function PdfExportModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-base-100 rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-base-300/60 backdrop-blur-sm p-4">
+      <div className="bg-base-100 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-base-200">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-base-200">
-          <div className="flex items-center gap-2">
-            <FileDown className="h-5 w-5 text-primary" />
-            <h2 className="font-semibold">Exportar PDF</h2>
+        <div className="flex items-center justify-between px-6 py-5 bg-base-100 border-b border-base-200">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-xl text-primary">
+              <FileDown className="h-5 w-5" />
+            </div>
+            <h2 className="font-bold text-lg tracking-tight">Reporte de Inventario</h2>
           </div>
           <button className="btn btn-sm btn-ghost btn-circle" onClick={onClose}>✕</button>
         </div>
 
-        <div className="p-5 space-y-5">
+        <div className="p-6 space-y-6">
           {/* Selección de áreas */}
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">Secciones a incluir</p>
+              <p className="text-xs font-bold uppercase tracking-wider opacity-60">Secciones a incluir</p>
               <button
-                className="text-xs text-primary hover:underline"
+                className="text-xs font-bold text-primary hover:opacity-70 transition-opacity"
                 onClick={toggleAll}
               >
-                {selectedIds.size === areas.length ? 'Desmarcar todas' : 'Seleccionar todas'}
+                {selectedIds.size === areas.length ? 'Limpiar Todo' : 'Todo el Laboratorio'}
               </button>
             </div>
-            <div className="max-h-48 overflow-y-auto space-y-1 border border-base-200 rounded-xl p-2">
+            <div className="max-h-52 overflow-y-auto space-y-1 bg-base-200/50 rounded-2xl p-2 border border-base-200">
               {areas.map((area) => (
                 <label
                   key={area.id}
-                  className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-base-200 cursor-pointer transition-colors"
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all",
+                    selectedIds.has(area.id) ? "bg-base-100 shadow-sm" : "hover:bg-base-200 opacity-70"
+                  )}
                 >
                   <input
                     type="checkbox"
-                    className="checkbox checkbox-sm checkbox-primary"
+                    className="checkbox checkbox-sm checkbox-primary rounded-md"
                     checked={selectedIds.has(area.id)}
                     onChange={() => toggleArea(area.id)}
                   />
-                  <span className="text-sm">{area.nombre}</span>
+                  <span className="text-sm font-medium">{area.nombre}</span>
                   {area.es_bodega && (
-                    <span className="badge badge-xs badge-ghost ml-auto">Bodega</span>
+                    <span className="badge badge-xs badge-ghost ml-auto font-bold uppercase tracking-wider opacity-50">Bodega</span>
                   )}
                 </label>
               ))}
             </div>
-            {selectedIds.size === 0 && (
-              <p className="text-xs text-error">Selecciona al menos una sección</p>
-            )}
           </div>
 
           {/* Opciones */}
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Opciones</p>
-            <label className="flex items-center gap-3 px-3 py-2.5 border border-base-200 rounded-xl cursor-pointer hover:bg-base-200 transition-colors">
+          <div className="space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider opacity-60">Configuración</p>
+            <label className="flex items-start gap-4 px-4 py-3 bg-base-200/50 border border-base-200 rounded-2xl cursor-pointer hover:bg-base-200 transition-all">
               <input
                 type="checkbox"
-                className="checkbox checkbox-sm checkbox-primary"
+                className="checkbox checkbox-sm checkbox-primary rounded-md mt-0.5"
                 checked={incluirResumen}
                 onChange={(e) => setIncluirResumen(e.target.checked)}
               />
-              <div>
-                <p className="text-sm font-medium">Incluir resumen ejecutivo</p>
-                <p className="text-xs opacity-50">Página con totales: productos, alertas y áreas</p>
+              <div className="flex-1">
+                <p className="text-sm font-bold">Resumen Ejecutivo</p>
+                <p className="text-[11px] opacity-50 mt-1 leading-relaxed">Incluye una página inicial con los KPIs globales (insumos, alertas críticas y áreas).</p>
               </div>
             </label>
-          </div>
-
-          {/* Info */}
-          <div className="rounded-lg bg-base-200 px-3 py-2 text-xs opacity-60 space-y-0.5">
-            <p>Generado por: <span className="font-medium">{usuarioNombre}</span></p>
-            <p>Formato: Carta horizontal (landscape)</p>
-            <p className="text-warning font-medium">Las alertas se destacan: rojo = bajo mínimo, amarillo = vence en ≤30 días</p>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex gap-2 px-5 py-4 border-t border-base-200 justify-end">
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancelar</button>
+        <div className="flex gap-3 px-6 py-5 bg-base-100 border-t border-base-200 justify-end">
+          <button className="btn btn-ghost btn-sm font-bold h-10 px-5" onClick={onClose}>Cerrar</button>
           <button
-            className="btn btn-primary btn-sm gap-1.5"
+            className="btn btn-primary btn-sm h-10 px-6 font-bold gap-2"
             disabled={selectedIds.size === 0 || loading}
             onClick={handleExport}
           >
@@ -473,7 +549,7 @@ function PdfExportModal({
             ) : (
               <FileDown className="h-4 w-4" />
             )}
-            {loading ? 'Generando...' : `Exportar (${selectedIds.size} sección${selectedIds.size !== 1 ? 'es' : ''})`}
+            {loading ? 'Generando...' : `Generar PDF`}
           </button>
         </div>
       </div>

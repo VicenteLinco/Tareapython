@@ -44,6 +44,12 @@ export default function RecepcionesPage() {
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
   const [areaId, setAreaId] = useState(selectedAreaId ? String(selectedAreaId) : '')
+
+  // Sync with global area filter
+  useEffect(() => {
+    setAreaId(selectedAreaId ? String(selectedAreaId) : '')
+    setPage(1)
+  }, [selectedAreaId])
   const [page, setPage] = useState(1)
   const navigate = useNavigate()
 

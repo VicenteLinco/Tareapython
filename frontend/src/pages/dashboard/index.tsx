@@ -135,6 +135,8 @@ function KpiCard({
 }
 
 function AlertList({ alerts }: { alerts?: Alerta[] }) {
+  const navigate = useNavigate()
+
   if (!alerts) return null
 
   if (alerts.length === 0) {
@@ -154,7 +156,7 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
   }
 
   return (
-    <div className="max-h-80 overflow-y-auto space-y-0.5">
+    <div className="max-h-96 overflow-y-auto space-y-2 p-1">
       {alerts.slice(0, 50).map((alerta, i) => {
         const config = severityConfig[alerta.tipo as keyof typeof severityConfig] ?? severityConfig.vence_90d
         const days = alerta.tipo === 'vence_30d' || alerta.tipo === 'vence_90d'
@@ -163,24 +165,29 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
         return (
           <div
             key={`${alerta.producto_id}-${alerta.tipo}-${i}`}
-            className="alert-item flex items-center justify-between rounded-lg px-4 py-3 hover:bg-base-200/60 cursor-default"
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-base-200/50 bg-base-100/50 p-3 hover:bg-base-200/50 transition-colors"
           >
-            <div className="flex items-center gap-3">
-              <span className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold', config.bg)}>
-                {config.label}
-              </span>
-              <span className="text-sm font-medium">{alerta.producto_nombre}</span>
-            </div>
-            <span className="text-xs font-mono opacity-40">
-              {alerta.total !== undefined ? (
-                <span className="flex items-baseline gap-1">
-                  <span className="font-bold">{Math.round(alerta.total)}</span>
-                  <span className="text-[10px]">{Math.round(alerta.total) === 1 ? (alerta.unidad || '') : (alerta.unidad_plural ?? autoPlural(alerta.unidad || ''))}</span>
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className={cn('inline-flex shrink-0 items-center rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider', config.bg)}>
+                  {config.label}
                 </span>
-              ) : (
-                days !== null ? `${days}d` : alerta.detalle
-              )}
-            </span>
+                <span className="text-sm font-semibold truncate" title={alerta.producto_nombre}>{alerta.producto_nombre}</span>
+              </div>
+              <p className="text-xs opacity-60">
+                {alerta.total !== undefined ? (
+                  <>Stock actual: <span className="font-bold text-base-content">{Math.round(alerta.total)}</span> {Math.round(alerta.total) === 1 ? (alerta.unidad || '') : (alerta.unidad_plural ?? autoPlural(alerta.unidad || ''))}</>
+                ) : (
+                  <>{days !== null ? `Vence en ${days} días` : alerta.detalle}</>
+                )}
+              </p>
+            </div>
+            <button 
+              className="btn btn-sm btn-ghost bg-base-200 hover:bg-primary hover:text-primary-content shrink-0"
+              onClick={() => navigate(`/stock?search=${encodeURIComponent(alerta.producto_nombre)}`)}
+            >
+              Resolver
+            </button>
           </div>
         )
       })}

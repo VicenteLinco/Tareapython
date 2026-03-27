@@ -97,8 +97,13 @@ struct DetalleRecepcionRow {
 /// GET /api/v1/recepciones
 async fn listar(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Query(params): Query<RecepcionQuery>,
 ) -> Result<Json<PaginatedRecepciones>, AppError> {
+    if let Some(aid) = params.area_id {
+        stock_ops::validar_acceso_area(&state.pool, claims.sub, aid, &claims.rol).await?;
+    }
+
     let per_page = params.per_page.unwrap_or(15).clamp(1, 100);
     let page = params.page.unwrap_or(1).max(1);
     let offset = (page - 1) * per_page;
@@ -324,14 +329,15 @@ async fn crear(
         // Obtener factor de conversión (None = unidad base, factor 1)
         let factor: Decimal = if let Some(pres_id) = det.presentacion_id {
             sqlx::query_scalar(
-                "SELECT factor_conversion FROM presentaciones WHERE id = $1 AND activa = true",
+                "SELECT factor_conversion FROM presentaciones WHERE id = $1 AND producto_id = $2 AND activa = true",
             )
             .bind(pres_id)
+            .bind(det.producto_id)
             .fetch_optional(&mut *tx)
             .await?
-            .ok_or(AppError::NotFound(format!(
-                "Presentación {} no encontrada",
-                pres_id
+            .ok_or(AppError::Validation(format!(
+                "La presentación {} no pertenece al producto {}",
+                pres_id, det.producto_id
             )))?
         } else {
             Decimal::ONE
@@ -555,14 +561,7 @@ async fn subir_foto(
 ) -> Result<StatusCode, AppError> {
     crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
 
-    // Validar que sea un data URL de imagen
-    if !req.data_url.starts_with("data:image/") {
-        return Err(AppError::Validation("Solo se aceptan imágenes (data URL)".into()));
-    }
-    // Límite ~10MB en base64
-    if req.data_url.len() > 14_000_000 {
-        return Err(AppError::Validation("La imagen no puede superar 10MB".into()));
-    }
+    validar_data_url_imagen(&req.data_url)?;
 
     let rows = sqlx::query(
         "UPDATE recepciones SET foto_documento = $1, foto_actualizada_at = NOW() WHERE id = $2",
@@ -588,27 +587,18 @@ async fn crear_o_reutilizar_lote(
     proveedor_id: i32,
     costo_unitario: Option<Decimal>,
 ) -> Result<Uuid, AppError> {
-    // Intentar encontrar lote existente
-    let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM lotes WHERE producto_id = $1 AND numero_lote = $2",
-    )
-    .bind(producto_id)
-    .bind(numero_lote)
-    .fetch_optional(&mut **tx)
-    .await?;
-
-    if let Some(lote_id) = existing {
-        return Ok(lote_id);
-    }
-
-    // Crear nuevo lote
+    // Generar código siempre; si hay conflicto, el INSERT lo descarta
     let codigo: String = sqlx::query_scalar("SELECT generar_codigo_lote()")
         .fetch_one(&mut **tx)
         .await?;
 
+    // ON CONFLICT garantiza atomicidad: no hay race condition entre SELECT e INSERT
+    // DO UPDATE con SET no-op asegura que RETURNING siempre devuelva el id
     let lote_id: Uuid = sqlx::query_scalar(
         r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento, codigo_interno, costo_unitario)
-           VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"#,
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (producto_id, numero_lote) DO UPDATE SET numero_lote = EXCLUDED.numero_lote
+           RETURNING id"#,
     )
     .bind(producto_id)
     .bind(proveedor_id)
@@ -620,6 +610,28 @@ async fn crear_o_reutilizar_lote(
     .await?;
 
     Ok(lote_id)
+}
+
+fn validar_data_url_imagen(data_url: &str) -> Result<(), AppError> {
+    let permitidos = ["data:image/jpeg;base64,", "data:image/png;base64,"];
+    if !permitidos.iter().any(|p| data_url.starts_with(p)) {
+        return Err(AppError::Validation(
+            "Solo se aceptan imágenes JPEG o PNG".into(),
+        ));
+    }
+    if data_url.len() > 14_000_000 {
+        return Err(AppError::Validation(
+            "La imagen no puede superar 10 MB".into(),
+        ));
+    }
+    let base64_part = data_url.split(',').nth(1).ok_or_else(|| {
+        AppError::Validation("Formato de imagen inválido".into())
+    })?;
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD
+        .decode(base64_part)
+        .map_err(|_| AppError::Validation("Imagen corrupta o inválida".into()))?;
+    Ok(())
 }
 
 pub fn routes() -> Router<AppState> {

@@ -6,13 +6,14 @@ interface Column<T> {
   className?: string
   render?: (item: T) => React.ReactNode
   filter?: React.ReactNode
+  width?: string
 }
 
 interface DataTableProps<T> {
   columns: Column<T>[]
   data: T[]
   onRowClick?: (item: T) => void
-  selectedId?: number | null
+  selectedId?: number | null | string
   keyField?: string
   emptyMessage?: string
   className?: string
@@ -28,52 +29,69 @@ export function DataTable<T extends Record<string, unknown>>({
   className,
 }: DataTableProps<T>) {
   const hasFilters = columns.some((c) => c.filter)
+  
   return (
-    <div className={cn('overflow-x-auto rounded-xl border border-base-200 bg-base-100', className)}>
-      <table className="table table-sm">
+    <div className={cn('overflow-x-auto w-full rounded-xl border border-base-200 bg-base-100', className)}>
+      <table className="table table-sm w-full border-separate border-spacing-0">
         <thead>
-          <tr className="border-base-200">
+          <tr className="bg-base-200/50">
             {columns.map((col) => (
-              <th key={col.key} className={cn('text-[11px] font-semibold uppercase tracking-wider opacity-40 bg-base-100', col.className)}>
+              <th 
+                key={col.key} 
+                className={cn('text-[11px] font-bold uppercase tracking-wider py-3 border-b border-base-200', col.className)}
+                style={{ width: col.width, minWidth: col.width }}
+              >
                 {col.header}
               </th>
             ))}
           </tr>
           {hasFilters && (
-            <tr className="border-b border-base-200">
+            <tr className="bg-base-100">
               {columns.map((col) => (
-                <th key={col.key} className={cn('py-1 px-2 bg-base-100 font-normal', col.className)}>
+                <th key={col.key} className={cn('py-2 px-2 border-b border-base-200', col.className)}>
                   {col.filter ?? null}
                 </th>
               ))}
             </tr>
           )}
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-base-200">
           {data.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="text-center py-16">
-                <p className="text-sm opacity-40">{emptyMessage}</p>
+              <td colSpan={columns.length} className="text-center py-12 opacity-40 italic text-sm">
+                {emptyMessage}
               </td>
             </tr>
           ) : (
             data.map((item) => (
               <tr
-                key={item[keyField] as string | number}
+                key={String(item[keyField])}
                 onClick={() => onRowClick?.(item)}
                 className={cn(
-                  'table-row-interactive border-base-200/60',
+                  'hover:bg-base-200/40 transition-colors',
                   onRowClick && 'cursor-pointer',
                   selectedId !== undefined &&
-                    item[keyField] === selectedId &&
-                    'bg-primary/5 !border-l-2 !border-l-primary'
+                    String(item[keyField]) === String(selectedId) &&
+                    'bg-primary/5 !border-l-4 !border-l-primary'
                 )}
               >
                 {columns.map((col) => (
-                  <td key={col.key} className={cn('py-3', col.className)}>
-                    {col.render
-                      ? col.render(item)
-                      : (item[col.key] as React.ReactNode)}
+                  <td 
+                    key={col.key} 
+                    className={cn('py-3 align-middle whitespace-nowrap overflow-hidden text-ellipsis', col.className)}
+                    style={{ maxWidth: col.width }}
+                  >
+                    {col.render ? col.render(item) : (() => {
+                      const val = String(item[col.key] ?? '');
+                      if (val.startsWith('data:image') || val.length > 500) {
+                        return <span className="text-[10px] opacity-20 italic">Dato largo / Imagen</span>;
+                      }
+                      return (
+                        <span className="truncate block" title={val}>
+                          {val}
+                        </span>
+                      );
+                    })()}
                   </td>
                 ))}
               </tr>

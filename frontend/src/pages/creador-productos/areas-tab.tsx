@@ -14,6 +14,7 @@ export default function AreasTab() {
   const [editing, setEditing] = useState<Area | null>(null)
   const [nombre, setNombre] = useState('')
   const [esBodega, setEsBodega] = useState(false)
+  const [frecuenciaDias, setFrecuenciaDias] = useState(0)
 
   const { data: areas = [], isLoading } = useQuery({
     queryKey: ['areas'],
@@ -54,6 +55,7 @@ export default function AreasTab() {
     setEditing(null)
     setNombre('')
     setEsBodega(false)
+    setFrecuenciaDias(0)
     setDialogOpen(true)
   }
 
@@ -61,6 +63,7 @@ export default function AreasTab() {
     setEditing(area)
     setNombre(area.nombre)
     setEsBodega(area.es_bodega)
+    setFrecuenciaDias(area.conteo_frecuencia_dias ?? 0)
     setDialogOpen(true)
   }
 
@@ -73,7 +76,7 @@ export default function AreasTab() {
     e.preventDefault()
     if (!nombre.trim()) return
     if (editing) {
-      updateMut.mutate({ id: editing.id, data: { nombre: nombre.trim(), es_bodega: esBodega } })
+      updateMut.mutate({ id: editing.id, data: { nombre: nombre.trim(), es_bodega: esBodega, conteo_frecuencia_dias: frecuenciaDias } })
     } else {
       createMut.mutate({ nombre: nombre.trim(), es_bodega: esBodega })
     }
@@ -110,6 +113,16 @@ export default function AreasTab() {
           ? <Badge variant="success">Activa</Badge>
           : <Badge variant="outline">Inactiva</Badge>
       ),
+    },
+    {
+      key: 'conteo_frecuencia_dias',
+      header: 'Conteo programado',
+      className: 'hidden md:table-cell',
+      render: (item: Area) => {
+        const f = item.conteo_frecuencia_dias ?? 0
+        const labels: Record<number, string> = { 0: '—', 7: 'Semanal', 14: 'Quincenal', 30: 'Mensual', 90: 'Trimestral' }
+        return <span className="text-xs opacity-60">{labels[f] ?? `${f} días`}</span>
+      },
     },
     {
       key: 'acciones',
@@ -177,6 +190,22 @@ export default function AreasTab() {
               </div>
             </label>
           </div>
+          {editing && (
+            <div className="form-control">
+              <label className="label"><span className="label-text text-sm font-medium">Frecuencia de conteo</span></label>
+              <select
+                className="select select-bordered select-sm h-9"
+                value={frecuenciaDias}
+                onChange={(e) => setFrecuenciaDias(Number(e.target.value))}
+              >
+                <option value={0}>Sin programación</option>
+                <option value={7}>Semanal (7 días)</option>
+                <option value={14}>Quincenal (14 días)</option>
+                <option value={30}>Mensual (30 días)</option>
+                <option value={90}>Trimestral (90 días)</option>
+              </select>
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn btn-ghost btn-sm" onClick={closeDialog}>Cancelar</button>
             <button type="submit" className="btn btn-primary btn-sm" disabled={isSaving}>

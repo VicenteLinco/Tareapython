@@ -120,8 +120,17 @@ export default function NuevaRecepcionPage() {
   // ── Camera lifecycle ─────────────────────────────────────────────────────
   const stopCamera = useCallback(async () => {
     if (scannerInstanceRef.current) {
-      try { await scannerInstanceRef.current.stop(); scannerInstanceRef.current.clear() } catch { /* ok */ }
-      scannerInstanceRef.current = null
+      const s = scannerInstanceRef.current
+      try {
+        if (s.isScanning) {
+          await s.stop()
+        }
+        s.clear()
+      } catch (err) {
+        console.warn('Error stopping camera:', err)
+      } finally {
+        scannerInstanceRef.current = null
+      }
     }
   }, [])
 

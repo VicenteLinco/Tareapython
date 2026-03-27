@@ -2,7 +2,24 @@ import { useState, useRef, useEffect } from 'react'
 import { Truck, ChevronDown, Check } from 'lucide-react'
 import type { Proveedor } from '@/types'
 
-// Reusable icon: emoji, logo URL, or truck fallback
+function isSafeIconUrl(url: string | null | undefined): boolean {
+  if (!url) return false
+  // Permitir HTTPS y rutas locales (siempre seguras)
+  if (url.startsWith('https://') || url.startsWith('/')) return true
+
+  // Permitir solo formatos de imagen estáticos (no ejecutables)
+  // Esto bloquea data:image/svg+xml que es el vector de ataque XSS
+  const safeDataPrefixes = [
+    'data:image/png',
+    'data:image/jpeg',
+    'data:image/jpg',
+    'data:image/webp',
+    'data:image/gif',
+  ]
+  return safeDataPrefixes.some((prefix) => url.startsWith(prefix))
+}
+
+// Reusable icon: emoji, logo URL (https only), or truck fallback
 export function ProveedorIcon({
   proveedor,
   className = 'h-5 w-5',
@@ -12,9 +29,26 @@ export function ProveedorIcon({
 }) {
   const [imgError, setImgError] = useState(false)
   const icono = proveedor?.icono
-  const isUrl = !!icono && (icono.startsWith('http') || icono.startsWith('data:') || icono.startsWith('/'))
+  const safeUrl = isSafeIconUrl(icono)
 
-  if (isUrl && !imgError) {
+  // Un emoji es una cadena muy corta (máximo 10 caracteres por seguridad)
+  // y que no parece una URL ni un base64.
+  const isEmoji =
+    !!icono &&
+    icono.length <= 10 &&
+    !icono.startsWith('http') &&
+    !icono.startsWith('/') &&
+    !icono.startsWith('data:')
+
+  if (isEmoji) {
+    return (
+      <span className={`shrink-0 flex items-center justify-center text-base leading-none ${className}`}>
+        {icono}
+      </span>
+    )
+  }
+
+  if (safeUrl && !imgError) {
     return (
       <div className={`relative shrink-0 flex items-center justify-center ${className}`}>
         <img
@@ -22,16 +56,9 @@ export function ProveedorIcon({
           alt=""
           className="h-full w-full rounded object-contain"
           onError={() => setImgError(true)}
+          referrerPolicy="no-referrer"
         />
       </div>
-    )
-  }
-
-  if (icono && !isUrl) {
-    return (
-      <span className={`shrink-0 flex items-center justify-center text-base leading-none ${className}`}>
-        {icono}
-      </span>
     )
   }
 

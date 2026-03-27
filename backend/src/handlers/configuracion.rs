@@ -7,11 +7,12 @@ use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::errors::AppError;
 
-// What GET /configuracion returns — pin_kiosko intentionally excluded
+// What GET /configuracion returns
 #[derive(Debug, Serialize)]
 struct ConfiguracionResponse {
     nombre_laboratorio: String,
     logo_base64: String,
+    pin_kiosko: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,23 +32,25 @@ async fn obtener(
     State(state): State<AppState>,
 ) -> Result<Json<ConfiguracionResponse>, AppError> {
     let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT clave, valor FROM configuracion WHERE clave IN ('nombre_laboratorio', 'logo_base64')",
+        "SELECT clave, valor_texto FROM configuracion WHERE clave IN ('nombre_laboratorio', 'logo_base64', 'pin_kiosko')",
     )
     .fetch_all(&state.pool)
     .await?;
 
     let mut nombre_laboratorio = "Laboratorio Clínico".to_string();
     let mut logo_base64 = String::new();
+    let mut pin_kiosko = String::new();
 
     for (clave, valor) in rows {
         match clave.as_str() {
             "nombre_laboratorio" => nombre_laboratorio = valor,
             "logo_base64" => logo_base64 = valor,
+            "pin_kiosko" => pin_kiosko = valor,
             _ => {}
         }
     }
 
-    Ok(Json(ConfiguracionResponse { nombre_laboratorio, logo_base64 }))
+    Ok(Json(ConfiguracionResponse { nombre_laboratorio, logo_base64, pin_kiosko }))
 }
 
 /// PUT /api/v1/configuracion — Actualizar configuración (solo admin)
@@ -60,8 +63,8 @@ async fn actualizar(
 
     if let Some(nombre) = &body.nombre_laboratorio {
         sqlx::query(
-            "INSERT INTO configuracion (clave, valor) VALUES ('nombre_laboratorio', $1)
-             ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor",
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('nombre_laboratorio', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
         )
         .bind(nombre)
         .execute(&state.pool)
@@ -70,8 +73,8 @@ async fn actualizar(
 
     if let Some(logo) = &body.logo_base64 {
         sqlx::query(
-            "INSERT INTO configuracion (clave, valor) VALUES ('logo_base64', $1)
-             ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor",
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('logo_base64', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
         )
         .bind(logo)
         .execute(&state.pool)
@@ -80,8 +83,8 @@ async fn actualizar(
 
     if let Some(pin) = &body.pin_kiosko {
         sqlx::query(
-            "INSERT INTO configuracion (clave, valor) VALUES ('pin_kiosko', $1)
-             ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor",
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('pin_kiosko', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
         )
         .bind(pin)
         .execute(&state.pool)
@@ -99,7 +102,7 @@ async fn verificar_pin(
     Json(body): Json<VerificarPinInput>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let stored: Option<String> = sqlx::query_scalar(
-        "SELECT valor FROM configuracion WHERE clave = 'pin_kiosko'",
+        "SELECT valor_texto FROM configuracion WHERE clave = 'pin_kiosko'",
     )
     .fetch_optional(&state.pool)
     .await?;

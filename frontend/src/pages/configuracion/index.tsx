@@ -7,6 +7,7 @@ import api from '@/lib/api'
 interface Configuracion {
   nombre_laboratorio: string
   logo_base64: string
+  pin_kiosko: string
 }
 
 export default function ConfiguracionPage() {
@@ -30,6 +31,7 @@ export default function ConfiguracionPage() {
     setNombre(data.nombre_laboratorio)
     setLogo(data.logo_base64)
     setPreview(data.logo_base64)
+    setPinKiosko(data.pin_kiosko || '')
     initialized.current = true
   }
 

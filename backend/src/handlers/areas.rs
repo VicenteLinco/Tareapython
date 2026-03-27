@@ -81,12 +81,14 @@ async fn actualizar(
         return Err(AppError::Validation("El nombre no puede estar vacío".into()));
     }
     let es_bodega = req.es_bodega.unwrap_or(anterior.es_bodega);
+    let frecuencia = req.conteo_frecuencia_dias.unwrap_or(anterior.conteo_frecuencia_dias);
 
     let area = sqlx::query_as::<_, Area>(
-        "UPDATE areas SET nombre = $1, es_bodega = $2 WHERE id = $3 RETURNING *",
+        "UPDATE areas SET nombre = $1, es_bodega = $2, conteo_frecuencia_dias = $3 WHERE id = $4 RETURNING *",
     )
     .bind(nombre)
     .bind(es_bodega)
+    .bind(frecuencia)
     .bind(id)
     .fetch_one(&state.pool)
     .await

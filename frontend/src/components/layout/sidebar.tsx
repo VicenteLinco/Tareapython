@@ -33,7 +33,7 @@ const navItems = [
 ]
 
 const adminItems = [
-  { to: '/catalogos', icon: Settings, label: 'Creador de Productos' },
+  { to: '/creador-productos', icon: Settings, label: 'Creador de Productos' },
   { to: '/configuracion', icon: SlidersHorizontal, label: 'Configuración' },
   { to: '/usuarios', icon: Users, label: 'Usuarios' },
   { to: '/audit-log', icon: FileText, label: 'Audit Log' },

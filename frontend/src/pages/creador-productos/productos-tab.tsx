@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { Html5Qrcode } from 'html5-qrcode'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Trash2, Search, Eye, Package, Tag, FileText, Camera, RotateCcw } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
@@ -10,7 +11,7 @@ import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select
 import api from '@/lib/api'
 import { toast } from 'sonner'
 import { autoPlural } from '@/lib/utils'
-import { getPresFormatos } from '@/lib/pres-formatos'
+import { getPresFormatos, type PresFormato } from '@/lib/pres-formatos'
 import type {
   PaginatedResponse,
   Producto,
@@ -426,55 +427,59 @@ function QuickCreateArea({
 // ── Barcode Scanner ──────────────────────────────────────────
 
 function BarcodeScanner({ onScan, onClose }: { onScan: (code: string) => void; onClose: () => void }) {
-  const videoRef = useRef<HTMLVideoElement>(null)
   const [error, setError] = useState<string | null>(null)
-  const animRef = useRef<number>(0)
-  const streamRef = useRef<MediaStream | null>(null)
+  const scannerRef = useRef<Html5Qrcode | null>(null)
 
   useEffect(() => {
-    if (!('BarcodeDetector' in window)) {
-      setError('Tu navegador no soporta el lector de cámara. Escribe el código manualmente.')
-      return
-    }
-    let active = true
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-      .then(async (stream) => {
-        if (!active) { stream.getTracks().forEach((t) => t.stop()); return }
-        streamRef.current = stream
-        const video = videoRef.current!
-        video.srcObject = stream
-        await video.play()
-        const detector = new (window as any).BarcodeDetector({
-          formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'],
-        })
-        function tick() {
-          detector.detect(video).then((codes: any[]) => {
-            if (!active) return
-            if (codes.length > 0) { onScan(codes[0].rawValue) }
-            else { animRef.current = requestAnimationFrame(tick) }
-          }).catch(() => { if (active) animRef.current = requestAnimationFrame(tick) })
-        }
-        animRef.current = requestAnimationFrame(tick)
-      })
-      .catch(() => { if (active) setError('No se pudo acceder a la cámara. Verifica los permisos.') })
+    const timer = setTimeout(async () => {
+      try {
+        const scanner = new Html5Qrcode('barcode-scanner-viewport')
+        scannerRef.current = scanner
+        await scanner.start(
+          { facingMode: 'environment' },
+          { 
+            fps: 15, 
+            qrbox: { width: 250, height: 120 },
+            aspectRatio: 1.777778
+          },
+          (decoded) => {
+            onScan(decoded)
+          },
+          () => {} 
+        )
+      } catch (err) {
+        console.error('Barcode scanner error:', err)
+        setError('No se pudo acceder a la cámara o el navegador no es compatible.')
+      }
+    }, 100)
+
     return () => {
-      active = false
-      cancelAnimationFrame(animRef.current)
-      streamRef.current?.getTracks().forEach((t) => t.stop())
+      clearTimeout(timer)
+      if (scannerRef.current) {
+        const s = scannerRef.current
+        if (s.isScanning) {
+          s.stop().catch(() => {}).finally(() => s.clear())
+        } else {
+          s.clear()
+        }
+      }
     }
-  }, [])
+  }, [onScan])
 
   return (
     <div className="space-y-3">
-      {error
-        ? <p className="text-sm text-warning py-6 text-center">{error}</p>
-        : (
-          <>
-            <p className="text-xs text-base-content/50 text-center">Apunta la cámara al código de barras</p>
-            <video ref={videoRef} className="w-full rounded-lg" style={{ maxHeight: 220 }} muted playsInline />
-          </>
-        )
-      }
+      {error ? (
+        <p className="text-sm text-warning py-6 text-center">{error}</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-base-content/50 text-center">Apunta la cámara al código de barras</p>
+          <div 
+            id="barcode-scanner-viewport" 
+            className="w-full rounded-lg overflow-hidden bg-black"
+            style={{ minHeight: '220px' }}
+          />
+        </div>
+      )}
       <div className="flex justify-end">
         <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Cerrar</button>
       </div>
@@ -495,7 +500,7 @@ function CreateProductoDialog({
   proveedores: Proveedor[]
 }) {
   const queryClient = useQueryClient()
-  const [presFormatos] = useState<string[]>(() => getPresFormatos())
+  const [presFormatos] = useState<PresFormato[]>(() => getPresFormatos())
   const [form, setForm] = useState({
     nombre: '',
     descripcion: '',
@@ -576,6 +581,15 @@ function CreateProductoDialog({
   function handleAreaChange(value: string) {
     if (value === '__new__') { setNewAreaOpen(true); return }
     setForm((f) => ({ ...f, area_id: value }))
+  }
+
+  function handlePresChange(nombre: string) {
+    const found = presFormatos.find(p => p.nombre === nombre)
+    setForm(f => ({
+      ...f,
+      pres_nombre: nombre,
+      pres_nombre_plural: found?.nombre_plural || (nombre ? autoPlural(nombre) : '')
+    }))
   }
 
   return (
@@ -725,11 +739,11 @@ function CreateProductoDialog({
                   <select
                     className="select select-bordered select-sm h-9 text-sm"
                     value={form.pres_nombre}
-                    onChange={(e) => setForm((f) => ({ ...f, pres_nombre: e.target.value }))}
+                    onChange={(e) => handlePresChange(e.target.value)}
                   >
                     <option value="">— Solo unidad base —</option>
-                    {presFormatos.map((n) => (
-                      <option key={n} value={n}>{n}</option>
+                    {presFormatos.map((p) => (
+                      <option key={p.nombre} value={p.nombre}>{p.nombre}</option>
                     ))}
                   </select>
                   {!form.pres_nombre && (
@@ -864,7 +878,7 @@ function EditProductoDialog({
   proveedores: Proveedor[]
 }) {
   const queryClient = useQueryClient()
-  const [presFormatos] = useState<string[]>(() => getPresFormatos())
+  const [presFormatos] = useState<PresFormato[]>(() => getPresFormatos())
   const [newAreaOpen, setNewAreaOpen] = useState(false)
   const [scannerOpen, setScannerOpen] = useState(false)
 
@@ -987,6 +1001,15 @@ function EditProductoDialog({
   function handleAreaChange(value: string) {
     if (value === '__new__') { setNewAreaOpen(true); return }
     setForm((f) => ({ ...f, area_id: value }))
+  }
+
+  function handlePresChange(nombre: string) {
+    const found = presFormatos.find(p => p.nombre === nombre)
+    setForm(f => ({
+      ...f,
+      pres_nombre: nombre,
+      pres_nombre_plural: found?.nombre_plural || (nombre ? autoPlural(nombre) : '')
+    }))
   }
 
   return (
@@ -1160,11 +1183,11 @@ function EditProductoDialog({
                     <select
                       className="select select-bordered select-sm h-9 text-sm"
                       value={form.pres_nombre}
-                      onChange={(e) => setForm((f) => ({ ...f, pres_nombre: e.target.value }))}
+                      onChange={(e) => handlePresChange(e.target.value)}
                     >
                       <option value="">{form.pres_id ? '— Solo unidad base —' : 'Seleccionar formato...'}</option>
-                      {presFormatos.map((n) => (
-                        <option key={n} value={n}>{n}</option>
+                      {presFormatos.map((p) => (
+                        <option key={p.nombre} value={p.nombre}>{p.nombre}</option>
                       ))}
                     </select>
                   </div>

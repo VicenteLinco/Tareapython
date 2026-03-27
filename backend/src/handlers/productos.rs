@@ -566,9 +566,114 @@ async fn reactivar(
     Ok(Json(producto))
 }
 
+/// GET /api/v1/productos/scan?codigo=<barcode>
+/// Busca un producto por código de barras de presentación o código interno
+async fn scan_barcode(
+    State(state): State<AppState>,
+    Query(params): Query<ScanQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let codigo = params.codigo.as_deref().unwrap_or("").trim().to_string();
+    if codigo.is_empty() {
+        return Err(AppError::Validation("El parámetro 'codigo' es requerido".into()));
+    }
+
+    // Buscar por codigo_barras en presentaciones primero
+    #[derive(Debug, sqlx::FromRow)]
+    struct ScanResult {
+        producto_id: Uuid,
+        producto_nombre: String,
+        unidad_base_nombre: String,
+        unidad_base_nombre_plural: String,
+        presentacion_id: Option<i32>,
+        presentacion_nombre: Option<String>,
+        factor_conversion: Option<Decimal>,
+        stock_total: Option<Decimal>,
+    }
+
+    let row = sqlx::query_as::<_, ScanResult>(
+        r#"SELECT
+             p.id as producto_id,
+             p.nombre as producto_nombre,
+             ub.nombre as unidad_base_nombre,
+             ub.nombre_plural as unidad_base_nombre_plural,
+             pr.id as presentacion_id,
+             pr.nombre as presentacion_nombre,
+             pr.factor_conversion,
+             (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (
+               SELECT l.id FROM lotes l WHERE l.producto_id = p.id
+             )) as stock_total
+           FROM presentaciones pr
+           JOIN productos p ON p.id = pr.producto_id
+           JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
+           WHERE pr.codigo_barras = $1 AND pr.activa = true AND p.activo = true
+           LIMIT 1"#,
+    )
+    .bind(&codigo)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    if let Some(r) = row {
+        return Ok(Json(serde_json::json!({
+            "encontrado": true,
+            "producto_id": r.producto_id,
+            "producto_nombre": r.producto_nombre,
+            "unidad_base_nombre": r.unidad_base_nombre,
+            "unidad_base_nombre_plural": r.unidad_base_nombre_plural,
+            "presentacion_id": r.presentacion_id,
+            "presentacion_nombre": r.presentacion_nombre,
+            "factor_conversion": r.factor_conversion,
+            "stock_total": r.stock_total,
+        })));
+    }
+
+    // Buscar por codigo_interno del producto
+    let row2 = sqlx::query_as::<_, ScanResult>(
+        r#"SELECT
+             p.id as producto_id,
+             p.nombre as producto_nombre,
+             ub.nombre as unidad_base_nombre,
+             ub.nombre_plural as unidad_base_nombre_plural,
+             NULL::int as presentacion_id,
+             NULL::text as presentacion_nombre,
+             NULL::numeric as factor_conversion,
+             (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (
+               SELECT l.id FROM lotes l WHERE l.producto_id = p.id
+             )) as stock_total
+           FROM productos p
+           JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
+           WHERE p.codigo_interno = $1 AND p.activo = true
+           LIMIT 1"#,
+    )
+    .bind(&codigo)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    if let Some(r) = row2 {
+        return Ok(Json(serde_json::json!({
+            "encontrado": true,
+            "producto_id": r.producto_id,
+            "producto_nombre": r.producto_nombre,
+            "unidad_base_nombre": r.unidad_base_nombre,
+            "unidad_base_nombre_plural": r.unidad_base_nombre_plural,
+            "presentacion_id": r.presentacion_id,
+            "presentacion_nombre": r.presentacion_nombre,
+            "factor_conversion": r.factor_conversion,
+            "stock_total": r.stock_total,
+        })));
+    }
+
+    Ok(Json(serde_json::json!({ "encontrado": false })))
+}
+
+#[derive(Debug, Deserialize)]
+struct ScanQuery {
+    codigo: Option<String>,
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
+        .route("/scan", get(scan_barcode))
         .route("/{id}", get(obtener).put(actualizar).delete(eliminar))
         .route("/{id}/reactivar", axum::routing::post(reactivar))
 }

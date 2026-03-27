@@ -1,6 +1,8 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use regex::Regex;
 use serde_json::json;
+use std::sync::OnceLock;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -80,16 +82,17 @@ pub fn validate_text_length(value: &str, field: &str, max: usize) -> Result<(), 
     Ok(())
 }
 
-/// Valida un campo de email: formato básico y longitud.
+static EMAIL_RE: OnceLock<Regex> = OnceLock::new();
+
+/// Valida un campo de email con regex RFC-compatible y longitud.
 pub fn validate_email(email: &str) -> Result<(), AppError> {
-    if email.len() > 255 {
-        return Err(AppError::Validation("Email excede 255 caracteres".into()));
+    if email.len() > 254 {
+        return Err(AppError::Validation("Email demasiado largo".into()));
     }
-    if !email.contains('@') || !email.contains('.') {
-        return Err(AppError::Validation("Formato de email inválido".into()));
-    }
-    let parts: Vec<&str> = email.split('@').collect();
-    if parts.len() != 2 || parts[0].is_empty() || parts[1].len() < 3 {
+    let re = EMAIL_RE.get_or_init(|| {
+        Regex::new(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$").unwrap()
+    });
+    if !re.is_match(email) {
         return Err(AppError::Validation("Formato de email inválido".into()));
     }
     Ok(())

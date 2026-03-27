@@ -579,9 +579,45 @@ async fn cancelar(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// GET /api/v1/conteo/pendientes
+/// Retorna las áreas que tienen frecuencia de conteo configurada y están vencidas o próximas
+async fn pendientes(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    #[derive(Debug, serde::Serialize, sqlx::FromRow)]
+    struct AreaPendiente {
+        area_id: i32,
+        area_nombre: String,
+        frecuencia_dias: i32,
+        ultimo_conteo_confirmado: Option<chrono::DateTime<Utc>>,
+        dias_desde_ultimo: Option<i64>,
+    }
+
+    let areas = sqlx::query_as::<_, AreaPendiente>(
+        r#"SELECT
+             a.id as area_id,
+             a.nombre as area_nombre,
+             a.conteo_frecuencia_dias as frecuencia_dias,
+             MAX(sc.confirmed_at) as ultimo_conteo_confirmado,
+             EXTRACT(EPOCH FROM (NOW() - MAX(sc.confirmed_at))) / 86400 AS dias_desde_ultimo
+           FROM areas a
+           LEFT JOIN sesiones_conteo sc ON sc.area_id = a.id AND sc.estado = 'confirmado'
+           WHERE a.activa = true AND a.conteo_frecuencia_dias > 0
+           GROUP BY a.id, a.nombre, a.conteo_frecuencia_dias
+           HAVING MAX(sc.confirmed_at) IS NULL
+              OR EXTRACT(EPOCH FROM (NOW() - MAX(sc.confirmed_at))) / 86400 >= a.conteo_frecuencia_dias * 0.85
+           ORDER BY dias_desde_ultimo DESC NULLS FIRST, a.nombre ASC"#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(serde_json::json!(areas)))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
+        .route("/pendientes", get(pendientes))
         .route("/{id}", get(obtener).delete(cancelar))
         .route("/{id}/items", patch(actualizar_items))
         .route("/{id}/confirmar", post(confirmar))

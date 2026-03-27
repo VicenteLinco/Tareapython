@@ -18,7 +18,7 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
     let protected = Router::new()
         // Catálogos
         .nest("/categorias", handlers::categorias::routes())
-        .nest("/unidades-basicas", handlers::unidades_medida::routes())
+        .nest("/unidades-basicas", handlers::unidades_basicas::routes())
         .nest("/areas", handlers::areas::routes())
         .nest("/proveedores", handlers::proveedores::routes())
         // Usuarios

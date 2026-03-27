@@ -3,6 +3,7 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 use uuid::Uuid;
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct Movimiento {
     pub id: Uuid,

@@ -33,6 +33,7 @@ export interface Area {
   nombre: string
   es_bodega: boolean
   activa: boolean
+  conteo_frecuencia_dias: number
 }
 
 export interface Categoria {
@@ -61,7 +62,7 @@ export interface Proveedor {
 }
 
 export interface Producto {
-  id: number
+  id: string
   nombre: string
   descripcion?: string | null
   codigo: string | null
@@ -77,19 +78,17 @@ export interface Producto {
 
 export interface Presentacion {
   id: number
-  producto_id: number
+  producto_id: string
   nombre: string
   nombre_plural: string
   factor_conversion: number
-  unidad_medida_id: number
-  unidad_medida_nombre?: string
   codigo_barras?: string | null
   version: number
 }
 
 export interface Lote {
   id: number
-  producto_id: number
+  producto_id: string
   producto_nombre?: string
   codigo_lote: string
   codigo_interno: string | null
@@ -117,7 +116,7 @@ export interface StockItem {
 
 export interface StockPorArea {
   lote_id: number
-  producto_id: number
+  producto_id: string
   producto_nombre: string
   codigo_lote: string
   fecha_vencimiento: string
@@ -129,7 +128,7 @@ export interface StockPorArea {
 
 export interface Alerta {
   tipo: 'bajo_minimo' | 'vence_30d' | 'vence_90d' | 'vencido'
-  producto_id: number
+  producto_id: string
   producto_nombre: string
   detalle: string
   total?: number
@@ -146,8 +145,8 @@ export interface AlertasResponse {
 
 export interface Movimiento {
   id: number
-  tipo: 'entrada' | 'salida' | 'transferencia_entrada' | 'transferencia_salida' | 'descarte' | 'ajuste'
-  producto_id: number
+  tipo: 'entrada' | 'salida' | 'transferencia_entrada' | 'transferencia_salida' | 'descarte' | 'ajuste' | 'ajuste_pos' | 'ajuste_neg'
+  producto_id: string
   producto_nombre?: string
   lote_id: number
   codigo_lote?: string
@@ -183,7 +182,7 @@ export interface Recepcion {
 export interface RecepcionDetalle {
   id: number
   recepcion_id: number
-  producto_id: number
+  producto_id: string
   producto_nombre?: string
   presentacion_id: number | null
   presentacion_nombre?: string
@@ -207,7 +206,7 @@ export interface PaginatedResponse<T> {
 
 // --- Request DTOs ---
 export interface ConsumoRequest {
-  producto_id: number
+  producto_id: string
   area_id: number
   cantidad: number
   lote_id?: number
@@ -217,11 +216,13 @@ export interface ConsumoRequest {
 export interface ConsumoBatchRequest {
   area_id: number
   items: {
-    producto_id: number
+    producto_id: string
     cantidad: number
+    unidad: 'base' | 'presentacion'
+    presentacion_id?: number
     lote_id?: number
   }[]
-  notas?: string
+  nota?: string
 }
 
 export interface RecepcionCreateRequest {
@@ -230,7 +231,7 @@ export interface RecepcionCreateRequest {
   fecha_recepcion: string
   nota?: string
   detalles: {
-    producto_id: number
+    producto_id: string
     presentacion_id?: number
     cantidad_presentacion: number
     codigo_lote: string
@@ -240,7 +241,7 @@ export interface RecepcionCreateRequest {
 }
 
 export interface TransferenciaRequest {
-  producto_id: number
+  producto_id: string
   area_origen_id: number
   area_destino_id: number
   cantidad: number
@@ -288,6 +289,7 @@ export interface CreateArea {
 export interface UpdateArea {
   nombre?: string
   es_bodega?: boolean
+  conteo_frecuencia_dias?: number
 }
 
 export interface CreateProveedor {

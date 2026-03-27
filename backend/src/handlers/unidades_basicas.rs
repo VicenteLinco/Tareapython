@@ -5,9 +5,9 @@ use serde_json::json;
 
 use crate::auth::models::Claims;
 use crate::db::AppState;
-use crate::dto::unidad_medida::{CreateUnidadBasica, UpdateUnidadBasica};
+use crate::dto::unidad_basica::{CreateUnidadBasica, UpdateUnidadBasica};
 use crate::errors::{validate_text_length, AppError};
-use crate::models::unidad_medida::UnidadBasica;
+use crate::models::unidad_basica::UnidadBasica;
 
 async fn listar(State(state): State<AppState>) -> Result<Json<Vec<UnidadBasica>>, AppError> {
     let unidades =

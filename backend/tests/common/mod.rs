@@ -8,16 +8,18 @@ use tower::ServiceExt;
 use inventario_lab_backend::auth::jwt::create_access_token;
 use inventario_lab_backend::config::AppConfig;
 use inventario_lab_backend::db::AppState;
+use inventario_lab_backend::middleware::rate_limit::RateLimiter;
 use inventario_lab_backend::routes::create_routes;
 
 /// Crea una config de prueba
 pub fn test_config() -> AppConfig {
     AppConfig {
         database_url: String::new(), // no se usa, el pool viene de sqlx::test
-        jwt_secret: "test-secret-key-for-testing-only".to_string(),
+        jwt_secret: "test-secret-key-for-testing-only-32-chars-long".to_string(),
         jwt_access_expiration: 900,
         jwt_refresh_expiration: 86400,
         port: 0,
+        cors_origin: "*".to_string(),
     }
 }
 
@@ -27,6 +29,7 @@ pub fn test_app(pool: PgPool) -> Router {
     let state = AppState {
         pool: pool.clone(),
         config: config.clone(),
+        login_limiter: RateLimiter::new(100, 60),
     };
 
     let routes = create_routes(state.clone());

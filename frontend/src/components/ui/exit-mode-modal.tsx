@@ -58,7 +58,7 @@ export function ExitModeModal({ onConfirm, onCancel }: ExitModeModalProps) {
           maxLength={8}
           value={pin}
           onChange={(e) => { setPin(e.target.value.replace(/\D/g, '')); setError('') }}
-          onKeyDown={(e) => e.key === 'Enter' && pin && handleVerify()}
+          onKeyDown={(e) => e.key === 'Enter' && handleVerify()}
           autoFocus
         />
 
@@ -73,7 +73,7 @@ export function ExitModeModal({ onConfirm, onCancel }: ExitModeModalProps) {
           <button
             className="btn btn-primary flex-1"
             onClick={handleVerify}
-            disabled={!pin || loading}
+            disabled={loading}
           >
             {loading ? <span className="loading loading-spinner loading-sm" /> : 'Confirmar'}
           </button>

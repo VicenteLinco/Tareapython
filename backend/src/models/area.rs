@@ -8,4 +8,5 @@ pub struct Area {
     pub es_bodega: bool,
     pub activa: bool,
     pub created_at: DateTime<Utc>,
+    pub conteo_frecuencia_dias: i32,
 }

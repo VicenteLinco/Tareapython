@@ -17,6 +17,7 @@ export interface MeResponse {
   email: string
   rol: string
   area_ids: number[]
+  version: number
 }
 
 // --- Models ---
@@ -24,8 +25,9 @@ export interface Usuario {
   id: string
   nombre: string
   email: string
-  rol: 'admin' | 'tecnologo' | 'consulta'
+  rol: 'admin' | 'tecnologo' | 'consulta' | string
   area_ids: number[]
+  version: number
 }
 
 export interface Area {
@@ -34,18 +36,21 @@ export interface Area {
   es_bodega: boolean
   activa: boolean
   conteo_frecuencia_dias: number
+  version: number
 }
 
 export interface Categoria {
   id: number
   nombre: string
   descripcion: string | null
+  version: number
 }
 
 export interface UnidadBasica {
   id: number
   nombre: string
   nombre_plural: string
+  version: number
 }
 
 export interface Proveedor {
@@ -121,19 +126,31 @@ export interface StockPorArea {
   codigo_lote: string
   fecha_vencimiento: string
   area_id: number
+  area_nombre: string
   cantidad: number
   unidad_base_nombre: string
   unidad_base_nombre_plural: string
 }
 
 export interface Alerta {
-  tipo: 'bajo_minimo' | 'vence_30d' | 'vence_90d' | 'vencido'
+  tipo_alerta: 'bajo_minimo' | 'vence_30d' | 'vence_90d' | 'vencido' | 'dead_stock' | 'anomalia_consumo' | 'agotamiento_proximo'
   producto_id: string
-  producto_nombre: string
-  detalle: string
-  total?: number
-  unidad?: string
-  unidad_plural?: string
+  nombre: string
+  proxima_fecha_venc: string | null
+  stock_minimo: number | null
+  total: number | null
+  unidad: string | null
+  unidad_plural: string | null
+  dias_inactivo?: number
+  dias_autonomia?: number
+  consumo_diario_30d?: number
+  dias_con_consumo?: number
+  es_anomalia?: boolean
+  total_en_camino?: number
+  tiene_pedido_pendiente?: boolean
+  dias_despacho?: number
+  proveedor_id?: number | null
+  proveedor_nombre?: string | null
 }
 
 export interface AlertasResponse {
@@ -145,7 +162,7 @@ export interface AlertasResponse {
 
 export interface Movimiento {
   id: number
-  tipo: 'entrada' | 'salida' | 'transferencia_entrada' | 'transferencia_salida' | 'descarte' | 'ajuste' | 'ajuste_pos' | 'ajuste_neg'
+  tipo: 'entrada' | 'salida' | 'descarte' | 'ajuste' | 'ajuste_pos' | 'ajuste_neg'
   producto_id: string
   producto_nombre?: string
   lote_id: number
@@ -195,6 +212,47 @@ export interface RecepcionDetalle {
   area_destino_nombre?: string
 }
 
+// --- Solicitudes de Compra ---
+export interface SolicitudCompra {
+  id: string
+  numero_documento: string
+  fecha_creacion: string
+  estado: 'pendiente' | 'aprobada' | 'rechazada' | 'enviada' | 'completada' | 'cancelada'
+  usuario_nombre: string
+  items_count: number
+  nota?: string
+  nota_revision?: string
+}
+
+export interface SolicitudCompraDetalle {
+  id: string
+  numero_documento: string
+  fecha_creacion: string
+  estado: string
+  usuario_nombre: string
+  nota: string | null
+  nota_revision: string | null
+  fecha_revision: string | null
+  revisado_por_nombre: string | null
+  items: SolicitudCompraItem[]
+}
+
+export interface SolicitudCompraItem {
+  producto_id: string
+  producto_nombre: string
+  cantidad_sugerida: number
+  unidad: string
+}
+
+export interface CreateSolicitudRequest {
+  nota?: string
+  items: {
+    producto_id: string
+    cantidad_sugerida: number
+    unidad: string
+  }[]
+}
+
 // --- Pagination ---
 export interface PaginatedResponse<T> {
   data: T[]
@@ -214,7 +272,7 @@ export interface ConsumoRequest {
 }
 
 export interface ConsumoBatchRequest {
-  area_id: number
+  area_id?: number
   items: {
     producto_id: string
     cantidad: number
@@ -240,15 +298,6 @@ export interface RecepcionCreateRequest {
   }[]
 }
 
-export interface TransferenciaRequest {
-  producto_id: string
-  area_origen_id: number
-  area_destino_id: number
-  cantidad: number
-  lote_id?: number
-  notas?: string
-}
-
 export interface DescarteRequest {
   items: {
     producto_id: number
@@ -269,6 +318,7 @@ export interface CreateCategoria {
 export interface UpdateCategoria {
   nombre?: string
   descripcion?: string
+  version: number
 }
 
 export interface CreateUnidadBasica {
@@ -279,6 +329,7 @@ export interface CreateUnidadBasica {
 export interface UpdateUnidadBasica {
   nombre?: string
   nombre_plural?: string
+  version: number
 }
 
 export interface CreateArea {
@@ -290,6 +341,7 @@ export interface UpdateArea {
   nombre?: string
   es_bodega?: boolean
   conteo_frecuencia_dias?: number
+  version: number
 }
 
 export interface CreateProveedor {
@@ -369,6 +421,7 @@ export interface ConteoDetalle {
   sesion: SesionConteo
   nota: string | null
   items: ConteoItem[]
+  presentaciones: Presentacion[]
 }
 
 export interface PaginatedSesiones {

@@ -43,7 +43,8 @@ export default function DashboardPage() {
   // Log de Resoluciones (Movimientos recientes que corrigieron alertas)
   const { data: movimientosRecientes, isLoading: loadingMovimientos } = useQuery({
     queryKey: ['movimientos-recientes'],
-    queryFn: () => api.get<PaginatedResponse<Movimiento>>('/movimientos', { params: { per_page: 20 } }).then(r => r.data)
+    queryFn: () => api.get<PaginatedResponse<Movimiento>>('/movimientos', { params: { per_page: 20 } }).then(r => r.data),
+    refetchInterval: 60000
   })
 
   const totalItems = stockData?.total ?? 0
@@ -145,6 +146,8 @@ export default function DashboardPage() {
                   entrada: { icon: <ArrowDownLeft className="w-3.5 h-3.5" />, bg: 'bg-success/10 text-success', label: 'Stock normalizado' },
                   descarte: { icon: <Trash2 className="w-3.5 h-3.5" />, bg: 'bg-error/10 text-error', label: 'Lote retirado' },
                   salida: { icon: <CheckCircle2 className="w-3.5 h-3.5" />, bg: 'bg-primary/10 text-primary', label: 'Consumo registrado' },
+                  transferencia_entrada: { icon: <ArrowDownLeft className="w-3.5 h-3.5" />, bg: 'bg-info/10 text-info', label: 'Transferencia recibida' },
+                  transferencia_salida: { icon: <ChevronRight className="w-3.5 h-3.5" />, bg: 'bg-base-300 text-base-content', label: 'Transferencia enviada' },
                 } as const
                 const cfg = tipoConfig[res.tipo as keyof typeof tipoConfig] ?? tipoConfig.salida
 
@@ -385,6 +388,7 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
             </button>
           </div>
         )
-      })}    </div>
+      })}
+    </div>
   )
 }

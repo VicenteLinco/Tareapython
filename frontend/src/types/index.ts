@@ -162,7 +162,7 @@ export interface AlertasResponse {
 
 export interface Movimiento {
   id: number
-  tipo: 'entrada' | 'salida' | 'descarte' | 'ajuste' | 'ajuste_pos' | 'ajuste_neg'
+  tipo: 'entrada' | 'salida' | 'descarte' | 'ajuste' | 'ajuste_pos' | 'ajuste_neg' | 'transferencia_entrada' | 'transferencia_salida'
   producto_id: string
   producto_nombre?: string
   lote_id: number

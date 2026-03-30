@@ -10,6 +10,7 @@ pub struct LoteFefo {
     pub stock_id: i32,
     pub lote_id: Uuid,
     pub cantidad: Decimal,
+    pub area_id: i32,
 }
 
 /// Busca lotes con FEFO para un producto en un área, bloqueando los registros (FOR UPDATE).
@@ -19,7 +20,7 @@ pub async fn lotes_fefo(
     area_id: i32,
 ) -> Result<Vec<LoteFefo>, AppError> {
     let lotes = sqlx::query_as::<_, LoteFefo>(
-        r#"SELECT s.id as stock_id, s.lote_id, s.cantidad
+        r#"SELECT s.id as stock_id, s.lote_id, s.cantidad, s.area_id
            FROM stock s
            JOIN lotes l ON l.id = s.lote_id
            WHERE l.producto_id = $1
@@ -30,6 +31,27 @@ pub async fn lotes_fefo(
     )
     .bind(producto_id)
     .bind(area_id)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    Ok(lotes)
+}
+
+/// Busca lotes con FEFO para un producto en TODAS las áreas (sin filtro de área).
+pub async fn lotes_fefo_global(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    producto_id: Uuid,
+) -> Result<Vec<LoteFefo>, AppError> {
+    let lotes = sqlx::query_as::<_, LoteFefo>(
+        r#"SELECT s.id as stock_id, s.lote_id, s.cantidad, s.area_id
+           FROM stock s
+           JOIN lotes l ON l.id = s.lote_id
+           WHERE l.producto_id = $1
+             AND s.cantidad > 0
+           ORDER BY l.fecha_vencimiento ASC
+           FOR UPDATE OF s"#,
+    )
+    .bind(producto_id)
     .fetch_all(&mut **tx)
     .await?;
 

@@ -99,6 +99,7 @@ async fn crear(
             stock_id: stock.stock_id,
             lote_id: item.lote_id,
             cantidad: stock.cantidad,
+            area_id: item.area_id,
         };
 
         let movs = stock_ops::aplicar_salida_fefo(

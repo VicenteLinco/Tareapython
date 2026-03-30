@@ -24,7 +24,7 @@ struct ConsumoRequest {
 
 #[derive(Debug, Deserialize)]
 struct ConsumoBatchRequest {
-    area_id: i32,
+    area_id: Option<i32>,
     items: Vec<ConsumoBatchItem>,
     nota: Option<String>,
 }
@@ -40,6 +40,7 @@ struct ConsumoBatchItem {
 /// Convierte cantidad a unidades base si se especificó presentación
 async fn convertir_a_base(
     pool: &sqlx::PgPool,
+    producto_id: Uuid,
     cantidad: Decimal,
     unidad: &str,
     presentacion_id: Option<i32>,
@@ -50,12 +51,16 @@ async fn convertir_a_base(
         ))?;
 
         let factor: Decimal = sqlx::query_scalar(
-            "SELECT factor_conversion FROM presentaciones WHERE id = $1 AND activa = true",
+            "SELECT factor_conversion FROM presentaciones WHERE id = $1 AND producto_id = $2 AND activa = true",
         )
         .bind(pres_id)
+        .bind(producto_id)
         .fetch_optional(pool)
         .await?
-        .ok_or(AppError::NotFound("Presentación no encontrada".into()))?;
+        .ok_or(AppError::Validation(format!(
+            "La presentación {} no pertenece al producto {}",
+            pres_id, producto_id
+        )))?;
 
         Ok(cantidad * factor)
     } else {
@@ -84,7 +89,7 @@ async fn consumo(
     }
 
     // Convertir a unidades base
-    let cantidad_base = convertir_a_base(&state.pool, req.cantidad, &req.unidad, req.presentacion_id).await?;
+    let cantidad_base = convertir_a_base(&state.pool, req.producto_id, req.cantidad, &req.unidad, req.presentacion_id).await?;
     if cantidad_base <= Decimal::ZERO {
         idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
         return Err(AppError::Validation("La cantidad debe ser mayor a 0".into()));
@@ -159,8 +164,10 @@ async fn consumo_batch(
         return Err(AppError::Validation("items no puede estar vacío".into()));
     }
 
-    // Validar acceso al área
-    stock_ops::validar_acceso_area(&state.pool, claims.sub, req.area_id, &claims.rol).await?;
+    // Validar acceso al área (solo si se especificó área)
+    if let Some(area_id) = req.area_id {
+        stock_ops::validar_acceso_area(&state.pool, claims.sub, area_id, &claims.rol).await?;
+    }
 
     // Idempotency
     let idem_key = idempotency::extract_idempotency_key(&headers)?;
@@ -171,13 +178,14 @@ async fn consumo_batch(
     // Convertir todas las cantidades a base
     let mut items_base = Vec::with_capacity(req.items.len());
     for item in &req.items {
-        let cantidad = convertir_a_base(&state.pool, item.cantidad, &item.unidad, item.presentacion_id).await?;
+        let cantidad = convertir_a_base(&state.pool, item.producto_id, item.cantidad, &item.unidad, item.presentacion_id).await?;
         if cantidad <= Decimal::ZERO {
             idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
             return Err(AppError::Validation("Todas las cantidades deben ser mayor a 0".into()));
         }
         items_base.push((item.producto_id, cantidad));
     }
+
 
     let mut tx = state.pool.begin().await?;
     let grupo = Uuid::new_v4();
@@ -187,7 +195,10 @@ async fn consumo_batch(
     let mut lotes_por_item = Vec::new();
 
     for (producto_id, cantidad) in &items_base {
-        let lotes = stock_ops::lotes_fefo(&mut tx, *producto_id, req.area_id).await?;
+        let lotes = match req.area_id {
+            Some(area_id) => stock_ops::lotes_fefo(&mut tx, *producto_id, area_id).await?,
+            None => stock_ops::lotes_fefo_global(&mut tx, *producto_id).await?,
+        };
         let disponible = stock_ops::stock_total(&lotes);
 
         if disponible < *cantidad {
@@ -220,11 +231,15 @@ async fn consumo_batch(
     let mut resumen = Vec::new();
 
     for (i, (producto_id, cantidad)) in items_base.iter().enumerate() {
+        let lote_area_id = req.area_id.unwrap_or_else(|| {
+            // When no area specified, use the area from the first lote in the group
+            lotes_por_item[i].first().map(|l| l.area_id).unwrap_or(0)
+        });
         let movs = stock_ops::aplicar_salida_fefo(
             &mut tx,
             &lotes_por_item[i],
             *cantidad,
-            req.area_id,
+            lote_area_id,
             claims.sub,
             "CONSUMO",
             grupo,
@@ -235,15 +250,25 @@ async fn consumo_batch(
 
         total_movimientos += movs.len() as u32;
 
-        let stock_restante: Option<Decimal> = sqlx::query_scalar(
-            r#"SELECT SUM(s.cantidad) FROM stock s
-               JOIN lotes l ON l.id = s.lote_id
-               WHERE l.producto_id = $1 AND s.area_id = $2 AND s.cantidad > 0"#,
-        )
-        .bind(producto_id)
-        .bind(req.area_id)
-        .fetch_one(&mut *tx)
-        .await?;
+        let stock_restante: Option<Decimal> = match req.area_id {
+            Some(area_id) => sqlx::query_scalar(
+                r#"SELECT SUM(s.cantidad) FROM stock s
+                   JOIN lotes l ON l.id = s.lote_id
+                   WHERE l.producto_id = $1 AND s.area_id = $2 AND s.cantidad > 0"#,
+            )
+            .bind(producto_id)
+            .bind(area_id)
+            .fetch_one(&mut *tx)
+            .await?,
+            None => sqlx::query_scalar(
+                r#"SELECT SUM(s.cantidad) FROM stock s
+                   JOIN lotes l ON l.id = s.lote_id
+                   WHERE l.producto_id = $1 AND s.cantidad > 0"#,
+            )
+            .bind(producto_id)
+            .fetch_one(&mut *tx)
+            .await?,
+        };
 
         let nombre: Option<String> =
             sqlx::query_scalar("SELECT nombre FROM productos WHERE id = $1")

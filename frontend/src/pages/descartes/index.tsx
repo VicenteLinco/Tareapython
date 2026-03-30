@@ -115,14 +115,18 @@ export default function DescartesPage() {
     if (totalSelected === 0 || !areaId) return
 
     const payload: DescarteRequest = {
-      items: selectedItems.map(i => ({
-        producto_id: Number(i.producto_id),
-        lote_id: i.lote_id,
-        area_id: areaId,
-        cantidad: i.cantidad_descartar,
-        motivo: i.motivo.toUpperCase(),
-        ...(justificacion && { nota: justificacion })
-      }))
+      items: selectedItems.map(i => {
+        const days = daysUntil(i.fecha_vencimiento)
+        const isHealthy = i.motivo !== 'vencido' && (days === null || days > 30)
+        return {
+          producto_id: Number(i.producto_id),
+          lote_id: i.lote_id,
+          area_id: areaId,
+          cantidad: i.cantidad_descartar,
+          motivo: i.motivo.toUpperCase(),
+          ...(justificacion && isHealthy && { nota: justificacion })
+        }
+      })
     }
 
     descarteMutation.mutate(payload)

@@ -402,8 +402,8 @@ export default function RecepcionDetallePage() {
               <tbody>
                 {detalle.map((item) => {
                   const days = daysUntil(item.fecha_vencimiento)
-                  const isExpired = days <= 0
-                  const isSoon = days > 0 && days <= 30
+                  const isExpired = days !== null && days <= 0
+                  const isSoon = days !== null && days > 0 && days <= 30
                   const qty = parseFloat(item.cantidad_unidades_base)
                   const qtyPres = parseFloat(item.cantidad_presentaciones)
                   const factor = parseFloat(item.factor_conversion_usado)

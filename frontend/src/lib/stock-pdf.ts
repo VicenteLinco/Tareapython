@@ -29,6 +29,12 @@ interface PdfOptions {
   nombreLaboratorio: string
   logoBase64: string
   usuarioNombre: string
+  filters?: {
+    q?: string
+    categoria_id?: string
+    proveedor_id?: string
+    stock_bajo?: boolean
+  }
 }
 
 interface StockResponse {
@@ -36,9 +42,16 @@ interface StockResponse {
   total_pages: number
 }
 
-async function fetchStockForArea(areaId: number): Promise<StockItem[]> {
+async function fetchStockForArea(areaId: number, filters?: PdfOptions['filters']): Promise<StockItem[]> {
+  const params = {
+    ...filters,
+    area_id: areaId,
+    per_page: 500,
+    page: 1,
+  }
+
   const first = await api
-    .get<StockResponse>('/stock', { params: { area_id: areaId, per_page: 500, page: 1 } })
+    .get<StockResponse>('/stock', { params })
     .then((r) => r.data)
 
   if (first.total_pages <= 1) return first.data
@@ -46,7 +59,7 @@ async function fetchStockForArea(areaId: number): Promise<StockItem[]> {
   const rest = await Promise.all(
     Array.from({ length: first.total_pages - 1 }, (_, i) =>
       api
-        .get<StockResponse>('/stock', { params: { area_id: areaId, per_page: 500, page: i + 2 } })
+        .get<StockResponse>('/stock', { params: { ...params, page: i + 2 } })
         .then((r) => r.data.data)
     )
   )
@@ -58,7 +71,7 @@ function getAlerta(item: StockItem): 'bajo' | 'vencer' | null {
   if (stock <= item.stock_minimo) return 'bajo'
   if (item.proximo_vencimiento) {
     const d = daysUntil(item.proximo_vencimiento)
-    if (d <= 30) return 'vencer'
+    if (d !== null && d <= 30) return 'vencer'
   }
   return null
 }
@@ -80,12 +93,12 @@ function parseLogoBase64(raw: string): { data: string; type: 'PNG' | 'JPEG' } | 
 }
 
 export async function exportarStockPDF(options: PdfOptions): Promise<void> {
-  const { selectedAreas, incluirResumen, nombreLaboratorio, logoBase64, usuarioNombre } = options
+  const { selectedAreas, incluirResumen, nombreLaboratorio, logoBase64, usuarioNombre, filters } = options
 
   // Fetch data
   const stockPorArea: { area: Area; items: StockItem[] }[] = []
   for (const area of selectedAreas) {
-    const items = await fetchStockForArea(area.id)
+    const items = await fetchStockForArea(area.id, filters)
     if (items.length > 0) stockPorArea.push({ area, items })
   }
 
@@ -186,7 +199,7 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
     const itemsVencer  = allItems.filter((i) => {
       if (!i.proximo_vencimiento) return false
       const d = daysUntil(i.proximo_vencimiento)
-      return d >= 0 && d <= 30
+      return d !== null && d >= 0 && d <= 30
     })
 
     const MARGIN = 14
@@ -373,7 +386,7 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
     } else {
       itemsVencer.slice(0, MAX_ROWS).forEach((item, idx) => {
         const d = daysUntil(item.proximo_vencimiento!)
-        const label = d === 0 ? 'hoy' : formatCantidad(d, 'día')
+        const label = d === null ? '-' : d === 0 ? 'hoy' : formatCantidad(d, 'día')
         drawAlertRow(
           item.producto_nombre,
           label,
@@ -406,7 +419,7 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
       const vencStr = item.proximo_vencimiento
         ? (() => {
             const d = daysUntil(item.proximo_vencimiento)
-            const label = d <= 0 ? 'Vencido' : formatCantidad(d, 'día')
+            const label = d === null ? '-' : d <= 0 ? 'Vencido' : formatCantidad(d, 'día')
             return `${formatDate(item.proximo_vencimiento)} (${label})`
           })()
         : '-'

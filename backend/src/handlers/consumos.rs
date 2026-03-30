@@ -116,7 +116,6 @@ async fn consumo(
         &mut tx,
         &lotes,
         cantidad_base,
-        req.area_id,
         claims.sub,
         "CONSUMO",
         grupo,
@@ -231,15 +230,10 @@ async fn consumo_batch(
     let mut resumen = Vec::new();
 
     for (i, (producto_id, cantidad)) in items_base.iter().enumerate() {
-        let lote_area_id = req.area_id.unwrap_or_else(|| {
-            // When no area specified, use the area from the first lote in the group
-            lotes_por_item[i].first().map(|l| l.area_id).unwrap_or(0)
-        });
         let movs = stock_ops::aplicar_salida_fefo(
             &mut tx,
             &lotes_por_item[i],
             *cantidad,
-            lote_area_id,
             claims.sub,
             "CONSUMO",
             grupo,

@@ -69,7 +69,6 @@ pub async fn aplicar_salida_fefo(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     lotes: &[LoteFefo],
     cantidad_total: Decimal,
-    area_id: i32,
     usuario_id: Uuid,
     tipo: &str,
     grupo_movimiento: Uuid,
@@ -105,7 +104,7 @@ pub async fn aplicar_salida_fefo(
         )
         .bind(grupo_movimiento)
         .bind(lote.lote_id)
-        .bind(area_id)
+        .bind(lote.area_id)
         .bind(tipo)
         .bind(consumir)
         .bind(usuario_id)

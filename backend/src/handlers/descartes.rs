@@ -106,7 +106,6 @@ async fn crear(
             &mut tx,
             &[lote_fefo],
             item.cantidad,
-            item.area_id,
             claims.sub,
             &item.tipo,
             grupo,

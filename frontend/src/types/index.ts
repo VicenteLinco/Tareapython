@@ -305,6 +305,7 @@ export interface DescarteRequest {
     area_id: number
     cantidad: number
     motivo: string
+    nota?: string
   }[]
   notas?: string
 }

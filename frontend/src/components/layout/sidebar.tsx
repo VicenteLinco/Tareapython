@@ -8,6 +8,7 @@ import {
   ArrowDownToLine,
   Trash2,
   History,
+  ShoppingCart,
   Settings,
   SlidersHorizontal,
   Users,
@@ -26,9 +27,10 @@ const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/stock', icon: Package, label: 'Inventario' },
   { to: '/consumos', icon: ClipboardList, label: 'Consumos' },
-  { to: '/recepciones', icon: ArrowDownToLine, label: 'Recepciones' },
-  { to: '/conteo', icon: ClipboardCheck, label: 'Conteo' },
   { to: '/descartes', icon: Trash2, label: 'Descartes' },
+  { to: '/recepciones', icon: ArrowDownToLine, label: 'Recepciones' },
+  { to: '/solicitudes-compra', icon: ShoppingCart, label: 'Solicitudes' },
+  { to: '/conteo', icon: ClipboardCheck, label: 'Conteo' },
   { to: '/movimientos', icon: History, label: 'Movimientos' },
 ]
 
@@ -80,7 +82,10 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-2 px-2">
+      <nav className={cn(
+        "flex-1 py-2 px-2 transition-all duration-300",
+        expanded ? "overflow-y-auto scrollbar-thin-hover" : "overflow-y-hidden"
+      )}>
         <div className="space-y-0.5">
           {navItems.map((item) => (
             <SidebarLink key={item.to} {...item} expanded={expanded} />

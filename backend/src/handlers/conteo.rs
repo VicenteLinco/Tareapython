@@ -67,12 +67,12 @@ struct CreateSesionInput {
     area_id: i32,
 }
 
-#[derive(Debug, Deserialize)]
-struct UpdateItemInput {
-    item_id: Uuid,
-    cantidad_contada: Option<Decimal>,
-    estado_item: String,
-    version: i32,
+#[derive(Debug, Deserialize, specta::Type)]
+pub struct UpdateItemInput {
+    pub item_id: Uuid,
+    pub cantidad_contada: Option<Decimal>,
+    pub estado_item: String,
+    pub version: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -206,12 +206,26 @@ async fn obtener(
     .fetch_all(&state.pool)
     .await?;
 
+    // Obtener presentaciones para todos los productos en la sesión
+    let producto_ids: Vec<Uuid> = items.iter().map(|i| i.producto_id).collect();
+    let presentaciones = sqlx::query_as::<_, crate::models::presentacion::Presentacion>(
+        "SELECT * FROM presentaciones WHERE producto_id = ANY($1) AND activa = true"
+    )
+    .bind(&producto_ids)
+    .fetch_all(&state.pool)
+    .await?;
+
     Ok(Json(serde_json::json!({
         "sesion": sesion,
         "nota": nota,
         "items": items,
+        "presentaciones": presentaciones,
     })))
 }
+
+use crate::services::conteo_service::ConteoService;
+
+// ... (listar y obtener omitidos para brevedad, permanecen igual)
 
 /// POST /api/v1/conteo
 async fn crear(
@@ -221,65 +235,13 @@ async fn crear(
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
 
-    let area_existe: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM areas WHERE id = $1 AND activa = true)")
-            .bind(req.area_id)
-            .fetch_one(&state.pool)
-            .await?;
-
-    if !area_existe {
-        return Err(AppError::NotFound("Área no encontrada o inactiva".into()));
-    }
-
-    let mut tx = state.pool.begin().await?;
-
-    let sesion_id: Uuid = sqlx::query_scalar(
-        r#"INSERT INTO sesiones_conteo (area_id, usuario_creador_id)
-           VALUES ($1, $2) RETURNING id"#,
-    )
-    .bind(req.area_id)
-    .bind(claims.sub)
-    .fetch_one(&mut *tx)
-    .await?;
-
-    #[derive(sqlx::FromRow)]
-    struct StockSnapshot {
-        lote_id: Uuid,
-        cantidad: Decimal,
-    }
-
-    let lotes = sqlx::query_as::<_, StockSnapshot>(
-        r#"SELECT s.lote_id, s.cantidad
-           FROM stock s
-           JOIN lotes l ON l.id = s.lote_id
-           WHERE s.area_id = $1 AND s.cantidad > 0
-           ORDER BY l.fecha_vencimiento ASC"#,
-    )
-    .bind(req.area_id)
-    .fetch_all(&mut *tx)
-    .await?;
-
-    let total_items = lotes.len() as i64;
-
-    for lote in &lotes {
-        sqlx::query(
-            r#"INSERT INTO conteo_items (sesion_id, lote_id, stock_sistema)
-               VALUES ($1, $2, $3)"#,
-        )
-        .bind(sesion_id)
-        .bind(lote.lote_id)
-        .bind(lote.cantidad)
-        .execute(&mut *tx)
-        .await?;
-    }
-
-    tx.commit().await?;
+    let sesion = ConteoService::iniciar_sesion(&state.pool, req.area_id, claims.sub).await?;
 
     Ok((
         StatusCode::CREATED,
         Json(serde_json::json!({
-            "id": sesion_id,
-            "total_items": total_items,
+            "id": sesion.id,
+            "total_items": sesion.total_items,
             "estado": "borrador",
         })),
     ))
@@ -294,105 +256,11 @@ async fn actualizar_items(
 ) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
 
-    let mut tx = state.pool.begin().await?;
-
-    let estado: Option<String> =
-        sqlx::query_scalar("SELECT estado FROM sesiones_conteo WHERE id = $1 FOR UPDATE")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or(AppError::NotFound("Sesión no encontrada".into()))?;
-
-    let estado = estado.ok_or(AppError::NotFound("Sesión no encontrada".into()))?;
-
-    if estado == "confirmado" || estado == "cancelado" {
-        tx.rollback().await?;
-        return Err(AppError::BusinessLogic(
-            "No se puede modificar una sesión confirmada o cancelada".into(),
-            "ESTADO_INVALIDO".into(),
-        ));
-    }
-
-    let mut updated = 0i32;
-    let mut conflictos: Vec<String> = Vec::new();
-
-    for item in &req.items {
-        if !["contado", "no_contado", "pendiente"].contains(&item.estado_item.as_str()) {
-            return Err(AppError::Validation(
-                format!("estado_item inválido: {}", item.estado_item),
-            ));
-        }
-
-        if item.estado_item == "contado" {
-            match item.cantidad_contada {
-                None => {
-                    return Err(AppError::Validation(
-                        "cantidad_contada requerida cuando estado_item = 'contado'".into(),
-                    ));
-                }
-                Some(c) if c < Decimal::ZERO => {
-                    return Err(AppError::Validation(
-                        "cantidad_contada no puede ser negativa".into(),
-                    ));
-                }
-                _ => {}
-            }
-        }
-
-        let rows = sqlx::query(
-            r#"UPDATE conteo_items
-               SET cantidad_contada = $1,
-                   estado_item = $2,
-                   version = version + 1,
-                   updated_at = NOW()
-               WHERE id = $3
-                 AND sesion_id = $4
-                 AND version = $5"#,
-        )
-        .bind(item.cantidad_contada)
-        .bind(&item.estado_item)
-        .bind(item.item_id)
-        .bind(id)
-        .bind(item.version)
-        .execute(&mut *tx)
-        .await?;
-
-        if rows.rows_affected() == 0 {
-            conflictos.push(item.item_id.to_string());
-        } else {
-            updated += 1;
-        }
-    }
-
-    if !conflictos.is_empty() {
-        tx.rollback().await?;
-        return Err(AppError::BusinessLogic(
-            format!("Conflicto de versión en {} ítem(s). Recarga la sesión.", conflictos.len()),
-            "VERSION_CONFLICT".into(),
-        ));
-    }
-
-    if estado == "borrador" && updated > 0 {
-        sqlx::query(
-            "UPDATE sesiones_conteo SET estado = 'en_progreso', updated_at = NOW() WHERE id = $1",
-        )
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
-    } else {
-        sqlx::query(
-            "UPDATE sesiones_conteo SET updated_at = NOW() WHERE id = $1",
-        )
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
-    }
-
-    tx.commit().await?;
+    let (updated, conflictos) = ConteoService::actualizar_items(&state.pool, id, req.items).await?;
 
     Ok(Json(serde_json::json!({
         "updated": updated,
-        "conflictos": conflictos.len(),
+        "conflictos": conflictos,
     })))
 }
 
@@ -414,126 +282,17 @@ async fn confirmar(
         return Ok(Json(body));
     }
 
-    let mut tx = state.pool.begin().await?;
-
-    let estado: Option<String> =
-        sqlx::query_scalar("SELECT estado FROM sesiones_conteo WHERE id = $1 FOR UPDATE")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or(AppError::NotFound("Sesión no encontrada".into()))?;
-
-    let estado = estado.ok_or(AppError::NotFound("Sesión no encontrada".into()))?;
-
-    if estado == "confirmado" {
-        tx.rollback().await?;
-        idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
-        return Err(AppError::BusinessLogic(
-            "La sesión ya está confirmada".into(),
-            "YA_CONFIRMADO".into(),
-        ));
+    // El service maneja la transacción y lógica de ajuste
+    match ConteoService::confirmar_sesion(&state.pool, id, claims.sub, req.nota).await {
+        Ok(response) => {
+            idempotency::save_response(&state.pool, &idem_key, 200, &response).await?;
+            Ok(Json(response))
+        }
+        Err(e) => {
+            idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
+            Err(e)
+        }
     }
-
-    if estado == "cancelado" {
-        tx.rollback().await?;
-        idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
-        return Err(AppError::BusinessLogic(
-            "No se puede confirmar una sesión cancelada".into(),
-            "ESTADO_INVALIDO".into(),
-        ));
-    }
-
-    #[derive(sqlx::FromRow)]
-    struct ItemAjuste {
-        lote_id: Uuid,
-        area_id: i32,
-        stock_sistema: Decimal,
-        cantidad_contada: Decimal,
-    }
-
-    let items = sqlx::query_as::<_, ItemAjuste>(
-        r#"SELECT ci.lote_id, sc.area_id, ci.stock_sistema, ci.cantidad_contada
-           FROM conteo_items ci
-           JOIN sesiones_conteo sc ON sc.id = ci.sesion_id
-           WHERE ci.sesion_id = $1
-             AND ci.estado_item = 'contado'
-             AND ci.cantidad_contada IS NOT NULL
-             AND ci.cantidad_contada <> ci.stock_sistema"#,
-    )
-    .bind(id)
-    .fetch_all(&mut *tx)
-    .await?;
-
-    let grupo = Uuid::new_v4();
-    let mut ajustes_generados = 0i32;
-
-    for item in &items {
-        let diferencia = item.cantidad_contada - item.stock_sistema;
-        let (tipo, cantidad_abs) = if diferencia > Decimal::ZERO {
-            ("AJUSTE_POSITIVO", diferencia)
-        } else {
-            ("AJUSTE_NEGATIVO", diferencia.abs())
-        };
-
-        // Set stock to the counted value (physical count = ground truth)
-        sqlx::query(
-            r#"INSERT INTO stock (lote_id, area_id, cantidad)
-               VALUES ($1, $2, $3)
-               ON CONFLICT (lote_id, area_id)
-               DO UPDATE SET cantidad = $3, updated_at = NOW()"#,
-        )
-        .bind(item.lote_id)
-        .bind(item.area_id)
-        .bind(item.cantidad_contada)
-        .execute(&mut *tx)
-        .await?;
-
-        // Record the movement using cantidad_abs from snapshot difference
-        sqlx::query(
-            r#"INSERT INTO movimientos (grupo_movimiento, lote_id, area_id, tipo, cantidad, cantidad_resultante, usuario_id, origen, nota)
-               SELECT $1, $2, $3, $4, $5, s.cantidad, $6, 'conteo', $7
-               FROM stock s WHERE s.lote_id = $2 AND s.area_id = $3"#,
-        )
-        .bind(grupo)
-        .bind(item.lote_id)
-        .bind(item.area_id)
-        .bind(tipo)
-        .bind(cantidad_abs)
-        .bind(claims.sub)
-        .bind(req.nota.as_deref())
-        .execute(&mut *tx)
-        .await?;
-
-        ajustes_generados += 1;
-    }
-
-    sqlx::query(
-        r#"UPDATE sesiones_conteo
-           SET estado = 'confirmado',
-               usuario_confirmador_id = $1,
-               nota = COALESCE($2, nota),
-               confirmed_at = NOW(),
-               updated_at = NOW()
-           WHERE id = $3"#,
-    )
-    .bind(claims.sub)
-    .bind(req.nota.as_deref())
-    .bind(id)
-    .execute(&mut *tx)
-    .await?;
-
-    tx.commit().await?;
-
-    let response = serde_json::json!({
-        "id": id,
-        "estado": "confirmado",
-        "ajustes_generados": ajustes_generados,
-        "grupo_movimiento": grupo,
-    });
-
-    idempotency::save_response(&state.pool, &idem_key, 200, &response).await?;
-
-    Ok(Json(response))
 }
 
 /// DELETE /api/v1/conteo/:id

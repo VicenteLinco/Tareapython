@@ -3,7 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
 import { Dialog } from '@/components/ui/dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import api from '@/lib/api'
+import { parseApiError } from '@/lib/api-error'
 import { toast } from 'sonner'
 import type { Categoria, CreateCategoria, UpdateCategoria } from '@/types'
 
@@ -13,6 +15,7 @@ export default function CategoriasTab() {
   const [editing, setEditing] = useState<Categoria | null>(null)
   const [nombre, setNombre] = useState('')
   const [descripcion, setDescripcion] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<Categoria | null>(null)
 
   const { data: categorias = [], isLoading } = useQuery({
     queryKey: ['categorias'],
@@ -26,7 +29,7 @@ export default function CategoriasTab() {
       toast.success('Categoría creada')
       closeDialog()
     },
-    onError: () => toast.error('Error al crear categoría'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   const updateMut = useMutation({
@@ -37,7 +40,7 @@ export default function CategoriasTab() {
       toast.success('Categoría actualizada')
       closeDialog()
     },
-    onError: () => toast.error('Error al actualizar categoría'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   const deleteMut = useMutation({
@@ -45,8 +48,9 @@ export default function CategoriasTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categorias'] })
       toast.success('Categoría eliminada')
+      setDeleteTarget(null)
     },
-    onError: () => toast.error('No se puede eliminar: tiene productos asociados'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   function openCreate() {
@@ -72,15 +76,16 @@ export default function CategoriasTab() {
     e.preventDefault()
     if (!nombre.trim()) return
     if (editing) {
-      updateMut.mutate({ id: editing.id, data: { nombre: nombre.trim(), descripcion: descripcion.trim() || undefined } })
+      updateMut.mutate({ 
+        id: editing.id, 
+        data: { 
+          nombre: nombre.trim(), 
+          descripcion: descripcion.trim() || undefined,
+          version: editing.version
+        } 
+      })
     } else {
       createMut.mutate({ nombre: nombre.trim(), descripcion: descripcion.trim() || undefined })
-    }
-  }
-
-  function handleDelete(cat: Categoria) {
-    if (confirm(`¿Eliminar la categoría "${cat.nombre}"?`)) {
-      deleteMut.mutate(cat.id)
     }
   }
 
@@ -109,7 +114,7 @@ export default function CategoriasTab() {
           <button className="btn btn-ghost btn-xs btn-square" onClick={() => openEdit(item)}>
             <Pencil className="h-3.5 w-3.5 opacity-50" />
           </button>
-          <button className="btn btn-ghost btn-xs btn-square" onClick={() => handleDelete(item)}>
+          <button className="btn btn-ghost btn-xs btn-square" onClick={() => setDeleteTarget(item)}>
             <Trash2 className="h-3.5 w-3.5 opacity-50 hover:text-error" />
           </button>
         </div>
@@ -133,7 +138,7 @@ export default function CategoriasTab() {
       ) : (
         <DataTable
           columns={columns}
-          data={categorias as unknown as Record<string, unknown>[]}
+          data={categorias}
           emptyMessage="No hay categorías registradas"
         />
       )}
@@ -170,6 +175,16 @@ export default function CategoriasTab() {
           </div>
         </form>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Eliminar categoría"
+        description={`¿Estás seguro de eliminar "${deleteTarget?.nombre}"? Esta acción no se puede deshacer si tiene productos asociados.`}
+        confirmLabel="Eliminar"
+        loading={deleteMut.isPending}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+      />
     </div>
   )
 }

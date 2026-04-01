@@ -3,8 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Trash2, Search, Plane, Truck, RotateCcw } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
 import { Dialog } from '@/components/ui/dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
+import { parseApiError } from '@/lib/api-error'
 import { toast } from 'sonner'
 import type { Proveedor, CreateProveedor, UpdateProveedor } from '@/types'
 
@@ -35,6 +37,8 @@ export default function ProveedoresTab() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Proveedor | null>(null)
   const [form, setForm] = useState(EMPTY_FORM)
+  const [deleteTarget, setDeleteTarget] = useState<Proveedor | null>(null)
+  const [reactivateTarget, setReactivateTarget] = useState<Proveedor | null>(null)
 
   const { data: proveedores = [], isLoading } = useQuery({
     queryKey: ['proveedores', { search, activo: !verInactivos }],
@@ -54,7 +58,7 @@ export default function ProveedoresTab() {
       toast.success('Proveedor creado')
       closeDialog()
     },
-    onError: () => toast.error('Error al crear proveedor'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   const updateMut = useMutation({
@@ -65,13 +69,7 @@ export default function ProveedoresTab() {
       toast.success('Proveedor actualizado')
       closeDialog()
     },
-    onError: (err: any) => {
-      if (err.response?.status === 409) {
-        toast.error('Conflicto de versión')
-      } else {
-        toast.error('Error al actualizar proveedor')
-      }
-    },
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   const deleteMut = useMutation({
@@ -79,8 +77,9 @@ export default function ProveedoresTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proveedores'] })
       toast.success('Proveedor desactivado')
+      setDeleteTarget(null)
     },
-    onError: () => toast.error('Error al desactivar proveedor'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   const reactivarMut = useMutation({
@@ -88,8 +87,9 @@ export default function ProveedoresTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proveedores'] })
       toast.success('Proveedor reactivado')
+      setReactivateTarget(null)
     },
-    onError: () => toast.error('Error al reactivar proveedor'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   function openCreate() {
@@ -127,7 +127,7 @@ export default function ProveedoresTab() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.nombre.trim()) return
-    const clean: CreateProveedor = {
+    const clean: any = {
       nombre: form.nombre.trim(),
       contacto: form.contacto.trim() || undefined,
       telefono: form.telefono.trim() || undefined,
@@ -195,16 +195,12 @@ export default function ProveedoresTab() {
               <button className="btn btn-ghost btn-xs btn-square" onClick={() => openEdit(item)}>
                 <Pencil className="h-3.5 w-3.5 opacity-40" />
               </button>
-              <button className="btn btn-ghost btn-xs btn-square" onClick={() => {
-                if (confirm(`¿Desactivar "${item.nombre}"?`)) deleteMut.mutate(item.id)
-              }}>
+              <button className="btn btn-ghost btn-xs btn-square" onClick={() => setDeleteTarget(item)}>
                 <Trash2 className="h-3.5 w-3.5 opacity-40 hover:text-error" />
               </button>
             </>
           ) : (
-            <button className="btn btn-ghost btn-xs btn-square" title="Reactivar" onClick={() => {
-              if (confirm(`¿Reactivar "${item.nombre}"?`)) reactivarMut.mutate(item.id)
-            }}>
+            <button className="btn btn-ghost btn-xs btn-square" title="Reactivar" onClick={() => setReactivateTarget(item)}>
               <RotateCcw className="h-3.5 w-3.5 opacity-60 text-primary" />
             </button>
           )}
@@ -296,11 +292,33 @@ export default function ProveedoresTab() {
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn btn-ghost btn-sm" onClick={closeDialog}>Cancelar</button>
             <button type="submit" className="btn btn-primary btn-sm px-6" disabled={isSaving}>
+              {isSaving ? <span className="loading loading-spinner loading-xs mr-2" /> : null}
               {isSaving ? 'Guardando...' : 'Guardar'}
             </button>
           </div>
         </form>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Desactivar proveedor"
+        description={`¿Estás seguro de desactivar "${deleteTarget?.nombre}"?`}
+        confirmLabel="Desactivar"
+        loading={deleteMut.isPending}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+      />
+
+      <ConfirmDialog
+        open={!!reactivateTarget}
+        title="Reactivar proveedor"
+        description={`¿Quieres volver a activar "${reactivateTarget?.nombre}"?`}
+        confirmLabel="Reactivar"
+        variant="warning"
+        loading={reactivarMut.isPending}
+        onClose={() => setReactivateTarget(null)}
+        onConfirm={() => reactivateTarget && reactivarMut.mutate(reactivateTarget.id)}
+      />
     </div>
   )
 }

@@ -92,20 +92,50 @@
     width: 100%;
   }
 
-  /* Smoother scrollbars */
+  /* Smoother & Elegant Scrollbars */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: oklch(0.7 0 0 / 0.3);
-    border-radius: 3px;
+    background: color-mix(in oklab, var(--color-base-content), transparent 90%);
+    border-radius: 20px;
+    transition: background 0.2s ease;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.6 0 0 / 0.5);
+    background: color-mix(in oklab, var(--color-base-content), transparent 75%);
+  }
+
+  /* For Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--color-base-content), transparent 90%) transparent;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-thin-hover {
+    scrollbar-width: thin;
+  }
+  .scrollbar-thin-hover::-webkit-scrollbar {
+    width: 4px;
+  }
+  .scrollbar-thin-hover:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--color-base-content), transparent 85%);
+  }
+  .scrollbar-thin-hover::-webkit-scrollbar-thumb {
+    background: transparent;
   }
 }
 

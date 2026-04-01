@@ -49,7 +49,7 @@ Buffer pH 7.0,Buffer de calibración,unidad,1000
          Content-Type: text/csv\r\n\r\n\
          {csv_content}\r\n\
          --{boundary}--\r\n",
-        config_json = config.to_string(),
+        config_json = config,
         csv_content = csv_content,
         boundary = boundary
     );
@@ -105,7 +105,7 @@ async fn setup_finalizar_y_bloquear(pool: PgPool) {
          Content-Disposition: form-data; name=\"file\"; filename=\"test.csv\"\r\n\r\n\
          nombre\nTest\r\n\
          --{boundary}--\r\n",
-        config_json = config.to_string(),
+        config_json = config,
         boundary = boundary
     );
 

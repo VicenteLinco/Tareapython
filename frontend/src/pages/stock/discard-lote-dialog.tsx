@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import api from '@/lib/api'
+import { parseApiError } from '@/lib/api-error'
 import { AlertCircle, History, AlertTriangle } from 'lucide-react'
 import { daysUntil, cn } from '@/lib/utils'
 import type { StockPorArea } from '@/types'
@@ -48,7 +49,7 @@ export function DiscardLoteDialog({ open, loteId, numeroLote, productoNombre, de
     }
     
     if (fechaVencimiento) {
-      setTipo(isExpired ? 'DESCARTE_VENCIDO' : 'DESCARTE_OTRO')
+      setTipo(isExpired ? 'DESCARTE_VENCIDO' : 'DESCARTE_DAÑADO')
     }
   }, [stockPorArea, defaultAreaId, open, fechaVencimiento, isExpired])
 
@@ -87,8 +88,7 @@ export function DiscardLoteDialog({ open, loteId, numeroLote, productoNombre, de
       onClose()
     },
     onError: (err: any) => {
-      const msg = err.response?.data?.error || err.response?.data?.message || err.message || 'Error al descartar lote'
-      setError(msg)
+      setError(parseApiError(err))
     }
   })
 
@@ -198,12 +198,12 @@ export function DiscardLoteDialog({ open, loteId, numeroLote, productoNombre, de
                   type="button"
                   className={cn(
                     "btn btn-sm h-12 rounded-xl flex flex-col items-center justify-center gap-0.5 border-2 transition-all",
-                    tipo === 'DESCARTE_OTRO' 
+                    tipo === 'DESCARTE_DAÑADO' 
                       ? "btn-primary text-primary-content border-primary shadow-lg shadow-primary/20" 
                       : "btn-ghost border-base-200 opacity-50",
                     isExpired && "pointer-events-none opacity-20" // No puedes elegir otro si ya venció
                   )}
-                  onClick={() => setTipo('DESCARTE_OTRO')}
+                  onClick={() => setTipo('DESCARTE_DAÑADO')}
                 >
                   <span className="text-xs font-bold">Deterioro / Daño</span>
                 </button>

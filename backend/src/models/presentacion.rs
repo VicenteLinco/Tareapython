@@ -3,7 +3,7 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, sqlx::FromRow, specta::Type)]
 pub struct Presentacion {
     pub id: i32,
     pub producto_id: Uuid,

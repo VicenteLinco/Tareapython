@@ -6,10 +6,11 @@ import {
   Search, Plus, Minus, Trash2, Send,
   Zap, AlertTriangle, ShoppingCart,
   Package, CheckCircle2,
-  Clock, Camera, X, MapPin
+  Clock, Camera, X
 } from 'lucide-react'
 import { useAreaStore } from '@/hooks/use-area-store'
 import api from '@/lib/api'
+import { parseApiError } from '@/lib/api-error'
 import type { Area, ConsumoBatchRequest, StockItem, PaginatedResponse } from '@/types'
 import { toast } from 'sonner'
 import { cn, formatCantidad, daysUntil } from '@/lib/utils'
@@ -209,6 +210,7 @@ export default function ConsumosPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stock'] })
       queryClient.invalidateQueries({ queryKey: ['stock-area'] })
+      queryClient.invalidateQueries({ queryKey: ['stock-global-search'] })
       queryClient.invalidateQueries({ queryKey: ['alertas'] })
       setCart({})
       setNotas('')
@@ -217,8 +219,7 @@ export default function ConsumosPage() {
       })
     },
     onError: (err: any) => {
-        const msg = err.response?.data?.error?.message || 'Error al registrar el consumo'
-        toast.error(msg)
+        toast.error(parseApiError(err))
     },
   })
 
@@ -326,13 +327,15 @@ export default function ConsumosPage() {
                         <div className="flex-1 min-w-0">
                             <h3 className="font-bold text-sm truncate">{p.producto_nombre}</h3>
                             <div className="flex items-center gap-2 text-[10px] font-bold opacity-50 uppercase mt-1">
-                                <MapPin className="h-3 w-3" />
-                                <span>Click para localizar stock</span>
+                                <Plus className="h-3 w-3" />
+                                <span>Añadir al registro</span>
                             </div>
                         </div>
                         <div className="text-right">
-                            <span className="text-xs font-bold block">{Math.round(p.stock_total || 0)}</span>
-                            <span className="text-[10px] opacity-40 uppercase">{p.unidad}</span>
+                            <span className="text-xs font-bold block">
+                                {formatCantidad(p.stock_total || 0, p.unidad, p.unidad_plural)}
+                            </span>
+                            <span className="text-[10px] opacity-40 uppercase">Restantes</span>
                         </div>
                     </button>
                 ))}
@@ -383,7 +386,7 @@ export default function ConsumosPage() {
                         "text-xs font-medium px-2 py-0.5 rounded-lg",
                         p.stock <= (p.stock_minimo || 0) ? "bg-error/10 text-error" : "bg-base-200"
                       )}>
-                        {formatCantidad(p.stock, p.unidad, p.unidad_plural)}
+                        {formatCantidad(p.stock, p.unidad, p.unidad_plural)} restantes
                       </span>
                       {isExpiringSoon && (
                         <span className="text-[10px] font-bold text-warning uppercase">Vence en {days}d</span>

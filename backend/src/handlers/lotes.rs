@@ -110,10 +110,8 @@ async fn listar(
     if let Some(producto_id) = params.producto_id {
         query = query.bind(producto_id);
     }
-    if params.con_stock == Some(true) {
-        if let Some(area_id) = params.area_id {
-            query = query.bind(area_id);
-        }
+    if let (Some(true), Some(area_id)) = (params.con_stock, params.area_id) {
+        query = query.bind(area_id);
     }
 
     let lotes = query.fetch_all(&state.pool).await?;

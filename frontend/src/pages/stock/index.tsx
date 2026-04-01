@@ -1,8 +1,8 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { 
   Search, 
-  Filter, 
   Plus, 
   FileDown, 
   LayoutGrid, 
@@ -11,9 +11,8 @@ import {
   Clock,
   ChevronRight,
   Package,
-  TrendingDown,
   Info,
-  History
+  ShoppingCart
 } from 'lucide-react'
 import api from '@/lib/api'
 import type { StockItem, PaginatedResponse, Categoria, Proveedor, Area } from '@/types'
@@ -28,20 +27,36 @@ import { exportarStockPDF } from '@/lib/stock-pdf'
 import { toast } from 'sonner'
 
 export default function StockPage() {
-  const [search, setSearch] = useState('')
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [search, setSearch] = useState(searchParams.get('search') || '')
   const [view, setView] = useState<'grid' | 'list'>('list')
   const [categoriaId, setCategoriaId] = useState<number | null>(null)
   const [proveedorId, setProveedorId] = useState<number | null>(null)
   const [stockBajo, setStockBajo] = useState(false)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [conAlertas, setConAlertas] = useState(searchParams.get('alertas') === 'true')
+  const [filter, setFilter] = useState(searchParams.get('filter') || '')
+  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('select') || null)
   const [areaId, setAreaId] = useState<number | null>(null)
   const [showPdfModal, setShowPdfModal] = useState(false)
 
   const usuario = useAuthStore(s => s.usuario)
 
+  // Sincronizar URL con estado local
+  useEffect(() => {
+    const s = searchParams.get('search')
+    const sel = searchParams.get('select')
+    const alertas = searchParams.get('alertas') === 'true'
+    const f = searchParams.get('filter') || ''
+    if (s !== null && s !== search) setSearch(s)
+    if (sel !== null && sel !== selectedId) setSelectedId(sel)
+    if (alertas !== conAlertas) setConAlertas(alertas)
+    if (f !== filter) setFilter(f)
+  }, [searchParams])
+
   // Queries
   const { data: stockResponse, isLoading } = useQuery({
-    queryKey: ['stock', { search, categoriaId, proveedorId, stockBajo, areaId }],
+    queryKey: ['stock', { search, categoriaId, proveedorId, stockBajo, conAlertas, areaId, filter }],
     queryFn: () =>
       api.get<PaginatedResponse<StockItem>>('/stock', {
         params: {
@@ -49,7 +64,9 @@ export default function StockPage() {
           categoria_id: categoriaId || undefined,
           proveedor_id: proveedorId || undefined,
           stock_bajo: stockBajo || undefined,
+          con_alertas: conAlertas || undefined,
           area_id: areaId || undefined,
+          filter: filter || undefined,
           per_page: 100
         },
       }).then((r) => r.data),
@@ -77,11 +94,42 @@ export default function StockPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-base-content">Inventario Global</h1>
-          <p className="text-sm text-base-content/50 mt-0.5">Consulta y gestión de existencias en tiempo real</p>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight text-base-content">
+              {filter === 'critico' ? 'Riesgo de Quiebre' : 
+               filter === 'vencimiento' ? 'Próximos a Vencer' :
+               filter === 'vencidos' ? 'Lotes Vencidos' : 
+               filter === 'sin-stock' ? 'Stock Quebrado' : 'Inventario Global'}
+            </h1>
+            {filter && (
+              <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 gap-1 px-3 py-1 rounded-full text-[10px] font-bold">
+                Filtro Activo: {filter.toUpperCase()}
+                <button 
+                  className="hover:text-error ml-1 transition-colors" 
+                  onClick={() => {
+                    const newParams = new URLSearchParams(searchParams)
+                    newParams.delete('filter')
+                    newParams.delete('alertas')
+                    setSearchParams(newParams)
+                  }}
+                >
+                  ✕
+                </button>
+              </Badge>
+            )}
+          </div>
+          <p className="text-sm text-base-content/50">
+            {filter ? 'Mostrando items que requieren atención prioritaria' : 'Consulta y gestión de existencias en tiempo real'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
+          {filter === 'critico' && (
+            <Button size="sm" className="h-9 rounded-xl btn-primary shadow-lg shadow-primary/20 text-white" onClick={() => navigate('/solicitudes-compra')}>
+              <ShoppingCart className="w-4 h-4 mr-2" />
+              Generar Pedido
+            </Button>
+          )}
           <Button variant="outline" size="sm" className="h-9 rounded-xl border-base-300" onClick={() => setShowPdfModal(true)}>
             <FileDown className="w-4 h-4 mr-2 opacity-50" />
             Exportar
@@ -97,11 +145,11 @@ export default function StockPage() {
 
       {/* Filters Bar */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-3 bg-base-100 p-3 rounded-2xl border border-base-200 shadow-sm">
-        <div className="md:col-span-4 relative group">
+        <div className="md:col-span-3 relative group">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-30 group-focus-within:opacity-100 transition-opacity" />
           <Input 
             placeholder="Buscar por nombre o código..." 
-            className="pl-9 h-10 bg-base-200/50 border-transparent focus:bg-base-100 transition-all rounded-xl"
+            className="pl-9 h-10 bg-base-200/50 border-transparent focus:bg-base-100 transition-all rounded-xl text-xs"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -140,25 +188,42 @@ export default function StockPage() {
           </select>
         </div>
 
-        <div className="md:col-span-2 flex items-center justify-between gap-2 pl-2">
-          <label className="flex items-center gap-2 cursor-pointer group">
-            <input 
-              type="checkbox" 
-              className="checkbox checkbox-sm checkbox-primary rounded-md" 
-              checked={stockBajo}
-              onChange={(e) => setStockBajo(e.target.checked)}
-            />
-            <span className="text-[10px] font-bold uppercase tracking-wider opacity-50 group-hover:opacity-100 transition-opacity">Stock Bajo</span>
-          </label>
+        <div className="md:col-span-3 flex items-center justify-between gap-2 pl-2">
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 cursor-pointer group" title="Mostrar solo productos con alertas">
+              <input 
+                type="checkbox" 
+                className="checkbox checkbox-xs checkbox-error rounded-md" 
+                checked={conAlertas || !!filter}
+                onChange={(e) => {
+                  setConAlertas(e.target.checked)
+                  if (!e.target.checked) setFilter('')
+                }}
+              />
+              <span className={cn("text-[9px] font-bold uppercase tracking-wider transition-opacity", (conAlertas || !!filter) ? "text-error" : "opacity-50 group-hover:opacity-100")}>Con Alertas</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer group">
+              <input 
+                type="checkbox" 
+                className="checkbox checkbox-xs checkbox-primary rounded-md" 
+                checked={stockBajo}
+                onChange={(e) => {
+                  setStockBajo(e.target.checked)
+                  if (e.target.checked) setFilter('') // Clear specific alert filter if stockBajo is checked
+                }}
+              />
+              <span className={cn("text-[9px] font-bold uppercase tracking-wider transition-opacity", stockBajo ? "text-primary" : "opacity-50 group-hover:opacity-100")}>Stock Bajo</span>
+            </label>
+          </div>
           <div className="flex bg-base-200 p-1 rounded-lg">
             <button 
-              className={cn("p-1.5 rounded-md transition-all", view === 'list' ? "bg-base-100 shadow-sm" : "opacity-40")}
+              className={cn("p-1 rounded-md transition-all", view === 'list' ? "bg-base-100 shadow-sm" : "opacity-40")}
               onClick={() => setView('list')}
             >
               <ListIcon className="w-3.5 h-3.5" />
             </button>
             <button 
-              className={cn("p-1.5 rounded-md transition-all", view === 'grid' ? "bg-base-100 shadow-sm" : "opacity-40")}
+              className={cn("p-1 rounded-md transition-all", view === 'grid' ? "bg-base-100 shadow-sm" : "opacity-40")}
               onClick={() => setView('grid')}
             >
               <LayoutGrid className="w-3.5 h-3.5" />
@@ -304,8 +369,8 @@ export default function StockPage() {
                 usuarioNombre: usuario?.nombre ?? 'Sistema',
                 filters: {
                   q: search || undefined,
-                  categoria_id: categoriaId || undefined,
-                  proveedor_id: proveedorId || undefined,
+                  categoria_id: categoriaId?.toString() || undefined,
+                  proveedor_id: proveedorId?.toString() || undefined,
                   stock_bajo: stockBajo,
                 }
               })

@@ -1,13 +1,9 @@
-import { useState, useEffect } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useState } from 'react'
 import { Plus, ClipboardCheck, ChevronRight, CheckCircle2, Clock, XCircle, AlertCircle, CalendarClock, MapPin } from 'lucide-react'
-import { toast } from 'sonner'
-import api from '@/lib/api'
-import type { PaginatedSesiones, SesionConteo, Area } from '@/types'
-import { formatDate } from '@/lib/utils'
-import { cn } from '@/lib/utils'
-import { useAreaStore } from '@/hooks/use-area-store'
+import { useNavigate } from 'react-router-dom'
+import { useConteoList } from '@/features/conteo/hooks/use-conteo-list'
+import { formatDate, cn } from '@/lib/utils'
+import type { SesionConteo } from '@/types'
 
 const ESTADO_CONFIG = {
   borrador:     { label: 'Borrador',     icon: AlertCircle,   className: 'badge-warning' },
@@ -16,74 +12,16 @@ const ESTADO_CONFIG = {
   cancelado:    { label: 'Cancelado',    icon: XCircle,       className: 'badge-ghost' },
 } as const
 
-interface AreaPendiente {
-  area_id: number
-  area_nombre: string
-  frecuencia_dias: number
-  ultimo_conteo_confirmado: string | null
-  dias_desde_ultimo: number | null
-}
-
 export default function ConteoPage() {
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const selectedAreaId = useAreaStore((s) => s.selectedAreaId)
-  const setSelectedAreaId = useAreaStore((s) => s.setSelectedArea)
+  const { sesiones, isLoading, areas, pendientes, filters, actions, isCreating } = useConteoList()
   const [showModal, setShowModal] = useState(false)
   const [areaIdModal, setAreaIdModal] = useState('')
-  const [filterEstado, setFilterEstado] = useState('')
-  const [areaId, setAreaId] = useState<number | null>(selectedAreaId)
-  const [page, setPage] = useState(1)
-
-  useEffect(() => {
-    setAreaId(selectedAreaId)
-    setPage(1)
-  }, [selectedAreaId])
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['conteo', { filterEstado, page, areaId }],
-    queryFn: () =>
-      api.get<PaginatedSesiones>('/conteo', {
-        params: {
-          estado: filterEstado || undefined,
-          area_id: areaId || undefined,
-          page,
-          per_page: 20,
-        },
-      }).then((r) => r.data),
-  })
-
-  const { data: areas } = useQuery({
-    queryKey: ['areas'],
-    queryFn: () => api.get<Area[]>('/areas').then((r) => r.data),
-  })
-
-  const { data: pendientes } = useQuery({
-    queryKey: ['conteo-pendientes'],
-    queryFn: () => api.get<AreaPendiente[]>('/conteo/pendientes').then((r) => r.data),
-    staleTime: 60000,
-  })
-
-  const crearMutation = useMutation({
-    mutationFn: (area_id: number) =>
-      api.post<{ id: string; total_items: number }>('/conteo', { area_id }).then((r) => r.data),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['conteo'] })
-      queryClient.invalidateQueries({ queryKey: ['conteo-pendientes'] })
-      setShowModal(false)
-      setAreaIdModal('')
-      if (data.total_items === 0) {
-        toast.warning('Esta área no tiene insumos en stock. El conteo se creó vacío.')
-      }
-      navigate(`/conteo/${data.id}`)
-    },
-    onError: () => toast.error('Error al crear sesión de conteo'),
-  })
 
   const handleCrear = (overrideAreaId?: number) => {
     const id = overrideAreaId ?? (areaIdModal ? Number(areaIdModal) : null)
     if (!id) return
-    crearMutation.mutate(id)
+    actions.crear(id)
   }
 
   return (
@@ -98,7 +36,7 @@ export default function ConteoPage() {
       </div>
 
       {/* Áreas pendientes */}
-      {pendientes && pendientes.length > 0 && (
+      {pendientes.length > 0 && (
         <div className="mb-5 bg-warning/10 border border-warning/30 rounded-xl p-3">
           <div className="flex items-center gap-2 mb-2.5">
             <CalendarClock className="h-4 w-4 text-warning" />
@@ -123,7 +61,7 @@ export default function ConteoPage() {
                 </div>
                 <button
                   className="btn btn-xs btn-warning"
-                  disabled={crearMutation.isPending}
+                  disabled={isCreating}
                   onClick={() => handleCrear(p.area_id)}
                 >
                   Contar
@@ -138,16 +76,11 @@ export default function ConteoPage() {
       <div className="flex flex-col gap-2 mb-4">
         <select
           className="select select-bordered select-sm w-48"
-          value={areaId ?? ''}
-          onChange={(e) => {
-            const val = e.target.value;
-            setAreaId(val ? Number(val) : null);
-            setSelectedAreaId(val ? Number(val) : null);
-            setPage(1);
-          }}
+          value={filters.areaId ?? ''}
+          onChange={(e) => actions.setArea(e.target.value ? Number(e.target.value) : null)}
         >
           <option value="">Todas las áreas</option>
-          {(areas ?? []).filter((a) => a.activa).map((a) => (
+          {areas.filter((a) => a.activa).map((a) => (
             <option key={a.id} value={a.id}>{a.nombre}</option>
           ))}
         </select>
@@ -155,10 +88,10 @@ export default function ConteoPage() {
           {(['', 'borrador', 'en_progreso', 'confirmado', 'cancelado'] as const).map((e) => (
             <button
               key={e}
-              onClick={() => { setFilterEstado(e); setPage(1) }}
+              onClick={() => actions.setEstado(e)}
               className={cn(
                 'btn btn-sm whitespace-nowrap',
-                filterEstado === e ? 'btn-primary' : 'btn-ghost'
+                filters.estado === e ? 'btn-primary' : 'btn-ghost'
               )}
             >
               {e === '' ? 'Todos los estados' : ESTADO_CONFIG[e].label}
@@ -174,14 +107,14 @@ export default function ConteoPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {(data?.data ?? []).map((sesion) => (
+          {(sesiones?.data ?? []).map((sesion) => (
             <SesionCard
               key={sesion.id}
               sesion={sesion}
               onClick={() => navigate(`/conteo/${sesion.id}`)}
             />
           ))}
-          {data?.data.length === 0 && (
+          {sesiones?.data.length === 0 && (
             <div className="text-center py-12 opacity-40">
               <ClipboardCheck className="h-10 w-10 mx-auto mb-3" />
               <p>No hay sesiones</p>
@@ -191,22 +124,22 @@ export default function ConteoPage() {
       )}
 
       {/* Paginación */}
-      {data && data.total_pages > 1 && (
+      {sesiones && sesiones.total_pages > 1 && (
         <div className="flex justify-center gap-2 mt-6">
           <button
             className="btn btn-sm btn-ghost"
-            disabled={page === 1}
-            onClick={() => setPage((p) => p - 1)}
+            disabled={filters.page === 1}
+            onClick={() => actions.setPage(filters.page - 1)}
           >
             Anterior
           </button>
           <span className="btn btn-sm btn-ghost pointer-events-none">
-            {page} / {data.total_pages}
+            {filters.page} / {sesiones.total_pages}
           </span>
           <button
             className="btn btn-sm btn-ghost"
-            disabled={page >= data.total_pages}
-            onClick={() => setPage((p) => p + 1)}
+            disabled={filters.page >= sesiones.total_pages}
+            onClick={() => actions.setPage(filters.page + 1)}
           >
             Siguiente
           </button>
@@ -237,7 +170,7 @@ export default function ConteoPage() {
                 onChange={(e) => setAreaIdModal(e.target.value)}
               >
                 <option value="">Seleccionar área...</option>
-                {(areas ?? []).filter((a) => a.activa).map((a) => (
+                {areas.filter((a) => a.activa).map((a) => (
                   <option key={a.id} value={a.id}>{a.nombre}</option>
                 ))}
               </select>
@@ -251,10 +184,10 @@ export default function ConteoPage() {
               </button>
               <button
                 className="btn btn-primary"
-                disabled={!areaIdModal || crearMutation.isPending}
+                disabled={!areaIdModal || isCreating}
                 onClick={() => handleCrear()}
               >
-                {crearMutation.isPending
+                {isCreating
                   ? <span className="loading loading-spinner loading-sm" />
                   : 'Iniciar conteo'}
               </button>

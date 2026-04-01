@@ -21,6 +21,7 @@ interface UsuarioResponse {
   rol: 'admin' | 'tecnologo' | 'consulta'
   activo: boolean
   areas: AreaSimple[]
+  version: number
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -75,8 +76,9 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
           password: '',
           rol: usuario.rol,
           area_ids: usuario.areas.map((a) => a.id),
+          version: usuario.version,
         }
-      : { ...EMPTY_FORM }
+      : { ...EMPTY_FORM, version: 1 }
   )
 
   // Reset cuando cambia el usuario a editar
@@ -85,13 +87,20 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
     setPrevUsuario(usuario)
     setForm(
       usuario
-        ? { nombre: usuario.nombre, email: usuario.email, password: '', rol: usuario.rol, area_ids: usuario.areas.map((a) => a.id) }
-        : { ...EMPTY_FORM }
+        ? { 
+            nombre: usuario.nombre, 
+            email: usuario.email, 
+            password: '', 
+            rol: usuario.rol, 
+            area_ids: usuario.areas.map((a) => a.id),
+            version: usuario.version
+          }
+        : { ...EMPTY_FORM, version: 1 }
     )
   }
 
   const createMut = useMutation({
-    mutationFn: (data: typeof form) => api.post('/usuarios', data),
+    mutationFn: (data: any) => api.post('/usuarios', data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['usuarios'] })
       toast.success('Usuario creado')
@@ -101,14 +110,20 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
   })
 
   const updateMut = useMutation({
-    mutationFn: (data: Omit<typeof form, 'password'>) =>
+    mutationFn: (data: any) =>
       api.put(`/usuarios/${usuario!.id}`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['usuarios'] })
       toast.success('Usuario actualizado')
       onClose()
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err: any) => {
+      if (err.response?.status === 409) {
+        toast.error('Conflicto: El usuario fue modificado por otro administrador. Recarga la lista.')
+      } else {
+        toast.error(parseApiError(err))
+      }
+    },
   })
 
   const isPending = createMut.isPending || updateMut.isPending
@@ -338,7 +353,13 @@ export default function UsuariosPage() {
     mutationFn: (u: UsuarioResponse) =>
       u.activo
         ? api.delete(`/usuarios/${u.id}`)
-        : api.put(`/usuarios/${u.id}`, { nombre: u.nombre, email: u.email, rol: u.rol, area_ids: u.areas.map((a) => a.id) }),
+        : api.put(`/usuarios/${u.id}`, { 
+            nombre: u.nombre, 
+            email: u.email, 
+            rol: u.rol, 
+            area_ids: u.areas.map((a) => a.id),
+            version: u.version
+          }),
     onSuccess: (_, u) => {
       qc.invalidateQueries({ queryKey: ['usuarios'] })
       toast.success(u.activo ? 'Usuario desactivado' : 'Usuario reactivado')

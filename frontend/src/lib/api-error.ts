@@ -1,5 +1,5 @@
 interface ApiErrorBody {
-  error?: string
+  error?: string | { code?: string; message?: string }
   message?: string
   details?: string
 }
@@ -11,8 +11,14 @@ export function parseApiError(err: unknown): string {
   const data = e.response?.data
   const status = e.response?.status
 
+  // Prioridad: mensaje explícito del backend
   if (data?.message) return data.message
-  if (data?.error) return data.error
+  
+  // Si el backend devuelve { error: { code, message } }
+  if (data?.error) {
+    if (typeof data.error === 'string') return data.error
+    if (typeof data.error === 'object' && data.error.message) return data.error.message
+  }
 
   switch (status) {
     case 400: return 'Datos inválidos. Revisa el formulario.'

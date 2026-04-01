@@ -82,16 +82,20 @@ async fn main() {
             ])
     };
 
-    // Rate limiter: 10 requests por minuto en login/refresh
-    let login_limiter = RateLimiter::new(10, 60);
+    // Rate limiters: (SPEC-TECH-04)
+    let login_limiter = RateLimiter::new(10, 60);    // Auth: 10 req/min
+    let mutation_limiter = RateLimiter::new(60, 60); // Mutaciones: 60 req/min
+    let read_limiter = RateLimiter::new(300, 60);    // Lecturas: 300 req/min
 
-    // Tarea de limpieza periódica del rate limiter
-    let cleanup_limiter = login_limiter.clone();
+    // Tarea de limpieza periódica de los rate limiters
+    let (c1, c2, c3) = (login_limiter.clone(), mutation_limiter.clone(), read_limiter.clone());
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
         loop {
             interval.tick().await;
-            cleanup_limiter.cleanup().await;
+            c1.cleanup().await;
+            c2.cleanup().await;
+            c3.cleanup().await;
         }
     });
 
@@ -99,10 +103,16 @@ async fn main() {
         pool: pool.clone(),
         config: config.clone(),
         login_limiter,
+        mutation_limiter,
+        read_limiter,
     };
 
     let app = Router::new()
         .merge(routes::create_routes(state.clone()))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::rate_limit::rate_limit_middleware,
+        ))
         .layer(axum::middleware::from_fn(
             middleware::security_headers::security_headers,
         ))

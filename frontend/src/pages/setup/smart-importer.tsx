@@ -1,8 +1,8 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { 
   FileUp, ArrowRight, CheckCircle2, 
   AlertCircle, Table as TableIcon, 
-  ChevronLeft, ChevronRight, X,
+  ChevronLeft, X,
   Database, Info
 } from 'lucide-react'
 import { cn } from '@/lib/utils'

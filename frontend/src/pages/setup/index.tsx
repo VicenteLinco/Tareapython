@@ -37,11 +37,6 @@ type Paso = 'bienvenida' | 'productos' | 'resultado-productos' | 'stock' | 'resu
 
 // ─── Plantillas CSV ───────────────────────────────────────────────────────────
 
-const CSV_PRODUCTOS = `nombre,descripcion,categoria,unidad_base,stock_minimo,presentacion_nombre,factor_conversion,codigo_barras
-Guante de látex talla S,Caja 100 unidades,EPP,unidad,5,Caja,100,
-Tubo vacutainer EDTA 3mL,,Hematología,unidad,10,,
-Alcohol isopropílico 1L,Para desinfección,Reactivos,litro,3,Garrón 5L,5,`
-
 const CSV_STOCK = `producto_nombre_o_codigo,numero_lote,fecha_vencimiento,area,cantidad,costo_unitario
 Guante de látex talla S,LOT-2024-001,2026-12-31,Urgencias,200,4500
 Tubo vacutainer EDTA 3mL,LOT-2024-002,2026-06-30,Hematología,500,350`
@@ -197,7 +192,6 @@ export default function SetupPage() {
   const qc = useQueryClient()
   const [paso, setPaso] = useState<Paso>('bienvenida')
   const [showSmartImporter, setShowSmartImporter] = useState(false)
-  const [resultadoProductos, setResultadoProductos] = useState<ImportResult | null>(null)
   const [resultadoStock, setResultadoStock] = useState<ImportResult | null>(null)
 
   const { data: estado, isLoading: cargandoEstado } = useQuery<SetupEstado>({
@@ -390,20 +384,6 @@ export default function SetupPage() {
         </div>
       )}
 
-      {/* ── Resultado productos (Legacy - Se mantiene por compatibilidad si se llega aquí) ── */}
-      {paso === 'resultado-productos' && resultadoProductos && (
-        <div className="card bg-base-100 border border-base-200 shadow-sm">
-          <div className="card-body gap-4">
-            <h2 className="font-semibold text-base">Resultado — Productos</h2>
-            <ResultadoBadges resultado={resultadoProductos} label="Productos" />
-            <div className="card-actions justify-end mt-4">
-              <button className="btn btn-primary btn-sm" onClick={() => setPaso('stock')}>
-                Continuar con stock →
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Paso 2: Importar stock ── */}
       {paso === 'stock' && (

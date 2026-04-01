@@ -120,7 +120,7 @@ export interface StockItem {
 }
 
 export interface StockPorArea {
-  lote_id: number
+  lote_id: string
   producto_id: string
   producto_nombre: string
   codigo_lote: string
@@ -133,7 +133,7 @@ export interface StockPorArea {
 }
 
 export interface Alerta {
-  tipo_alerta: 'bajo_minimo' | 'vence_30d' | 'vence_90d' | 'vencido' | 'dead_stock' | 'anomalia_consumo' | 'agotamiento_proximo'
+  tipo_alerta: 'bajo_minimo' | 'vence_30d' | 'vence_90d' | 'vencido' | 'dead_stock' | 'anomalia_consumo' | 'agotamiento_proximo' | 'sin_stock'
   producto_id: string
   nombre: string
   proxima_fecha_venc: string | null
@@ -242,6 +242,11 @@ export interface SolicitudCompraItem {
   producto_nombre: string
   cantidad_sugerida: number
   unidad: string
+  codigo_proveedor?: string | null
+  codigo_maestro?: string | null
+  proveedor_nombre?: string | null
+  presentacion_nombre?: string | null
+  factor_conversion?: number | null
 }
 
 export interface CreateSolicitudRequest {
@@ -300,14 +305,12 @@ export interface RecepcionCreateRequest {
 
 export interface DescarteRequest {
   items: {
-    producto_id: number
-    lote_id: number
+    lote_id: string
     area_id: number
     cantidad: number
-    motivo: string
+    tipo: string
     nota?: string
   }[]
-  notas?: string
 }
 
 // --- Catalog DTOs ---

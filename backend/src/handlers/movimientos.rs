@@ -132,8 +132,6 @@ async fn listar(
         let mapped = match t.as_str() {
             "entrada" => vec!["INGRESO", "CARGA_INICIAL"],
             "salida" => vec!["CONSUMO"],
-            "transferencia_entrada" => vec!["TRANSFERENCIA_ENTRADA"],
-            "transferencia_salida" => vec!["TRANSFERENCIA_SALIDA"],
             "descarte" => vec!["DESCARTE_VENCIDO", "DESCARTE_DAÑADO"],
             "ajuste" => vec!["AJUSTE_POSITIVO", "AJUSTE_NEGATIVO"],
             "ajuste_pos" => vec!["AJUSTE_POSITIVO"],
@@ -166,8 +164,6 @@ async fn listar(
         item.tipo = match item.tipo.as_str() {
             "INGRESO" | "CARGA_INICIAL" => "entrada".to_string(),
             "CONSUMO" => "salida".to_string(),
-            "TRANSFERENCIA_ENTRADA" => "transferencia_entrada".to_string(),
-            "TRANSFERENCIA_SALIDA" => "transferencia_salida".to_string(),
             "DESCARTE_VENCIDO" | "DESCARTE_DAÑADO" => "descarte".to_string(),
             "AJUSTE_POSITIVO" => "ajuste_pos".to_string(),
             "AJUSTE_NEGATIVO" => "ajuste_neg".to_string(),
@@ -212,8 +208,6 @@ async fn obtener(
     mov.tipo = match mov.tipo.as_str() {
         "INGRESO" | "CARGA_INICIAL" => "entrada".to_string(),
         "CONSUMO" => "salida".to_string(),
-        "TRANSFERENCIA_ENTRADA" => "transferencia_entrada".to_string(),
-        "TRANSFERENCIA_SALIDA" => "transferencia_salida".to_string(),
         "DESCARTE_VENCIDO" | "DESCARTE_DAÑADO" => "descarte".to_string(),
         "AJUSTE_POSITIVO" => "ajuste_pos".to_string(),
         "AJUSTE_NEGATIVO" => "ajuste_neg".to_string(),

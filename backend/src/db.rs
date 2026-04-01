@@ -8,4 +8,6 @@ pub struct AppState {
     pub pool: PgPool,
     pub config: AppConfig,
     pub login_limiter: RateLimiter,
+    pub mutation_limiter: RateLimiter,
+    pub read_limiter: RateLimiter,
 }

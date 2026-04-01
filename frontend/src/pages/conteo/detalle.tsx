@@ -1,15 +1,18 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, PackageOpen } from 'lucide-react'
-import { toast } from 'sonner'
-import api from '@/lib/api'
+import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, PackageOpen, MoreHorizontal } from 'lucide-react'
 import { useAuthStore } from '@/hooks/use-auth-store'
-import type { ConteoDetalle, ConteoItem } from '@/types'
-import { cn, formatDate, formatCantidad } from '@/lib/utils'
-import { v4 as uuidv4 } from 'uuid'
+import { useConteoSession } from '@/features/conteo/hooks/use-conteo-session'
+import { useQuery } from '@tanstack/react-query'
+import api from '@/lib/api'
+import type { ConteoItem } from '@/types'
+import { cn, formatDate, formatCantidad, formatStockHumano } from '@/lib/utils'
 
-// Agrupa items por producto
+interface Configuracion {
+  conteo_ciego: boolean
+}
+
+// Agrupa items por producto (mantenemos esta utilidad local o se podría mover a utils)
 function agruparPorProducto(items: ConteoItem[]) {
   const grupos: Record<string, { producto_nombre: string; items: ConteoItem[] }> = {}
   for (const item of items) {
@@ -26,145 +29,53 @@ function agruparPorProducto(items: ConteoItem[]) {
 export default function ConteoDetallePage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const usuario = useAuthStore((s) => s.usuario)
   const isAdmin = usuario?.rol === 'admin'
 
-  const [localItems, setLocalItems] = useState<Record<string, { cantidad: string; estado: string; version: number }>>({})
+  const { data: config } = useQuery({
+    queryKey: ['configuracion'],
+    queryFn: () => api.get<Configuracion>('/configuracion').then(r => r.data),
+    staleTime: 60000
+  })
+
+  const {
+    sesion,
+    items,
+    presentaciones,
+    isLoading,
+    isError,
+    stats,
+    editable,
+    actions,
+    nota,
+    isSaving,
+    isConfirming,
+    hasChanges
+  } = useConteoSession(id)
+
+  // Guardado automático cuando hay cambios y no se está guardando ya
+  useEffect(() => {
+    if (hasChanges && !isSaving && editable) {
+      const timer = setTimeout(() => actions.save(), 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [hasChanges, isSaving, editable])
+
   const [showConfirmar, setShowConfirmar] = useState(false)
-  const [nota, setNota] = useState('')
   const [colapsados, setColapsados] = useState<Record<string, boolean>>({})
-
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['conteo-detalle', id],
-    queryFn: () =>
-      api.get<ConteoDetalle>(`/conteo/${id}`).then((r) => r.data),
-    enabled: !!id,
-    refetchInterval: false,
-  })
-
-  const sesion = data?.sesion
-  const items = data?.items ?? []
-  const editable = sesion?.estado === 'borrador' || sesion?.estado === 'en_progreso'
-
-  const itemsConEdicion = useMemo(() =>
-    items.map((item) => {
-      const local = localItems[item.id]
-      if (!local) return item
-      return {
-        ...item,
-        cantidad_contada: local.estado === 'contado' && local.cantidad !== ''
-          ? parseFloat(local.cantidad)
-          : item.cantidad_contada,
-        estado_item: local.estado as ConteoItem['estado_item'],
-      }
-    }),
-    [items, localItems]
-  )
-
-  const { contados, total } = useMemo(() => ({
-    contados: itemsConEdicion.filter((i) => i.estado_item === 'contado').length,
-    total: itemsConEdicion.length,
-  }), [itemsConEdicion])
-
-  const progreso = total > 0 ? Math.round((contados / total) * 100) : 0
-
-  const guardarMutation = useMutation({
-    mutationFn: (items: Array<{ item_id: string; cantidad_contada: number | null; estado_item: string; version: number }>) =>
-      api.patch(`/conteo/${id}/items`, { items }).then((r) => r.data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conteo-detalle', id] })
-      setLocalItems({})
-      toast.success('Guardado')
-    },
-    onError: (err: any) => {
-      const code = err?.response?.data?.code
-      if (code === 'VERSION_CONFLICT') {
-        toast.error('Otro usuario modificó algunos ítems. Recargando...')
-        queryClient.invalidateQueries({ queryKey: ['conteo-detalle', id] })
-        setLocalItems({})
-      } else {
-        toast.error('Error al guardar')
-      }
-    },
-  })
-
-  const confirmarMutation = useMutation({
-    mutationFn: () =>
-      api.post(
-        `/conteo/${id}/confirmar`,
-        { nota: nota || undefined },
-        { headers: { 'x-idempotency-key': uuidv4() } }
-      ).then((r) => r.data),
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['conteo-detalle', id] })
-      queryClient.invalidateQueries({ queryKey: ['conteo'] })
-      setShowConfirmar(false)
-      toast.success(`Conteo confirmado. ${data.ajustes_generados} ajustes generados.`)
-      navigate('/conteo')
-    },
-    onError: () => toast.error('Error al confirmar'),
-  })
-
-  const handleGuardar = useCallback(() => {
-    const payload = Object.entries(localItems).map(([item_id, local]) => ({
-      item_id,
-      cantidad_contada: local.estado === 'contado' && local.cantidad !== ''
-        ? parseFloat(local.cantidad)
-        : null,
-      estado_item: local.estado,
-      version: local.version,
-    }))
-    if (payload.length > 0) guardarMutation.mutate(payload)
-  }, [localItems, guardarMutation])
-
-  const handleCantidadChange = (item: ConteoItem, valor: string) => {
-    setLocalItems((prev) => ({
-      ...prev,
-      [item.id]: {
-        cantidad: valor,
-        estado: 'contado',
-        version: prev[item.id]?.version ?? item.version,
-      },
-    }))
-  }
-
-  const handleNoContado = (item: ConteoItem) => {
-    const estaNoContado = (localItems[item.id]?.estado ?? item.estado_item) === 'no_contado'
-    setLocalItems((prev) => ({
-      ...prev,
-      [item.id]: {
-        cantidad: '',
-        estado: estaNoContado ? 'pendiente' : 'no_contado',
-        version: prev[item.id]?.version ?? item.version,
-      },
-    }))
-  }
 
   const toggleColapsar = (productoId: string) =>
     setColapsados((prev) => ({ ...prev, [productoId]: !prev[productoId] }))
-
-  const hayCambiosPendientes = Object.keys(localItems).length > 0
-
-  const resumen = useMemo(() => {
-    const sinDiff = itemsConEdicion.filter((i) => i.estado_item === 'contado' && i.cantidad_contada === i.stock_sistema).length
-    const negativo = itemsConEdicion.filter((i) => i.estado_item === 'contado' && i.cantidad_contada !== null && i.cantidad_contada < i.stock_sistema).length
-    const positivo = itemsConEdicion.filter((i) => i.estado_item === 'contado' && i.cantidad_contada !== null && i.cantidad_contada > i.stock_sistema).length
-    const noContados = itemsConEdicion.filter((i) => i.estado_item === 'no_contado').length
-    return { sinDiff, negativo, positivo, noContados }
-  }, [itemsConEdicion])
 
   const horasDesde = sesion
     ? Math.floor((Date.now() - new Date(sesion.created_at).getTime()) / 3600000)
     : 0
 
-  if (isLoading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
-        <span className="loading loading-spinner loading-lg" />
-      </div>
-    )
-  }
+  if (isLoading) return (
+    <div className="flex justify-center items-center min-h-screen">
+      <span className="loading loading-spinner loading-lg" />
+    </div>
+  )
 
   if (isError) return (
     <div className="flex justify-center items-center min-h-screen">
@@ -174,7 +85,7 @@ export default function ConteoDetallePage() {
 
   if (!sesion) return null
 
-  const grupos = agruparPorProducto(itemsConEdicion)
+  const grupos = agruparPorProducto(items)
 
   return (
     <div className="flex flex-col min-h-screen bg-base-200">
@@ -188,28 +99,26 @@ export default function ConteoDetallePage() {
             <p className="font-semibold truncate">{sesion.area_nombre}</p>
             <p className="text-xs opacity-50">Conteo · {formatDate(sesion.created_at)}</p>
           </div>
-          {editable && hayCambiosPendientes && (
+          {editable && hasChanges && (
             <button
               className="btn btn-primary btn-sm"
-              onClick={handleGuardar}
-              disabled={guardarMutation.isPending}
+              onClick={actions.save}
+              disabled={isSaving}
             >
-              {guardarMutation.isPending
-                ? <span className="loading loading-spinner loading-xs" />
-                : 'Guardar'}
+              {isSaving ? <span className="loading loading-spinner loading-xs" /> : 'Guardar'}
             </button>
           )}
         </div>
         {/* Barra de progreso */}
         <div className="px-4 pb-3">
           <div className="flex justify-between text-xs opacity-60 mb-1">
-            <span>{contados} / {total} ítems contados</span>
-            <span>{progreso}%</span>
+            <span>{stats.contados} / {stats.total} ítems contados</span>
+            <span>{stats.progreso}%</span>
           </div>
           <div className="w-full bg-base-200 rounded-full h-2">
             <div
               className="h-2 rounded-full bg-primary transition-all duration-300"
-              style={{ width: `${progreso}%` }}
+              style={{ width: `${stats.progreso}%` }}
             />
           </div>
         </div>
@@ -229,7 +138,6 @@ export default function ConteoDetallePage() {
         )}
         {grupos.map(([productoId, grupo]) => (
           <div key={productoId} className="bg-base-100 rounded-xl overflow-hidden border border-base-200">
-            {/* Header de producto */}
             <button
               className="w-full flex items-center justify-between px-4 py-3 text-left"
               onClick={() => toggleColapsar(productoId)}
@@ -237,24 +145,21 @@ export default function ConteoDetallePage() {
               <span className="font-semibold text-sm">{grupo.producto_nombre}</span>
               <div className="flex items-center gap-2">
                 <span className="text-xs opacity-40">{formatCantidad(grupo.items.length, 'lote')}</span>
-                {colapsados[productoId]
-                  ? <ChevronDown className="h-4 w-4 opacity-40" />
-                  : <ChevronUp className="h-4 w-4 opacity-40" />
-                }
+                {colapsados[productoId] ? <ChevronDown className="h-4 w-4 opacity-40" /> : <ChevronUp className="h-4 w-4 opacity-40" />}
               </div>
             </button>
 
-            {/* Items del producto */}
             {!colapsados[productoId] && (
               <div className="divide-y divide-base-200">
                 {grupo.items.map((item) => (
                   <LoteRow
                     key={item.id}
                     item={item}
-                    localEdit={localItems[item.id]}
                     editable={editable}
-                    onCantidadChange={(v) => handleCantidadChange(item, v)}
-                    onNoContado={() => handleNoContado(item)}
+                    conteoCiego={config?.conteo_ciego}
+                    presentaciones={presentaciones.filter(p => p.producto_id === item.producto_id)}
+                    onCantidadChange={(v: string) => actions.updateItem(item, v)}
+                    onNoContado={() => actions.toggleNoContado(item)}
                   />
                 ))}
               </div>
@@ -263,13 +168,10 @@ export default function ConteoDetallePage() {
         ))}
       </div>
 
-      {/* Bottom bar — Confirmar (solo admin) */}
-      {isAdmin && editable && !hayCambiosPendientes && (
+      {/* Confirmar Bar */}
+      {isAdmin && editable && !hasChanges && (
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-base-100 border-t border-base-200">
-          <button
-            className="btn btn-primary w-full"
-            onClick={() => setShowConfirmar(true)}
-          >
+          <button className="btn btn-primary w-full" onClick={() => setShowConfirmar(true)}>
             Revisar y confirmar
           </button>
         </div>
@@ -280,46 +182,38 @@ export default function ConteoDetallePage() {
         <div className="modal modal-open modal-bottom">
           <div className="modal-box rounded-t-2xl rounded-b-none">
             <h3 className="font-bold text-lg mb-4">Resumen de ajustes</h3>
-
             <div className="space-y-2 mb-4">
-              <ResumenRow label="Sin diferencia" value={resumen.sinDiff} className="text-success" icon="✅" />
-              <ResumenRow label="Ajuste negativo" value={resumen.negativo} className="text-error" icon="🔴" />
-              <ResumenRow label="Ajuste positivo" value={resumen.positivo} className="text-info" icon="🔵" />
-              <ResumenRow label="No contados" value={resumen.noContados} className="opacity-50" icon="⬜" />
+              <ResumenRow label="Sin diferencia" value={stats.sinDiff} className="text-success" icon="✅" />
+              <ResumenRow label="Ajuste negativo" value={stats.negativo} className="text-error" icon="🔴" />
+              <ResumenRow label="Ajuste positivo" value={stats.positivo} className="text-info" icon="🔵" />
+              <ResumenRow label="No contados" value={stats.noContados} className="opacity-50" icon="⬜" />
             </div>
 
             {horasDesde >= 2 && (
               <div className="alert alert-warning mb-4 text-sm py-2">
                 <AlertTriangle className="h-4 w-4 shrink-0" />
-                <span>Han pasado {horasDesde}h desde que se inició esta sesión. Movimientos registrados durante el conteo pueden afectar las diferencias.</span>
+                <span>Han pasado {horasDesde}h desde el inicio. Los movimientos recientes pueden afectar las diferencias.</span>
               </div>
             )}
 
             <div className="form-control mb-4">
-              <label className="label">
-                <span className="label-text">Nota (opcional)</span>
-              </label>
+              <label className="label"><span className="label-text">Nota (opcional)</span></label>
               <textarea
                 className="textarea textarea-bordered"
                 rows={2}
-                placeholder="Ej: Conteo sábado 22/03, responsable: Ana M."
                 value={nota}
-                onChange={(e) => setNota(e.target.value)}
+                onChange={(e) => actions.setNota(e.target.value)}
               />
             </div>
 
             <div className="modal-action">
-              <button className="btn btn-ghost flex-1" onClick={() => setShowConfirmar(false)}>
-                Cancelar
-              </button>
+              <button className="btn btn-ghost flex-1" onClick={() => setShowConfirmar(false)}>Cancelar</button>
               <button
                 className="btn btn-primary flex-1"
-                onClick={() => confirmarMutation.mutate()}
-                disabled={confirmarMutation.isPending}
+                onClick={actions.confirm}
+                disabled={isConfirming}
               >
-                {confirmarMutation.isPending
-                  ? <span className="loading loading-spinner loading-sm" />
-                  : 'Confirmar ajustes'}
+                {isConfirming ? <span className="loading loading-spinner loading-sm" /> : 'Confirmar ajustes'}
               </button>
             </div>
           </div>
@@ -330,93 +224,156 @@ export default function ConteoDetallePage() {
   )
 }
 
-// ---- Subcomponentes ----
-
-function LoteRow({
-  item,
-  localEdit,
-  editable,
-  onCantidadChange,
-  onNoContado,
-}: {
-  item: ConteoItem
-  localEdit?: { cantidad: string; estado: string }
-  editable: boolean
-  onCantidadChange: (v: string) => void
-  onNoContado: () => void
-}) {
-  const estadoActual = localEdit?.estado ?? item.estado_item
-  const cantidadActual = localEdit?.estado === 'contado'
-    ? localEdit.cantidad
-    : item.cantidad_contada !== null
-      ? String(item.cantidad_contada)
-      : ''
-
-  const diferencia = estadoActual === 'contado' && cantidadActual !== ''
-    ? parseFloat(cantidadActual) - item.stock_sistema
+function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange, onNoContado }: any) {
+  const esNoContado = item.estado_item === 'no_contado'
+  const contado = item.estado_item === 'contado'
+  const diferencia = contado && item.cantidad_contada !== null
+    ? Number(item.cantidad_contada) - Number(item.stock_sistema)
     : null
 
-  const esNoContado = estadoActual === 'no_contado'
+  // Estado local para los inputs
+  const [presCounts, setPresCounts] = useState<Record<number, string>>({})
+  const [unidadesSueltas, setUnidadesSueltas] = useState('')
+
+  useEffect(() => {
+    if (contado && item.cantidad_contada !== null && presentaciones.length > 0) {
+      let total = Number(item.cantidad_contada)
+      const newPres: Record<number, string> = {}
+      const p = presentaciones[0]
+      const cantPres = Math.floor(total / p.factor_conversion)
+      const resto = total % p.factor_conversion
+      if (cantPres > 0) newPres[p.id] = String(cantPres)
+      setPresCounts(newPres)
+      setUnidadesSueltas(resto > 0 ? String(resto) : '')
+    }
+  }, [])
+
+  const updateTotal = (newPresCounts: Record<number, string>, newSueltas: string) => {
+    let total = parseFloat(newSueltas) || 0
+    presentaciones.forEach((p: any) => {
+      total += (parseFloat(newPresCounts[p.id]) || 0) * p.factor_conversion
+    })
+    onCantidadChange(String(total))
+  }
+
+  const handlePresChange = (presId: number, val: string) => {
+    const next = { ...presCounts, [presId]: val }; setPresCounts(next); updateTotal(next, unidadesSueltas)
+  }
+
+  const handleSueltasChange = (val: string) => {
+    setUnidadesSueltas(val); updateTotal(presCounts, val)
+  }
+
+  // Stock formateado humano (ej: 1 Caja + 10 Reacciones)
+  const stockSisHumano = presentaciones.length > 0 
+    ? formatStockHumano(
+        Number(item.stock_sistema), 
+        presentaciones[0].factor_conversion,
+        item.unidad_base_nombre, item.unidad_base_nombre_plural,
+        presentaciones[0].nombre, presentaciones[0].nombre_plural
+      )
+    : formatCantidad(Number(item.stock_sistema), item.unidad_base_nombre, item.unidad_base_nombre_plural)
 
   return (
-    <div className={cn('px-4 py-3', esNoContado && 'opacity-40')}>
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <p className="text-xs font-mono opacity-60">{item.numero_lote}</p>
-          <p className="text-xs opacity-50">
-            Vence: {item.fecha_vencimiento.slice(0, 7)} · Sistema: {formatCantidad(Number(item.stock_sistema), item.unidad_base_nombre, item.unidad_base_nombre_plural)}
-          </p>
+    <div className={cn(
+      'px-3 py-2.5 transition-all duration-200 border-l-4', 
+      esNoContado ? 'bg-warning/5 border-warning opacity-60' : 
+      contado ? 'bg-success/5 border-success' : 'bg-base-100 border-transparent'
+    )}>
+      {/* Fila 1: Info Lote y Stock Sistema */}
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-xs font-mono font-black opacity-80 truncate">{item.numero_lote}</span>
+          <span className="text-[10px] opacity-40 font-bold bg-base-200 px-1 rounded">{item.fecha_vencimiento.slice(2, 10)}</span>
+          {!conteoCiego && (
+            <span className="text-[10px] text-primary/60 font-black uppercase ml-1">
+               Sistema: {stockSisHumano}
+            </span>
+          )}
         </div>
-        {diferencia !== null && (
-          <DifBadge diferencia={diferencia} />
-        )}
+        
+        <div className="flex items-center gap-1.5 shrink-0">
+          {!conteoCiego && diferencia !== null && <DifBadge diferencia={diferencia} />}
+          <div className="dropdown dropdown-end">
+            <label tabIndex={0} className="btn btn-ghost btn-xs btn-circle opacity-20 hover:opacity-100"><MoreHorizontal className="h-3.5 w-3.5" /></label>
+            <ul tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-48 text-xs">
+              <li><button onClick={onNoContado} className={esNoContado ? 'text-primary' : 'text-warning'}>{esNoContado ? 'Reactivar' : 'No encontrado'}</button></li>
+            </ul>
+          </div>
+        </div>
       </div>
 
-      {editable && (
-        <div className="flex items-center gap-3">
-          <input
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="1"
-            className="input input-bordered w-28 text-xl font-bold text-center h-14 text-base-content disabled:opacity-30"
-            placeholder="—"
-            value={cantidadActual}
-            onChange={(e) => onCantidadChange(e.target.value)}
-            disabled={esNoContado}
-          />
-          <div className="flex-1">
-            <p className="text-xs opacity-50 mb-1">{item.unidad_base_nombre}</p>
-            <button
-              className={cn(
-                'btn btn-xs',
-                esNoContado ? 'btn-warning' : 'btn-ghost opacity-50'
-              )}
-              onClick={onNoContado}
-            >
-              {esNoContado ? 'Desmarcar' : 'No contado'}
-            </button>
+      {/* Fila 2: Inputs Compactos */}
+      {editable && !esNoContado && (
+        <div className="flex items-center gap-2">
+          {presentaciones.length > 0 ? (
+            <div className="flex-1 flex items-center gap-2 bg-base-200/40 p-1.5 rounded-xl border border-base-200/50">
+              {presentaciones.map((p: any) => (
+                <div key={p.id} className="flex items-center gap-1.5">
+                  <input
+                    type="number" inputMode="numeric"
+                    className="input input-xs input-bordered w-14 text-center font-bold h-8 rounded-lg"
+                    placeholder="0" value={presCounts[p.id] || ''}
+                    onChange={(e) => handlePresChange(p.id, e.target.value)}
+                  />
+                  <span className="text-[10px] font-bold opacity-40 uppercase truncate max-w-[40px]">{p.nombre_plural || p.nombre}</span>
+                </div>
+              ))}
+              <div className="flex items-center gap-1.5 ml-1 border-l border-base-300/50 pl-2">
+                <input
+                  type="number" inputMode="numeric"
+                  className="input input-xs input-bordered w-14 text-center font-bold h-8 rounded-lg"
+                  placeholder="0" value={unidadesSueltas}
+                  onChange={(e) => handleSueltasChange(e.target.value)}
+                />
+                <span className="text-[10px] font-bold opacity-40 uppercase">{item.unidad_base_nombre_plural}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1">
+              <input
+                type="number" inputMode="decimal"
+                className="input input-sm input-bordered w-28 text-center font-bold rounded-xl h-9"
+                placeholder="0" value={item.cantidad_contada ?? ''}
+                onChange={(e) => onCantidadChange(e.target.value)}
+              />
+              <span className="text-[10px] font-bold opacity-40 uppercase ml-2">{item.unidad_base_nombre_plural}</span>
+            </div>
+          )}
+
+          {/* Mini Indicador de Total e Impacto */}
+          <div className="flex flex-col items-end min-w-[60px] leading-tight">
+            {presentaciones.length > 0 && (
+              <>
+                <span className="text-[9px] font-black opacity-30 uppercase tracking-tighter">Total</span>
+                <span className="text-xs font-bold font-mono">
+                  {item.cantidad_contada || 0}
+                </span>
+              </>
+            )}
+            {contado && <span className="text-[8px] font-black text-success uppercase mt-0.5">OK</span>}
           </div>
         </div>
       )}
 
-      {!editable && (
-        <div className="flex items-center gap-2">
-          <span className="text-xl font-bold">
-            {item.cantidad_contada !== null
-              ? (Number(item.cantidad_contada) % 1 === 0 ? Math.floor(Number(item.cantidad_contada)) : Number(item.cantidad_contada))
-              : '—'}
-          </span>
-          <span className="text-sm opacity-50">
-            {item.cantidad_contada !== null
-              ? (Number(item.cantidad_contada) === 1 ? item.unidad_base_nombre : item.unidad_base_nombre_plural)
-              : item.unidad_base_nombre}
-          </span>
+      {/* Vista solo lectura compacta */}
+      {!editable && !esNoContado && (
+        <div className="flex items-center gap-2 text-xs font-bold opacity-70">
+          <span>Contado:</span>
+          <span>{item.cantidad_contada !== null ? formatCantidad(Number(item.cantidad_contada), item.unidad_base_nombre, item.unidad_base_nombre_plural) : '—'}</span>
+        </div>
+      )}
+
+      {esNoContado && (
+        <div className="flex items-center gap-1.5 text-warning text-[9px] font-black uppercase">
+          <AlertTriangle className="h-3 w-3" /> No encontrado
         </div>
       )}
     </div>
   )
 }
+
+// (DifBadge, ResumenRow se mantienen igual para asegurar funcionamiento visual)
 
 function DifBadge({ diferencia }: { diferencia: number }) {
   if (Math.abs(diferencia) < 0.001) return <span className="badge badge-success badge-sm">±0</span>

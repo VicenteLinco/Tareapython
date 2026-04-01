@@ -15,11 +15,11 @@ interface DataTableProps<T> {
   onRowClick?: (item: T) => void
   selectedId?: number | null | string
   keyField?: string
-  emptyMessage?: string
+  emptyMessage?: React.ReactNode
   className?: string
 }
 
-export function DataTable<T extends Record<string, unknown>>({
+export function DataTable<T>({
   columns,
   data,
   onRowClick,
@@ -65,13 +65,13 @@ export function DataTable<T extends Record<string, unknown>>({
           ) : (
             data.map((item) => (
               <tr
-                key={String(item[keyField])}
+                key={String((item as any)[keyField])}
                 onClick={() => onRowClick?.(item)}
                 className={cn(
                   'hover:bg-base-200/40 transition-colors',
                   onRowClick && 'cursor-pointer',
                   selectedId !== undefined &&
-                    String(item[keyField]) === String(selectedId) &&
+                    String((item as any)[keyField]) === String(selectedId) &&
                     'bg-primary/5 !border-l-4 !border-l-primary'
                 )}
               >
@@ -82,7 +82,7 @@ export function DataTable<T extends Record<string, unknown>>({
                     style={{ maxWidth: col.width }}
                   >
                     {col.render ? col.render(item) : (() => {
-                      const val = String(item[col.key] ?? '');
+                      const val = String((item as any)[col.key] ?? '');
                       if (val.startsWith('data:image') || val.length > 500) {
                         return <span className="text-[10px] opacity-20 italic">Dato largo / Imagen</span>;
                       }

@@ -15,6 +15,6 @@ pub mod proveedores;
 pub mod recepciones;
 pub mod setup;
 pub mod stock;
-pub mod transferencias;
+pub mod solicitudes_compra;
 pub mod unidades_basicas;
 pub mod usuarios;

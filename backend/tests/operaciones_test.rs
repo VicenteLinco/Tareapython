@@ -364,56 +364,6 @@ async fn consumo_batch_rollback_si_un_item_falla(pool: PgPool) {
 }
 
 // ==========================================
-// TRANSFERENCIAS
-// ==========================================
-
-#[sqlx::test(migrations = "./migrations")]
-async fn transferencia_entre_areas(pool: PgPool) {
-    let token = common::admin_access_token(&pool).await;
-    let app = common::test_app(pool.clone());
-
-    let (producto_uuid, producto_id) = setup_stock(&pool, &token, &app, 1, 200.0).await;
-
-    // Transferir 80 del área 1 al área 2
-    let idem_key = Uuid::new_v4().to_string();
-    let (status, json) = common::post_json_idempotent(
-        &app,
-        "/api/v1/transferencias",
-        &token,
-        serde_json::json!({
-            "producto_id": producto_id,
-            "area_origen_id": 1,
-            "area_destino_id": 2,
-            "cantidad": 80,
-            "nota": "Reposición"
-        }),
-        &idem_key,
-    )
-    .await;
-
-    assert_eq!(status, StatusCode::CREATED);
-    assert!(json["grupo_movimiento"].is_string());
-
-    // Verificar stock en origen (200 - 80 = 120)
-    let (stock_origen,): (Option<rust_decimal::Decimal>,) = sqlx::query_as(
-        "SELECT SUM(s.cantidad) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = $1 AND s.area_id = 1",
-    )
-    .bind(producto_uuid)
-    .fetch_one(&pool)
-    .await.unwrap();
-    assert_eq!(stock_origen.unwrap().to_string(), "120.00");
-
-    // Verificar stock en destino (80)
-    let (stock_destino,): (Option<rust_decimal::Decimal>,) = sqlx::query_as(
-        "SELECT SUM(s.cantidad) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = $1 AND s.area_id = 2",
-    )
-    .bind(producto_uuid)
-    .fetch_one(&pool)
-    .await.unwrap();
-    assert_eq!(stock_destino.unwrap().to_string(), "80.00");
-}
-
-// ==========================================
 // DESCARTES
 // ==========================================
 
@@ -478,7 +428,7 @@ async fn consultar_stock(pool: PgPool) {
     let (status, json) = common::get_json(&app, "/api/v1/stock?area_id=1", &token).await;
 
     assert_eq!(status, StatusCode::OK);
-    assert!(json["data"].as_array().unwrap().len() >= 1);
+    assert!(!json["data"].as_array().unwrap().is_empty());
     assert!(json["resumen"]["total_productos_con_stock"].as_i64().unwrap() >= 1);
 }
 
@@ -493,11 +443,11 @@ async fn consultar_stock_por_area(pool: PgPool) {
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["area"]["id"], 1);
-    assert!(json["productos"].as_array().unwrap().len() >= 1);
+    assert!(!json["productos"].as_array().unwrap().is_empty());
 
     // Cada producto tiene lotes
     let producto = &json["productos"][0];
-    assert!(producto["lotes"].as_array().unwrap().len() >= 1);
+    assert!(!producto["lotes"].as_array().unwrap().is_empty());
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -548,7 +498,7 @@ async fn listar_movimientos(pool: PgPool) {
     .await;
 
     assert_eq!(status, StatusCode::OK);
-    assert!(json["data"].as_array().unwrap().len() >= 1);
+    assert!(!json["data"].as_array().unwrap().is_empty());
     assert_eq!(json["data"][0]["tipo"], "salida");
 }
 

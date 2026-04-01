@@ -1,3 +1,4 @@
+import React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { 
   Package, 
@@ -12,18 +13,65 @@ import {
   Search,
   Eye,
   AlertCircle,
-  BarChart3,
   Truck,
   CheckCircle2,
-  ArrowDownLeft,
-  User,
-  Trash2
+  ArrowDownLeft
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
 import type { Alerta, PaginatedResponse, StockItem, Movimiento } from '@/types'
-import { daysUntil, autoPlural } from '@/lib/utils'
-import { cn } from '@/lib/utils'
+import { cn, daysUntil, autoPlural } from '@/lib/utils'
+
+// Helpers nativos para evitar dependencias externas
+const formatStock = (val: number | null) => {
+  if (val === null) return '0'
+  return val % 1 === 0 ? val.toString() : val.toFixed(2)
+}
+
+const formatDate = (dateStr: string) => {
+  try {
+    const date = new Date(dateStr + 'T12:00:00');
+    return new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: 'short' }).format(date);
+  } catch (e) {
+    return dateStr;
+  }
+}
+
+const formatRelative = (dateStr: string) => {
+  try {
+    const date = new Date(dateStr + 'T12:00:00');
+    const now = new Date();
+    const diffInDays = Math.round((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    
+    const rtf = new Intl.RelativeTimeFormat('es', { numeric: 'auto' });
+    
+    if (Math.abs(diffInDays) < 30) {
+      return rtf.format(diffInDays, 'day');
+    } else {
+      const diffInMonths = Math.round(diffInDays / 30);
+      return rtf.format(diffInMonths, 'month');
+    }
+  } catch (e) {
+    return '';
+  }
+}
+
+const formatDistanceSimple = (dateStr: string) => {
+  try {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffInMs = now.getTime() - date.getTime();
+    const diffInMins = Math.round(diffInMs / (1000 * 60));
+    
+    if (diffInMins < 60) return `hace ${diffInMins} min`;
+    const diffInHours = Math.round(diffInMins / 60);
+    if (diffInHours < 24) return `hace ${diffInHours} h`;
+    const diffInDays = Math.round(diffInHours / 24);
+    return `hace ${diffInDays} d`;
+  } catch (e) {
+    return '';
+  }
+}
 
 export default function DashboardPage() {
   const navigate = useNavigate()
@@ -34,150 +82,210 @@ export default function DashboardPage() {
       api.get<PaginatedResponse<StockItem>>('/stock', { params: { per_page: 1 } }).then((r) => r.data),
   })
 
-  const { data: alertasResponse, isLoading: alertasLoading } = useQuery({
+  const { data: alertasResponse, isLoading: alertasLoading, isError: alertasError } = useQuery({
     queryKey: ['alertas'],
     queryFn: () => api.get<PaginatedResponse<Alerta>>('/stock/alertas', { params: { per_page: 100 } }).then((r) => r.data),
     refetchInterval: 60000,
+    retry: 1,
   })
 
-  // Log de Resoluciones (Movimientos recientes que corrigieron alertas)
   const { data: movimientosRecientes, isLoading: loadingMovimientos } = useQuery({
     queryKey: ['movimientos-recientes'],
-    queryFn: () => api.get<PaginatedResponse<Movimiento>>('/movimientos', { params: { per_page: 20 } }).then(r => r.data),
+    queryFn: () => api.get<PaginatedResponse<Movimiento>>('/movimientos', { params: { per_page: 40 } }).then(r => r.data),
     refetchInterval: 60000
   })
+const totalItems = stockData?.total ?? 0
+const alerts = alertasResponse?.data ?? []
 
-  const totalItems = stockData?.total ?? 0
-  const alerts = alertasResponse?.data ?? []
-  const criticos = alerts.filter(a => a.tipo_alerta === 'bajo_minimo' || a.tipo_alerta === 'agotamiento_proximo').length
-  const porVencer = alerts.filter(a => a.tipo_alerta === 'vence_30d').length
-  const vencidos = alerts.filter(a => a.tipo_alerta === 'vencido').length
+// Métricas para las tarjetas superiores - Alineado con lógica de Backend
+const criticos = alerts.filter(a => 
+  a.tipo_alerta === 'sin_stock' || 
+  a.tipo_alerta === 'agotamiento_proximo' || 
+  a.tipo_alerta === 'bajo_minimo'
+).length
+
+const porVencer = alerts.filter(a => 
+  a.tipo_alerta === 'vencido' || 
+  a.tipo_alerta === 'vence_30d' || 
+  a.tipo_alerta === 'vence_90d'
+).length
+
+const quebrados = alerts.filter(a => a.tipo_alerta === 'sin_stock').length
+
 
   const alertaProductoIds = new Set(alerts.map(a => a.producto_id))
-
-  const resoluciones = (movimientosRecientes?.data ?? [])
-    .filter(m => !alertaProductoIds.has(m.producto_id))
-    .slice(0, 5)
+  
+  const resoluciones = (movimientosRecientes?.data ?? []).filter(m => {
+      const tiposResolucion = ['ENTRADA', 'AJUSTE_POSITIVO', 'RECEPCION']
+      return tiposResolucion.includes(m.tipo) && !alertaProductoIds.has(m.producto_id)
+  }).slice(0, 8)
 
   const loadingResoluciones = alertasLoading || loadingMovimientos
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-sm opacity-50 mt-0.5">Resumen operativo y alertas prioritarias</p>
+    <div className="p-4 sm:p-6 space-y-8 max-w-[1600px] mx-auto animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-base-200 pb-6">
+        <div>
+          <h1 className="text-3xl font-black tracking-tight text-base-content flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-xl">
+              <Package className="w-7 h-7 text-primary" />
+            </div>
+            Panel de Control
+          </h1>
+          <p className="text-sm opacity-50 mt-1 font-medium">Gestión inteligente de inventario y alertas prioritarias</p>
+        </div>
+        <div className="flex items-center gap-2">
+           <button 
+             onClick={() => navigate('/stock')}
+             className="btn btn-ghost btn-sm gap-2 font-bold opacity-70 hover:opacity-100"
+           >
+             <Search className="w-4 h-4" />
+             Consultar Stock
+           </button>
+           <button 
+             onClick={() => navigate('/solicitudes-compra')}
+             className="btn btn-primary btn-sm gap-2 shadow-lg shadow-primary/20"
+           >
+             <ShoppingCart className="w-4 h-4" />
+             Nuevo Pedido
+           </button>
+        </div>
       </div>
 
-      {/* KPI Grid */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
-          label="Insumos en Stock"
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          label="Insumos Activos"
           value={totalItems}
-          icon={<Package />}
+          icon={<Package className="w-5 h-5" />}
           color="bg-primary/10 text-primary"
           loading={stockLoading}
+          onClick={() => navigate('/stock')}
         />
-        <KpiCard
-          label="Riesgo de Quiebre"
+        <StatCard
+          label="Sin Stock"
+          value={quebrados}
+          icon={<AlertCircle className="w-5 h-5" />}
+          color="bg-error/10 text-error"
+          loading={alertasLoading}
+          alert={quebrados > 0}
+          onClick={() => navigate('/stock?filter=sin-stock')}
+        />
+        <StatCard
+          label="Stock Crítico"
           value={criticos}
-          icon={<TrendingDown />}
+          icon={<TrendingDown className="w-5 h-5" />}
           color="bg-error/10 text-error"
           loading={alertasLoading}
           alert={criticos > 0}
+          onClick={() => navigate('/stock?alertas=true&filter=critico')}
         />
-        <KpiCard
-          label="Próximos a Vencer"
+        <StatCard
+          label="Por Vencer"
           value={porVencer}
-          icon={<Clock />}
+          icon={<Clock className="w-5 h-5" />}
           color="bg-warning/10 text-warning"
           loading={alertasLoading}
           alert={porVencer > 0}
-        />
-        <KpiCard
-          label="Lotes Vencidos"
-          value={vencidos}
-          icon={<AlertTriangle />}
-          color="bg-error/10 text-error"
-          loading={alertasLoading}
-          alert={vencidos > 0}
+          onClick={() => navigate('/stock?alertas=true&filter=vencimiento')}
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Alerts Section */}
-        <div className="lg:col-span-2 rounded-3xl border border-base-200 bg-base-100 overflow-hidden shadow-sm">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-base-200">
-            <div>
-                <h2 className="text-sm font-bold uppercase tracking-wider">Alertas Prioritarias</h2>
-                <p className="text-[11px] opacity-40 mt-0.5 font-medium">Acciones requeridas para mantener la operación</p>
-            </div>
-            <button
-                className="btn btn-ghost btn-xs gap-1 opacity-50 hover:opacity-100 font-bold"
-                onClick={() => navigate('/stock')}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+        <div className="xl:col-span-8 space-y-4">
+          <div className="flex items-center justify-between px-2">
+            <h2 className="text-lg font-black flex items-center gap-2">
+              Alertas que requieren atención
+              {alerts.length > 0 && (
+                <span className="badge badge-error badge-sm font-bold text-white">{alerts.length}</span>
+              )}
+            </h2>
+            <button 
+              onClick={() => navigate('/stock?alertas=true')}
+              className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
             >
-                Ver inventario <ChevronRight className="h-3 w-3" />
+              Ver todo el historial <ChevronRight className="w-3 h-3" />
             </button>
-            </div>
-            <div className="p-2">
+          </div>
+
+          <div className="bg-base-100/40 rounded-3xl border border-base-200/60 overflow-hidden shadow-sm backdrop-blur-sm">
             {alertasLoading ? (
-                <div className="space-y-1 p-3">
-                {[1, 2, 3].map((i) => <div key={i} className="skeleton h-12 w-full rounded-2xl" />)}
+              <div className="p-20 flex flex-col items-center gap-4 opacity-40">
+                <span className="loading loading-spinner loading-lg text-primary"></span>
+                <p className="font-bold text-sm">Analizando inventario...</p>
+              </div>
+            ) : alertasError ? (
+              <div className="p-16 flex flex-col items-center justify-center text-center gap-3">
+                <div className="p-4 bg-warning/10 text-warning rounded-full">
+                  <AlertTriangle className="w-10 h-10" />
                 </div>
+                <div>
+                  <h3 className="text-base font-black text-warning">Error al cargar alertas</h3>
+                  <p className="text-xs opacity-50 mt-1 max-w-xs mx-auto">No se pudo conectar con el servicio de alertas. Verifica que el backend esté funcionando correctamente.</p>
+                </div>
+                <button
+                  className="btn btn-sm btn-ghost border border-warning/30 text-warning hover:bg-warning/10 rounded-xl"
+                  onClick={() => window.location.reload()}
+                >
+                  Reintentar
+                </button>
+              </div>
             ) : (
-                <AlertList alerts={alerts} />
+              <AlertList alerts={alerts} />
             )}
-            </div>
+          </div>
         </div>
 
-        {/* Resolutions Log */}
-        <div className="rounded-3xl border border-base-200 bg-base-100 overflow-hidden shadow-sm">
-          <div className="flex items-center gap-3 px-6 py-5 border-b border-base-200 bg-base-200/20">
-            <CheckCircle2 className="w-5 h-5 text-success" />
-            <h2 className="text-sm font-bold uppercase tracking-wider">Resoluciones</h2>
-          </div>
-          <div className="p-4 space-y-4">
+        <div className="xl:col-span-4 space-y-6">
+          <div className="bg-base-100/40 rounded-3xl border border-base-200/60 p-5 shadow-sm backdrop-blur-sm">
+            <h2 className="text-sm font-black uppercase tracking-widest opacity-40 mb-4 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4" />
+              Recuperaciones Recientes
+            </h2>
+            
             {loadingResoluciones ? (
-              [1, 2, 3].map(i => <div key={i} className="skeleton h-16 w-full rounded-2xl" />)
+              <div className="space-y-3">
+                {[1, 2, 3].map(i => <div key={i} className="h-12 bg-base-200/50 rounded-xl animate-pulse" />)}
+              </div>
             ) : resoluciones.length === 0 ? (
-              <div className="py-10 text-center opacity-30 italic text-xs">No hay resoluciones recientes</div>
+              <div className="py-8 text-center opacity-30 italic text-sm">Sin acciones recientes</div>
             ) : (
-              resoluciones.map(res => {
-                const tipoConfig = {
-                  entrada: { icon: <ArrowDownLeft className="w-3.5 h-3.5" />, bg: 'bg-success/10 text-success', label: 'Stock normalizado' },
-                  descarte: { icon: <Trash2 className="w-3.5 h-3.5" />, bg: 'bg-error/10 text-error', label: 'Lote retirado' },
-                  salida: { icon: <CheckCircle2 className="w-3.5 h-3.5" />, bg: 'bg-primary/10 text-primary', label: 'Consumo registrado' },
-                  transferencia_entrada: { icon: <ArrowDownLeft className="w-3.5 h-3.5" />, bg: 'bg-info/10 text-info', label: 'Transferencia recibida' },
-                  transferencia_salida: { icon: <ChevronRight className="w-3.5 h-3.5" />, bg: 'bg-base-300 text-base-content', label: 'Transferencia enviada' },
-                } as const
-                const cfg = tipoConfig[res.tipo as keyof typeof tipoConfig] ?? tipoConfig.salida
-
-                return (
-                  <div key={res.id} className="flex gap-3 items-start group">
-                    <div className={`p-2 rounded-xl mt-1 group-hover:scale-110 transition-transform ${cfg.bg}`}>
-                      {cfg.icon}
+              <div className="space-y-3">
+                {resoluciones.map((res) => (
+                  <div key={res.id} className="flex items-center gap-3 p-3 rounded-2xl bg-success/5 border border-success/10 group hover:bg-success/10 transition-colors">
+                    <div className="p-2 bg-success/10 text-success rounded-lg">
+                      <ArrowDownLeft className="w-4 h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold truncate">{res.producto_nombre || 'Movimiento'}</p>
-                      <p className="text-[10px] opacity-50 mt-0.5 flex items-center gap-1">
-                        <User className="w-2.5 h-2.5" /> {res.usuario_nombre}
-                      </p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className="text-[10px] font-bold bg-base-200 px-1.5 py-0.5 rounded text-primary">
-                          {res.tipo === 'entrada' ? '+' : '-'}{Math.round(res.cantidad)}
-                        </span>
-                        <span className="text-[9px] opacity-40 uppercase font-bold tracking-tighter">{cfg.label}</span>
-                      </div>
+                      <p className="text-[11px] font-bold truncate text-success">{res.producto_nombre}</p>
+                      <p className="text-[9px] opacity-60 font-medium">Stock normalizado por {res.tipo}</p>
+                    </div>
+                    <div className="text-[10px] opacity-40 font-bold">
+                       {res.created_at && formatDistanceSimple(res.created_at)}
                     </div>
                   </div>
-                )
-              })
+                ))}
+              </div>
             )}
-            <button
-              className="btn btn-ghost btn-block btn-sm text-[10px] font-bold opacity-40 hover:opacity-100"
-              onClick={() => navigate('/movimientos')}
-            >
-              Ver historial completo
-            </button>
+          </div>
+
+          <div className="bg-primary/5 rounded-3xl border border-primary/10 p-5 relative overflow-hidden group">
+             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+               <TrendingUp className="w-20 h-20" />
+             </div>
+             <div className="relative z-10">
+               <h3 className="text-primary font-black text-sm mb-1 uppercase tracking-tight">Estado Operativo</h3>
+               <p className="text-xs opacity-70 mb-4 font-medium italic">Todo el sistema está sincronizado correctamente.</p>
+               <div className="flex items-center gap-4">
+                  <div className="text-center px-4 border-r border-primary/10">
+                    <p className="text-xl font-black text-primary">{totalItems}</p>
+                    <p className="text-[9px] font-bold uppercase opacity-50">SKUs</p>
+                  </div>
+                  <div className="text-center px-4">
+                    <p className="text-xl font-black text-error">{quebrados}</p>
+                    <p className="text-[9px] font-bold uppercase opacity-50">Críticos</p>
+                  </div>
+               </div>
+             </div>
           </div>
         </div>
       </div>
@@ -185,38 +293,34 @@ export default function DashboardPage() {
   )
 }
 
-function KpiCard({
-  label,
-  value,
-  icon,
-  color,
-  loading,
-  alert,
-}: {
-  label: string
-  value: number
-  icon: React.ReactNode
-  color: string
-  loading: boolean
-  alert?: boolean
-}) {
+function StatCard({ label, value, icon, color, loading, alert, onClick }: any) {
   return (
-    <div className={cn(
-      'stat-card rounded-3xl border bg-base-100 p-6 transition-all shadow-sm',
-      alert ? 'border-error/20 ring-1 ring-error/10' : 'border-base-200'
-    )}>
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mb-2">{label}</p>
-          {loading ? (
-            <div className="skeleton h-9 w-14 rounded-xl" />
-          ) : (
-            <p className={cn("text-3xl font-bold tabular-nums", alert && "text-error")}>{value}</p>
-          )}
-        </div>
-        <div className={cn('flex h-12 w-12 items-center justify-center rounded-2xl [&>svg]:h-6 [&>svg]:w-6', color)}>
+    <div 
+      onClick={onClick}
+      className={cn(
+        "relative overflow-hidden group p-5 rounded-3xl border transition-all cursor-pointer",
+        alert ? "bg-error/5 border-error/20 ring-1 ring-error/10 animate-subtle-pulse" : "bg-base-100/40 border-base-200/60 hover:border-primary/40 hover:bg-base-100/80 shadow-sm backdrop-blur-sm",
+        "flex flex-col gap-1"
+      )}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className={cn("p-2.5 rounded-2xl transition-transform group-hover:scale-110 duration-300", color)}>
           {icon}
         </div>
+        {alert && (
+          <div className="w-2 h-2 rounded-full bg-error animate-ping" />
+        )}
+      </div>
+      
+      {loading ? (
+        <div className="h-8 w-16 bg-base-300/30 animate-pulse rounded-lg mb-1" />
+      ) : (
+        <p className={cn("text-3xl font-black tabular-nums tracking-tighter", alert && "text-error")}>{value}</p>
+      )}
+      <p className="text-[11px] font-black uppercase tracking-widest opacity-40">{label}</p>
+      
+      <div className="absolute top-0 right-0 -mr-4 -mt-4 opacity-5 group-hover:opacity-10 transition-opacity">
+        {icon && React.cloneElement(icon as React.ReactElement<{ className?: string }>, { className: "w-24 h-24" })}
       </div>
     </div>
   )
@@ -224,17 +328,19 @@ function KpiCard({
 
 function AlertList({ alerts }: { alerts?: Alerta[] }) {
   const navigate = useNavigate()
-
+  
   if (!alerts) return null
 
   if (alerts.length === 0) {
     return (
-      <div className="py-16 text-center">
-        <div className="bg-success/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle2 className="w-8 h-8 text-success" />
+      <div className="p-20 flex flex-col items-center justify-center text-center gap-4">
+        <div className="p-4 bg-success/10 text-success rounded-full">
+          <CheckCircle2 className="w-12 h-12" />
         </div>
-        <p className="text-sm font-bold opacity-40 uppercase tracking-widest">Estado Óptimo</p>
-        <p className="text-xs opacity-25 mt-1 font-medium">Todo el inventario está bajo control</p>
+        <div>
+          <h3 className="text-lg font-black italic">¡Todo bajo control!</h3>
+          <p className="text-sm opacity-40 max-w-xs mx-auto">No hay alertas críticas en este momento. El inventario está operando normalmente.</p>
+        </div>
       </div>
     )
   }
@@ -248,6 +354,15 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
       actionIcon: <AlertTriangle className="w-3 h-3" />,
       actionClass: 'btn-error text-white hover:bg-error/90 border-none shadow-sm',
       path: (a: Alerta) => `/stock?search=${encodeURIComponent(a.nombre)}&select=${a.producto_id}&action=discard`
+    },
+    sin_stock: {
+      label: 'Sin Stock',
+      bg: 'bg-error/10 text-error border-error/20 ring-1 ring-error/30',
+      icon: <AlertCircle />,
+      actionLabel: 'Comprar YA',
+      actionIcon: <ShoppingCart className="w-3 h-3" />,
+      actionClass: 'btn-error text-white animate-pulse shadow-lg border-none',
+      path: (a: Alerta) => `/solicitudes-compra?select=${a.producto_id}`
     },
     agotamiento_proximo: { 
       label: 'Agotamiento crítico', 
@@ -305,87 +420,105 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
     },
   }
 
+  const groupedAlerts = Object.values(
+    alerts.reduce((acc, alerta) => {
+      if (!acc[alerta.producto_id]) acc[alerta.producto_id] = []
+      acc[alerta.producto_id].push(alerta)
+      return acc
+    }, {} as Record<string, Alerta[]>)
+  )
+
   return (
-    <div className="max-h-[500px] overflow-y-auto space-y-2 p-1 custom-scrollbar">
-      {alerts.slice(0, 50).map((alerta, i) => {
+    <div className="max-h-[600px] overflow-y-auto space-y-2 p-2 custom-scrollbar">
+      {groupedAlerts.slice(0, 50).map((group, i) => {
+        const alerta = group[0]
         const config = severityConfig[alerta.tipo_alerta as keyof typeof severityConfig] ?? severityConfig.vence_90d
-        const isBajoMinimo = alerta.tipo_alerta === 'bajo_minimo'
-        const isAgotamiento = alerta.tipo_alerta === 'agotamiento_proximo'
-        const isDeadStock = alerta.tipo_alerta === 'dead_stock'
-        const isAnomalia = alerta.tipo_alerta === 'anomalia_consumo'
-        const isVencidoAlerta = alerta.tipo_alerta === 'vencido'
+        
+        const isBajoMinimo = group.some(a => a.tipo_alerta === 'bajo_minimo')
+        const isAgotamiento = group.some(a => a.tipo_alerta === 'agotamiento_proximo')
+        const isSinStock = group.some(a => a.tipo_alerta === 'sin_stock')
+        const isDeadStock = group.some(a => a.tipo_alerta === 'dead_stock')
+        const isAnomalia = group.some(a => a.tipo_alerta === 'anomalia_consumo')
+        const isVencidoAlerta = group.some(a => a.tipo_alerta === 'vencido')
         const days = alerta.proxima_fecha_venc ? daysUntil(alerta.proxima_fecha_venc) : null
         const isVencidoReal = days !== null && days <= 0
         const isVenceSoon = days !== null && days > 0
 
-        const totalLabel = alerta.total !== null ? Math.round(alerta.total) : 0
-        const minLabel = alerta.stock_minimo !== null ? Math.round(alerta.stock_minimo) : 0
-        const unit = totalLabel === 1 ? (alerta.unidad || '') : (alerta.unidad_plural ?? autoPlural(alerta.unidad || ''))
-
-        const hasEnoughData = (alerta.dias_con_consumo || 0) >= 3
-        const isCalculating = !hasEnoughData && (alerta.dias_con_consumo || 0) > 0
+        const totalLabel = formatStock(alerta.total)
+        const minLabel = formatStock(alerta.stock_minimo)
+        const isPlural = (alerta.total || 0) !== 1
+        const unit = isPlural ? (alerta.unidad_plural ?? autoPlural(alerta.unidad || '')) : (alerta.unidad || '')
 
         return (
           <div
-            key={`${alerta.producto_id}-${alerta.tipo_alerta}-${i}`}
-            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-base-200/50 bg-base-100/50 p-4 hover:bg-base-200/50 transition-all group"
+            key={`${alerta.producto_id}-${i}`}
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-base-200/50 bg-base-100/50 p-4 hover:bg-base-200 hover:shadow-md transition-all group relative overflow-hidden"
           >
-            <div className="flex flex-col gap-1.5 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className={cn('inline-flex shrink-0 items-center rounded-md border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider', config.bg)}>
-                  {config.label}
-                </span>
-                <span className="text-sm font-bold truncate group-hover:text-primary transition-colors" title={alerta.nombre}>{alerta.nombre}</span>
-                {alerta.es_anomalia && (
-                  <span className="badge badge-secondary badge-outline text-[8px] font-bold h-4">ANOMALÍA</span>
-                )}
-                {alerta.tiene_pedido_pendiente && (
-                  <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-info/10 text-info border border-info/20 text-[8px] font-bold">
-                    <Truck className="w-2.5 h-2.5" />
-                    EN CAMINO
-                  </div>
-                )}
+            <div className={cn("absolute left-0 top-0 bottom-0 w-1", config.bg.split(' ')[0])} />
+
+            <div className="flex flex-col gap-1.5 min-w-0 flex-1 pl-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {group.map(a => {
+                   const aConfig = severityConfig[a.tipo_alerta as keyof typeof severityConfig] ?? severityConfig.vence_90d
+                   return (
+                     <span key={a.tipo_alerta} className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider', aConfig.bg)}>
+                       {aConfig.label}
+                     </span>
+                   )
+                })}
+                <span className="text-sm font-black truncate group-hover:text-primary transition-colors" title={alerta.nombre}>{alerta.nombre}</span>
               </div>
+
               <p className="text-[11px] opacity-60 font-medium">
-                {isAgotamiento ? (
+                {isSinStock ? (
+                  <span className="font-bold text-error uppercase italic ring-1 ring-error/20 px-1 rounded bg-error/5 flex items-center gap-1 w-fit">
+                    <AlertCircle className="w-3 h-3" /> ¡Producto totalmente agotado!
+                  </span>
+                ) : isAgotamiento ? (
                   <>
                     Stock actual: <span className="font-bold text-error">{totalLabel}</span> {unit} |{' '}
-                    <span className="text-error font-bold italic underline">Quedan ~{alerta.dias_autonomia} días</span>
+                    <span className="text-error font-bold italic underline">Queda poco tiempo</span>
                   </>
-                ) : isAnomalia ? (
+                ) : isAnomalia && group.length === 1 ? (
                   <>Stock actual: <span className="font-bold text-base-content">{totalLabel}</span> {unit} | <span className="text-secondary font-bold">Pico de consumo detectado</span></>
                 ) : isBajoMinimo ? (
                   <>
                     Stock actual: <span className="font-bold text-base-content">{totalLabel}</span> {unit} <span className="opacity-40">(Mín: {minLabel})</span>
-                    {isCalculating && <span className="ml-2 text-[9px] italic opacity-40 flex items-center gap-1 inline-flex"><BarChart3 className="w-2.5 h-2.5" /> Calculando...</span>}
-                    {hasEnoughData && alerta.dias_autonomia && <span className="ml-2 text-[9px] font-bold opacity-50 flex items-center gap-1 inline-flex text-primary"><BarChart3 className="w-2.5 h-2.5" /> Dura ~{alerta.dias_autonomia}d</span>}
                   </>
                 ) : isDeadStock ? (
-                  <>Stock actual: <span className="font-bold text-base-content">{totalLabel}</span> {unit} | <span className="text-error font-medium">Sin movimientos hace {alerta.dias_inactivo || '90+'} días</span></>
+                    <span className="text-slate-500 font-bold">Sin movimientos hace {alerta.dias_inactivo || '90+'} días</span>
                 ) : (
                   <>
                     Stock actual: <span className="font-bold text-base-content">{totalLabel}</span> {unit} |{' '}
                     {isVencidoReal || isVencidoAlerta ? (
-                      <span className="text-error font-bold uppercase">Venció hace {Math.abs(days || 0)} días</span>
+                      <span className="text-error font-bold uppercase">Venció {alerta.proxima_fecha_venc && formatRelative(alerta.proxima_fecha_venc)}</span>
                     ) : isVenceSoon ? (
-                      <span className="text-warning font-bold">Vence en {days} días</span>
+                      <span className="text-warning font-bold">Vence {alerta.proxima_fecha_venc && formatRelative(alerta.proxima_fecha_venc)}</span>
                     ) : (
-                      <span>Vence el {alerta.proxima_fecha_venc}</span>
+                      <span>Vence el {alerta.proxima_fecha_venc && formatDate(alerta.proxima_fecha_venc)}</span>
                     )}
                   </>
                 )}
               </p>
             </div>
-            <button
-              className={cn(
-                "btn btn-sm gap-2 shrink-0 h-10 px-5 rounded-xl font-bold transition-all active:scale-95 shadow-sm", 
-                alerta.tiene_pedido_pendiente && !isAgotamiento && !isVencidoAlerta ? "btn-ghost opacity-40" : config.actionClass
-              )}
-              onClick={() => navigate(config.path(alerta))}
-            >
-              {config.actionIcon}
-              {config.actionLabel}
-            </button>
+            
+            <div className="flex items-center gap-2">
+               {alerta.tiene_pedido_pendiente && (
+                  <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-info/10 text-info border border-info/20 text-[9px] font-bold animate-pulse">
+                    <Truck className="w-3 h-3" /> EN CAMINO
+                  </div>
+                )}
+                <button
+                onClick={() => navigate(config.path(alerta))}
+                className={cn(
+                    "btn btn-sm h-10 px-4 rounded-xl font-black transition-all flex items-center gap-2",
+                    config.actionClass || "btn-ghost border-base-200"
+                )}
+                >
+                {config.actionIcon || <ChevronRight className="w-3.5 h-3.5" />}
+                <span>{config.actionLabel || 'Ver detalles'}</span>
+                </button>
+            </div>
           </div>
         )
       })}

@@ -4,7 +4,9 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
 import { Badge } from '@/components/ui/badge'
 import { Dialog } from '@/components/ui/dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import api from '@/lib/api'
+import { parseApiError } from '@/lib/api-error'
 import { toast } from 'sonner'
 import type { Area, CreateArea, UpdateArea } from '@/types'
 
@@ -15,6 +17,7 @@ export default function AreasTab() {
   const [nombre, setNombre] = useState('')
   const [esBodega, setEsBodega] = useState(false)
   const [frecuenciaDias, setFrecuenciaDias] = useState(0)
+  const [deleteTarget, setDeleteTarget] = useState<Area | null>(null)
 
   const { data: areas = [], isLoading } = useQuery({
     queryKey: ['areas'],
@@ -28,7 +31,7 @@ export default function AreasTab() {
       toast.success('Área creada')
       closeDialog()
     },
-    onError: () => toast.error('Error al crear área'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   const updateMut = useMutation({
@@ -39,7 +42,7 @@ export default function AreasTab() {
       toast.success('Área actualizada')
       closeDialog()
     },
-    onError: () => toast.error('Error al actualizar área'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   const deleteMut = useMutation({
@@ -47,8 +50,9 @@ export default function AreasTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['areas'] })
       toast.success('Área eliminada')
+      setDeleteTarget(null)
     },
-    onError: () => toast.error('No se puede eliminar: tiene stock asociado'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   function openCreate() {
@@ -76,15 +80,17 @@ export default function AreasTab() {
     e.preventDefault()
     if (!nombre.trim()) return
     if (editing) {
-      updateMut.mutate({ id: editing.id, data: { nombre: nombre.trim(), es_bodega: esBodega, conteo_frecuencia_dias: frecuenciaDias } })
+      updateMut.mutate({ 
+        id: editing.id, 
+        data: { 
+          nombre: nombre.trim(), 
+          es_bodega: esBodega, 
+          conteo_frecuencia_dias: frecuenciaDias,
+          version: editing.version
+        } 
+      })
     } else {
       createMut.mutate({ nombre: nombre.trim(), es_bodega: esBodega })
-    }
-  }
-
-  function handleDelete(area: Area) {
-    if (confirm(`¿Eliminar el área "${area.nombre}"?`)) {
-      deleteMut.mutate(area.id)
     }
   }
 
@@ -133,7 +139,7 @@ export default function AreasTab() {
           <button className="btn btn-ghost btn-xs btn-square" onClick={() => openEdit(item)}>
             <Pencil className="h-3.5 w-3.5 opacity-50" />
           </button>
-          <button className="btn btn-ghost btn-xs btn-square" onClick={() => handleDelete(item)}>
+          <button className="btn btn-ghost btn-xs btn-square" onClick={() => setDeleteTarget(item)}>
             <Trash2 className="h-3.5 w-3.5 opacity-50 hover:text-error" />
           </button>
         </div>
@@ -157,7 +163,7 @@ export default function AreasTab() {
       ) : (
         <DataTable
           columns={columns}
-          data={areas as unknown as Record<string, unknown>[]}
+          data={areas}
           emptyMessage="No hay áreas registradas"
         />
       )}
@@ -214,6 +220,16 @@ export default function AreasTab() {
           </div>
         </form>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Eliminar área"
+        description={`¿Estás seguro de eliminar el área "${deleteTarget?.nombre}"? Esta acción desactivará el acceso pero mantendrá el historial de movimientos.`}
+        confirmLabel="Eliminar"
+        loading={deleteMut.isPending}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+      />
     </div>
   )
 }

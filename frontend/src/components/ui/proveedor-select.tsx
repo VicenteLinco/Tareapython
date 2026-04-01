@@ -1,23 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Truck, ChevronDown, Check } from 'lucide-react'
 import type { Proveedor } from '@/types'
-
-function isSafeIconUrl(url: string | null | undefined): boolean {
-  if (!url) return false
-  // Permitir HTTPS y rutas locales (siempre seguras)
-  if (url.startsWith('https://') || url.startsWith('/')) return true
-
-  // Permitir solo formatos de imagen estáticos (no ejecutables)
-  // Esto bloquea data:image/svg+xml que es el vector de ataque XSS
-  const safeDataPrefixes = [
-    'data:image/png',
-    'data:image/jpeg',
-    'data:image/jpg',
-    'data:image/webp',
-    'data:image/gif',
-  ]
-  return safeDataPrefixes.some((prefix) => url.startsWith(prefix))
-}
+import { isSafeIconUrl, cn } from '@/lib/utils'
 
 // Reusable icon: emoji, logo URL (https only), or truck fallback
 export function ProveedorIcon({
@@ -31,8 +15,8 @@ export function ProveedorIcon({
   const icono = proveedor?.icono
   const safeUrl = isSafeIconUrl(icono)
 
-  // Un emoji es una cadena muy corta (máximo 10 caracteres por seguridad)
-  // y que no parece una URL ni un base64.
+  // Un emoji es una cadena muy corta que no empieza como una URL o data URL.
+  // Usamos una Regex para detectar si contiene al menos un emoji común.
   const isEmoji =
     !!icono &&
     icono.length <= 10 &&
@@ -42,7 +26,10 @@ export function ProveedorIcon({
 
   if (isEmoji) {
     return (
-      <span className={`shrink-0 flex items-center justify-center text-base leading-none ${className}`}>
+      <span className={cn(
+        "shrink-0 flex items-center justify-center text-lg leading-none select-none",
+        className
+      )}>
         {icono}
       </span>
     )
@@ -50,11 +37,14 @@ export function ProveedorIcon({
 
   if (safeUrl && !imgError) {
     return (
-      <div className={`relative shrink-0 flex items-center justify-center ${className}`}>
+      <div className={cn(
+        "relative shrink-0 flex items-center justify-center overflow-hidden rounded",
+        className
+      )}>
         <img
           src={icono!}
           alt=""
-          className="h-full w-full rounded object-contain"
+          className="h-full w-full object-contain"
           onError={() => setImgError(true)}
           referrerPolicy="no-referrer"
         />
@@ -63,8 +53,11 @@ export function ProveedorIcon({
   }
 
   return (
-    <div className={`shrink-0 flex items-center justify-center ${className}`}>
-      <Truck className="h-full w-full opacity-20" />
+    <div className={cn(
+      "shrink-0 flex items-center justify-center bg-base-200 rounded",
+      className
+    )}>
+      <Truck className="h-[60%] w-[60%] opacity-30" />
     </div>
   )
 }

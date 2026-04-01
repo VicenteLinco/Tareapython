@@ -1,9 +1,29 @@
 use axum::middleware;
 use axum::Router;
+use tower_http::services::ServeDir;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::auth::middleware::require_auth;
 use crate::db::AppState;
 use crate::handlers;
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        handlers::auth_handler::login,
+    ),
+    components(
+        schemas(
+            crate::auth::models::LoginRequest,
+            crate::auth::models::LoginResponse,
+        )
+    ),
+    tags(
+        (name = "auth", description = "Autenticación de usuarios")
+    )
+)]
+struct ApiDoc;
 
 pub fn create_routes(state: AppState) -> Router<AppState> {
     // Auth protegido (bajo /api/v1/auth)
@@ -36,7 +56,7 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
         // Operaciones de escritura
         .nest("/consumos", handlers::consumos::routes())
         .nest("/recepciones", handlers::recepciones::routes())
-        .nest("/transferencias", handlers::transferencias::routes())
+        .nest("/solicitudes-compra", handlers::solicitudes_compra::routes())
         .nest("/descartes", handlers::descartes::routes())
         .nest("/conteo", handlers::conteo::routes())
         // Ledger y audit (lectura)
@@ -51,7 +71,10 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
 
     Router::new()
         .merge(handlers::health::routes())
+        .merge(SwaggerUi::new("/swagger-ui")
+            .url("/api-docs/openapi.json", ApiDoc::openapi()))
         .nest("/api/v1/auth", handlers::auth_handler::public_routes())
         .nest("/api/v1/auth", auth_protected)
         .nest("/api/v1", protected)
+        .nest_service("/api/v1/uploads", ServeDir::new("uploads"))
 }

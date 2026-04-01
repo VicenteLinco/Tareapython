@@ -4,6 +4,8 @@ use axum::{Extension, Json, Router};
 use serde_json::json;
 use uuid::Uuid;
 
+use validator::Validate;
+
 use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::dto::area::{CreateArea, UpdateArea};
@@ -25,6 +27,7 @@ async fn crear(
     Json(req): Json<CreateArea>,
 ) -> Result<(axum::http::StatusCode, Json<Area>), AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
+    req.validate()?;
 
     let nombre = req.nombre.trim().to_string();
     if nombre.is_empty() {
@@ -46,14 +49,12 @@ async fn crear(
         _ => e.into(),
     })?;
 
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, datos_nuevos, usuario_id) VALUES ('areas', $1, 'CREATE', $2, $3)",
-    )
-    .bind(area.id.to_string())
-    .bind(json!({"nombre": &area.nombre, "es_bodega": area.es_bodega}))
-    .bind(claims.sub)
-    .execute(&state.pool)
-    .await?;
+    crate::services::audit::registrar(
+        &state.pool, "areas", &area.id.to_string(), "CREATE",
+        None,
+        Some(json!({"nombre": &area.nombre, "es_bodega": area.es_bodega})),
+        claims.sub,
+    ).await?;
 
     Ok((axum::http::StatusCode::CREATED, Json(area)))
 }
@@ -65,6 +66,7 @@ async fn actualizar(
     Json(req): Json<UpdateArea>,
 ) -> Result<Json<Area>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
+    req.validate()?;
 
     let anterior = sqlx::query_as::<_, Area>("SELECT * FROM areas WHERE id = $1")
         .bind(id)
@@ -84,30 +86,29 @@ async fn actualizar(
     let frecuencia = req.conteo_frecuencia_dias.unwrap_or(anterior.conteo_frecuencia_dias);
 
     let area = sqlx::query_as::<_, Area>(
-        "UPDATE areas SET nombre = $1, es_bodega = $2, conteo_frecuencia_dias = $3 WHERE id = $4 RETURNING *",
+        "UPDATE areas SET nombre = $1, es_bodega = $2, conteo_frecuencia_dias = $3, version = version + 1 WHERE id = $4 AND version = $5 RETURNING *",
     )
     .bind(nombre)
     .bind(es_bodega)
     .bind(frecuencia)
     .bind(id)
-    .fetch_one(&state.pool)
+    .bind(req.version)
+    .fetch_optional(&state.pool)
     .await
     .map_err(|e| match &e {
         sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
             AppError::Conflict(format!("El área '{}' ya existe", nombre))
         }
         _ => e.into(),
-    })?;
+    })?
+    .ok_or(AppError::Conflict("El área ha sido modificada por otro usuario (error de versión)".into()))?;
 
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, datos_anteriores, datos_nuevos, usuario_id) VALUES ('areas', $1, 'UPDATE', $2, $3, $4)",
-    )
-    .bind(id.to_string())
-    .bind(json!({"nombre": &anterior.nombre, "es_bodega": anterior.es_bodega}))
-    .bind(json!({"nombre": &area.nombre, "es_bodega": area.es_bodega}))
-    .bind(claims.sub)
-    .execute(&state.pool)
-    .await?;
+    crate::services::audit::registrar(
+        &state.pool, "areas", &id.to_string(), "UPDATE",
+        Some(json!({"nombre": &anterior.nombre, "es_bodega": anterior.es_bodega})),
+        Some(json!({"nombre": &area.nombre, "es_bodega": area.es_bodega})),
+        claims.sub,
+    ).await?;
 
     Ok(Json(area))
 }
@@ -142,13 +143,10 @@ async fn eliminar(
         }
     }
 
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, usuario_id) VALUES ('areas', $1, 'DELETE', $2)",
-    )
-    .bind(id.to_string())
-    .bind(claims.sub)
-    .execute(&state.pool)
-    .await?;
+    crate::services::audit::registrar(
+        &state.pool, "areas", &id.to_string(), "DELETE",
+        None, None, claims.sub,
+    ).await?;
 
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

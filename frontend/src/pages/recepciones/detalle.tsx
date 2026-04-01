@@ -8,7 +8,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
-import { formatDate, daysUntil, cn, formatCantidad } from '@/lib/utils'
+import { formatDate, daysUntil, cn, formatCantidad, getImageUrl } from '@/lib/utils'
 import { toast } from 'sonner'
 
 interface RecepcionHeader {
@@ -370,7 +370,7 @@ export default function RecepcionDetallePage() {
               <X className="h-4 w-4" />
             </button>
             <img
-              src={foto_documento}
+              src={getImageUrl(foto_documento)}
               alt="Guía de despacho"
               className="max-h-[85vh] max-w-[85vw] rounded-xl shadow-2xl object-contain"
             />

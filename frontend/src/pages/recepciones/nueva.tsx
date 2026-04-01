@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { Html5Qrcode } from 'html5-qrcode'
 import api from '@/lib/api'
+import { parseApiError } from '@/lib/api-error'
 import type { Proveedor, Producto, Presentacion, Area } from '@/types'
 import { formatCantidad, autoPlural } from '@/lib/utils'
 
@@ -201,9 +202,7 @@ export default function NuevaRecepcionPage() {
       navigate('/recepciones')
     },
     onError: (err: any) => {
-      const d = err?.response?.data
-      const msg = d?.error?.message ?? d?.message ?? err?.message ?? 'Error al crear recepción'
-      toast.error(String(msg))
+      toast.error(parseApiError(err))
     },
   })
 
@@ -217,9 +216,7 @@ export default function NuevaRecepcionPage() {
       navigate('/recepciones')
     },
     onError: (err: any) => {
-      const d = err?.response?.data
-      const msg = d?.error?.message ?? d?.message ?? err?.message ?? 'Error al guardar borrador'
-      toast.error(String(msg))
+      toast.error(parseApiError(err))
     },
   })
 

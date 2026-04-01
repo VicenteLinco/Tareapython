@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use axum::Router;
@@ -30,6 +31,8 @@ pub fn test_app(pool: PgPool) -> Router {
         pool: pool.clone(),
         config: config.clone(),
         login_limiter: RateLimiter::new(100, 60),
+        mutation_limiter: RateLimiter::new(500, 60),
+        read_limiter: RateLimiter::new(1000, 60),
     };
 
     let routes = create_routes(state.clone());

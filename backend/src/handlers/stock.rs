@@ -23,23 +23,10 @@ struct StockQuery {
     categoria_id: Option<i32>,
     proveedor_id: Option<i32>,
     stock_bajo: Option<bool>,
+    con_alertas: Option<bool>,
+    filter: Option<String>,
     page: Option<i64>,
     per_page: Option<i64>,
-}
-
-#[derive(Debug, Serialize, sqlx::FromRow)]
-struct StockItem {
-    producto_id: Uuid,
-    codigo_interno: String,
-    producto_nombre: String,
-    categoria: Option<String>,
-    unidad: String,
-    unidad_plural: Option<String>,
-    stock_total: Option<Decimal>,
-    stock_minimo: Decimal,
-    proximo_vencimiento: Option<NaiveDate>,
-    proveedor_nombre: Option<String>,
-    proveedor_icono: Option<String>,
 }
 
 // === Handlers ===
@@ -64,104 +51,151 @@ async fn listar(
     let limit = pagination.per_page();
     let offset = pagination.offset();
 
-    let mut conditions = vec!["s.cantidad > 0".to_string()];
+    let filter = params.filter.as_deref().unwrap_or("");
+    let con_alertas = params.con_alertas == Some(true) || !filter.is_empty();
+
     let mut param_idx = 0;
+    let mut binds = Vec::new();
 
-    if params.area_id.is_some() {
+    let area_filter = if let Some(aid) = params.area_id {
         param_idx += 1;
-        conditions.push(format!("s.area_id = ${}", param_idx));
-    }
-    if params.q.is_some() {
-        param_idx += 1;
-        conditions.push(format!(
-            "(p.nombre ILIKE ${0} OR p.codigo_interno ILIKE ${0})",
-            param_idx
-        ));
-    }
-    if params.categoria_id.is_some() {
-        param_idx += 1;
-        conditions.push(format!("p.categoria_id = ${}", param_idx));
-    }
-    if params.proveedor_id.is_some() {
-        param_idx += 1;
-        conditions.push(format!("l.proveedor_id = ${}", param_idx));
-    }
-    if params.stock_bajo == Some(true) {
-        conditions.push("p.stock_minimo > 0".to_string());
-    }
+        binds.push(aid.to_string());
+        format!("AND s.area_id = ${}", param_idx)
+    } else {
+        "".to_string()
+    };
 
-    let where_clause = conditions.join(" AND ");
+    let q_filter = if let Some(q) = &params.q {
+        param_idx += 1;
+        binds.push(format!("%{}%", q));
+        format!("AND (p.nombre ILIKE ${0} OR p.codigo_interno ILIKE ${0})", param_idx)
+    } else {
+        "".to_string()
+    };
 
-    let base_from = r#"FROM stock s
-        JOIN lotes l ON l.id = s.lote_id
-        JOIN productos p ON p.id = l.producto_id
-        JOIN unidades_basicas um ON um.id = p.unidad_base_id
-        LEFT JOIN categorias c ON c.id = p.categoria_id
-        LEFT JOIN LATERAL (
-            SELECT pv.nombre, pv.icono
-            FROM lotes l2
-            JOIN stock s2 ON s2.lote_id = l2.id
-            JOIN proveedores pv ON pv.id = l2.proveedor_id
-            WHERE l2.producto_id = p.id AND s2.cantidad > 0
-            ORDER BY l2.fecha_vencimiento ASC
-            LIMIT 1
-        ) fefo_prov ON true"#;
+    let cat_filter = if let Some(cat_id) = params.categoria_id {
+        param_idx += 1;
+        binds.push(cat_id.to_string());
+        format!("AND p.categoria_id = ${}", param_idx)
+    } else {
+        "".to_string()
+    };
 
-    let count_sql = format!(
-        "SELECT COUNT(DISTINCT p.id) {} WHERE {}",
-        base_from, where_clause
-    );
-    let data_sql = format!(
-        r#"SELECT p.id as producto_id, p.codigo_interno, p.nombre as producto_nombre,
-                  c.nombre as categoria, um.nombre as unidad, um.nombre_plural as unidad_plural,
-                  SUM(s.cantidad) as stock_total, p.stock_minimo,
-                  MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0) as proximo_vencimiento,
-                  fefo_prov.nombre as proveedor_nombre, fefo_prov.icono as proveedor_icono
-           {} WHERE {}
-           GROUP BY p.id, p.codigo_interno, p.nombre, c.nombre, um.nombre, um.nombre_plural, p.stock_minimo, fefo_prov.nombre, fefo_prov.icono
-           {}
-           ORDER BY p.nombre
+    let prov_filter = if let Some(prov_id) = params.proveedor_id {
+        param_idx += 1;
+        binds.push(prov_id.to_string());
+        format!("AND p.proveedor_id = ${}", param_idx)
+    } else {
+        "".to_string()
+    };
+
+    // Filter by type (Dashboard logic)
+    let type_filter = match filter {
+        "critico" => "AND ((stock_total <= 0 AND stock_minimo > 0) OR (stock_minimo > 0 AND stock_total < stock_minimo) OR (consumo_diario_ajustado > 0.0001 AND (stock_total / consumo_diario_ajustado) <= 7))",
+        "vencimiento" => "AND (proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days' AND proximo_vencimiento >= CURRENT_DATE)",
+        "vencidos" => "AND proximo_vencimiento < CURRENT_DATE",
+        "sin-stock" => "AND stock_total <= 0 AND stock_minimo > 0",
+        _ if params.con_alertas == Some(true) => "AND ((stock_total < stock_minimo AND stock_minimo > 0) OR proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days')",
+        _ if params.stock_bajo == Some(true) => "AND stock_total < stock_minimo",
+        _ => ""
+    };
+
+    // Base query using CTEs for cleaner logic and to include 0-stock items
+    let sql = format!(
+        r#"WITH stock_stats AS (
+               SELECT 
+                   l.producto_id,
+                   SUM(s.cantidad) AS total,
+                   MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0) AS proxima_fecha_venc
+               FROM lotes l
+               LEFT JOIN stock s ON s.lote_id = l.id
+               WHERE 1=1 {}
+               GROUP BY l.producto_id
+           ),
+           movimiento_stats AS (
+               SELECT 
+                   l.producto_id,
+                   (
+                     (COALESCE(SUM(CASE WHEN m.tipo = 'CONSUMO' AND m.created_at >= NOW() - INTERVAL '7 days' THEN m.cantidad ELSE 0 END), 0) / 7.0 * 0.7) +
+                     (COALESCE(SUM(CASE WHEN m.tipo = 'CONSUMO' AND m.created_at BETWEEN NOW() - INTERVAL '30 days' AND NOW() - INTERVAL '7 days' THEN m.cantidad ELSE 0 END), 0) / 23.0 * 0.3)
+                   ) AS consumo_diario_ponderado,
+                   COUNT(DISTINCT CASE WHEN m.tipo = 'CONSUMO' THEN m.created_at::date END) AS dias_con_consumo,
+                   EXTRACT(DAY FROM (NOW() - MIN(m.created_at)))::INT + 1 AS dias_vida_sistema
+               FROM lotes l
+               JOIN movimientos m ON m.lote_id = l.id
+               GROUP BY l.producto_id
+           ),
+           fefo_prov AS (
+               SELECT DISTINCT ON (l2.producto_id)
+                   l2.producto_id, pv.nombre, pv.icono
+               FROM lotes l2
+               JOIN stock s2 ON s2.lote_id = l2.id
+               JOIN proveedores pv ON pv.id = l2.proveedor_id
+               WHERE s2.cantidad > 0
+               ORDER BY l2.producto_id, l2.fecha_vencimiento ASC
+           ),
+           final_stats AS (
+               SELECT 
+                   p.id as producto_id,
+                   p.codigo_interno,
+                   p.nombre as producto_nombre,
+                   c.nombre as categoria,
+                   um.nombre as unidad,
+                   um.nombre_plural as unidad_plural,
+                   COALESCE(ss.total, 0) as stock_total,
+                   p.stock_minimo,
+                   ss.proxima_fecha_venc as proximo_vencimiento,
+                   fp.nombre as proveedor_nombre,
+                   fp.icono as proveedor_icono,
+                   CASE 
+                       WHEN ms.dias_vida_sistema < 30 AND ms.dias_con_consumo >= 3 THEN
+                           COALESCE(ms.consumo_diario_ponderado * (30.0 / NULLIF(ms.dias_vida_sistema, 0)), 0)::NUMERIC(15,4)
+                       ELSE COALESCE(ms.consumo_diario_ponderado, 0)::NUMERIC(15,4)                   END AS consumo_diario_ajustado
+               FROM productos p
+               JOIN unidades_basicas um ON um.id = p.unidad_base_id
+               LEFT JOIN categorias c ON c.id = p.categoria_id
+               LEFT JOIN stock_stats ss ON ss.producto_id = p.id
+               LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
+               LEFT JOIN fefo_prov fp ON fp.producto_id = p.id
+               WHERE p.activo = true {} {} {}
+           ),
+           filtered AS (
+               SELECT * FROM final_stats WHERE 1=1 {} {}
+           ),
+           total_count AS (
+               SELECT COUNT(*) as full_count FROM filtered
+           )
+           SELECT f.*, tc.full_count 
+           FROM filtered f, total_count tc
+           ORDER BY f.producto_nombre
            LIMIT ${} OFFSET ${}"#,
-        base_from,
-        where_clause,
-        if params.stock_bajo == Some(true) {
-            "HAVING SUM(s.cantidad) < p.stock_minimo"
+        area_filter,
+        q_filter,
+        cat_filter,
+        prov_filter,
+        if !con_alertas && params.q.is_none() && params.categoria_id.is_none() && params.proveedor_id.is_none() {
+            "AND (stock_total > 0 OR stock_minimo > 0)"
         } else {
             ""
         },
+        type_filter,
         param_idx + 1,
         param_idx + 2
     );
-
-    let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
-    let mut data_query = sqlx::query_as::<_, StockItem>(&data_sql);
-
-    if let Some(area_id) = params.area_id {
-        count_query = count_query.bind(area_id);
-        data_query = data_query.bind(area_id);
+    
+    let mut query = sqlx::query_as::<_, StockItemRow>(&sql);
+    for b in binds {
+        query = query.bind(b);
     }
-    if let Some(q) = &params.q {
-        let pattern = format!("%{}%", q);
-        count_query = count_query.bind(pattern.clone());
-        data_query = data_query.bind(pattern);
-    }
-    if let Some(cat_id) = params.categoria_id {
-        count_query = count_query.bind(cat_id);
-        data_query = data_query.bind(cat_id);
-    }
-    if let Some(prov_id) = params.proveedor_id {
-        count_query = count_query.bind(prov_id);
-        data_query = data_query.bind(prov_id);
-    }
+    query = query.bind(limit).bind(offset);
 
-    data_query = data_query.bind(limit).bind(offset);
-
-    let total = count_query.fetch_one(&state.pool).await?;
-    let data = data_query.fetch_all(&state.pool).await?;
+    let rows = query.fetch_all(&state.pool).await?;
+    let total = rows.first().map(|r| r.full_count).unwrap_or(0);
+    let total_pages = if limit > 0 { (total + limit - 1) / limit } else { 1 };
 
     // Resumen
     let resumen_total: (i64,) = sqlx::query_as(
-        "SELECT COUNT(DISTINCT l.producto_id) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE s.cantidad > 0",
+        "SELECT COUNT(DISTINCT l.producto_id) FROM stock s JOIN lotes l ON l.id = s.lote_id JOIN productos p ON p.id = l.producto_id WHERE s.cantidad > 0 AND p.activo = true",
     )
     .fetch_one(&state.pool)
     .await?;
@@ -171,7 +205,7 @@ async fn listar(
             SELECT l.producto_id FROM stock s
             JOIN lotes l ON l.id = s.lote_id
             JOIN productos p ON p.id = l.producto_id
-            WHERE s.cantidad > 0 AND p.stock_minimo > 0
+            WHERE s.cantidad > 0 AND p.stock_minimo > 0 AND p.activo = true
             GROUP BY l.producto_id, p.stock_minimo
             HAVING SUM(s.cantidad) < p.stock_minimo
         ) sub"#,
@@ -182,15 +216,14 @@ async fn listar(
     let por_vencer: (i64,) = sqlx::query_as(
         r#"SELECT COUNT(DISTINCT l.producto_id) FROM stock s
            JOIN lotes l ON l.id = s.lote_id
-           WHERE s.cantidad > 0 AND l.fecha_vencimiento <= CURRENT_DATE + INTERVAL '90 days'"#,
+           JOIN productos p ON p.id = l.producto_id
+           WHERE s.cantidad > 0 AND p.activo = true AND l.fecha_vencimiento <= CURRENT_DATE + INTERVAL '90 days'"#,
     )
     .fetch_one(&state.pool)
     .await?;
 
-    let total_pages = if limit > 0 { (total + limit - 1) / limit } else { 1 };
-
     Ok(Json(serde_json::json!({
-        "data": data,
+        "data": rows,
         "total": total,
         "page": pagination.page(),
         "per_page": limit,
@@ -201,6 +234,23 @@ async fn listar(
             "productos_por_vencer_90d": por_vencer.0,
         }
     })))
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+struct StockItemRow {
+    producto_id: Uuid,
+    codigo_interno: String,
+    producto_nombre: String,
+    categoria: Option<String>,
+    unidad: String,
+    unidad_plural: Option<String>,
+    stock_total: Option<Decimal>,
+    stock_minimo: Decimal,
+    proximo_vencimiento: Option<NaiveDate>,
+    proveedor_nombre: Option<String>,
+    proveedor_icono: Option<String>,
+    #[serde(skip)]
+    full_count: i64,
 }
 
 /// GET /api/v1/stock/area/:area_id — Stock de un área específica
@@ -223,7 +273,7 @@ async fn stock_por_area(
     let limit = pagination.per_page();
     let offset = pagination.offset();
 
-    // Query unificada: productos + lotes en una sola round-trip con JSON aggregation
+    // Query unificada: productos + lotes + presentaciones en una sola round-trip con JSON aggregation
     let data_sql = format!(
         r#"SELECT
                p.id as producto_id,
@@ -233,6 +283,16 @@ async fn stock_por_area(
                um.nombre_plural as unidad_plural,
                p.stock_minimo,
                COALESCE(SUM(s.cantidad), 0) AS stock,
+               (
+                   SELECT JSON_AGG(JSON_BUILD_OBJECT(
+                       'id', pr.id,
+                       'nombre', pr.nombre,
+                       'nombre_plural', pr.nombre_plural,
+                       'factor_conversion', pr.factor_conversion
+                   ))
+                   FROM presentaciones pr
+                   WHERE pr.producto_id = p.id AND pr.activa = true
+               ) AS presentaciones,
                JSON_AGG(
                    JSON_BUILD_OBJECT(
                        'lote_id',          s.lote_id,
@@ -328,6 +388,18 @@ struct AlertaRow {
     proxima_fecha_venc: Option<NaiveDate>,
     stock_minimo: Option<Decimal>,
     tipo_alerta: Option<String>,
+    dias_inactivo: Option<i32>,
+    consumo_diario_30d: Option<Decimal>,
+    dias_autonomia: Option<i32>,
+    dias_con_consumo: Option<i64>,
+    es_anomalia: Option<bool>,
+    proveedor_id: Option<i32>,
+    proveedor_nombre: Option<String>,
+    dias_despacho: Option<i32>,
+    total_en_camino: Option<Decimal>,
+    tiene_pedido_pendiente: bool,
+    #[serde(skip)]
+    total_count: i64,
 }
 
 /// GET /api/v1/stock/alertas — Productos que necesitan atención
@@ -339,83 +411,168 @@ async fn alertas(
     let page = params.page.max(1);
     let offset = (page - 1) * per_page;
 
-    let total: i64 = sqlx::query_scalar(
-        r#"WITH stock_producto AS (
-               SELECT l.producto_id, p.stock_minimo,
-                   SUM(s.cantidad) AS total,
-                   MIN(CASE WHEN l.fecha_vencimiento IS NOT NULL THEN l.fecha_vencimiento END) AS proxima_fecha_venc
-               FROM stock s
-               JOIN lotes l ON l.id = s.lote_id
-               JOIN productos p ON p.id = l.producto_id
-               WHERE s.cantidad > 0 AND p.activo = true
-               GROUP BY l.producto_id, p.stock_minimo
-           )
-           SELECT COUNT(*) FROM stock_producto
-           WHERE (stock_minimo > 0 AND total < stock_minimo)
-              OR proxima_fecha_venc <= CURRENT_DATE + 90"#,
+    // Verificar si las tablas de solicitudes de compra ya existen (migraciones 019+)
+    let solicitudes_disponibles: bool = sqlx::query_scalar(
+        "SELECT to_regclass('public.solicitudes_compra') IS NOT NULL"
     )
     .fetch_one(&state.pool)
-    .await?;
+    .await
+    .unwrap_or(false);
 
-    let alertas = sqlx::query_as::<_, AlertaRow>(
-        r#"WITH stock_producto AS (
+    let pedidos_cte = if solicitudes_disponibles {
+        r#"pedidos_pendientes AS (
                SELECT
-                   l.producto_id,
+                   producto_id,
+                   SUM(cantidad_sugerida) as total_en_camino
+               FROM solicitud_compra_detalle scd
+               JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
+               WHERE sc.estado IN ('aprobada', 'enviada')
+               GROUP BY producto_id
+           ),"#
+    } else {
+        // Tablas no disponibles aún: CTE vacío para no romper el query
+        r#"pedidos_pendientes AS (
+               SELECT NULL::UUID as producto_id, NULL::NUMERIC as total_en_camino WHERE FALSE
+           ),"#
+    };
+
+    let sql = format!(
+        r#"WITH stock_stats AS (
+               SELECT
+                   p.id as producto_id,
+                   COALESCE(SUM(s.cantidad), 0) AS total,
+                   MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0) AS proxima_fecha_venc
+               FROM productos p
+               LEFT JOIN lotes l ON l.producto_id = p.id
+               LEFT JOIN stock s ON s.lote_id = l.id
+               WHERE p.activo = true
+               GROUP BY p.id
+           ),
+           movimiento_stats AS (
+               SELECT
+                   p.id as producto_id,
+                   MAX(m.created_at) AS ultimo_movimiento,
+                   (
+                     (COALESCE(SUM(CASE WHEN m.tipo = 'CONSUMO' AND m.created_at >= NOW() - INTERVAL '7 days' THEN m.cantidad ELSE 0 END), 0) / 7.0 * 0.7) +
+                     (COALESCE(SUM(CASE WHEN m.tipo = 'CONSUMO' AND m.created_at BETWEEN NOW() - INTERVAL '30 days' AND NOW() - INTERVAL '7 days' THEN m.cantidad ELSE 0 END), 0) / 23.0 * 0.3)
+                   )::DECIMAL AS consumo_diario_ponderado,
+                   COUNT(DISTINCT CASE WHEN m.tipo = 'CONSUMO' THEN m.created_at::date END) AS dias_con_consumo,
+                   EXTRACT(DAY FROM (NOW() - MIN(m.created_at)))::INT + 1 AS dias_vida_sistema,
+                   (COALESCE(SUM(CASE WHEN m.tipo = 'CONSUMO' AND m.created_at >= NOW() - INTERVAL '7 days' THEN m.cantidad ELSE 0 END), 0) / 7.0)::DECIMAL AS consumo_7d
+               FROM productos p
+               LEFT JOIN lotes l ON l.producto_id = p.id
+               LEFT JOIN movimientos m ON m.lote_id = l.id
+               GROUP BY p.id
+           ),
+           {}
+           stats AS (
+               SELECT
+                   p.id as producto_id,
                    p.nombre,
                    p.stock_minimo,
+                   p.proveedor_id,
+                   pv.nombre AS proveedor_nombre,
+                   COALESCE(pv.dias_despacho_tierra, pv.dias_despacho_aereo, 7) AS dias_despacho,
                    ub.nombre AS unidad,
                    ub.nombre_plural AS unidad_plural,
-                   SUM(s.cantidad) AS total,
-                   MIN(CASE WHEN l.fecha_vencimiento IS NOT NULL
-                       THEN l.fecha_vencimiento END) AS proxima_fecha_venc
-               FROM stock s
-               JOIN lotes l ON l.id = s.lote_id
-               JOIN productos p ON p.id = l.producto_id
+                   COALESCE(ss.total, 0) AS total,
+                   COALESCE(pp.total_en_camino, 0) AS total_en_camino,
+                   ss.proxima_fecha_venc,
+                   ms.ultimo_movimiento,
+                   CASE
+                       WHEN ms.dias_vida_sistema < 30 THEN
+                           COALESCE(ms.consumo_diario_ponderado * (30.0 / NULLIF(ms.dias_vida_sistema, 0)), 0)::NUMERIC(15,4)
+                       ELSE COALESCE(ms.consumo_diario_ponderado, 0)::NUMERIC(15,4)                   END AS consumo_diario_ajustado,
+                   ms.dias_con_consumo,
+                   (ms.consumo_7d > ms.consumo_diario_ponderado * 3 AND ms.dias_con_consumo > 5) AS es_anomalia
+               FROM productos p
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-               WHERE s.cantidad > 0 AND p.activo = true
-               GROUP BY l.producto_id, p.nombre, p.stock_minimo, ub.nombre, ub.nombre_plural
+               LEFT JOIN proveedores pv ON pv.id = p.proveedor_id
+               LEFT JOIN stock_stats ss ON ss.producto_id = p.id
+               LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
+               LEFT JOIN pedidos_pendientes pp ON pp.producto_id = p.id
+               WHERE p.activo = true
+           ),
+           filtered_alertas AS (
+               SELECT
+                   producto_id,
+                   nombre,
+                   total,
+                   unidad,
+                   unidad_plural,
+                   proxima_fecha_venc,
+                   stock_minimo,
+                   total_en_camino,
+                   (total_en_camino > 0) AS tiene_pedido_pendiente,
+                   proveedor_id,
+                   proveedor_nombre,
+                   dias_despacho,
+                   EXTRACT(DAY FROM (NOW() - COALESCE(ultimo_movimiento, NOW() - INTERVAL '365 days')))::INT as dias_inactivo,
+                   consumo_diario_ajustado as consumo_diario_30d,
+                   dias_con_consumo,
+                   es_anomalia,
+                   CASE
+                       WHEN consumo_diario_ajustado > 0.0001 AND dias_con_consumo >= 3 THEN LEAST(FLOOR(total / consumo_diario_ajustado), 999)::INT
+                       ELSE NULL
+                   END as dias_autonomia,
+                   alerta.tipo as tipo_alerta
+               FROM stats
+               CROSS JOIN LATERAL (
+                   SELECT 'vencido' as tipo WHERE proxima_fecha_venc < CURRENT_DATE
+                   UNION ALL
+                   SELECT 'sin_stock' WHERE total <= 0 AND stock_minimo > 0
+                   UNION ALL
+                   SELECT 'agotamiento_proximo' WHERE consumo_diario_ajustado > 0.0001 AND dias_con_consumo >= 3 AND (total / consumo_diario_ajustado) <= 7 AND total > 0
+                   UNION ALL
+                   SELECT 'vence_30d' WHERE proxima_fecha_venc >= CURRENT_DATE AND proxima_fecha_venc <= CURRENT_DATE + INTERVAL '30 days'
+                   UNION ALL
+                   SELECT 'bajo_minimo' WHERE stock_minimo > 0 AND total < stock_minimo AND total > 0
+                   UNION ALL
+                   SELECT 'dead_stock' WHERE total > 0 AND (ultimo_movimiento <= NOW() - INTERVAL '90 days' OR ultimo_movimiento IS NULL)
+                   UNION ALL
+                   SELECT 'vence_90d' WHERE proxima_fecha_venc > CURRENT_DATE + INTERVAL '30 days' AND proxima_fecha_venc <= CURRENT_DATE + INTERVAL '90 days'
+                   UNION ALL
+                   SELECT 'anomalia_consumo' WHERE es_anomalia
+               ) alerta
+           ),
+           total_count AS (
+               SELECT COUNT(*) as full_count FROM filtered_alertas
            )
            SELECT
-               producto_id,
-               nombre,
-               total,
-               unidad,
-               unidad_plural,
-               proxima_fecha_venc,
-               stock_minimo,
-               CASE
-                   WHEN proxima_fecha_venc < CURRENT_DATE THEN 'vencido'
-                   WHEN proxima_fecha_venc <= CURRENT_DATE + 30 THEN 'vence_30d'
-                   WHEN proxima_fecha_venc <= CURRENT_DATE + 90 THEN 'vence_90d'
-                   WHEN stock_minimo > 0 AND total < stock_minimo THEN 'bajo_minimo'
-               END AS tipo_alerta
-           FROM stock_producto
-           WHERE (stock_minimo > 0 AND total < stock_minimo)
-              OR proxima_fecha_venc <= CURRENT_DATE + 90
+               fa.*,
+               tc.full_count as total_count
+           FROM filtered_alertas fa, total_count tc
            ORDER BY
-               CASE WHEN proxima_fecha_venc < CURRENT_DATE THEN 0
-                    WHEN proxima_fecha_venc <= CURRENT_DATE + 30 THEN 1
-                    WHEN stock_minimo > 0 AND total < stock_minimo THEN 2
-                    ELSE 3 END,
+               CASE WHEN tipo_alerta = 'vencido' THEN 0
+                    WHEN tipo_alerta = 'sin_stock' THEN 1
+                    WHEN tipo_alerta = 'agotamiento_proximo' THEN 2
+                    WHEN tipo_alerta = 'vence_30d' THEN 3
+                    WHEN tipo_alerta = 'bajo_minimo' THEN 4
+                    ELSE 5 END,
                proxima_fecha_venc ASC NULLS LAST,
                nombre ASC
            LIMIT $1 OFFSET $2"#,
-    )
+        pedidos_cte
+    );
+
+    let rows = sqlx::query_as::<_, AlertaRow>(&sql)
     .bind(per_page)
     .bind(offset)
     .fetch_all(&state.pool)
     .await?;
 
+    let total = rows.first().map(|r| r.total_count).unwrap_or(0);
     let total_pages = (total + per_page - 1) / per_page;
 
     Ok(Json(serde_json::json!({
-        "data": alertas,
+        "data": rows,
         "total": total,
         "page": page,
         "per_page": per_page,
         "total_pages": total_pages,
     })))
 }
+
 
 pub fn routes() -> Router<AppState> {
     Router::new()

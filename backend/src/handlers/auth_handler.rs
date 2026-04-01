@@ -32,6 +32,18 @@ fn extract_client_ip(headers: &HeaderMap) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+/// Login de usuario para obtener tokens de acceso
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/login",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Login exitoso", body = LoginResponse),
+        (status = 401, description = "Credenciales inválidas"),
+        (status = 429, description = "Demasiadas solicitudes")
+    ),
+    tag = "auth"
+)]
 async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,

@@ -10,7 +10,6 @@ use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::dto::pagination::{PaginatedResponse, PaginationParams};
 use crate::errors::{validate_text_length, AppError};
-use crate::models::presentacion::Presentacion;
 use crate::models::producto::Producto;
 
 // === DTOs ===
@@ -26,7 +25,7 @@ struct ProductoQuery {
     per_page: Option<i64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, specta::Type)]
 struct ProductoListItem {
     id: Uuid,
     codigo_interno: String,
@@ -41,33 +40,33 @@ struct ProductoListItem {
     activo: bool,
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
-struct CategoriaRef {
-    id: i32,
-    nombre: String,
+#[derive(Debug, Serialize, sqlx::FromRow, specta::Type)]
+pub struct CategoriaRef {
+    pub id: i32,
+    pub nombre: String,
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
-struct UnidadRef {
-    id: i32,
-    nombre: String,
-    nombre_plural: String,
+#[derive(Debug, Serialize, sqlx::FromRow, specta::Type)]
+pub struct UnidadRef {
+    pub id: i32,
+    pub nombre: String,
+    pub nombre_plural: String,
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
-struct AreaRef {
-    id: i32,
-    nombre: String,
+#[derive(Debug, Serialize, sqlx::FromRow, specta::Type)]
+pub struct AreaRef {
+    pub id: i32,
+    pub nombre: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, specta::Type)]
 struct ProveedorRef {
     id: i32,
     nombre: String,
     icono: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, specta::Type)]
 struct CreateProducto {
     nombre: String,
     descripcion: Option<String>,
@@ -81,12 +80,12 @@ struct CreateProducto {
     area_ids: Option<Vec<i32>>,
 }
 
-#[derive(Debug, Deserialize)]
-struct CreatePresentacionInline {
-    nombre: String,
-    nombre_plural: String,
-    factor_conversion: Decimal,
-    codigo_barras: Option<String>,
+#[derive(Debug, Deserialize, specta::Type)]
+pub struct CreatePresentacionInline {
+    pub nombre: String,
+    pub nombre_plural: String,
+    pub factor_conversion: Decimal,
+    pub codigo_barras: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -125,12 +124,16 @@ struct ProductoRow {
     area_nombre: Option<String>,
 }
 
+use crate::services::producto_service::ProductoService;
+
 // === Handlers ===
 
 async fn listar(
     State(state): State<AppState>,
     Query(params): Query<ProductoQuery>,
 ) -> Result<Json<PaginatedResponse<ProductoListItem>>, AppError> {
+    // ... (listar se mantendrá aquí por ahora ya que es muy específico de la UI,
+    // pero en una fase 2 se podría mover a un QueryService)
     let activo = params.activo.unwrap_or(true);
     let pagination = PaginationParams { page: params.page, per_page: params.per_page };
     let limit = pagination.per_page();
@@ -255,78 +258,8 @@ async fn obtener(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let producto = sqlx::query_as::<_, Producto>("SELECT * FROM productos WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or(AppError::NotFound("Producto no encontrado".into()))?;
-
-    let categoria = if let Some(cat_id) = producto.categoria_id {
-        sqlx::query_as::<_, CategoriaRef>("SELECT id, nombre FROM categorias WHERE id = $1")
-            .bind(cat_id)
-            .fetch_optional(&state.pool)
-            .await?
-    } else {
-        None
-    };
-
-    let unidad = sqlx::query_as::<_, UnidadRef>(
-        "SELECT id, nombre, nombre_plural FROM unidades_basicas WHERE id = $1",
-    )
-    .bind(producto.unidad_base_id)
-    .fetch_one(&state.pool)
-    .await?;
-
-    let proveedor = if let Some(prov_id) = producto.proveedor_id {
-        #[derive(sqlx::FromRow, Serialize)]
-        struct ProveedorDetailRef {
-            id: i32,
-            nombre: String,
-            icono: Option<String>,
-        }
-        sqlx::query_as::<_, ProveedorDetailRef>(
-            "SELECT id, nombre, icono FROM proveedores WHERE id = $1",
-        )
-        .bind(prov_id)
-        .fetch_optional(&state.pool)
-        .await?
-        .map(|p| json!({"id": p.id, "nombre": p.nombre, "icono": p.icono}))
-    } else {
-        None
-    };
-
-    let presentaciones = sqlx::query_as::<_, Presentacion>(
-        "SELECT * FROM presentaciones WHERE producto_id = $1 AND activa = true ORDER BY nombre",
-    )
-    .bind(id)
-    .fetch_all(&state.pool)
-    .await?;
-
-    let areas: Vec<AreaRef> = sqlx::query_as(
-        "SELECT a.id, a.nombre FROM areas a JOIN producto_area pa ON pa.area_id = a.id WHERE pa.producto_id = $1 ORDER BY a.nombre",
-    )
-    .bind(id)
-    .fetch_all(&state.pool)
-    .await?;
-
-    Ok(Json(json!({
-        "id": producto.id,
-        "codigo_interno": producto.codigo_interno,
-        "nombre": producto.nombre,
-        "descripcion": producto.descripcion,
-        "codigo_proveedor": producto.codigo_proveedor,
-        "codigo_maestro": producto.codigo_maestro,
-        "categoria": categoria,
-        "unidad_base": unidad,
-        "proveedor": proveedor,
-        "stock_minimo": producto.stock_minimo,
-        "presentaciones": presentaciones,
-        "areas": areas,
-        "activo": producto.activo,
-        "version": producto.version,
-        "created_at": producto.created_at,
-        "updated_at": producto.updated_at,
-    })))
+    let detalle = ProductoService::obtener_detalle(&state.pool, id).await?;
+    Ok(Json(detalle))
 }
 
 async fn crear(
@@ -345,70 +278,20 @@ async fn crear(
         validate_text_length(desc, "descripcion", 1000)?;
     }
 
-    let mut tx = state.pool.begin().await?;
-
-    let codigo: String =
-        sqlx::query_scalar("SELECT generar_codigo_producto()")
-            .fetch_one(&mut *tx)
-            .await?;
-
-    let producto = sqlx::query_as::<_, Producto>(
-        r#"INSERT INTO productos (codigo_interno, nombre, descripcion, categoria_id, unidad_base_id, proveedor_id, codigo_proveedor, codigo_maestro, stock_minimo)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *"#,
-    )
-    .bind(&codigo)
-    .bind(&nombre)
-    .bind(&req.descripcion)
-    .bind(req.categoria_id)
-    .bind(req.unidad_base_id)
-    .bind(req.proveedor_id)
-    .bind(&req.codigo_proveedor)
-    .bind(&req.codigo_maestro)
-    .bind(req.stock_minimo.unwrap_or(Decimal::ZERO))
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| match &e {
-        sqlx::Error::Database(db_err) if db_err.is_foreign_key_violation() => {
-            AppError::Validation("Categoría, unidad, proveedor o área no existe".into())
-        }
-        _ => e.into(),
-    })?;
-
-    if let Some(presentaciones) = &req.presentaciones {
-        for pres in presentaciones {
-            sqlx::query(
-                "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras) VALUES ($1, $2, $3, $4, $5)",
-            )
-            .bind(producto.id)
-            .bind(pres.nombre.trim())
-            .bind(pres.nombre_plural.trim())
-            .bind(pres.factor_conversion)
-            .bind(&pres.codigo_barras)
-            .execute(&mut *tx)
-            .await?;
-        }
-    }
-
-    if let Some(area_ids) = &req.area_ids {
-        for area_id in area_ids {
-            sqlx::query("INSERT INTO producto_area (producto_id, area_id) VALUES ($1, $2)")
-                .bind(producto.id)
-                .bind(area_id)
-                .execute(&mut *tx)
-                .await?;
-        }
-    }
-
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, datos_nuevos, usuario_id) VALUES ('productos', $1, 'CREATE', $2, $3)",
-    )
-    .bind(producto.id.to_string())
-    .bind(json!({"codigo_interno": &producto.codigo_interno, "nombre": &producto.nombre}))
-    .bind(claims.sub)
-    .execute(&mut *tx)
-    .await?;
-
-    tx.commit().await?;
+    let producto = ProductoService::crear_producto(
+        &state.pool,
+        nombre,
+        req.descripcion,
+        req.categoria_id,
+        req.unidad_base_id,
+        req.proveedor_id,
+        req.codigo_proveedor,
+        req.codigo_maestro,
+        req.stock_minimo,
+        req.presentaciones,
+        req.area_ids,
+        claims.sub,
+    ).await?;
 
     Ok((
         axum::http::StatusCode::CREATED,
@@ -428,71 +311,25 @@ async fn actualizar(
 ) -> Result<Json<Producto>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
-    let anterior = sqlx::query_as::<_, Producto>("SELECT * FROM productos WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or(AppError::NotFound("Producto no encontrado".into()))?;
-
-    if req.version != anterior.version {
-        return Err(AppError::Conflict(
-            "El registro fue modificado por otro usuario".into(),
-        ));
-    }
-
-    let nombre = req.nombre.as_deref().map(str::trim).unwrap_or(&anterior.nombre);
-    if nombre.is_empty() {
+    let nombre = req.nombre.as_deref().map(str::trim).unwrap_or("");
+    if req.nombre.is_some() && nombre.is_empty() {
         return Err(AppError::Validation("El nombre no puede estar vacío".into()));
     }
 
-    let new_proveedor_id = req.proveedor_id.or(anterior.proveedor_id);
-
-    let mut tx = state.pool.begin().await?;
-
-    let producto = sqlx::query_as::<_, Producto>(
-        r#"UPDATE productos
-           SET nombre = $1, descripcion = $2, categoria_id = $3, proveedor_id = $4, stock_minimo = $5,
-               codigo_proveedor = $6, codigo_maestro = $7,
-               version = version + 1, updated_at = NOW()
-           WHERE id = $8
-           RETURNING *"#,
-    )
-    .bind(nombre)
-    .bind(req.descripcion.as_deref().or(anterior.descripcion.as_deref()))
-    .bind(req.categoria_id.or(anterior.categoria_id))
-    .bind(new_proveedor_id)
-    .bind(req.stock_minimo.unwrap_or(anterior.stock_minimo))
-    .bind(req.codigo_proveedor.as_deref().or(anterior.codigo_proveedor.as_deref()))
-    .bind(req.codigo_maestro.as_deref().or(anterior.codigo_maestro.as_deref()))
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await?;
-
-    if let Some(area_ids) = &req.area_ids {
-        sqlx::query("DELETE FROM producto_area WHERE producto_id = $1")
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
-        for area_id in area_ids {
-            sqlx::query("INSERT INTO producto_area (producto_id, area_id) VALUES ($1, $2)")
-                .bind(id)
-                .bind(area_id)
-                .execute(&mut *tx)
-                .await?;
-        }
-    }
-
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, datos_anteriores, datos_nuevos, usuario_id) VALUES ('productos', $1, 'UPDATE', $2, $3, $4)",
-    )
-    .bind(id.to_string())
-    .bind(json!({"nombre": &anterior.nombre, "version": anterior.version}))
-    .bind(json!({"nombre": &producto.nombre, "version": producto.version}))
-    .bind(claims.sub)
-    .execute(&mut *tx)
-    .await?;
-
-    tx.commit().await?;
+    let producto = ProductoService::actualizar_producto(
+        &state.pool,
+        id,
+        nombre.to_string(),
+        req.descripcion,
+        req.categoria_id,
+        req.proveedor_id,
+        req.codigo_proveedor,
+        req.codigo_maestro,
+        req.stock_minimo,
+        req.area_ids,
+        req.version,
+        claims.sub,
+    ).await?;
 
     Ok(Json(producto))
 }
@@ -504,38 +341,7 @@ async fn eliminar(
 ) -> Result<axum::http::StatusCode, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
-    let stock_count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = $1 AND s.cantidad > 0",
-    )
-    .bind(id)
-    .fetch_one(&state.pool)
-    .await?;
-
-    if stock_count.0 > 0 {
-        return Err(AppError::BusinessLogic(
-            "No se puede eliminar: tiene stock activo".into(),
-            "TIENE_STOCK".into(),
-        ));
-    }
-
-    let result = sqlx::query(
-        "UPDATE productos SET activo = false, updated_at = NOW() WHERE id = $1 AND activo = true",
-    )
-    .bind(id)
-    .execute(&state.pool)
-    .await?;
-
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Producto no encontrado".into()));
-    }
-
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, usuario_id) VALUES ('productos', $1, 'DELETE', $2)",
-    )
-    .bind(id.to_string())
-    .bind(claims.sub)
-    .execute(&state.pool)
-    .await?;
+    ProductoService::eliminar_producto(&state.pool, id, claims.sub).await?;
 
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
@@ -547,21 +353,7 @@ async fn reactivar(
 ) -> Result<Json<Producto>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
-    let producto = sqlx::query_as::<_, Producto>(
-        "UPDATE productos SET activo = true, updated_at = NOW() WHERE id = $1 RETURNING *",
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(AppError::NotFound("Producto no encontrado".into()))?;
-
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, usuario_id) VALUES ('productos', $1, 'UPDATE', $2)",
-    )
-    .bind(id.to_string())
-    .bind(claims.sub)
-    .execute(&state.pool)
-    .await?;
+    let producto = ProductoService::reactivar_producto(&state.pool, id, claims.sub).await?;
 
     Ok(Json(producto))
 }
@@ -572,97 +364,9 @@ async fn scan_barcode(
     State(state): State<AppState>,
     Query(params): Query<ScanQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let codigo = params.codigo.as_deref().unwrap_or("").trim().to_string();
-    if codigo.is_empty() {
-        return Err(AppError::Validation("El parámetro 'codigo' es requerido".into()));
-    }
-
-    // Buscar por codigo_barras en presentaciones primero
-    #[derive(Debug, sqlx::FromRow)]
-    struct ScanResult {
-        producto_id: Uuid,
-        producto_nombre: String,
-        unidad_base_nombre: String,
-        unidad_base_nombre_plural: String,
-        presentacion_id: Option<i32>,
-        presentacion_nombre: Option<String>,
-        factor_conversion: Option<Decimal>,
-        stock_total: Option<Decimal>,
-    }
-
-    let row = sqlx::query_as::<_, ScanResult>(
-        r#"SELECT
-             p.id as producto_id,
-             p.nombre as producto_nombre,
-             ub.nombre as unidad_base_nombre,
-             ub.nombre_plural as unidad_base_nombre_plural,
-             pr.id as presentacion_id,
-             pr.nombre as presentacion_nombre,
-             pr.factor_conversion,
-             (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (
-               SELECT l.id FROM lotes l WHERE l.producto_id = p.id
-             )) as stock_total
-           FROM presentaciones pr
-           JOIN productos p ON p.id = pr.producto_id
-           JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-           WHERE pr.codigo_barras = $1 AND pr.activa = true AND p.activo = true
-           LIMIT 1"#,
-    )
-    .bind(&codigo)
-    .fetch_optional(&state.pool)
-    .await?;
-
-    if let Some(r) = row {
-        return Ok(Json(serde_json::json!({
-            "encontrado": true,
-            "producto_id": r.producto_id,
-            "producto_nombre": r.producto_nombre,
-            "unidad_base_nombre": r.unidad_base_nombre,
-            "unidad_base_nombre_plural": r.unidad_base_nombre_plural,
-            "presentacion_id": r.presentacion_id,
-            "presentacion_nombre": r.presentacion_nombre,
-            "factor_conversion": r.factor_conversion,
-            "stock_total": r.stock_total,
-        })));
-    }
-
-    // Buscar por codigo_interno del producto
-    let row2 = sqlx::query_as::<_, ScanResult>(
-        r#"SELECT
-             p.id as producto_id,
-             p.nombre as producto_nombre,
-             ub.nombre as unidad_base_nombre,
-             ub.nombre_plural as unidad_base_nombre_plural,
-             NULL::int as presentacion_id,
-             NULL::text as presentacion_nombre,
-             NULL::numeric as factor_conversion,
-             (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (
-               SELECT l.id FROM lotes l WHERE l.producto_id = p.id
-             )) as stock_total
-           FROM productos p
-           JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-           WHERE p.codigo_interno = $1 AND p.activo = true
-           LIMIT 1"#,
-    )
-    .bind(&codigo)
-    .fetch_optional(&state.pool)
-    .await?;
-
-    if let Some(r) = row2 {
-        return Ok(Json(serde_json::json!({
-            "encontrado": true,
-            "producto_id": r.producto_id,
-            "producto_nombre": r.producto_nombre,
-            "unidad_base_nombre": r.unidad_base_nombre,
-            "unidad_base_nombre_plural": r.unidad_base_nombre_plural,
-            "presentacion_id": r.presentacion_id,
-            "presentacion_nombre": r.presentacion_nombre,
-            "factor_conversion": r.factor_conversion,
-            "stock_total": r.stock_total,
-        })));
-    }
-
-    Ok(Json(serde_json::json!({ "encontrado": false })))
+    let codigo = params.codigo.as_deref().unwrap_or("");
+    let resultado = ProductoService::buscar_por_codigo(&state.pool, codigo).await?;
+    Ok(Json(resultado))
 }
 
 #[derive(Debug, Deserialize)]

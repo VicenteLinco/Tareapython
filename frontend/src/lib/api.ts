@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { v4 as uuidv4 } from 'uuid'
 import { useAuthStore } from '@/hooks/use-auth-store'
 
 const api = axios.create({
@@ -6,11 +7,22 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-api.interceptors.request.use((config) => {
+api.interceptors.request.use((config: any) => {
   const token = useAuthStore.getState().accessToken
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+
+  // Idempotency centralizada para mutaciones (resiste reintentos de axios)
+  const method = config.method?.toLowerCase() || ''
+  if (['post', 'put', 'patch'].includes(method)) {
+    if (!config._idempotencyKey && !config.headers['X-Idempotency-Key'] && !config.headers['x-idempotency-key']) {
+      config._idempotencyKey = uuidv4()
+    }
+    const key = config._idempotencyKey || config.headers['X-Idempotency-Key'] || config.headers['x-idempotency-key']
+    config.headers['X-Idempotency-Key'] = key
+  }
+
   return config
 })
 

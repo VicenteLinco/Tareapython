@@ -123,8 +123,8 @@ async fn actualizar(
     }
 
     // No permitir cambiar factor_conversion si hay recepciones que la usaron
-    if let Some(new_factor) = req.factor_conversion {
-        if new_factor != anterior.factor_conversion {
+    if let Some(new_factor) = req.factor_conversion
+        && new_factor != anterior.factor_conversion {
             let used: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM recepcion_detalle WHERE presentacion_id = $1)",
             )
@@ -139,7 +139,6 @@ async fn actualizar(
                     "FACTOR_EN_USO".into(),
                 ));
             }
-        }
     }
 
     let nombre = req.nombre.as_deref().map(str::trim).unwrap_or(&anterior.nombre);

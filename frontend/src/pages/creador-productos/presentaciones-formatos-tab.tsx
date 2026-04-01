@@ -99,7 +99,7 @@ export default function PresentacionesFormatosTab() {
 
       <DataTable
         columns={columns}
-        data={formatos as unknown as Record<string, unknown>[]}
+        data={formatos}
         emptyMessage="No hay formatos registrados"
       />
     </div>

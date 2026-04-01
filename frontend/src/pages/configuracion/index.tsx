@@ -8,6 +8,7 @@ interface Configuracion {
   nombre_laboratorio: string
   logo_base64: string
   pin_kiosko: string
+  conteo_ciego: boolean
 }
 
 export default function ConfiguracionPage() {
@@ -23,6 +24,7 @@ export default function ConfiguracionPage() {
   const [logo, setLogo] = useState('')
   const [preview, setPreview] = useState('')
   const [pinKiosko, setPinKiosko] = useState('')
+  const [conteoCiego, setConteoCiego] = useState(false)
   const [showPin, setShowPin] = useState(false)
 
   // Sync con datos cargados
@@ -32,11 +34,12 @@ export default function ConfiguracionPage() {
     setLogo(data.logo_base64)
     setPreview(data.logo_base64)
     setPinKiosko(data.pin_kiosko || '')
+    setConteoCiego(!!data.conteo_ciego)
     initialized.current = true
   }
 
   const mutation = useMutation({
-    mutationFn: (payload: { nombre_laboratorio: string; logo_base64: string; pin_kiosko: string }) =>
+    mutationFn: (payload: { nombre_laboratorio: string; logo_base64: string; pin_kiosko: string; conteo_ciego: boolean }) =>
       api.put<Configuracion>('/configuracion', payload).then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['configuracion'] })
@@ -73,7 +76,12 @@ export default function ConfiguracionPage() {
       toast.error('El nombre del laboratorio es requerido')
       return
     }
-    mutation.mutate({ nombre_laboratorio: nombre.trim(), logo_base64: logo, pin_kiosko: pinKiosko.trim() })
+    mutation.mutate({ 
+      nombre_laboratorio: nombre.trim(), 
+      logo_base64: logo, 
+      pin_kiosko: pinKiosko.trim(),
+      conteo_ciego: conteoCiego
+    })
   }
 
   if (isLoading) {
@@ -178,6 +186,27 @@ export default function ConfiguracionPage() {
               {showPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           </label>
+        </div>
+
+        {/* Conteo Ciego */}
+        <div className="flex flex-col gap-1 p-4 bg-base-200/50 rounded-xl border border-base-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm font-bold flex items-center gap-2">
+                Conteo Ciego
+                <div className="badge badge-outline badge-xs opacity-50">Logística</div>
+              </label>
+              <p className="text-[11px] opacity-60 leading-relaxed max-w-xs mt-1">
+                Oculta el stock esperado durante el proceso de conteo para garantizar que el personal cuente físicamente cada ítem sin sesgos.
+              </p>
+            </div>
+            <input 
+              type="checkbox" 
+              className="toggle toggle-primary" 
+              checked={conteoCiego}
+              onChange={(e) => setConteoCiego(e.target.checked)}
+            />
+          </div>
         </div>
 
         <button type="submit" className="btn btn-primary" disabled={mutation.isPending}>

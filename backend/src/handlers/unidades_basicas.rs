@@ -3,6 +3,8 @@ use axum::routing::{get, put};
 use axum::{Extension, Json, Router};
 use serde_json::json;
 
+use validator::Validate;
+
 use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::dto::unidad_basica::{CreateUnidadBasica, UpdateUnidadBasica};
@@ -11,7 +13,7 @@ use crate::models::unidad_basica::UnidadBasica;
 
 async fn listar(State(state): State<AppState>) -> Result<Json<Vec<UnidadBasica>>, AppError> {
     let unidades =
-        sqlx::query_as::<_, UnidadBasica>("SELECT * FROM unidades_basicas ORDER BY nombre")
+        sqlx::query_as::<_, UnidadBasica>("SELECT * FROM unidades_basicas WHERE activo = true ORDER BY nombre")
             .fetch_all(&state.pool)
             .await?;
     Ok(Json(unidades))
@@ -23,6 +25,7 @@ async fn crear(
     Json(req): Json<CreateUnidadBasica>,
 ) -> Result<(axum::http::StatusCode, Json<UnidadBasica>), AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
+    req.validate()?;
 
     let nombre = req.nombre.trim().to_string();
     let nombre_plural = req.nombre_plural.trim().to_string();
@@ -34,28 +37,23 @@ async fn crear(
     validate_text_length(&nombre, "nombre", 50)?;
     validate_text_length(&nombre_plural, "nombre_plural", 50)?;
 
+    // ON CONFLICT: si existía una unidad inactiva con el mismo nombre, la reactiva
     let unidad = sqlx::query_as::<_, UnidadBasica>(
-        "INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ($1, $2) RETURNING *",
+        r#"INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ($1, $2)
+           ON CONFLICT (nombre) DO UPDATE SET activo = true, nombre_plural = EXCLUDED.nombre_plural, version = unidades_basicas.version + 1
+           RETURNING *"#,
     )
     .bind(&nombre)
     .bind(&nombre_plural)
     .fetch_one(&state.pool)
-    .await
-    .map_err(|e| match &e {
-        sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
-            AppError::Conflict("Ya existe una unidad con ese nombre".into())
-        }
-        _ => e.into(),
-    })?;
-
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, datos_nuevos, usuario_id) VALUES ('unidades_basicas', $1, 'CREATE', $2, $3)",
-    )
-    .bind(unidad.id.to_string())
-    .bind(json!({"nombre": &unidad.nombre, "nombre_plural": &unidad.nombre_plural}))
-    .bind(claims.sub)
-    .execute(&state.pool)
     .await?;
+
+    crate::services::audit::registrar(
+        &state.pool, "unidades_basicas", &unidad.id.to_string(), "CREATE",
+        None,
+        Some(json!({"nombre": &unidad.nombre, "nombre_plural": &unidad.nombre_plural})),
+        claims.sub,
+    ).await?;
 
     Ok((axum::http::StatusCode::CREATED, Json(unidad)))
 }
@@ -67,6 +65,7 @@ async fn actualizar(
     Json(req): Json<UpdateUnidadBasica>,
 ) -> Result<Json<UnidadBasica>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
+    req.validate()?;
 
     let anterior =
         sqlx::query_as::<_, UnidadBasica>("SELECT * FROM unidades_basicas WHERE id = $1")
@@ -93,29 +92,28 @@ async fn actualizar(
     }
 
     let unidad = sqlx::query_as::<_, UnidadBasica>(
-        "UPDATE unidades_basicas SET nombre = $1, nombre_plural = $2 WHERE id = $3 RETURNING *",
+        "UPDATE unidades_basicas SET nombre = $1, nombre_plural = $2, version = version + 1 WHERE id = $3 AND version = $4 RETURNING *",
     )
     .bind(nombre)
     .bind(nombre_plural)
     .bind(id)
-    .fetch_one(&state.pool)
+    .bind(req.version)
+    .fetch_optional(&state.pool)
     .await
     .map_err(|e| match &e {
         sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
             AppError::Conflict("Ya existe una unidad con ese nombre".into())
         }
         _ => e.into(),
-    })?;
+    })?
+    .ok_or(AppError::Conflict("La unidad ha sido modificada por otro usuario (error de versión)".into()))?;
 
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, datos_anteriores, datos_nuevos, usuario_id) VALUES ('unidades_basicas', $1, 'UPDATE', $2, $3, $4)",
-    )
-    .bind(id.to_string())
-    .bind(json!({"nombre": &anterior.nombre, "nombre_plural": &anterior.nombre_plural}))
-    .bind(json!({"nombre": &unidad.nombre, "nombre_plural": &unidad.nombre_plural}))
-    .bind(claims.sub)
-    .execute(&state.pool)
-    .await?;
+    crate::services::audit::registrar(
+        &state.pool, "unidades_basicas", &id.to_string(), "UPDATE",
+        Some(json!({"nombre": &anterior.nombre, "nombre_plural": &anterior.nombre_plural})),
+        Some(json!({"nombre": &unidad.nombre, "nombre_plural": &unidad.nombre_plural})),
+        claims.sub,
+    ).await?;
 
     Ok(Json(unidad))
 }
@@ -127,38 +125,20 @@ async fn eliminar(
 ) -> Result<axum::http::StatusCode, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
-    let count: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM productos WHERE unidad_base_id = $1")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
-
-    if count.0 > 0 {
-        return Err(AppError::BusinessLogic(
-            format!(
-                "No se puede eliminar: tiene {} productos asociados",
-                count.0
-            ),
-            "TIENE_DEPENDENCIAS".into(),
-        ));
-    }
-
-    let result = sqlx::query("DELETE FROM unidades_basicas WHERE id = $1")
+    // Soft delete universal: siempre marcamos como inactivo
+    let result = sqlx::query("UPDATE unidades_basicas SET activo = false WHERE id = $1 AND activo = true")
         .bind(id)
         .execute(&state.pool)
         .await?;
 
     if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Unidad básica no encontrada".into()));
+        return Err(AppError::NotFound("Unidad básica no encontrada o ya inactiva".into()));
     }
 
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, usuario_id) VALUES ('unidades_basicas', $1, 'DELETE', $2)",
-    )
-    .bind(id.to_string())
-    .bind(claims.sub)
-    .execute(&state.pool)
-    .await?;
+    crate::services::audit::registrar(
+        &state.pool, "unidades_basicas", &id.to_string(), "DELETE",
+        None, None, claims.sub,
+    ).await?;
 
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

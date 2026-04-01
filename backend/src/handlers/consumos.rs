@@ -122,11 +122,7 @@ async fn consumo(
         req.nota.as_deref(),
         None,
     )
-    .await
-    .map_err(|e| {
-        // No podemos limpiar aquí async, pero el tx rollback se encargará
-        e
-    })?;
+    .await?;
 
     // Calcular stock restante
     let stock_restante: Option<Decimal> = sqlx::query_scalar(
@@ -185,6 +181,8 @@ async fn consumo_batch(
         items_base.push((item.producto_id, cantidad));
     }
 
+    // ORDENAR por producto_id para evitar deadlocks en base de datos al hacer FOR UPDATE
+    items_base.sort_by_key(|&(prod_id, _)| prod_id);
 
     let mut tx = state.pool.begin().await?;
     let grupo = Uuid::new_v4();

@@ -1,6 +1,49 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
+/**
+ * Convierte una ruta de imagen de la DB en una URL completa para el frontend.
+ * Soporta imágenes legacy (base64) y nuevas (rutas relativas al bucket de uploads).
+ */
+export function getImageUrl(path: string | null | undefined): string {
+  if (!path) return ''
+  // Si ya es un data URL (legacy), devolverlo tal cual
+  if (path.startsWith('data:image')) return path
+  // Si es una ruta relativa (ej: "recepciones/xyz.webp"), anteponer el prefijo del API
+  return `/api/v1/uploads/${path}`
+}
+
+/**
+ * Formatea una cantidad total de forma "humana" usando presentaciones.
+ * Ej: 110 unidades con factor 100 -> "1 Caja + 10 Reacciones"
+ */
+export function formatStockHumano(
+  total: number,
+  factor: number,
+  uBase: string,
+  uBasePlural: string,
+  uPres: string,
+  uPresPlural: string
+): string {
+  const t = Math.abs(total)
+  const isNeg = total < 0
+  
+  if (factor <= 1) return formatCantidad(total, uBase, uBasePlural)
+
+  const cajas = Math.floor(t / factor)
+  const sueltas = t % factor
+
+  const labelPres = cajas === 1 ? uPres : (uPresPlural || autoPlural(uPres))
+  const labelBase = sueltas === 1 ? uBase : (uBasePlural || autoPlural(uBase))
+
+  let result = ''
+  if (cajas > 0) result += `${cajas} ${labelPres}`
+  if (cajas > 0 && sueltas > 0) result += ' + '
+  if (sueltas > 0 || cajas === 0) result += `${sueltas % 1 === 0 ? Math.floor(sueltas) : sueltas.toFixed(1)} ${labelBase}`
+
+  return isNeg ? `-${result}` : result
+}
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }

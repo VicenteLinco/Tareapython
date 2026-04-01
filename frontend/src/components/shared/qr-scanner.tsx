@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 import { v4 as uuidv4 } from 'uuid'
-import { AlertCircle, Camera } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface QrScannerProps {

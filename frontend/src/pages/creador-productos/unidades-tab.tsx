@@ -3,7 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
 import { Dialog } from '@/components/ui/dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import api from '@/lib/api'
+import { parseApiError } from '@/lib/api-error'
 import { toast } from 'sonner'
 import type { UnidadBasica, CreateUnidadBasica, UpdateUnidadBasica } from '@/types'
 
@@ -13,6 +15,7 @@ export default function UnidadesTab() {
   const [editing, setEditing] = useState<UnidadBasica | null>(null)
   const [nombre, setNombre] = useState('')
   const [nombrePlural, setNombrePlural] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<UnidadBasica | null>(null)
 
   const { data: unidades = [], isLoading } = useQuery({
     queryKey: ['unidades-basicas'],
@@ -26,7 +29,7 @@ export default function UnidadesTab() {
       toast.success('Unidad creada')
       closeDialog()
     },
-    onError: (err: any) => toast.error(err.response?.data?.error?.message ?? 'Error al crear unidad'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   const updateMut = useMutation({
@@ -37,7 +40,7 @@ export default function UnidadesTab() {
       toast.success('Unidad actualizada')
       closeDialog()
     },
-    onError: (err: any) => toast.error(err.response?.data?.error?.message ?? 'Error al actualizar unidad'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   const deleteMut = useMutation({
@@ -45,8 +48,9 @@ export default function UnidadesTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unidades-basicas'] })
       toast.success('Unidad eliminada')
+      setDeleteTarget(null)
     },
-    onError: (err: any) => toast.error(err.response?.data?.error?.message ?? 'No se puede eliminar: tiene productos asociados'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   function openCreate() {
@@ -72,14 +76,17 @@ export default function UnidadesTab() {
     e.preventDefault()
     if (!nombre.trim() || !nombrePlural.trim()) return
     if (editing) {
-      updateMut.mutate({ id: editing.id, data: { nombre: nombre.trim(), nombre_plural: nombrePlural.trim() } })
+      updateMut.mutate({ 
+        id: editing.id, 
+        data: { 
+          nombre: nombre.trim(), 
+          nombre_plural: nombrePlural.trim(),
+          version: editing.version
+        } 
+      })
     } else {
       createMut.mutate({ nombre: nombre.trim(), nombre_plural: nombrePlural.trim() })
     }
-  }
-
-  function handleDelete(u: UnidadBasica) {
-    if (confirm(`¿Eliminar la unidad "${u.nombre}"?`)) deleteMut.mutate(u.id)
   }
 
   const isSaving = createMut.isPending || updateMut.isPending
@@ -104,7 +111,7 @@ export default function UnidadesTab() {
           <button className="btn btn-ghost btn-xs btn-square" onClick={() => openEdit(item)}>
             <Pencil className="h-3.5 w-3.5 opacity-50" />
           </button>
-          <button className="btn btn-ghost btn-xs btn-square" onClick={() => handleDelete(item)}>
+          <button className="btn btn-ghost btn-xs btn-square" onClick={() => setDeleteTarget(item)}>
             <Trash2 className="h-3.5 w-3.5 opacity-50 hover:text-error" />
           </button>
         </div>
@@ -128,7 +135,7 @@ export default function UnidadesTab() {
       ) : (
         <DataTable
           columns={columns}
-          data={unidades as unknown as Record<string, unknown>[]}
+          data={unidades}
           emptyMessage="No hay unidades registradas"
         />
       )}
@@ -168,6 +175,16 @@ export default function UnidadesTab() {
           </div>
         </form>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Eliminar unidad básica"
+        description={`¿Estás seguro de eliminar "${deleteTarget?.nombre}"? Esta acción no se puede deshacer si tiene productos asociados.`}
+        confirmLabel="Eliminar"
+        loading={deleteMut.isPending}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+      />
     </div>
   )
 }

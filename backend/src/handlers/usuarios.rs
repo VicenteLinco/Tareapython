@@ -9,6 +9,8 @@ use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHasher};
 
+use validator::Validate;
+
 use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::dto::usuario::{AreaSimple, CreateUsuario, UpdateUsuario, UsuarioResponse};
@@ -39,6 +41,7 @@ async fn build_usuario_response(
         rol: user.rol.clone(),
         activo: user.activo,
         areas,
+        version: user.version,
     })
 }
 
@@ -98,6 +101,7 @@ async fn crear(
     Json(req): Json<CreateUsuario>,
 ) -> Result<(axum::http::StatusCode, Json<UsuarioResponse>), AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
+    req.validate()?;
 
     let nombre = req.nombre.trim().to_string();
     let email = req.email.trim().to_lowercase();
@@ -179,6 +183,7 @@ async fn actualizar(
     Json(req): Json<UpdateUsuario>,
 ) -> Result<Json<UsuarioResponse>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
+    req.validate()?;
 
     let anterior = sqlx::query_as::<_, Usuario>("SELECT * FROM usuarios WHERE id = $1")
         .bind(id)
@@ -186,36 +191,37 @@ async fn actualizar(
         .await?
         .ok_or(AppError::NotFound("Usuario no encontrado".into()))?;
 
+    if req.version != anterior.version {
+        return Err(AppError::Conflict(
+            "El registro fue modificado por otro usuario".into(),
+        ));
+    }
+
     let nombre = req.nombre.as_deref().map(str::trim).unwrap_or(&anterior.nombre);
     let email = req.email.as_deref().map(|e| e.trim().to_lowercase());
     let email_ref = email.as_deref().unwrap_or(&anterior.email);
 
-    if let Some(rol) = &req.rol {
-        if !["admin", "tecnologo", "consulta"].contains(&rol.as_str()) {
+    if let Some(rol) = &req.rol
+        && !["admin", "tecnologo", "consulta"].contains(&rol.as_str()) {
             return Err(AppError::Validation(
                 "Rol inválido. Debe ser: admin, tecnologo o consulta".into(),
             ));
-        }
     }
     let rol = req.rol.as_deref().unwrap_or(&anterior.rol);
 
     let mut tx = state.pool.begin().await?;
 
     let user = sqlx::query_as::<_, Usuario>(
-        "UPDATE usuarios SET nombre = $1, email = $2, rol = $3, updated_at = NOW() WHERE id = $4 RETURNING *",
+        "UPDATE usuarios SET nombre = $1, email = $2, rol = $3, version = version + 1, updated_at = NOW() WHERE id = $4 AND version = $5 RETURNING *",
     )
     .bind(nombre)
     .bind(email_ref)
     .bind(rol)
     .bind(id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| match &e {
-        sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
-            AppError::Conflict(format!("El email '{}' ya está registrado", email_ref))
-        }
-        _ => e.into(),
-    })?;
+    .bind(req.version)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(AppError::Conflict("El usuario ha sido modificado por otro usuario (error de versión)".into()))?;
 
     // Reasignar áreas si se enviaron
     if let Some(area_ids) = &req.area_ids {

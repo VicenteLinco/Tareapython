@@ -6,15 +6,16 @@ import { DataTable } from '@/components/ui/data-table'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/pagination'
 import { Dialog } from '@/components/ui/dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Sheet } from '@/components/ui/sheet'
 import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
+import { parseApiError } from '@/lib/api-error'
 import { toast } from 'sonner'
-import { autoPlural } from '@/lib/utils'
+import { autoPlural, cn } from '@/lib/utils'
 import { getPresFormatos, type PresFormato } from '@/lib/pres-formatos'
 import type {
   PaginatedResponse,
-  Producto,
   Categoria,
   UnidadBasica,
   Area,
@@ -35,6 +36,7 @@ interface ProductoListItem {
   area: { id: number; nombre: string } | null
   stock_minimo: string
   activo: boolean
+  version: number
 }
 
 export default function ProductosTab() {
@@ -49,6 +51,8 @@ export default function ProductosTab() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ProductoListItem | null>(null)
+  const [reactivateTarget, setReactivateTarget] = useState<ProductoListItem | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['productos', { search, categoriaId, areaId, proveedorId, page, activo: !verInactivos }],
@@ -91,8 +95,9 @@ export default function ProductosTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productos'] })
       toast.success('Producto desactivado')
+      setDeleteTarget(null)
     },
-    onError: (err: any) => toast.error(err.response?.data?.error?.message ?? 'No se puede desactivar: tiene stock activo'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   const reactivarMut = useMutation({
@@ -100,15 +105,10 @@ export default function ProductosTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productos'] })
       toast.success('Producto reactivado')
+      setReactivateTarget(null)
     },
-    onError: () => toast.error('Error al reactivar producto'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
-
-  function handleDelete(p: ProductoListItem) {
-    if (confirm(`¿Desactivar el producto "${p.nombre}"?`)) {
-      deleteMut.mutate(p.id)
-    }
-  }
 
   const columns = [
     {
@@ -139,7 +139,7 @@ export default function ProductosTab() {
       render: (item: ProductoListItem) => (
         item.proveedor ? (
           <div className={`flex items-center gap-1.5 ${!item.activo ? 'opacity-50' : ''}`}>
-            <ProveedorIcon proveedor={item.proveedor} className="h-4 w-4" />
+            <ProveedorIcon proveedor={item.proveedor as any} className="h-4 w-4" />
             <span className="text-sm">{item.proveedor.nombre}</span>
           </div>
         ) : (
@@ -195,14 +195,12 @@ export default function ProductosTab() {
               <button className="btn btn-ghost btn-xs btn-square" onClick={() => setEditId(item.id)}>
                 <Pencil className="h-3.5 w-3.5 opacity-50" />
               </button>
-              <button className="btn btn-ghost btn-xs btn-square" onClick={() => handleDelete(item)}>
+              <button className="btn btn-ghost btn-xs btn-square" onClick={() => setDeleteTarget(item)}>
                 <Trash2 className="h-3.5 w-3.5 opacity-50 hover:text-error" />
               </button>
             </>
           ) : (
-            <button className="btn btn-ghost btn-xs btn-square" title="Reactivar" onClick={() => {
-              if (confirm(`¿Reactivar producto "${item.nombre}"?`)) reactivarMut.mutate(item.id)
-            }}>
+            <button className="btn btn-ghost btn-xs btn-square" title="Reactivar" onClick={() => setReactivateTarget(item)}>
               <RotateCcw className="h-3.5 w-3.5 opacity-60 text-primary" />
             </button>
           )}
@@ -276,7 +274,7 @@ export default function ProductosTab() {
         <>
           <DataTable
             columns={columns}
-            data={(data?.data ?? []) as unknown as Record<string, unknown>[]}
+            data={data?.data ?? []}
             emptyMessage="No hay productos registrados"
           />
           <Pagination page={data?.page ?? 1} totalPages={data?.total_pages ?? 1} onPageChange={setPage} />
@@ -298,7 +296,6 @@ export default function ProductosTab() {
           onClose={() => setEditId(null)}
           productoId={editId}
           categorias={categorias ?? []}
-          unidades={unidades ?? []}
           areas={areas ?? []}
           proveedores={proveedores ?? []}
         />
@@ -307,6 +304,27 @@ export default function ProductosTab() {
       <Sheet open={!!detailId} onClose={() => setDetailId(null)} title="Detalle de producto">
         {detailId && <ProductoDetail id={detailId} />}
       </Sheet>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Desactivar producto"
+        description={`¿Estás seguro de desactivar "${deleteTarget?.nombre}"? Esta acción no se puede deshacer si tiene stock activo.`}
+        confirmLabel="Desactivar"
+        loading={deleteMut.isPending}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+      />
+
+      <ConfirmDialog
+        open={!!reactivateTarget}
+        title="Reactivar producto"
+        description={`¿Quieres volver a activar el producto "${reactivateTarget?.nombre}"?`}
+        confirmLabel="Reactivar"
+        variant="warning"
+        loading={reactivarMut.isPending}
+        onClose={() => setReactivateTarget(null)}
+        onConfirm={() => reactivateTarget && reactivarMut.mutate(reactivateTarget.id)}
+      />
     </div>
   )
 }
@@ -326,7 +344,7 @@ function QuickCreateCategoria({
       onCreated(res.data)
       setNombre('')
     },
-    onError: (err: any) => toast.error(err.response?.data?.error?.message ?? 'Error al crear categoría'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
   return (
     <Dialog open={open} onClose={onClose} title="Nueva categoría">
@@ -362,7 +380,7 @@ function QuickCreateUnidad({
       onCreated(res.data)
       setF({ nombre: '', nombre_plural: '' })
     },
-    onError: (err: any) => toast.error(err.response?.data?.error?.message ?? 'Error al crear unidad'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
   return (
     <Dialog open={open} onClose={onClose} title="Nueva unidad básica">
@@ -403,7 +421,7 @@ function QuickCreateArea({
       onCreated(res.data)
       setNombre('')
     },
-    onError: (err: any) => toast.error(err.response?.data?.error?.message ?? 'Error al crear área'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
   return (
     <Dialog open={open} onClose={onClose} title="Nueva área">
@@ -528,7 +546,7 @@ function CreateProductoDialog({
       toast.success('Producto creado')
       handleClose()
     },
-    onError: (err: any) => toast.error(err.response?.data?.error?.message ?? 'Error al crear producto'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   function handleClose() {
@@ -867,13 +885,12 @@ function CreateProductoDialog({
 // ── Edit Dialog ──────────────────────────────────────────────
 
 function EditProductoDialog({
-  open, onClose, productoId, categorias, unidades, areas, proveedores,
+  open, onClose, productoId, categorias, areas, proveedores,
 }: {
   open: boolean
   onClose: () => void
   productoId: string
   categorias: Categoria[]
-  unidades: UnidadBasica[]
   areas: Area[]
   proveedores: Proveedor[]
 }) {
@@ -940,13 +957,7 @@ function EditProductoDialog({
       toast.success('Producto actualizado')
       onClose()
     },
-    onError: (err: any) => {
-      if (err.response?.status === 409) {
-        toast.error('Conflicto de versión: recarga la página')
-      } else {
-        toast.error(err.response?.data?.error?.message ?? 'Error al actualizar producto')
-      }
-    },
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   function handleSubmit(e: React.FormEvent) {
@@ -956,7 +967,7 @@ function EditProductoDialog({
 
     // Build new presentacion if filled
     const hasNewPres = form.pres_nombre && form.pres_factor
-    const payload: UpdateProducto & { nueva_presentacion?: any } = {
+    const payload: UpdateProducto = {
       nombre: form.nombre.trim() || undefined,
       descripcion: form.descripcion.trim() || undefined,
       categoria_id: form.categoria_id ? Number(form.categoria_id) : undefined,
@@ -981,8 +992,8 @@ function EditProductoDialog({
       }).then(() => {
         queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
         toast.success('Presentación actualizada')
-      }).catch((err: any) => {
-        toast.error(err.response?.data?.error?.message ?? 'Error al actualizar presentación')
+      }).catch((err) => {
+        toast.error(parseApiError(err))
       })
     } else if (!form.pres_id && hasNewPres) {
       // Create new presentation
@@ -994,7 +1005,7 @@ function EditProductoDialog({
       }).then(() => {
         queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
         toast.success('Presentación agregada')
-      }).catch(() => toast.error('Error al agregar presentación'))
+      }).catch((err) => toast.error(parseApiError(err)))
     }
   }
 
@@ -1382,8 +1393,4 @@ function DetailRow({ label, value, mono }: { label: string; value: string; mono?
       </span>
     </div>
   )
-}
-
-function cn(...classes: string[]) {
-  return classes.filter(Boolean).join(' ')
 }

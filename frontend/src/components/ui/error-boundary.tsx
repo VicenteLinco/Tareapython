@@ -1,4 +1,5 @@
-import { Component, ReactNode } from 'react'
+import { Component } from 'react'
+import type { ReactNode } from 'react'
 import { RefreshCw, AlertCircle } from 'lucide-react'
 
 interface Props {

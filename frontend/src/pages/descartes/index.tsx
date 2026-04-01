@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { useAreaStore } from '@/hooks/use-area-store'
 import api from '@/lib/api'
+import { parseApiError } from '@/lib/api-error'
 import type { Area, StockPorArea, DescarteRequest } from '@/types'
 import { toast } from 'sonner'
 import { cn, formatCantidad, daysUntil, formatDate } from '@/lib/utils'
@@ -31,7 +32,7 @@ export default function DescartesPage() {
   const [areaId, setAreaId] = useState<number | null>(globalAreaId)
   const [search, setSearch] = useState('')
   const [filterExpiring, setFilterExpiring] = useState(false)
-  const [items, setItems] = useState<Record<number, DescarteItemLocal>>({})
+  const [items, setItems] = useState<Record<string, DescarteItemLocal>>({})
   const [showHealthyWarning, setShowHealthyWarning] = useState(false)
   const [healthyJustification, setHealthyJustification] = useState('')
 
@@ -72,10 +73,10 @@ export default function DescartesPage() {
       queryClient.invalidateQueries({ queryKey: ['stock-area-lotes'] })
       setItems({})
     },
-    onError: () => toast.error('Error al registrar el descarte')
+    onError: (err: any) => toast.error(parseApiError(err))
   })
 
-  const toggleItem = (loteId: number) => {
+  const toggleItem = (loteId: string) => {
     setItems(prev => {
       if (prev[loteId]) {
         const { [loteId]: _, ...rest } = prev
@@ -95,7 +96,7 @@ export default function DescartesPage() {
     })
   }
 
-  const updateItem = (loteId: number, field: keyof DescarteItemLocal, value: any) => {
+  const updateItem = (loteId: string, field: keyof DescarteItemLocal, value: any) => {
     setItems(prev => ({
       ...prev,
       [loteId]: { ...prev[loteId], [field]: value }
@@ -118,12 +119,15 @@ export default function DescartesPage() {
       items: selectedItems.map(i => {
         const days = daysUntil(i.fecha_vencimiento)
         const isHealthy = i.motivo !== 'vencido' && (days === null || days > 30)
+        
+        // Map frontend "motivo" to backend "tipo"
+        const tipo = i.motivo === 'vencido' ? 'DESCARTE_VENCIDO' : 'DESCARTE_DAÑADO'
+
         return {
-          producto_id: Number(i.producto_id),
           lote_id: i.lote_id,
           area_id: areaId,
           cantidad: i.cantidad_descartar,
-          motivo: i.motivo.toUpperCase(),
+          tipo,
           ...(justificacion && isHealthy && { nota: justificacion })
         }
       })

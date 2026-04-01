@@ -4,6 +4,8 @@ use axum::{Extension, Json, Router};
 use serde::Deserialize;
 use serde_json::json;
 
+use validator::Validate;
+
 use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::dto::proveedor::{CreateProveedor, UpdateProveedor};
@@ -49,6 +51,7 @@ async fn crear(
     Json(req): Json<CreateProveedor>,
 ) -> Result<(axum::http::StatusCode, Json<Proveedor>), AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
+    req.validate()?;
 
     let nombre = req.nombre.trim().to_string();
     if nombre.is_empty() {
@@ -72,14 +75,12 @@ async fn crear(
     .fetch_one(&state.pool)
     .await?;
 
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, datos_nuevos, usuario_id) VALUES ('proveedores', $1, 'CREATE', $2, $3)",
-    )
-    .bind(proveedor.id.to_string())
-    .bind(json!({"nombre": &proveedor.nombre}))
-    .bind(claims.sub)
-    .execute(&state.pool)
-    .await?;
+    crate::services::audit::registrar(
+        &state.pool, "proveedores", &proveedor.id.to_string(), "CREATE",
+        None,
+        Some(json!({"nombre": &proveedor.nombre})),
+        claims.sub,
+    ).await?;
 
     Ok((axum::http::StatusCode::CREATED, Json(proveedor)))
 }
@@ -91,6 +92,7 @@ async fn actualizar(
     Json(req): Json<UpdateProveedor>,
 ) -> Result<Json<Proveedor>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
+    req.validate()?;
 
     let anterior = sqlx::query_as::<_, Proveedor>("SELECT * FROM proveedores WHERE id = $1")
         .bind(id)
@@ -130,15 +132,12 @@ async fn actualizar(
         "El registro fue modificado por otro usuario. Recarga e intenta de nuevo.".into(),
     ))?;
 
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, datos_anteriores, datos_nuevos, usuario_id) VALUES ('proveedores', $1, 'UPDATE', $2, $3, $4)",
-    )
-    .bind(id.to_string())
-    .bind(json!({"nombre": &anterior.nombre}))
-    .bind(json!({"nombre": &proveedor.nombre}))
-    .bind(claims.sub)
-    .execute(&state.pool)
-    .await?;
+    crate::services::audit::registrar(
+        &state.pool, "proveedores", &id.to_string(), "UPDATE",
+        Some(json!({"nombre": &anterior.nombre})),
+        Some(json!({"nombre": &proveedor.nombre})),
+        claims.sub,
+    ).await?;
 
     Ok(Json(proveedor))
 }
@@ -161,13 +160,10 @@ async fn eliminar(
         return Err(AppError::NotFound("Proveedor no encontrado".into()));
     }
 
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, usuario_id) VALUES ('proveedores', $1, 'DELETE', $2)",
-    )
-    .bind(id.to_string())
-    .bind(claims.sub)
-    .execute(&state.pool)
-    .await?;
+    crate::services::audit::registrar(
+        &state.pool, "proveedores", &id.to_string(), "DELETE",
+        None, None, claims.sub,
+    ).await?;
 
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
@@ -187,13 +183,12 @@ async fn reactivar(
     .await?
     .ok_or(AppError::NotFound("Proveedor no encontrado".into()))?;
 
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, usuario_id) VALUES ('proveedores', $1, 'UPDATE', $2)",
-    )
-    .bind(id.to_string())
-    .bind(claims.sub)
-    .execute(&state.pool)
-    .await?;
+    crate::services::audit::registrar(
+        &state.pool, "proveedores", &id.to_string(), "UPDATE",
+        None,
+        Some(json!({"activo": true})),
+        claims.sub,
+    ).await?;
 
     Ok(Json(proveedor))
 }

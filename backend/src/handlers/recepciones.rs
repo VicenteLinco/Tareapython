@@ -12,6 +12,7 @@ use crate::db::AppState;
 use crate::errors::{validate_text_length, AppError};
 use crate::services::idempotency;
 use crate::services::stock_ops;
+use crate::services::storage;
 
 // === DTOs ===
 
@@ -49,6 +50,7 @@ struct RecepcionListItem {
     created_at: DateTime<Utc>,
     areas_destino: Option<String>,
     tiene_foto: bool,
+    solicitud_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,6 +65,7 @@ struct CreateRecepcion {
     estado: Option<String>, // "completa" o "borrador", default "completa"
     fecha_recepcion: DateTime<Utc>,
     nota: Option<String>,
+    solicitud_id: Option<Uuid>,
     detalle: Vec<DetalleRecepcionInput>,
 }
 
@@ -165,7 +168,8 @@ async fn listar(
                    FROM recepcion_detalle rd2
                    JOIN areas a2 ON a2.id = rd2.area_destino_id
                    WHERE rd2.recepcion_id = r.id) as areas_destino,
-                  (r.foto_documento IS NOT NULL) as tiene_foto
+                  (r.foto_documento IS NOT NULL) as tiene_foto,
+                  r.solicitud_id
            FROM recepciones r
            JOIN proveedores p ON p.id = r.proveedor_id
            JOIN usuarios u ON u.id = r.usuario_id
@@ -212,7 +216,8 @@ async fn obtener(
                   p.icono as proveedor_icono, r.guia_despacho, r.estado, r.fecha_recepcion,
                   u.nombre as usuario_nombre, r.created_at,
                   NULL::text as areas_destino,
-                  (r.foto_documento IS NOT NULL) as tiene_foto
+                  (r.foto_documento IS NOT NULL) as tiene_foto,
+                  r.solicitud_id
            FROM recepciones r
            JOIN proveedores p ON p.id = r.proveedor_id
            JOIN usuarios u ON u.id = r.usuario_id
@@ -309,10 +314,14 @@ async fn crear(
 
     let mut tx = state.pool.begin().await?;
 
+    // Ordenar detalle por producto_id para prevenir deadlocks
+    let mut detalle_ordenado = req.detalle;
+    detalle_ordenado.sort_by_key(|d| d.producto_id);
+
     // Crear cabecera
     let recepcion_id: Uuid = sqlx::query_scalar(
-        r#"INSERT INTO recepciones (proveedor_id, guia_despacho, estado, fecha_recepcion, usuario_id, nota)
-           VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"#,
+        r#"INSERT INTO recepciones (proveedor_id, guia_despacho, estado, fecha_recepcion, usuario_id, nota, solicitud_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id"#,
     )
     .bind(req.proveedor_id)
     .bind(&req.guia_despacho)
@@ -320,12 +329,13 @@ async fn crear(
     .bind(req.fecha_recepcion)
     .bind(claims.sub)
     .bind(&req.nota)
+    .bind(req.solicitud_id)
     .fetch_one(&mut *tx)
     .await?;
 
     let grupo = Uuid::new_v4();
 
-    for det in &req.detalle {
+    for det in &detalle_ordenado {
         // Obtener factor de conversión (None = unidad base, factor 1)
         let factor: Decimal = if let Some(pres_id) = det.presentacion_id {
             sqlx::query_scalar(
@@ -401,6 +411,14 @@ async fn crear(
         }
     }
 
+    // Si es completa y viene de una solicitud, marcarla como completada
+    if !es_borrador && let Some(sid) = req.solicitud_id {
+            sqlx::query("UPDATE solicitudes_compra SET estado = 'completada' WHERE id = $1")
+                .bind(sid)
+                .execute(&mut *tx)
+                .await?;
+    }
+
     tx.commit().await?;
 
     let numero_doc: String =
@@ -439,14 +457,14 @@ async fn confirmar_borrador(
     let mut tx = state.pool.begin().await?;
 
     // Verificar que existe y es borrador
-    let estado: Option<String> =
-        sqlx::query_scalar("SELECT estado FROM recepciones WHERE id = $1")
+    let res: Option<(String, Option<Uuid>)> =
+        sqlx::query_as("SELECT estado, solicitud_id FROM recepciones WHERE id = $1")
             .bind(id)
             .fetch_optional(&mut *tx)
-            .await?
-            .ok_or(AppError::NotFound("Recepción no encontrada".into()))?;
+            .await?;
 
-    let estado = estado.ok_or(AppError::NotFound("Recepción no encontrada".into()))?;
+    let (estado, solicitud_id) = res.ok_or(AppError::NotFound("Recepción no encontrada".into()))?;
+    
     if estado != "borrador" {
         tx.rollback().await?;
         idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
@@ -465,12 +483,15 @@ async fn confirmar_borrador(
         cantidad_unidades_base: Decimal,
     }
 
-    let lineas = sqlx::query_as::<_, DetalleLine>(
+    let mut lineas = sqlx::query_as::<_, DetalleLine>(
         "SELECT producto_id, lote_id, area_destino_id, cantidad_unidades_base FROM recepcion_detalle WHERE recepcion_id = $1",
     )
     .bind(id)
     .fetch_all(&mut *tx)
     .await?;
+
+    // Ordenar por producto_id para evitar deadlocks
+    lineas.sort_by_key(|l| l.producto_id);
 
     let grupo = Uuid::new_v4();
     let nota: Option<String> = sqlx::query_scalar("SELECT nota FROM recepciones WHERE id = $1")
@@ -507,6 +528,14 @@ async fn confirmar_borrador(
         .bind(id)
         .execute(&mut *tx)
         .await?;
+
+    // Si viene de una solicitud, marcarla como completada
+    if let Some(sid) = solicitud_id {
+        sqlx::query("UPDATE solicitudes_compra SET estado = 'completada' WHERE id = $1")
+            .bind(sid)
+            .execute(&mut *tx)
+            .await?;
+    }
 
     tx.commit().await?;
 
@@ -561,19 +590,46 @@ async fn subir_foto(
 ) -> Result<StatusCode, AppError> {
     crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
 
-    validar_data_url_imagen(&req.data_url)?;
+    // 1. Obtener la ruta de la foto actual (si existe) para eliminarla
+    let old_foto: Option<String> = sqlx::query_scalar("SELECT foto_documento FROM recepciones WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .flatten();
 
+    // 2. Guardar la nueva imagen en disco
+    let file_path = storage::save_base64_image(&req.data_url, "recepciones", &format!("rec_{}", id)).await?;
+
+    // 3. Actualizar la base de datos con la RUTA relativa
     let rows = sqlx::query(
         "UPDATE recepciones SET foto_documento = $1, foto_actualizada_at = NOW() WHERE id = $2",
     )
-    .bind(&req.data_url)
+    .bind(&file_path)
     .bind(id)
     .execute(&state.pool)
     .await?;
 
     if rows.rows_affected() == 0 {
+        // Si no se actualizó nada, limpiar el archivo recién creado para no dejar basura
+        let _ = storage::delete_image(&file_path).await;
         return Err(AppError::NotFound("Recepción no encontrada".into()));
     }
+
+    // 4. Si la actualización fue exitosa, intentar borrar la foto vieja del disco
+    if let Some(old) = old_foto {
+        // Solo borrar si es una ruta (no un base64 heredado)
+        if !old.starts_with("data:image") {
+            let _ = storage::delete_image(&old).await;
+        }
+    }
+
+    sqlx::query(
+        "INSERT INTO audit_log (tabla, registro_id, accion, usuario_id) VALUES ('recepciones', $1, 'UPDATE', $2)"
+    )
+    .bind(id.to_string())
+    .bind(claims.sub)
+    .execute(&state.pool)
+    .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -610,28 +666,6 @@ async fn crear_o_reutilizar_lote(
     .await?;
 
     Ok(lote_id)
-}
-
-fn validar_data_url_imagen(data_url: &str) -> Result<(), AppError> {
-    let permitidos = ["data:image/jpeg;base64,", "data:image/png;base64,"];
-    if !permitidos.iter().any(|p| data_url.starts_with(p)) {
-        return Err(AppError::Validation(
-            "Solo se aceptan imágenes JPEG o PNG".into(),
-        ));
-    }
-    if data_url.len() > 14_000_000 {
-        return Err(AppError::Validation(
-            "La imagen no puede superar 10 MB".into(),
-        ));
-    }
-    let base64_part = data_url.split(',').nth(1).ok_or_else(|| {
-        AppError::Validation("Formato de imagen inválido".into())
-    })?;
-    use base64::Engine;
-    base64::engine::general_purpose::STANDARD
-        .decode(base64_part)
-        .map_err(|_| AppError::Validation("Imagen corrupta o inválida".into()))?;
-    Ok(())
 }
 
 pub fn routes() -> Router<AppState> {

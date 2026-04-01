@@ -9,3 +9,4 @@ pub mod recepcion;
 pub mod stock;
 pub mod unidad_basica;
 pub mod usuario;
+pub mod solicitud;

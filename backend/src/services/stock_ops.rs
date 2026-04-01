@@ -65,6 +65,7 @@ pub fn stock_total(lotes: &[LoteFefo]) -> Decimal {
 
 /// Aplica un consumo/salida FEFO: resta stock, inserta movimientos.
 /// Retorna los movimientos generados (lote_id, cantidad consumida).
+#[allow(clippy::too_many_arguments)]
 pub async fn aplicar_salida_fefo(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     lotes: &[LoteFefo],
@@ -121,6 +122,7 @@ pub async fn aplicar_salida_fefo(
 }
 
 /// Aplica un ingreso: upsert stock, inserta movimiento.
+#[allow(clippy::too_many_arguments)]
 pub async fn aplicar_ingreso(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     lote_id: Uuid,

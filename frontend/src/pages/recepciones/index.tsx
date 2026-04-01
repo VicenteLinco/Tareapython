@@ -152,9 +152,9 @@ export default function RecepcionesPage() {
       header: '',
       render: (item: RecepcionRow) =>
         item.tiene_foto ? (
-          <FileText className="h-4 w-4 text-primary/60" title="Tiene guía de despacho adjunta" />
+          <FileText className="h-4 w-4 text-primary/60" />
         ) : (
-          <FileX className="h-4 w-4 text-base-content/20" title="Sin guía adjunta" />
+          <FileX className="h-4 w-4 text-base-content/20" />
         ),
     },
     { key: 'usuario_nombre', header: 'Usuario', className: 'hidden md:table-cell' },

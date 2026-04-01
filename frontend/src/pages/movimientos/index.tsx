@@ -11,8 +11,6 @@ import { useAreaStore } from '@/hooks/use-area-store'
 const tipoConfig: Record<string, { label: string; variant: 'success' | 'destructive' | 'info' | 'warning' | 'secondary' }> = {
   entrada: { label: 'Entrada', variant: 'success' },
   salida: { label: 'Salida', variant: 'destructive' },
-  transferencia_entrada: { label: 'Transf. In', variant: 'info' },
-  transferencia_salida: { label: 'Transf. Out', variant: 'warning' },
   descarte: { label: 'Descarte', variant: 'destructive' },
   ajuste_pos: { label: 'Ajuste (+)', variant: 'success' },
   ajuste_neg: { label: 'Ajuste (-)', variant: 'destructive' },
@@ -68,7 +66,7 @@ export default function MovimientosPage() {
     {
       key: 'cantidad', header: 'Cantidad',
       render: (item: Movimiento) => {
-        const neg = ['salida', 'transferencia_salida', 'descarte', 'ajuste_neg'].includes(item.tipo)
+        const neg = ['salida', 'descarte', 'ajuste_neg'].includes(item.tipo)
         const cantidadEntera = Math.round(item.cantidad)
         return (
           <span className={`font-mono font-semibold text-sm ${neg ? 'text-error' : 'text-success'}`}>
@@ -135,7 +133,7 @@ export default function MovimientosPage() {
         </div>
       ) : (
         <>
-          <DataTable columns={columns} data={(data?.data ?? []) as unknown as Record<string, unknown>[]} emptyMessage="No hay movimientos" />
+          <DataTable columns={columns} data={data?.data ?? []} emptyMessage="No hay movimientos" />
           <Pagination page={data?.page ?? 1} totalPages={data?.total_pages ?? 1} onPageChange={setPage} />
         </>
       )}

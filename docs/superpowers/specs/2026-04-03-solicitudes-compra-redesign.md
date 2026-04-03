@@ -199,8 +199,8 @@ FROM recepcion_detalle rd
 JOIN recepciones r ON r.id = rd.recepcion_id
 WHERE rd.producto_id = p.id
   AND rd.precio_unitario IS NOT NULL
-  AND r.estado = 'confirmada'
-ORDER BY r.fecha_confirmacion DESC
+  AND r.estado IN ('completa', 'parcial')
+ORDER BY r.fecha_recepcion DESC
 LIMIT 1
 ```
 

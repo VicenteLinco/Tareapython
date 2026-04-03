@@ -76,6 +76,7 @@ export interface Producto {
   unidad_base_id: number
   unidad_base_nombre?: string
   stock_minimo: number
+  lead_time_propio?: number
   activo: boolean
   version: number
   presentaciones?: Presentacion[]
@@ -114,6 +115,8 @@ export interface StockItem {
   unidad_plural: string | null
   stock_total: number | null
   stock_minimo: number
+  dias_autonomia?: number
+  lead_time_propio?: number
   proximo_vencimiento: string | null
   proveedor_nombre: string | null
   proveedor_icono: string | null
@@ -217,7 +220,7 @@ export interface SolicitudCompra {
   id: string
   numero_documento: string
   fecha_creacion: string
-  estado: 'pendiente' | 'aprobada' | 'rechazada' | 'enviada' | 'completada' | 'cancelada'
+  estado: 'borrador' | 'pendiente' | 'aprobada' | 'rechazada' | 'enviada' | 'completada' | 'cancelada'
   usuario_nombre: string
   items_count: number
   nota?: string
@@ -246,7 +249,11 @@ export interface SolicitudCompraItem {
   codigo_maestro?: string | null
   proveedor_nombre?: string | null
   presentacion_nombre?: string | null
+  presentacion_nombre_plural?: string | null
   factor_conversion?: number | null
+  precio_unitario?: number | null
+  presentacion_id?: number | null
+  cantidad_presentaciones?: number | null
 }
 
 export interface CreateSolicitudRequest {
@@ -255,7 +262,54 @@ export interface CreateSolicitudRequest {
     producto_id: string
     cantidad_sugerida: number
     unidad: string
+    precio_unitario?: number
+    presentacion_id?: number
+    cantidad_presentaciones?: number
   }[]
+}
+
+// Ítem en el borrador (estado local del componente)
+export interface SolicitudItem {
+  producto_id: string
+  producto_nombre: string
+  codigo_proveedor: string | null
+  codigo_maestro: string | null
+  proveedor_id: number | null
+  proveedor_nombre: string
+  lead_time: number
+  presentacion_id: number | null
+  presentacion_nombre: string | null
+  presentacion_nombre_plural: string | null
+  factor_conversion: number | null
+  unidad_base: string
+  unidad_base_plural: string | null
+  cantidad: number
+  precio_unitario: number
+}
+
+// Respuesta del endpoint GET /recomendaciones
+export interface ItemRecomendado {
+  producto_id: string
+  producto_nombre: string
+  codigo_proveedor: string | null
+  codigo_maestro: string | null
+  proveedor_id: number | null
+  proveedor_nombre: string | null
+  lead_time: number
+  autonomia_dias: number | null
+  nivel_urgencia: 'critico' | 'urgente' | 'planificar'
+  stock_actual: number
+  stock_minimo: number
+  consumo_diario_30d: number
+  cantidad_sugerida_base: number
+  presentacion_id: number | null
+  presentacion_nombre: string | null
+  presentacion_nombre_plural: string | null
+  factor_conversion: number | null
+  cantidad_sugerida_presentacion: number | null
+  precio_ultima_recepcion: number | null
+  unidad_base: string
+  unidad_base_plural: string | null
 }
 
 // --- Pagination ---
@@ -377,6 +431,8 @@ export interface CreateProducto {
   proveedor_id?: number
   codigo_proveedor?: string
   codigo_maestro?: string
+  stock_minimo?: number
+  lead_time_propio?: number
   presentaciones?: { nombre: string; nombre_plural: string; factor_conversion: number; codigo_barras?: string }[]
   area_ids?: number[]
 }
@@ -389,6 +445,7 @@ export interface UpdateProducto {
   codigo_proveedor?: string
   codigo_maestro?: string
   stock_minimo?: number
+  lead_time_propio?: number
   area_ids?: number[]
   version: number
 }

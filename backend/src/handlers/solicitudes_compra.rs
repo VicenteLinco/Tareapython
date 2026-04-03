@@ -288,15 +288,11 @@ pub async fn recomendaciones(
         r#"WITH consumo AS (
             SELECT
                 l.producto_id,
-                COALESCE(
-                    SUM(ABS(m.cantidad)) FILTER (
-                        WHERE m.tipo_movimiento = 'consumo'
-                          AND m.created_at >= NOW() - INTERVAL '30 days'
-                    ) / 30.0,
-                    0
-                )::DECIMAL(15,4) AS consumo_diario_30d
+                (SUM(m.cantidad) / 30.0)::DECIMAL(15,4) AS consumo_diario_30d
             FROM movimientos m
             JOIN lotes l ON l.id = m.lote_id
+            WHERE m.tipo = 'CONSUMO'
+              AND m.created_at >= NOW() - INTERVAL '30 days'
             GROUP BY l.producto_id
         ),
         stock_total AS (
@@ -332,23 +328,23 @@ pub async fn recomendaciones(
                 COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)::INT
                                                                                   AS lead_time,
                 CASE
-                    WHEN COALESCE(c.consumo_diario_30d, 0) > 0.0001
+                    WHEN COALESCE(c.consumo_diario_30d, 0) > 0
                     THEN (COALESCE(st.stock_actual, 0) / c.consumo_diario_30d)::FLOAT
                     ELSE NULL
                 END                                                               AS autonomia_dias,
                 CASE
-                    WHEN COALESCE(c.consumo_diario_30d, 0) <= 0.0001
+                    WHEN COALESCE(c.consumo_diario_30d, 0) <= 0
                          AND COALESCE(st.stock_actual, 0) < COALESCE(p.stock_minimo, 0)
                         THEN 'critico'
-                    WHEN COALESCE(c.consumo_diario_30d, 0) > 0.0001
+                    WHEN COALESCE(c.consumo_diario_30d, 0) > 0
                          AND (COALESCE(st.stock_actual, 0) / c.consumo_diario_30d)
                              < COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)
                         THEN 'critico'
-                    WHEN COALESCE(c.consumo_diario_30d, 0) > 0.0001
+                    WHEN COALESCE(c.consumo_diario_30d, 0) > 0
                          AND (COALESCE(st.stock_actual, 0) / c.consumo_diario_30d)
                              < COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7) * 1.5
                         THEN 'urgente'
-                    WHEN COALESCE(c.consumo_diario_30d, 0) > 0.0001
+                    WHEN COALESCE(c.consumo_diario_30d, 0) > 0
                          AND (COALESCE(st.stock_actual, 0) / c.consumo_diario_30d)
                              < COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7) * 2.5
                         THEN 'planificar'
@@ -370,12 +366,12 @@ pub async fn recomendaciones(
                 CASE
                     WHEN pres.factor_conversion IS NOT NULL AND pres.factor_conversion > 0
                     THEN CEIL(
-                        GREATEST(0, CEIL(
+                        GREATEST(0,
                             COALESCE(p.stock_minimo, 0) * 2
                             + COALESCE(c.consumo_diario_30d, 0)
                               * COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)
                             - COALESCE(st.stock_actual, 0)
-                        )) / pres.factor_conversion
+                        ) / pres.factor_conversion
                     )
                     ELSE NULL
                 END                                                               AS cantidad_sugerida_presentacion,

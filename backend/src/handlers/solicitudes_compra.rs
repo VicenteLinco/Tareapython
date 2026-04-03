@@ -37,7 +37,7 @@ pub struct ItemRecomendado {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct CreateSolicitudRequest {
+pub struct UpdateSolicitudRequest {
     pub nota: Option<String>,
     pub items: Vec<CreateSolicitudItem>,
 }
@@ -47,6 +47,9 @@ pub struct CreateSolicitudItem {
     pub producto_id: Uuid,
     pub cantidad_sugerida: Decimal,
     pub unidad: String,
+    pub precio_unitario: Option<Decimal>,
+    pub presentacion_id: Option<i32>,
+    pub cantidad_presentaciones: Option<Decimal>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -84,49 +87,263 @@ pub struct SolicitudDetalleItem {
     pub codigo_maestro: Option<String>,
     pub proveedor_nombre: Option<String>,
     pub presentacion_nombre: Option<String>,
+    pub presentacion_nombre_plural: Option<String>,
     pub factor_conversion: Option<Decimal>,
+    pub precio_unitario: Option<Decimal>,
+    pub presentacion_id: Option<i32>,
+    pub cantidad_presentaciones: Option<Decimal>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+struct SolicitudDetalleRow {
+    pub id: Uuid,
+    pub numero_documento: String,
+    pub fecha_creacion: DateTime<Utc>,
+    pub estado: String,
+    pub nota: Option<String>,
+    pub nota_revision: Option<String>,
+    pub fecha_revision: Option<DateTime<Utc>>,
+    pub usuario_nombre: String,
+    pub revisado_por_nombre: Option<String>,
+}
+
+async fn obtener_solicitud_por_id(
+    id: Uuid,
+    pool: &sqlx::PgPool,
+) -> Result<SolicitudDetalle, AppError> {
+    let solicitud = sqlx::query_as::<_, SolicitudDetalleRow>(
+        r#"SELECT s.id, s.numero_documento, s.fecha_creacion, s.estado, s.nota,
+                  s.nota_revision, s.fecha_revision,
+                  u.nombre as usuario_nombre,
+                  ur.nombre as revisado_por_nombre
+           FROM solicitudes_compra s
+           JOIN usuarios u ON u.id = s.usuario_id
+           LEFT JOIN usuarios ur ON ur.id = s.revisado_por
+           WHERE s.id = $1"#
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::NotFound("Solicitud no encontrada".into()))?;
+
+    let items = sqlx::query_as::<_, SolicitudDetalleItem>(
+        r#"SELECT
+            d.producto_id,
+            p.nombre as producto_nombre,
+            d.cantidad_sugerida,
+            d.unidad,
+            p.codigo_proveedor,
+            p.codigo_maestro,
+            prov.nombre as proveedor_nombre,
+            pres.nombre as presentacion_nombre,
+            pres.nombre_plural as presentacion_nombre_plural,
+            pres.factor_conversion,
+            d.precio_unitario,
+            d.presentacion_id,
+            d.cantidad_presentaciones
+           FROM solicitud_compra_detalle d
+           JOIN productos p ON p.id = d.producto_id
+           LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
+           LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
+           WHERE d.solicitud_id = $1
+           ORDER BY p.nombre"#,
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(SolicitudDetalle {
+        id: solicitud.id,
+        numero_documento: solicitud.numero_documento,
+        fecha_creacion: solicitud.fecha_creacion,
+        estado: solicitud.estado,
+        usuario_nombre: solicitud.usuario_nombre,
+        nota: solicitud.nota,
+        nota_revision: solicitud.nota_revision,
+        fecha_revision: solicitud.fecha_revision,
+        revisado_por_nombre: solicitud.revisado_por_nombre,
+        items,
+    })
+}
+
+async fn insertar_item(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    solicitud_id: Uuid,
+    item: &CreateSolicitudItem,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "INSERT INTO solicitud_compra_detalle
+         (solicitud_id, producto_id, cantidad_sugerida, unidad,
+          precio_unitario, presentacion_id, cantidad_presentaciones)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)"
+    )
+    .bind(solicitud_id)
+    .bind(item.producto_id)
+    .bind(item.cantidad_sugerida)
+    .bind(&item.unidad)
+    .bind(item.precio_unitario)
+    .bind(item.presentacion_id)
+    .bind(item.cantidad_presentaciones)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 async fn crear(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
-    Json(payload): Json<CreateSolicitudRequest>,
+    Json(payload): Json<UpdateSolicitudRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    // Check for existing active borrador
+    let borrador_existente: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM solicitudes_compra
+         WHERE usuario_id = $1 AND estado = 'borrador'
+         LIMIT 1"
+    )
+    .bind(claims.sub)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    if let Some(id) = borrador_existente {
+        return Err(AppError::BusinessLogic(
+            format!("Ya existe un borrador activo: {}", id),
+            "BORRADOR_EXISTENTE".into(),
+        ));
+    }
+
     let mut tx = state.pool.begin().await?;
 
     let solicitud_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO solicitudes_compra (usuario_id, nota) VALUES ($1, $2) RETURNING id"
+        "INSERT INTO solicitudes_compra (usuario_id, nota, estado)
+         VALUES ($1, $2, 'borrador') RETURNING id"
     )
     .bind(claims.sub)
     .bind(&payload.nota)
     .fetch_one(&mut *tx)
     .await?;
 
-    for item in payload.items {
-        sqlx::query(
-            "INSERT INTO solicitud_compra_detalle (solicitud_id, producto_id, cantidad_sugerida, unidad)
-             VALUES ($1, $2, $3, $4)"
-        )
-        .bind(solicitud_id)
-        .bind(item.producto_id)
-        .bind(item.cantidad_sugerida)
-        .bind(item.unidad)
-        .execute(&mut *tx)
-        .await?;
+    for item in &payload.items {
+        insertar_item(&mut tx, solicitud_id, item).await?;
     }
 
     tx.commit().await?;
 
-    let numero: String = sqlx::query_scalar("SELECT numero_documento FROM solicitudes_compra WHERE id = $1")
-        .bind(solicitud_id)
-        .fetch_one(&state.pool)
-        .await?;
+    let numero: String = sqlx::query_scalar(
+        "SELECT numero_documento FROM solicitudes_compra WHERE id = $1"
+    )
+    .bind(solicitud_id)
+    .fetch_one(&state.pool)
+    .await?;
 
     Ok(Json(serde_json::json!({
         "id": solicitud_id,
         "numero_documento": numero,
-        "status": "success"
+        "status": "borrador_creado"
     })))
+}
+
+async fn get_borrador(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let borrador_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM solicitudes_compra
+         WHERE usuario_id = $1 AND estado = 'borrador'
+         ORDER BY fecha_creacion DESC LIMIT 1"
+    )
+    .bind(claims.sub)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    match borrador_id {
+        None => Ok(Json(serde_json::json!({ "borrador": null }))),
+        Some(id) => {
+            let detalle = obtener_solicitud_por_id(id, &state.pool).await?;
+            Ok(Json(serde_json::json!({ "borrador": detalle })))
+        }
+    }
+}
+
+async fn actualizar(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateSolicitudRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let es_dueno: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM solicitudes_compra
+         WHERE id = $1 AND usuario_id = $2 AND estado = 'borrador')"
+    )
+    .bind(id)
+    .bind(claims.sub)
+    .fetch_one(&state.pool)
+    .await?;
+
+    if !es_dueno {
+        return Err(AppError::BusinessLogic(
+            "Solo puedes editar tu propio borrador".into(),
+            "ACCESO_DENEGADO".into(),
+        ));
+    }
+
+    let mut tx = state.pool.begin().await?;
+
+    sqlx::query("UPDATE solicitudes_compra SET nota = $1 WHERE id = $2")
+        .bind(&payload.nota)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("DELETE FROM solicitud_compra_detalle WHERE solicitud_id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+    for item in &payload.items {
+        insertar_item(&mut tx, id, item).await?;
+    }
+
+    tx.commit().await?;
+
+    Ok(Json(serde_json::json!({ "status": "actualizado", "id": id })))
+}
+
+async fn enviar(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let items_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM solicitud_compra_detalle WHERE solicitud_id = $1"
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    if items_count == 0 {
+        return Err(AppError::Validation(
+            "La solicitud debe tener al menos un ítem".into()
+        ));
+    }
+
+    let filas = sqlx::query(
+        "UPDATE solicitudes_compra
+         SET estado = 'pendiente'
+         WHERE id = $1 AND usuario_id = $2 AND estado = 'borrador'"
+    )
+    .bind(id)
+    .bind(claims.sub)
+    .execute(&state.pool)
+    .await?;
+
+    if filas.rows_affected() == 0 {
+        return Err(AppError::BusinessLogic(
+            "No se encontró un borrador activo tuyo con ese ID".into(),
+            "BORRADOR_NO_ENCONTRADO".into(),
+        ));
+    }
+
+    Ok(Json(serde_json::json!({ "status": "enviada", "estado": "pendiente" })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -149,7 +366,7 @@ async fn revisar(
     }
 
     let filas = sqlx::query(
-        "UPDATE solicitudes_compra 
+        "UPDATE solicitudes_compra
          SET estado = $1, nota_revision = $2, fecha_revision = NOW(), revisado_por = $3
          WHERE id = $4 AND estado = 'pendiente'"
     )
@@ -183,7 +400,7 @@ async fn listar(
         .await?;
 
     let solicitudes = sqlx::query_as::<_, SolicitudResumen>(
-        r#"SELECT 
+        r#"SELECT
             s.id, s.numero_documento, s.fecha_creacion, s.estado,
             u.nombre as usuario_nombre,
             (SELECT COUNT(*) FROM solicitud_compra_detalle WHERE solicitud_id = s.id) as items_count,
@@ -211,74 +428,7 @@ async fn obtener(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<SolicitudDetalle>, AppError> {
-    let solicitud = sqlx::query_as::<_, SolicitudDetalleRow>(
-        r#"SELECT s.id, s.numero_documento, s.fecha_creacion, s.estado, s.nota, 
-                  s.nota_revision, s.fecha_revision,
-                  u.nombre as usuario_nombre,
-                  ur.nombre as revisado_por_nombre
-           FROM solicitudes_compra s
-           JOIN usuarios u ON u.id = s.usuario_id
-           LEFT JOIN usuarios ur ON ur.id = s.revisado_por
-           WHERE s.id = $1"#
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(AppError::NotFound("Solicitud no encontrada".into()))?;
-
-    let items = sqlx::query_as::<_, SolicitudDetalleItem>(
-        r#"SELECT 
-            d.producto_id, 
-            p.nombre as producto_nombre, 
-            d.cantidad_sugerida, 
-            d.unidad,
-            p.codigo_proveedor,
-            p.codigo_maestro,
-            prov.nombre as proveedor_nombre,
-            pres.nombre as presentacion_nombre,
-            pres.factor_conversion
-           FROM solicitud_compra_detalle d
-           JOIN productos p ON p.id = d.producto_id
-           LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
-           LEFT JOIN LATERAL (
-               SELECT nombre, factor_conversion 
-               FROM presentaciones 
-               WHERE producto_id = p.id AND activa = true 
-               ORDER BY factor_conversion DESC, created_at ASC 
-               LIMIT 1
-           ) pres ON true
-           WHERE d.solicitud_id = $1
-           ORDER BY p.nombre"#,
-    )
-    .bind(id)
-    .fetch_all(&state.pool)
-    .await?;
-
-    Ok(Json(SolicitudDetalle {
-        id: solicitud.id,
-        numero_documento: solicitud.numero_documento,
-        fecha_creacion: solicitud.fecha_creacion,
-        estado: solicitud.estado,
-        usuario_nombre: solicitud.usuario_nombre,
-        nota: solicitud.nota,
-        nota_revision: solicitud.nota_revision,
-        fecha_revision: solicitud.fecha_revision,
-        revisado_por_nombre: solicitud.revisado_por_nombre,
-        items,
-    }))
-}
-
-#[derive(Debug, Serialize, sqlx::FromRow)]
-struct SolicitudDetalleRow {
-    pub id: Uuid,
-    pub numero_documento: String,
-    pub fecha_creacion: DateTime<Utc>,
-    pub estado: String,
-    pub nota: Option<String>,
-    pub nota_revision: Option<String>,
-    pub fecha_revision: Option<DateTime<Utc>>,
-    pub usuario_nombre: String,
-    pub revisado_por_nombre: Option<String>,
+    Ok(Json(obtener_solicitud_por_id(id, &state.pool).await?))
 }
 
 pub async fn recomendaciones(
@@ -409,6 +559,9 @@ pub async fn recomendaciones(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
-        .route("/{id}", get(obtener))
+        .route("/borrador", get(get_borrador))
+        .route("/recomendaciones", get(recomendaciones))
+        .route("/{id}", get(obtener).put(actualizar))
         .route("/{id}/revisar", post(revisar))
+        .route("/{id}/enviar", post(enviar))
 }

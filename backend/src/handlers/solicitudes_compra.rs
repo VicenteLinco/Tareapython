@@ -213,9 +213,9 @@ async fn crear(
 
     let mut tx = state.pool.begin().await?;
 
-    let solicitud_id: Uuid = sqlx::query_scalar(
+    let (solicitud_id, numero): (Uuid, String) = sqlx::query_as(
         "INSERT INTO solicitudes_compra (usuario_id, nota, estado)
-         VALUES ($1, $2, 'borrador') RETURNING id"
+         VALUES ($1, $2, 'borrador') RETURNING id, numero_documento"
     )
     .bind(claims.sub)
     .bind(&payload.nota)
@@ -227,13 +227,6 @@ async fn crear(
     }
 
     tx.commit().await?;
-
-    let numero: String = sqlx::query_scalar(
-        "SELECT numero_documento FROM solicitudes_compra WHERE id = $1"
-    )
-    .bind(solicitud_id)
-    .fetch_one(&state.pool)
-    .await?;
 
     Ok(Json(serde_json::json!({
         "id": solicitud_id,
@@ -280,9 +273,14 @@ async fn actualizar(
     .await?;
 
     if !es_dueno {
-        return Err(AppError::BusinessLogic(
+        return Err(AppError::Forbidden(
             "Solo puedes editar tu propio borrador".into(),
-            "ACCESO_DENEGADO".into(),
+        ));
+    }
+
+    if payload.items.is_empty() {
+        return Err(AppError::Validation(
+            "El borrador debe tener al menos un ítem".into(),
         ));
     }
 

@@ -70,14 +70,15 @@ struct CreateRecepcion {
 }
 
 #[derive(Debug, Deserialize)]
-struct DetalleRecepcionInput {
-    producto_id: Uuid,
-    numero_lote: String,
-    fecha_vencimiento: NaiveDate,
-    presentacion_id: Option<i32>,   // None = unidad base (factor 1)
-    cantidad_presentaciones: Decimal,
-    area_destino_id: i32,
-    costo_unitario: Option<Decimal>,
+pub struct DetalleRecepcionInput {
+    pub producto_id: Uuid,
+    pub numero_lote: String,
+    pub fecha_vencimiento: NaiveDate,
+    pub presentacion_id: Option<i32>,   // None = unidad base (factor 1)
+    pub cantidad_presentaciones: Decimal,
+    pub area_destino_id: i32,
+    pub costo_unitario: Option<Decimal>,
+    pub precio_unitario: Option<Decimal>,  // precio neto para solicitudes
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -312,120 +313,27 @@ async fn crear(
         }
     }
 
-    let mut tx = state.pool.begin().await?;
-
-    // Ordenar detalle por producto_id para prevenir deadlocks
-    let mut detalle_ordenado = req.detalle;
-    detalle_ordenado.sort_by_key(|d| d.producto_id);
-
-    // Crear cabecera
-    let recepcion_id: Uuid = sqlx::query_scalar(
-        r#"INSERT INTO recepciones (proveedor_id, guia_despacho, estado, fecha_recepcion, usuario_id, nota, solicitud_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id"#,
-    )
-    .bind(req.proveedor_id)
-    .bind(&req.guia_despacho)
-    .bind(estado)
-    .bind(req.fecha_recepcion)
-    .bind(claims.sub)
-    .bind(&req.nota)
-    .bind(req.solicitud_id)
-    .fetch_one(&mut *tx)
-    .await?;
-
-    let grupo = Uuid::new_v4();
-
-    for det in &detalle_ordenado {
-        // Obtener factor de conversión (None = unidad base, factor 1)
-        let factor: Decimal = if let Some(pres_id) = det.presentacion_id {
-            sqlx::query_scalar(
-                "SELECT factor_conversion FROM presentaciones WHERE id = $1 AND producto_id = $2 AND activa = true",
-            )
-            .bind(pres_id)
-            .bind(det.producto_id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or(AppError::Validation(format!(
-                "La presentación {} no pertenece al producto {}",
-                pres_id, det.producto_id
-            )))?
-        } else {
-            Decimal::ONE
-        };
-
-        let cantidad_base = det.cantidad_presentaciones * factor;
-
-        // Crear o reutilizar lote
-        let lote_id = crear_o_reutilizar_lote(
-            &mut tx,
-            det.producto_id,
-            &det.numero_lote,
-            det.fecha_vencimiento,
-            req.proveedor_id,
-            det.costo_unitario,
-        )
-        .await?;
-
-        // Insertar detalle
-        sqlx::query(
-            r#"INSERT INTO recepcion_detalle
-               (recepcion_id, producto_id, lote_id, presentacion_id, area_destino_id,
-                cantidad_presentaciones, factor_conversion_usado, cantidad_unidades_base)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
-        )
-        .bind(recepcion_id)
-        .bind(det.producto_id)
-        .bind(lote_id)
-        .bind(det.presentacion_id)   // Option<i32>, NULL si unidad base
-        .bind(det.area_destino_id)
-        .bind(det.cantidad_presentaciones)
-        .bind(factor)
-        .bind(cantidad_base)
-        .execute(&mut *tx)
-        .await?;
-
-        // Solo generar stock y movimientos si NO es borrador
-        if !es_borrador {
-            stock_ops::aplicar_ingreso(
-                &mut tx,
-                lote_id,
-                det.area_destino_id,
-                cantidad_base,
-                claims.sub,
-                "INGRESO",
-                Some(grupo),
-                req.nota.as_deref(),
-                Some("recepcion"),
-            )
-            .await?;
-
-            // Auto-populate producto_area
-            sqlx::query(
-                r#"INSERT INTO producto_area (producto_id, area_id)
-                   VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
-            )
-            .bind(det.producto_id)
-            .bind(det.area_destino_id)
-            .execute(&mut *tx)
-            .await?;
+    let (recepcion_id, numero_doc) = match crate::services::recepcion_service::RecepcionService::crear_recepcion(
+        &state.pool,
+        crate::services::recepcion_service::CrearRecepcionParams {
+            proveedor_id: req.proveedor_id,
+            guia_despacho: req.guia_despacho,
+            estado: estado.to_string(),
+            fecha_recepcion: req.fecha_recepcion,
+            nota: req.nota,
+            solicitud_id: req.solicitud_id,
+            detalle: req.detalle,
+            usuario_id: claims.sub,
+        },
+    ).await {
+        Ok(res) => res,
+        Err(e) => {
+            if let Some(ref k) = idem_key {
+                idempotency::cleanup_on_error(&state.pool, k).await?;
+            }
+            return Err(e);
         }
-    }
-
-    // Si es completa y viene de una solicitud, marcarla como completada
-    if !es_borrador && let Some(sid) = req.solicitud_id {
-            sqlx::query("UPDATE solicitudes_compra SET estado = 'completada' WHERE id = $1")
-                .bind(sid)
-                .execute(&mut *tx)
-                .await?;
-    }
-
-    tx.commit().await?;
-
-    let numero_doc: String =
-        sqlx::query_scalar("SELECT numero_documento FROM recepciones WHERE id = $1")
-            .bind(recepcion_id)
-            .fetch_one(&state.pool)
-            .await?;
+    };
 
     let response = serde_json::json!({
         "id": recepcion_id,
@@ -454,90 +362,17 @@ async fn confirmar_borrador(
         return Ok(Json(body));
     }
 
-    let mut tx = state.pool.begin().await?;
-
-    // Verificar que existe y es borrador
-    let res: Option<(String, Option<Uuid>)> =
-        sqlx::query_as("SELECT estado, solicitud_id FROM recepciones WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?;
-
-    let (estado, solicitud_id) = res.ok_or(AppError::NotFound("Recepción no encontrada".into()))?;
-    
-    if estado != "borrador" {
-        tx.rollback().await?;
-        idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
-        return Err(AppError::BusinessLogic(
-            "Solo se pueden confirmar recepciones en estado borrador".into(),
-            "ESTADO_INVALIDO".into(),
-        ));
-    }
-
-    // Obtener detalle
-    #[derive(sqlx::FromRow)]
-    struct DetalleLine {
-        producto_id: Uuid,
-        lote_id: Uuid,
-        area_destino_id: i32,
-        cantidad_unidades_base: Decimal,
-    }
-
-    let mut lineas = sqlx::query_as::<_, DetalleLine>(
-        "SELECT producto_id, lote_id, area_destino_id, cantidad_unidades_base FROM recepcion_detalle WHERE recepcion_id = $1",
-    )
-    .bind(id)
-    .fetch_all(&mut *tx)
-    .await?;
-
-    // Ordenar por producto_id para evitar deadlocks
-    lineas.sort_by_key(|l| l.producto_id);
-
-    let grupo = Uuid::new_v4();
-    let nota: Option<String> = sqlx::query_scalar("SELECT nota FROM recepciones WHERE id = $1")
-        .bind(id)
-        .fetch_one(&mut *tx)
-        .await?;
-
-    for linea in &lineas {
-        stock_ops::aplicar_ingreso(
-            &mut tx,
-            linea.lote_id,
-            linea.area_destino_id,
-            linea.cantidad_unidades_base,
-            claims.sub,
-            "INGRESO",
-            Some(grupo),
-            nota.as_deref(),
-            Some("recepcion"),
-        )
-        .await?;
-
-        // Auto-populate producto_area
-        sqlx::query(
-            "INSERT INTO producto_area (producto_id, area_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-        )
-        .bind(linea.producto_id)
-        .bind(linea.area_destino_id)
-        .execute(&mut *tx)
-        .await?;
-    }
-
-    // Actualizar estado
-    sqlx::query("UPDATE recepciones SET estado = 'completa' WHERE id = $1")
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
-
-    // Si viene de una solicitud, marcarla como completada
-    if let Some(sid) = solicitud_id {
-        sqlx::query("UPDATE solicitudes_compra SET estado = 'completada' WHERE id = $1")
-            .bind(sid)
-            .execute(&mut *tx)
-            .await?;
-    }
-
-    tx.commit().await?;
+    let grupo = match crate::services::recepcion_service::RecepcionService::confirmar_borrador(
+        &state.pool,
+        id,
+        claims.sub,
+    ).await {
+        Ok(g) => g,
+        Err(e) => {
+            idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
+            return Err(e);
+        }
+    };
 
     let response = serde_json::json!({
         "id": id,
@@ -558,14 +393,12 @@ async fn eliminar_borrador(
 ) -> Result<StatusCode, AppError> {
     crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
 
-    let estado: Option<String> =
+    let estado: String =
         sqlx::query_scalar("SELECT estado FROM recepciones WHERE id = $1")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?
             .ok_or(AppError::NotFound("Recepción no encontrada".into()))?;
-
-    let estado = estado.ok_or(AppError::NotFound("Recepción no encontrada".into()))?;
     if estado != "borrador" {
         return Err(AppError::BusinessLogic(
             "Solo se pueden eliminar recepciones en estado borrador".into(),
@@ -632,40 +465,6 @@ async fn subir_foto(
     .await?;
 
     Ok(StatusCode::NO_CONTENT)
-}
-
-/// Helper: Crea lote o reutiliza si ya existe (mismo producto + numero_lote)
-async fn crear_o_reutilizar_lote(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    producto_id: Uuid,
-    numero_lote: &str,
-    fecha_vencimiento: NaiveDate,
-    proveedor_id: i32,
-    costo_unitario: Option<Decimal>,
-) -> Result<Uuid, AppError> {
-    // Generar código siempre; si hay conflicto, el INSERT lo descarta
-    let codigo: String = sqlx::query_scalar("SELECT generar_codigo_lote()")
-        .fetch_one(&mut **tx)
-        .await?;
-
-    // ON CONFLICT garantiza atomicidad: no hay race condition entre SELECT e INSERT
-    // DO UPDATE con SET no-op asegura que RETURNING siempre devuelva el id
-    let lote_id: Uuid = sqlx::query_scalar(
-        r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento, codigo_interno, costo_unitario)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (producto_id, numero_lote) DO UPDATE SET numero_lote = EXCLUDED.numero_lote
-           RETURNING id"#,
-    )
-    .bind(producto_id)
-    .bind(proveedor_id)
-    .bind(numero_lote)
-    .bind(fecha_vencimiento)
-    .bind(&codigo)
-    .bind(costo_unitario)
-    .fetch_one(&mut **tx)
-    .await?;
-
-    Ok(lote_id)
 }
 
 pub fn routes() -> Router<AppState> {

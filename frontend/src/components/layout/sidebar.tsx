@@ -23,15 +23,35 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/hooks/use-auth-store'
 
-const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/stock', icon: Package, label: 'Inventario' },
-  { to: '/consumos', icon: ClipboardList, label: 'Consumos' },
-  { to: '/descartes', icon: Trash2, label: 'Descartes' },
-  { to: '/recepciones', icon: ArrowDownToLine, label: 'Recepciones' },
-  { to: '/solicitudes-compra', icon: ShoppingCart, label: 'Solicitudes' },
-  { to: '/conteo', icon: ClipboardCheck, label: 'Conteo' },
-  { to: '/movimientos', icon: History, label: 'Movimientos' },
+const navGroups = [
+  {
+    label: null,
+    items: [
+      { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+    ],
+  },
+  {
+    label: 'Consulta',
+    items: [
+      { to: '/stock', icon: Package, label: 'Inventario' },
+      { to: '/movimientos', icon: History, label: 'Movimientos' },
+    ],
+  },
+  {
+    label: 'Operaciones',
+    items: [
+      { to: '/consumos', icon: ClipboardList, label: 'Consumos' },
+      { to: '/descartes', icon: Trash2, label: 'Descartes' },
+      { to: '/conteo', icon: ClipboardCheck, label: 'Conteo' },
+    ],
+  },
+  {
+    label: 'Compras',
+    items: [
+      { to: '/recepciones', icon: ArrowDownToLine, label: 'Recepciones' },
+      { to: '/solicitudes-compra', icon: ShoppingCart, label: 'Solicitudes' },
+    ],
+  },
 ]
 
 const adminItems = [
@@ -86,11 +106,24 @@ export function Sidebar() {
         "flex-1 py-2 px-2 transition-all duration-300",
         expanded ? "overflow-y-auto scrollbar-thin-hover" : "overflow-y-hidden"
       )}>
-        <div className="space-y-0.5">
-          {navItems.map((item) => (
-            <SidebarLink key={item.to} {...item} expanded={expanded} />
-          ))}
-        </div>
+        {navGroups.map((group, i) => (
+          <div key={i}>
+            {i > 0 && <div className="my-3 mx-2 h-px bg-base-200" />}
+            {group.label && (
+              <p className={cn(
+                'px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest opacity-40 transition-all duration-300',
+                expanded ? 'opacity-40' : 'opacity-0'
+              )}>
+                {group.label}
+              </p>
+            )}
+            <div className="space-y-0.5">
+              {group.items.map((item) => (
+                <SidebarLink key={item.to} {...item} expanded={expanded} />
+              ))}
+            </div>
+          </div>
+        ))}
 
         {isAdmin && (
           <>

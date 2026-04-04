@@ -300,7 +300,6 @@ export default function SolicitudesCompraPage() {
           usuario_nombre: detail.usuario_nombre,
           nota: detail.nota,
           items: detail.items,
-          // @ts-ignore — extra fields added in Task 11
           subtotal_neto: subtotalNeto,
           iva: iva,
           total_con_iva: totalConIva,
@@ -398,7 +397,6 @@ export default function SolicitudesCompraPage() {
         usuario_nombre: detail.usuario_nombre,
         nota: detail.nota,
         items: detail.items,
-        // @ts-ignore — extra fields added in Task 11
         subtotal_neto: subtotal,
         iva: Math.round(subtotal * 0.19),
         total_con_iva: subtotal + Math.round(subtotal * 0.19),

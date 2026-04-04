@@ -7,6 +7,9 @@ interface SolicitudPdfOptions {
   fecha_creacion: string
   usuario_nombre: string
   nota?: string | null
+  subtotal_neto: number
+  iva: number
+  total_con_iva: number
   items: {
     producto_nombre: string
     cantidad_sugerida: number
@@ -15,7 +18,10 @@ interface SolicitudPdfOptions {
     codigo_proveedor?: string | null
     proveedor_nombre?: string | null
     presentacion_nombre?: string | null
+    presentacion_nombre_plural?: string | null
     factor_conversion?: number | null
+    precio_unitario?: number | null
+    cantidad_presentaciones?: number | null
   }[]
   nombreLaboratorio: string
 }
@@ -32,7 +38,7 @@ const C = {
 }
 
 export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promise<void> {
-  const { numero_documento, fecha_creacion, usuario_nombre, nota, items, nombreLaboratorio } = options
+  const { numero_documento, fecha_creacion, usuario_nombre, nota, items, nombreLaboratorio, subtotal_neto, iva, total_con_iva } = options
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' })
   const W = doc.internal.pageSize.getWidth()
@@ -118,65 +124,87 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
   autoTable(doc, {
     startY: y,
     head: [[
-      '#', 
-      'Descripción del Producto e Identificadores', 
-      'Proveedor Sugerido', 
-      'Cant. Sugerida', 
-      'Presentación Recomendada'
+      '#',
+      'Descripción · Identificadores',
+      'Cód. Prov.',
+      'Cód. Bodega',
+      'Cantidad',
+      'P. Neto',
+      'Total Neto',
     ]],
-    body: items.map((i, index) => {
-      const cantPresentaciones = i.factor_conversion && i.factor_conversion > 0 
-        ? Math.ceil((i.cantidad_sugerida / i.factor_conversion) * 100) / 100 
-        : null;
-
-      const presInfo = cantPresentaciones 
-        ? `${cantPresentaciones} ${i.presentacion_nombre || 'Unidades'}`
-        : '---';
+    body: items.map((item, index) => {
+      const usaPresentacion = item.presentacion_nombre && item.factor_conversion && item.cantidad_presentaciones
+      const cantDisplay = usaPresentacion
+        ? `${item.cantidad_presentaciones} ${(item.cantidad_presentaciones === 1 ? item.presentacion_nombre : (item.presentacion_nombre_plural ?? item.presentacion_nombre + 's'))}\n= ${Math.round(item.cantidad_sugerida)} ${item.unidad}`
+        : `${Math.round(item.cantidad_sugerida)} ${item.unidad}`
+      const qty = usaPresentacion ? item.cantidad_presentaciones! : item.cantidad_sugerida
+      const totalLinea = item.precio_unitario ? qty * item.precio_unitario : null
 
       return [
         index + 1,
-        { 
-          content: i.producto_nombre + `\nCod. Bodega: ${i.codigo_maestro || 'N/A'}  |  Cod. Prov: ${i.codigo_proveedor || 'N/A'}`,
-          styles: { fontSize: 8 }
-        },
-        i.proveedor_nombre || 'NO ESPECIFICADO',
-        `${Math.round(i.cantidad_sugerida)} ${i.unidad}`,
-        { content: presInfo, styles: { fontStyle: 'bold', halign: 'center' } }
+        item.producto_nombre,
+        item.codigo_proveedor ?? '—',
+        item.codigo_maestro ?? '—',
+        { content: cantDisplay, styles: { fontSize: 7 } },
+        item.precio_unitario ? `$${Math.round(item.precio_unitario).toLocaleString('es-CL')}` : '—',
+        totalLinea ? `$${Math.round(totalLinea).toLocaleString('es-CL')}` : '—',
       ]
     }),
     theme: 'grid',
     headStyles: {
       fillColor: C.primary,
       textColor: C.white,
-      fontSize: 8,
+      fontSize: 7,
       fontStyle: 'bold',
       halign: 'center',
-      cellPadding: 4
-    },
-    styles: {
-      fontSize: 8,
       cellPadding: 3,
-      valign: 'middle'
     },
+    styles: { fontSize: 8, cellPadding: 3, valign: 'middle' },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 8 },
-      1: { cellWidth: 75 },
-      2: { halign: 'left', cellWidth: 40 },
-      3: { halign: 'center', cellWidth: 30 },
-      4: { halign: 'center', cellWidth: 35 }
+      0: { halign: 'center', cellWidth: 7 },
+      1: { cellWidth: 60 },
+      2: { halign: 'center', cellWidth: 22 },
+      3: { halign: 'center', cellWidth: 22 },
+      4: { halign: 'center', cellWidth: 28 },
+      5: { halign: 'right', cellWidth: 22 },
+      6: { halign: 'right', cellWidth: 25 },
     },
-    alternateRowStyles: {
-      fillColor: C.bgLight
-    },
-    didParseCell: function(data) {
-      if (data.section === 'body' && data.column.index === 1) {
-        // Estilo especial para la descripción se maneja en el contenido arriba
-      }
-    }
+    alternateRowStyles: { fillColor: C.bgLight },
   })
 
+  // --- CAJA DE TOTALES IVA ---
+  const tableEndY = (doc as any).lastAutoTable.finalY + 5
+  let ty = tableEndY
+
+  // Caja de totales (right-aligned)
+  const boxX = W - 85
+  doc.setFillColor(...C.bgLight)
+  doc.roundedRect(boxX, ty, 70, 28, 2, 2, 'F')
+
+  doc.setFontSize(8)
+  doc.setTextColor(...C.textLight)
+  doc.setFont('helvetica', 'normal')
+  doc.text('Subtotal neto:', boxX + 4, ty + 7)
+  doc.text('IVA 19%:', boxX + 4, ty + 14)
+
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(...C.textMain)
+  doc.text(`$${Math.round(subtotal_neto).toLocaleString('es-CL')}`, W - 20, ty + 7, { align: 'right' })
+  doc.text(`$${Math.round(iva).toLocaleString('es-CL')}`, W - 20, ty + 14, { align: 'right' })
+
+  // Separator line
+  doc.setDrawColor(...C.secondary)
+  doc.setLineWidth(0.5)
+  doc.line(boxX + 4, ty + 17, boxX + 66, ty + 17)
+
+  doc.setFontSize(10)
+  doc.setTextColor(...C.secondary)
+  doc.text('Total con IVA:', boxX + 4, ty + 24)
+  doc.text(`$${Math.round(total_con_iva).toLocaleString('es-CL')}`, W - 20, ty + 24, { align: 'right' })
+
+  const finalY = ty + 33
+
   // --- SECCIÓN DE FIRMAS ---
-  const finalY = (doc as any).lastAutoTable.finalY + 25
   
   const signY = finalY + 15 > H - 25 ? (doc.addPage(), 40) : finalY
   

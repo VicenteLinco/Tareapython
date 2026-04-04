@@ -19,6 +19,7 @@ pub struct CrearProductoParams {
     pub stock_minimo: Option<Decimal>,
     pub precio_unidad: Option<Decimal>,
     pub lead_time_propio: Option<i32>,
+    pub ubicacion: Option<String>,
     pub presentaciones: Option<Vec<crate::handlers::productos::CreatePresentacionInline>>,
     pub area_ids: Option<Vec<i32>>,
     pub usuario_id: Uuid,
@@ -35,6 +36,7 @@ pub struct ActualizarProductoParams {
     pub stock_minimo: Option<Decimal>,
     pub precio_unidad: Option<Decimal>,
     pub lead_time_propio: Option<i32>,
+    pub ubicacion: Option<String>,
     pub area_ids: Option<Vec<i32>>,
     pub version_esperada: i32,
     pub usuario_id: Uuid,
@@ -53,8 +55,8 @@ impl ProductoService {
             .await?;
 
         let producto = sqlx::query_as::<_, Producto>(
-            r#"INSERT INTO productos (codigo_interno, nombre, descripcion, categoria_id, unidad_base_id, proveedor_id, codigo_proveedor, codigo_maestro, stock_minimo, precio_unidad, lead_time_propio)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *"#,
+            r#"INSERT INTO productos (codigo_interno, nombre, descripcion, categoria_id, unidad_base_id, proveedor_id, codigo_proveedor, codigo_maestro, stock_minimo, precio_unidad, lead_time_propio, ubicacion)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *"#,
         )
         .bind(&codigo)
         .bind(&params.nombre)
@@ -67,6 +69,7 @@ impl ProductoService {
         .bind(params.stock_minimo.unwrap_or(Decimal::ZERO))
         .bind(params.precio_unidad)
         .bind(params.lead_time_propio)
+        .bind(&params.ubicacion)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| match &e {
@@ -131,6 +134,7 @@ impl ProductoService {
                 'stock_minimo',    p.stock_minimo,
                 'precio_unidad',   p.precio_unidad,
                 'lead_time_propio',p.lead_time_propio,
+                'ubicacion',       p.ubicacion,
                 'activo',          p.activo,
                 'version',         p.version,
                 'created_at',      p.created_at,
@@ -209,8 +213,8 @@ impl ProductoService {
             r#"UPDATE productos
                SET nombre = $1, descripcion = $2, categoria_id = $3, proveedor_id = $4, stock_minimo = $5,
                    codigo_proveedor = $6, codigo_maestro = $7, precio_unidad = $8, lead_time_propio = $9,
-                   version = version + 1, updated_at = NOW()
-               WHERE id = $10 AND version = $11
+                   ubicacion = $10, version = version + 1, updated_at = NOW()
+               WHERE id = $11 AND version = $12
                RETURNING *"#,
         )
         .bind(&params.nombre)
@@ -222,6 +226,7 @@ impl ProductoService {
         .bind(&params.codigo_maestro)
         .bind(params.precio_unidad)
         .bind(params.lead_time_propio)
+        .bind(&params.ubicacion)
         .bind(params.id)
         .bind(params.version_esperada)
         .fetch_optional(&mut *tx)

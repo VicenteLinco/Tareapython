@@ -530,6 +530,7 @@ function CreateProductoDialog({
     categoria_id: '',
     unidad_base_id: '',
     area_id: '',
+    ubicacion: '',
     proveedor_id: '',
     codigo_proveedor: '',
     codigo_maestro: '',
@@ -549,7 +550,7 @@ function CreateProductoDialog({
   const [scannerOpen, setScannerOpen] = useState(false)
 
   const createMut = useMutation({
-    mutationFn: (data: CreateProducto) => api.post('/productos', data),
+    mutationFn: (data: any) => api.post('/productos', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productos'] })
       toast.success('Producto creado')
@@ -562,8 +563,10 @@ function CreateProductoDialog({
     onClose()
     setForm({
       nombre: '', descripcion: '', categoria_id: '', unidad_base_id: '',
-      area_id: '', proveedor_id: '', codigo_proveedor: '', codigo_maestro: '',
+      area_id: '', ubicacion: '', proveedor_id: '', codigo_proveedor: '', codigo_maestro: '',
       stock_minimo: '0',
+      precio_unidad: '',
+      precio_pres: '',
       lead_time_propio: '0',
       pres_nombre: '', pres_nombre_plural: '', pres_factor: '', pres_codigo_barras: '',
     })
@@ -596,6 +599,7 @@ function CreateProductoDialog({
       precio_unidad: form.precio_unidad ? Number(form.precio_unidad) : undefined,
       lead_time_propio: form.lead_time_propio ? Number(form.lead_time_propio) : undefined,
       area_ids: [Number(form.area_id)],
+      ubicacion: form.ubicacion.trim() || undefined,
       presentaciones,
     })
   }
@@ -617,7 +621,7 @@ function CreateProductoDialog({
 
   function handlePresChange(nombre: string) {
     const found = presFormatos.find(p => p.nombre === nombre)
-    const factorValue = found ? String(found.factor_defecto) : form.pres_factor
+    const factorValue = found ? String(found.factor_conversion) : form.pres_factor
     setForm(f => {
       const pu = parseFloat(f.precio_unidad) || 0
       const factor = parseFloat(factorValue) || 1
@@ -717,11 +721,11 @@ function CreateProductoDialog({
               </div>
               <div className="form-control">
                 <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Sección / Área</span>
+                  <span className="label-text text-sm font-medium">Área</span>
                   <span className="label-text-alt text-error text-[10px]">requerido</span>
                 </label>
                 <select
-                  className="select select-bordered select-sm h-9 text-sm"
+                  className={cn("select select-bordered select-sm h-9 text-sm", !form.area_id && "select-error")}
                   value={form.area_id}
                   onChange={(e) => handleAreaChange(e.target.value)}
                 >
@@ -731,7 +735,23 @@ function CreateProductoDialog({
                   ))}
                   <option value="__new__">＋ Crear nueva área...</option>
                 </select>
+                <p className="text-[10px] text-base-content/40 mt-0.5">Sección del laboratorio donde este producto pertenece y se usa</p>
               </div>
+            </div>
+
+            <div className="form-control">
+              <label className="label py-0.5">
+                <span className="label-text text-sm font-medium">Ubicación de almacenamiento</span>
+                <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+              </label>
+              <input
+                type="text"
+                className="input input-bordered input-sm h-9"
+                value={form.ubicacion}
+                onChange={(e) => setForm((f) => ({ ...f, ubicacion: e.target.value }))}
+                placeholder="Ej: Refrigerador 2, estante superior"
+              />
+              <p className="text-[10px] text-base-content/40 mt-0.5">Lugar físico exacto: refrigerador, armario, estante</p>
             </div>
 
             <div className="form-control">
@@ -1030,6 +1050,7 @@ function EditProductoDialog({
     descripcion: '',
     categoria_id: '',
     area_id: '',
+    ubicacion: '',
     proveedor_id: '',
     codigo_proveedor: '',
     codigo_maestro: '',
@@ -1058,6 +1079,7 @@ function EditProductoDialog({
         descripcion: producto.descripcion ?? '',
         categoria_id: catId ? String(catId) : '',
         area_id: areaId ? String(areaId) : '',
+        ubicacion: producto.ubicacion ?? '',
         proveedor_id: provId ? String(provId) : '',
         codigo_proveedor: producto.codigo_proveedor ?? '',
         codigo_maestro: producto.codigo_maestro ?? '',
@@ -1104,6 +1126,7 @@ function EditProductoDialog({
       precio_unidad: form.precio_unidad ? Number(form.precio_unidad) : undefined,
       lead_time_propio: Number(form.lead_time_propio) || 0,
       area_ids: form.area_id ? [Number(form.area_id)] : undefined,
+      ubicacion: form.ubicacion.trim() || null,
       version: producto.version,
     }
 
@@ -1144,7 +1167,7 @@ function EditProductoDialog({
 
   function handlePresChange(nombre: string) {
     const found = presFormatos.find(p => p.nombre === nombre)
-    const factorValue = found ? String(found.factor_defecto) : form.pres_factor
+    const factorValue = found ? String(found.factor_conversion) : form.pres_factor
     setForm(f => {
       const pu = parseFloat(f.precio_unidad) || 0
       const factor = parseFloat(factorValue) || 1
@@ -1268,20 +1291,37 @@ function EditProductoDialog({
                 </div>
                 <div className="form-control">
                   <label className="label py-0.5">
-                    <span className="label-text text-sm font-medium">Sección / Área</span>
+                    <span className="label-text text-sm font-medium">Área</span>
+                    <span className="label-text-alt text-error text-[10px]">requerido</span>
                   </label>
                   <select
-                    className="select select-bordered select-sm h-9 text-sm"
+                    className={cn("select select-bordered select-sm h-9 text-sm", !form.area_id && "select-error")}
                     value={form.area_id}
                     onChange={(e) => handleAreaChange(e.target.value)}
                   >
-                    <option value="">Sin área</option>
+                    <option value="">Seleccionar área...</option>
                     {areas.map((a) => (
                       <option key={a.id} value={String(a.id)}>{a.nombre}</option>
                     ))}
                     <option value="__new__">＋ Crear nueva área...</option>
                   </select>
+                  <p className="text-[10px] text-base-content/40 mt-0.5">Sección del laboratorio donde este producto pertenece y se usa</p>
                 </div>
+              </div>
+
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Ubicación de almacenamiento</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                </label>
+                <input
+                  type="text"
+                  className="input input-bordered input-sm h-9"
+                  value={form.ubicacion}
+                  onChange={(e) => setForm((f) => ({ ...f, ubicacion: e.target.value }))}
+                  placeholder="Ej: Refrigerador 2, estante superior"
+                />
+                <p className="text-[10px] text-base-content/40 mt-0.5">Lugar físico exacto: refrigerador, armario, estante</p>
               </div>
 
               <div className="form-control">

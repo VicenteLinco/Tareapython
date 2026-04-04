@@ -39,6 +39,8 @@ export interface StockItem {
   proveedor_nombre: string | null
   proveedor_icono: string | null
   imagen_url?: string | null
+  area_id?: number
+  area_nombre?: string
 }
 
 export interface StockPorArea {
@@ -175,6 +177,38 @@ export interface PaginatedResponse<T> {
   total_pages: number
 }
 
+// --- Producto DTOs ---
+export interface CreateProducto {
+  nombre: string
+  descripcion?: string | null
+  categoria_id?: number | null
+  unidad_base_id: number
+  proveedor_id?: number | null
+  codigo_proveedor?: string | null
+  codigo_maestro?: string | null
+  stock_minimo?: number
+  precio_unidad?: number | null
+  lead_time_propio?: number | null
+  ubicacion?: string | null
+  presentaciones?: { nombre: string; nombre_plural: string; factor_conversion: number; codigo_barras?: string | null }[]
+  area_ids?: number[]
+}
+
+export interface UpdateProducto {
+  nombre?: string
+  descripcion?: string | null
+  categoria_id?: number | null
+  proveedor_id?: number | null
+  codigo_proveedor?: string | null
+  codigo_maestro?: string | null
+  stock_minimo?: number
+  precio_unidad?: number | null
+  lead_time_propio?: number | null
+  ubicacion?: string | null
+  area_ids?: number[]
+  version: number
+}
+
 // --- Request DTOs (Specific complex ones) ---
 export interface ConsumoBatchRequest {
   area_id?: number
@@ -184,6 +218,7 @@ export interface ConsumoBatchRequest {
     unidad: 'base' | 'presentacion'
     presentacion_id?: number
     lote_id?: number
+    area_id?: number
   }[]
   nota?: string
 }

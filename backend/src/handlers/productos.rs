@@ -80,6 +80,7 @@ struct CreateProducto {
     stock_minimo: Option<Decimal>,
     precio_unidad: Option<Decimal>,
     lead_time_propio: Option<i32>,
+    ubicacion: Option<String>,
     presentaciones: Option<Vec<CreatePresentacionInline>>,
     area_ids: Option<Vec<i32>>,
 }
@@ -103,6 +104,7 @@ struct UpdateProducto {
     stock_minimo: Option<Decimal>,
     precio_unidad: Option<Decimal>,
     lead_time_propio: Option<i32>,
+    ubicacion: Option<String>,
     area_ids: Option<Vec<i32>>,
     version: i32,
 }
@@ -301,6 +303,7 @@ async fn crear(
             stock_minimo: req.stock_minimo,
             precio_unidad: req.precio_unidad,
             lead_time_propio: req.lead_time_propio,
+            ubicacion: req.ubicacion,
             presentaciones: req.presentaciones,
             area_ids: req.area_ids,
             usuario_id: claims.sub,
@@ -343,6 +346,7 @@ async fn actualizar(
             stock_minimo: req.stock_minimo,
             precio_unidad: req.precio_unidad,
             lead_time_propio: req.lead_time_propio,
+            ubicacion: req.ubicacion,
             area_ids: req.area_ids,
             version_esperada: req.version,
             usuario_id: claims.sub,

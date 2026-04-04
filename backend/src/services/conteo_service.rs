@@ -133,9 +133,10 @@ impl ConteoService {
                 if item.cantidad_contada.is_none() {
                     return Err(AppError::Validation("Cantidad requerida para ítems contados".into()));
                 }
-                if let Some(c) = item.cantidad_contada
-                    && c < Decimal::ZERO {
+                if let Some(c) = item.cantidad_contada {
+                    if c < Decimal::ZERO {
                         return Err(AppError::Validation("Cantidad no puede ser negativa".into()));
+                    }
                 }
             }
 
@@ -231,17 +232,16 @@ impl ConteoService {
             let tipo = if diferencia > Decimal::ZERO { "AJUSTE_POSITIVO" } else { "AJUSTE_NEGATIVO" };
             let cant_mov = diferencia.abs();
 
-            // Sincronizar stock aplicando el delta relativo a la realidad física vs snapshot
+            // El conteo físico es la fuente de verdad: se establece directamente, no como delta
             sqlx::query(
                 r#"INSERT INTO stock (lote_id, area_id, cantidad)
                    VALUES ($1, $2, GREATEST(0, $3))
                    ON CONFLICT (lote_id, area_id)
-                   DO UPDATE SET cantidad = GREATEST(0, stock.cantidad + $4), updated_at = NOW()"#,
+                   DO UPDATE SET cantidad = GREATEST(0, $3), updated_at = NOW()"#,
             )
             .bind(lote_id)
             .bind(area_id)
             .bind(cant_fisica)
-            .bind(diferencia)
             .execute(&mut *tx)
             .await?;
 

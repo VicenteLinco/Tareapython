@@ -37,7 +37,9 @@ struct ProductoListItem {
     proveedor: Option<ProveedorRef>,
     area: Option<AreaRef>,
     stock_minimo: Decimal,
+    lead_time_propio: Option<i32>,
     activo: bool,
+    imagen_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow, specta::Type)]
@@ -76,6 +78,8 @@ struct CreateProducto {
     codigo_proveedor: Option<String>,
     codigo_maestro: Option<String>,
     stock_minimo: Option<Decimal>,
+    precio_unidad: Option<Decimal>,
+    lead_time_propio: Option<i32>,
     presentaciones: Option<Vec<CreatePresentacionInline>>,
     area_ids: Option<Vec<i32>>,
 }
@@ -97,6 +101,8 @@ struct UpdateProducto {
     codigo_proveedor: Option<String>,
     codigo_maestro: Option<String>,
     stock_minimo: Option<Decimal>,
+    precio_unidad: Option<Decimal>,
+    lead_time_propio: Option<i32>,
     area_ids: Option<Vec<i32>>,
     version: i32,
 }
@@ -111,6 +117,7 @@ struct ProductoRow {
     codigo_proveedor: Option<String>,
     codigo_maestro: Option<String>,
     stock_minimo: Decimal,
+    lead_time_propio: Option<i32>,
     activo: bool,
     cat_id: Option<i32>,
     cat_nombre: Option<String>,
@@ -122,6 +129,7 @@ struct ProductoRow {
     prov_icono: Option<String>,
     area_id: Option<i32>,
     area_nombre: Option<String>,
+    imagen_url: Option<String>,
 }
 
 use crate::services::producto_service::ProductoService;
@@ -173,7 +181,7 @@ async fn listar(
     );
     let data_sql = format!(
         r#"SELECT p.id, p.codigo_interno, p.nombre, p.codigo_proveedor, p.codigo_maestro,
-                  p.stock_minimo, p.activo,
+                  p.stock_minimo, p.lead_time_propio, p.activo, p.imagen_url,
                   c.id as cat_id, c.nombre as cat_nombre,
                   um.id as um_id, um.nombre as um_nombre, um.nombre_plural as um_nombre_plural,
                   pr.id as prov_id, pr.nombre as prov_nombre, pr.icono as prov_icono,
@@ -242,7 +250,9 @@ async fn listar(
                 nombre: r.area_nombre.unwrap_or_default(),
             }),
             stock_minimo: r.stock_minimo,
+            lead_time_propio: r.lead_time_propio,
             activo: r.activo,
+            imagen_url: r.imagen_url,
         })
         .collect();
 
@@ -280,17 +290,21 @@ async fn crear(
 
     let producto = ProductoService::crear_producto(
         &state.pool,
-        nombre,
-        req.descripcion,
-        req.categoria_id,
-        req.unidad_base_id,
-        req.proveedor_id,
-        req.codigo_proveedor,
-        req.codigo_maestro,
-        req.stock_minimo,
-        req.presentaciones,
-        req.area_ids,
-        claims.sub,
+        crate::services::producto_service::CrearProductoParams {
+            nombre,
+            descripcion: req.descripcion,
+            categoria_id: req.categoria_id,
+            unidad_base_id: req.unidad_base_id,
+            proveedor_id: req.proveedor_id,
+            codigo_proveedor: req.codigo_proveedor,
+            codigo_maestro: req.codigo_maestro,
+            stock_minimo: req.stock_minimo,
+            precio_unidad: req.precio_unidad,
+            lead_time_propio: req.lead_time_propio,
+            presentaciones: req.presentaciones,
+            area_ids: req.area_ids,
+            usuario_id: claims.sub,
+        },
     ).await?;
 
     Ok((
@@ -318,17 +332,21 @@ async fn actualizar(
 
     let producto = ProductoService::actualizar_producto(
         &state.pool,
-        id,
-        nombre.to_string(),
-        req.descripcion,
-        req.categoria_id,
-        req.proveedor_id,
-        req.codigo_proveedor,
-        req.codigo_maestro,
-        req.stock_minimo,
-        req.area_ids,
-        req.version,
-        claims.sub,
+        crate::services::producto_service::ActualizarProductoParams {
+            id,
+            nombre: nombre.to_string(),
+            descripcion: req.descripcion,
+            categoria_id: req.categoria_id,
+            proveedor_id: req.proveedor_id,
+            codigo_proveedor: req.codigo_proveedor,
+            codigo_maestro: req.codigo_maestro,
+            stock_minimo: req.stock_minimo,
+            precio_unidad: req.precio_unidad,
+            lead_time_propio: req.lead_time_propio,
+            area_ids: req.area_ids,
+            version_esperada: req.version,
+            usuario_id: claims.sub,
+        },
     ).await?;
 
     Ok(Json(producto))
@@ -374,10 +392,84 @@ struct ScanQuery {
     codigo: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct SubirImagenInput {
+    data_url: String,
+}
+
+async fn subir_imagen(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<SubirImagenInput>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    // Verificar que el producto existe y obtener imagen actual
+    let imagen_actual: Option<String> = sqlx::query_scalar(
+        "SELECT imagen_url FROM productos WHERE id = $1 AND activo = true",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .flatten();
+
+    if imagen_actual.is_none() {
+        // Check product exists at all
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1)")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
+        if !exists {
+            return Err(AppError::NotFound("Producto no encontrado".into()));
+        }
+    }
+
+    // Eliminar imagen anterior si existe
+    if let Some(ref path) = imagen_actual {
+        crate::services::storage::delete_image(path).await?;
+    }
+
+    // Guardar nueva imagen
+    let path = crate::services::storage::save_base64_image(&req.data_url, "productos", &id.to_string()).await?;
+
+    // Actualizar base de datos
+    sqlx::query("UPDATE productos SET imagen_url = $1 WHERE id = $2")
+        .bind(&path)
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(Json(json!({
+        "imagen_url": format!("/api/v1/uploads/{}", path)
+    })))
+}
+
+async fn quitar_imagen(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let imagen_actual: Option<String> = sqlx::query_scalar(
+        "SELECT imagen_url FROM productos WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .flatten();
+
+    if let Some(ref path) = imagen_actual {
+        crate::services::storage::delete_image(path).await?;
+        sqlx::query("UPDATE productos SET imagen_url = NULL WHERE id = $1")
+            .bind(id)
+            .execute(&state.pool)
+            .await?;
+    }
+
+    Ok(Json(json!({ "ok": true })))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
         .route("/scan", get(scan_barcode))
         .route("/{id}", get(obtener).put(actualizar).delete(eliminar))
         .route("/{id}/reactivar", axum::routing::post(reactivar))
+        .route("/{id}/imagen", axum::routing::put(subir_imagen).delete(quitar_imagen))
 }

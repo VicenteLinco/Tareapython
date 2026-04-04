@@ -8,22 +8,43 @@ use crate::models::producto::Producto;
 
 pub struct ProductoService;
 
+pub struct CrearProductoParams {
+    pub nombre: String,
+    pub descripcion: Option<String>,
+    pub categoria_id: Option<i32>,
+    pub unidad_base_id: i32,
+    pub proveedor_id: Option<i32>,
+    pub codigo_proveedor: Option<String>,
+    pub codigo_maestro: Option<String>,
+    pub stock_minimo: Option<Decimal>,
+    pub precio_unidad: Option<Decimal>,
+    pub lead_time_propio: Option<i32>,
+    pub presentaciones: Option<Vec<crate::handlers::productos::CreatePresentacionInline>>,
+    pub area_ids: Option<Vec<i32>>,
+    pub usuario_id: Uuid,
+}
+
+pub struct ActualizarProductoParams {
+    pub id: Uuid,
+    pub nombre: String,
+    pub descripcion: Option<String>,
+    pub categoria_id: Option<i32>,
+    pub proveedor_id: Option<i32>,
+    pub codigo_proveedor: Option<String>,
+    pub codigo_maestro: Option<String>,
+    pub stock_minimo: Option<Decimal>,
+    pub precio_unidad: Option<Decimal>,
+    pub lead_time_propio: Option<i32>,
+    pub area_ids: Option<Vec<i32>>,
+    pub version_esperada: i32,
+    pub usuario_id: Uuid,
+}
+
 impl ProductoService {
     /// Crea un nuevo producto con sus presentaciones y áreas asociadas
-    #[allow(clippy::too_many_arguments)]
     pub async fn crear_producto(
         pool: &PgPool,
-        nombre: String,
-        descripcion: Option<String>,
-        categoria_id: Option<i32>,
-        unidad_base_id: i32,
-        proveedor_id: Option<i32>,
-        codigo_proveedor: Option<String>,
-        codigo_maestro: Option<String>,
-        stock_minimo: Option<Decimal>,
-        presentaciones: Option<Vec<crate::handlers::productos::CreatePresentacionInline>>,
-        area_ids: Option<Vec<i32>>,
-        usuario_id: Uuid,
+        params: CrearProductoParams,
     ) -> Result<Producto, AppError> {
         let mut tx = pool.begin().await?;
 
@@ -32,18 +53,20 @@ impl ProductoService {
             .await?;
 
         let producto = sqlx::query_as::<_, Producto>(
-            r#"INSERT INTO productos (codigo_interno, nombre, descripcion, categoria_id, unidad_base_id, proveedor_id, codigo_proveedor, codigo_maestro, stock_minimo)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *"#,
+            r#"INSERT INTO productos (codigo_interno, nombre, descripcion, categoria_id, unidad_base_id, proveedor_id, codigo_proveedor, codigo_maestro, stock_minimo, precio_unidad, lead_time_propio)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *"#,
         )
         .bind(&codigo)
-        .bind(&nombre)
-        .bind(&descripcion)
-        .bind(categoria_id)
-        .bind(unidad_base_id)
-        .bind(proveedor_id)
-        .bind(&codigo_proveedor)
-        .bind(&codigo_maestro)
-        .bind(stock_minimo.unwrap_or(Decimal::ZERO))
+        .bind(&params.nombre)
+        .bind(&params.descripcion)
+        .bind(params.categoria_id)
+        .bind(params.unidad_base_id)
+        .bind(params.proveedor_id)
+        .bind(&params.codigo_proveedor)
+        .bind(&params.codigo_maestro)
+        .bind(params.stock_minimo.unwrap_or(Decimal::ZERO))
+        .bind(params.precio_unidad)
+        .bind(params.lead_time_propio)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| match &e {
@@ -53,7 +76,7 @@ impl ProductoService {
             _ => e.into(),
         })?;
 
-        if let Some(pres_list) = presentaciones {
+        if let Some(pres_list) = params.presentaciones {
             for pres in pres_list {
                 sqlx::query(
                     "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras) VALUES ($1, $2, $3, $4, $5)",
@@ -68,7 +91,7 @@ impl ProductoService {
             }
         }
 
-        if let Some(ids) = area_ids {
+        if let Some(ids) = params.area_ids {
             for area_id in ids {
                 sqlx::query("INSERT INTO producto_area (producto_id, area_id) VALUES ($1, $2)")
                     .bind(producto.id)
@@ -84,7 +107,7 @@ impl ProductoService {
         )
         .bind(producto.id.to_string())
         .bind(json!({"codigo_interno": &producto.codigo_interno, "nombre": &producto.nombre}))
-        .bind(usuario_id)
+        .bind(params.usuario_id)
         .execute(&mut *tx)
         .await?;
 
@@ -93,7 +116,6 @@ impl ProductoService {
     }
 
     /// Obtiene un producto por ID con todos sus detalles (Categoría, Unidad, Áreas, etc)
-    /// Usa una sola consulta con JSON aggregation para evitar el problema N+1.
     pub async fn obtener_detalle(
         pool: &PgPool,
         id: Uuid,
@@ -107,12 +129,18 @@ impl ProductoService {
                 'codigo_proveedor',p.codigo_proveedor,
                 'codigo_maestro',  p.codigo_maestro,
                 'stock_minimo',    p.stock_minimo,
+                'precio_unidad',   p.precio_unidad,
+                'lead_time_propio',p.lead_time_propio,
                 'activo',          p.activo,
                 'version',         p.version,
                 'created_at',      p.created_at,
                 'updated_at',      p.updated_at,
                 'categoria', CASE WHEN c.id IS NOT NULL
                     THEN json_build_object('id', c.id, 'nombre', c.nombre)
+                    ELSE NULL
+                END,
+                'proveedor', CASE WHEN prov.id IS NOT NULL
+                    THEN json_build_object('id', prov.id, 'nombre', prov.nombre)
                     ELSE NULL
                 END,
                 'unidad_base', json_build_object(
@@ -149,6 +177,7 @@ impl ProductoService {
             )
             FROM productos p
             LEFT JOIN categorias c ON c.id = p.categoria_id
+            LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
             JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
             WHERE p.id = $1"#,
         )
@@ -160,28 +189,17 @@ impl ProductoService {
     }
 
     /// Actualiza un producto existente con control de concurrencia (versión)
-    #[allow(clippy::too_many_arguments)]
     pub async fn actualizar_producto(
         pool: &PgPool,
-        id: Uuid,
-        nombre: String,
-        descripcion: Option<String>,
-        categoria_id: Option<i32>,
-        proveedor_id: Option<i32>,
-        codigo_proveedor: Option<String>,
-        codigo_maestro: Option<String>,
-        stock_minimo: Option<Decimal>,
-        area_ids: Option<Vec<i32>>,
-        version_esperada: i32,
-        usuario_id: Uuid,
+        params: ActualizarProductoParams,
     ) -> Result<Producto, AppError> {
         let anterior = sqlx::query_as::<_, Producto>("SELECT * FROM productos WHERE id = $1")
-            .bind(id)
+            .bind(params.id)
             .fetch_optional(pool)
             .await?
             .ok_or(AppError::NotFound("Producto no encontrado".into()))?;
 
-        if version_esperada != anterior.version {
+        if params.version_esperada != anterior.version {
             return Err(AppError::Conflict("El registro fue modificado por otro usuario".into()));
         }
 
@@ -190,32 +208,34 @@ impl ProductoService {
         let producto = sqlx::query_as::<_, Producto>(
             r#"UPDATE productos
                SET nombre = $1, descripcion = $2, categoria_id = $3, proveedor_id = $4, stock_minimo = $5,
-                   codigo_proveedor = $6, codigo_maestro = $7,
+                   codigo_proveedor = $6, codigo_maestro = $7, precio_unidad = $8, lead_time_propio = $9,
                    version = version + 1, updated_at = NOW()
-               WHERE id = $8 AND version = $9
+               WHERE id = $10 AND version = $11
                RETURNING *"#,
         )
-        .bind(nombre)
-        .bind(descripcion)
-        .bind(categoria_id)
-        .bind(proveedor_id)
-        .bind(stock_minimo.unwrap_or(anterior.stock_minimo))
-        .bind(codigo_proveedor)
-        .bind(codigo_maestro)
-        .bind(id)
-        .bind(version_esperada)
+        .bind(&params.nombre)
+        .bind(&params.descripcion)
+        .bind(params.categoria_id)
+        .bind(params.proveedor_id)
+        .bind(params.stock_minimo.unwrap_or(anterior.stock_minimo))
+        .bind(&params.codigo_proveedor)
+        .bind(&params.codigo_maestro)
+        .bind(params.precio_unidad)
+        .bind(params.lead_time_propio)
+        .bind(params.id)
+        .bind(params.version_esperada)
         .fetch_optional(&mut *tx)
         .await?
         .ok_or(AppError::Conflict("Error de concurrencia al actualizar".into()))?;
 
-        if let Some(ids) = area_ids {
+        if let Some(ids) = params.area_ids {
             sqlx::query("DELETE FROM producto_area WHERE producto_id = $1")
-                .bind(id)
+                .bind(params.id)
                 .execute(&mut *tx)
                 .await?;
             for area_id in ids {
                 sqlx::query("INSERT INTO producto_area (producto_id, area_id) VALUES ($1, $2)")
-                    .bind(id)
+                    .bind(params.id)
                     .bind(area_id)
                     .execute(&mut *tx)
                     .await?;
@@ -225,10 +245,10 @@ impl ProductoService {
         sqlx::query(
             "INSERT INTO audit_log (tabla, registro_id, accion, datos_anteriores, datos_nuevos, usuario_id) VALUES ('productos', $1, 'UPDATE', $2, $3, $4)",
         )
-        .bind(id.to_string())
+        .bind(params.id.to_string())
         .bind(json!({"nombre": &anterior.nombre, "version": anterior.version}))
         .bind(json!({"nombre": &producto.nombre, "version": producto.version}))
-        .bind(usuario_id)
+        .bind(params.usuario_id)
         .execute(&mut *tx)
         .await?;
 
@@ -323,15 +343,17 @@ impl ProductoService {
             presentacion_nombre: String,
             factor_conversion: Decimal,
             stock_total: Option<Decimal>,
+            imagen_url: Option<String>,
         }
 
         // 1. Buscar por código de barras de presentación
         let row = sqlx::query_as::<_, Row1>(
-            r#"SELECT 
+            r#"SELECT
                  p.id as producto_id, p.nombre as producto_nombre,
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
                  pr.id as presentacion_id, pr.nombre as presentacion_nombre, pr.factor_conversion,
-                 (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total
+                 (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
+                 p.imagen_url
                FROM presentaciones pr
                JOIN productos p ON p.id = pr.producto_id
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
@@ -353,6 +375,7 @@ impl ProductoService {
                 "presentacion_nombre": r.presentacion_nombre,
                 "factor_conversion": r.factor_conversion,
                 "stock_total": r.stock_total,
+                "imagen_url": r.imagen_url,
             }));
         }
 
@@ -363,14 +386,16 @@ impl ProductoService {
             unidad_base_nombre: String,
             unidad_base_nombre_plural: String,
             stock_total: Option<Decimal>,
+            imagen_url: Option<String>,
         }
 
         // 2. Buscar por código interno
         let row2 = sqlx::query_as::<_, Row2>(
-            r#"SELECT 
+            r#"SELECT
                  p.id as producto_id, p.nombre as producto_nombre,
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
-                 (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total
+                 (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
+                 p.imagen_url
                FROM productos p
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
                WHERE p.codigo_interno = $1 AND p.activo = true
@@ -391,6 +416,7 @@ impl ProductoService {
                 "presentacion_nombre": null,
                 "factor_conversion": null,
                 "stock_total": r.stock_total,
+                "imagen_url": r.imagen_url,
             }));
         }
 

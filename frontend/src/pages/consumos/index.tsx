@@ -2,12 +2,13 @@ import { useState, useMemo, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
-import { 
+import {
   Search, Plus, Minus, Trash2, Send,
   Zap, AlertTriangle, ShoppingCart,
   Package, CheckCircle2,
   Clock, Camera, X
 } from 'lucide-react'
+import { ProductoImage } from '@/components/ui/producto-image'
 import { useAreaStore } from '@/hooks/use-area-store'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
@@ -92,6 +93,13 @@ export default function ConsumosPage() {
 
   // --- Lógica de Carrito ---
   const addToCart = (producto: StockProduct, presentationId?: number) => {
+    if (producto.stock <= 0) {
+      toast.error('No hay stock disponible para este producto', {
+        icon: <AlertTriangle className="text-error" />
+      })
+      return
+    }
+
     setCart(prev => {
       const id = producto.producto_id
       const existing = prev[id]
@@ -117,6 +125,12 @@ export default function ConsumosPage() {
 
   // --- Selección desde búsqueda global ---
   const handleSelectGlobalProduct = (p: StockItem) => {
+    if ((p.stock_total || 0) <= 0) {
+      toast.error('No hay stock disponible para este producto', {
+        icon: <AlertTriangle className="text-error" />
+      })
+      return
+    }
     // Construir un StockProduct compatible desde StockItem
     const stockProduct: StockProduct = {
       producto_id: p.producto_id,
@@ -315,30 +329,41 @@ export default function ConsumosPage() {
           ) : !areaId ? (
             /* Resultados de Búsqueda Global */
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4">
-                {globalStock?.data.map(p => (
-                    <button
-                        key={p.producto_id}
-                        onClick={() => handleSelectGlobalProduct(p)}
-                        className="flex items-center gap-4 p-4 bg-base-100 border border-base-200 rounded-3xl hover:border-primary/50 transition-all text-left group"
-                    >
-                        <div className="p-3 bg-base-200 rounded-2xl group-hover:bg-primary/10 transition-colors">
-                            <Package className="h-6 w-6 opacity-40 group-hover:text-primary group-hover:opacity-100" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <h3 className="font-bold text-sm truncate">{p.producto_nombre}</h3>
-                            <div className="flex items-center gap-2 text-[10px] font-bold opacity-50 uppercase mt-1">
-                                <Plus className="h-3 w-3" />
-                                <span>Añadir al registro</span>
+                {globalStock?.data.map(p => {
+                    const hasStock = (p.stock_total || 0) > 0;
+                    return (
+                        <button
+                            key={p.producto_id}
+                            onClick={() => handleSelectGlobalProduct(p)}
+                            disabled={!hasStock}
+                            className={cn(
+                                "flex items-center gap-4 p-4 bg-base-100 border border-base-200 rounded-3xl hover:border-primary/50 transition-all text-left group",
+                                !hasStock && "opacity-50 grayscale cursor-not-allowed border-dashed"
+                            )}
+                        >
+                            <ProductoImage src={p.imagen_url} size="md" className="group-hover:ring-2 group-hover:ring-primary/30" />
+                            <div className="flex-1 min-w-0">
+                                <h3 className="font-bold text-sm truncate">{p.producto_nombre}</h3>
+                                <div className="flex items-center gap-2 text-[10px] font-bold opacity-50 uppercase mt-1">
+                                    {hasStock ? (
+                                        <>
+                                            <Plus className="h-3 w-3" />
+                                            <span>Añadir al registro</span>
+                                        </>
+                                    ) : (
+                                        <span className="text-error">Sin inventario</span>
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                        <div className="text-right">
-                            <span className="text-xs font-bold block">
-                                {formatCantidad(p.stock_total || 0, p.unidad, p.unidad_plural)}
-                            </span>
-                            <span className="text-[10px] opacity-40 uppercase">Restantes</span>
-                        </div>
-                    </button>
-                ))}
+                            <div className="text-right">
+                                <span className={cn("text-xs font-bold block", !hasStock && "text-error")}>
+                                    {formatCantidad(p.stock_total || 0, p.unidad, p.unidad_plural)}
+                                </span>
+                                <span className="text-[10px] opacity-40 uppercase">Restantes</span>
+                            </div>
+                        </button>
+                    );
+                })}
                 {globalStock?.data.length === 0 && (
                     <div className="col-span-full py-20 text-center opacity-30">
                         <p>No se encontró ningún producto con ese nombre.</p>
@@ -356,27 +381,33 @@ export default function ConsumosPage() {
                 const proximoVencimiento = p.lotes?.[0]?.fecha_vencimiento
                 const days = proximoVencimiento ? daysUntil(proximoVencimiento) : null
                 const isExpiringSoon = days !== null && days <= 90
+                const hasStock = p.stock > 0
 
                 return (
                   <button
                     key={p.producto_id}
                     onClick={() => addToCart(p)}
+                    disabled={!hasStock}
                     className={cn(
                       "group flex flex-col p-4 bg-base-100 border rounded-3xl transition-all text-left relative overflow-hidden active:scale-[0.98]",
-                      isExpiringSoon ? "border-warning/40 shadow-sm" : "border-base-200 hover:border-primary/50 hover:shadow-md"
+                      !hasStock ? "opacity-50 grayscale cursor-not-allowed border-dashed" :
+                      (isExpiringSoon ? "border-warning/40 shadow-sm" : "border-base-200 hover:border-primary/50 hover:shadow-md")
                     )}
                   >
                     <div className="flex justify-between items-start mb-2">
                       <span className="text-[10px] font-bold uppercase tracking-wider opacity-40">#{p.codigo_interno}</span>
                       <div className="flex gap-1">
-                        {isExpiringSoon && (
+                        {isExpiringSoon && hasStock && (
                           <div className="badge badge-warning badge-xs gap-1 py-2 px-1.5 font-bold animate-pulse">
                             <Clock className="w-2.5 h-2.5" />
                             FEFO
                           </div>
                         )}
-                        {p.stock <= (p.stock_minimo || 0) && (
+                        {hasStock && p.stock <= (p.stock_minimo || 0) && (
                           <div className="badge badge-error badge-xs p-1.5 animate-pulse"></div>
+                        )}
+                        {!hasStock && (
+                          <div className="badge badge-error badge-xs py-2 px-1.5 font-bold uppercase text-[9px]">Agotado</div>
                         )}
                       </div>
                     </div>
@@ -384,19 +415,22 @@ export default function ConsumosPage() {
                     <div className="flex items-center gap-2 mt-auto">
                       <span className={cn(
                         "text-xs font-medium px-2 py-0.5 rounded-lg",
-                        p.stock <= (p.stock_minimo || 0) ? "bg-error/10 text-error" : "bg-base-200"
+                        !hasStock ? "bg-error/10 text-error" : 
+                        (p.stock <= (p.stock_minimo || 0) ? "bg-error/10 text-error" : "bg-base-200")
                       )}>
                         {formatCantidad(p.stock, p.unidad, p.unidad_plural)} restantes
                       </span>
-                      {isExpiringSoon && (
+                      {isExpiringSoon && hasStock && (
                         <span className="text-[10px] font-bold text-warning uppercase">Vence en {days}d</span>
                       )}
                     </div>
-                    <div className="absolute bottom-0 right-0 p-3 translate-y-2 translate-x-2 opacity-0 group-hover:translate-y-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all">
-                      <div className="bg-primary text-primary-content p-1.5 rounded-xl shadow-lg">
-                        <Plus className="h-4 w-4" />
+                    {hasStock && (
+                      <div className="absolute bottom-0 right-0 p-3 translate-y-2 translate-x-2 opacity-0 group-hover:translate-y-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all">
+                        <div className="bg-primary text-primary-content p-1.5 rounded-xl shadow-lg">
+                          <Plus className="h-4 w-4" />
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </button>
                 )
               })}

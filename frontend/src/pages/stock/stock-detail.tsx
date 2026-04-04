@@ -8,6 +8,7 @@ import { formatDate, daysUntil, cn, autoPlural } from '@/lib/utils'
 import type { StockItem, Movimiento, PaginatedResponse } from '@/types'
 import { DiscardLoteDialog } from './discard-lote-dialog'
 import { Trash2, ShoppingCart, AlertCircle, Play, History, Box, ArrowUpRight, ArrowDownLeft, FileText, User } from 'lucide-react'
+import { ProductoImage } from '@/components/ui/producto-image'
 
 interface LoteSummary {
   id: string
@@ -75,8 +76,10 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
 
   return (
     <div className="space-y-6">
-      {/* Meta */}
-      <div className="flex flex-wrap gap-1.5">
+      {/* Imagen + Meta */}
+      <div className="flex items-start gap-3">
+        <ProductoImage src={item.imagen_url} size="md" className="flex-shrink-0 mt-0.5" />
+        <div className="flex flex-wrap gap-1.5">
         {item.codigo_interno && (
           <span className="badge badge-sm badge-ghost font-mono">{item.codigo_interno}</span>
         )}
@@ -89,6 +92,7 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
             {item.proveedor_nombre}
           </span>
         )}
+        </div>
       </div>
 
       {/* Stock summary */}

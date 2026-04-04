@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Search, Eye, Package, Tag, FileText, Camera, RotateCcw } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Eye, Package, Tag, FileText, Camera, RotateCcw, ImagePlus, X } from 'lucide-react'
+import { comprimirImagen } from '@/lib/image-utils'
+import { ProductoImage } from '@/components/ui/producto-image'
 import { DataTable } from '@/components/ui/data-table'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/pagination'
@@ -37,6 +39,7 @@ interface ProductoListItem {
   stock_minimo: string
   activo: boolean
   version: number
+  imagen_url?: string | null
 }
 
 export default function ProductosTab() {
@@ -447,6 +450,8 @@ function QuickCreateArea({
 function BarcodeScanner({ onScan, onClose }: { onScan: (code: string) => void; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const scannerRef = useRef<Html5Qrcode | null>(null)
+  const onScanRef = useRef(onScan)
+  useEffect(() => { onScanRef.current = onScan }, [onScan])
 
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -461,7 +466,7 @@ function BarcodeScanner({ onScan, onClose }: { onScan: (code: string) => void; o
             aspectRatio: 1.777778
           },
           (decoded) => {
-            onScan(decoded)
+            onScanRef.current(decoded)
           },
           () => {} 
         )
@@ -482,7 +487,7 @@ function BarcodeScanner({ onScan, onClose }: { onScan: (code: string) => void; o
         }
       }
     }
-  }, [onScan])
+  }, [])
 
   return (
     <div className="space-y-3">
@@ -528,6 +533,10 @@ function CreateProductoDialog({
     proveedor_id: '',
     codigo_proveedor: '',
     codigo_maestro: '',
+    stock_minimo: '0',
+    precio_unidad: '',
+    precio_pres: '',
+    lead_time_propio: '0',
     pres_nombre: '',
     pres_nombre_plural: '',
     pres_factor: '',
@@ -554,6 +563,8 @@ function CreateProductoDialog({
     setForm({
       nombre: '', descripcion: '', categoria_id: '', unidad_base_id: '',
       area_id: '', proveedor_id: '', codigo_proveedor: '', codigo_maestro: '',
+      stock_minimo: '0',
+      lead_time_propio: '0',
       pres_nombre: '', pres_nombre_plural: '', pres_factor: '', pres_codigo_barras: '',
     })
   }
@@ -581,6 +592,9 @@ function CreateProductoDialog({
       proveedor_id: form.proveedor_id ? Number(form.proveedor_id) : undefined,
       codigo_proveedor: form.codigo_proveedor.trim() || undefined,
       codigo_maestro: form.codigo_maestro.trim() || undefined,
+      stock_minimo: Number(form.stock_minimo) || 0,
+      precio_unidad: form.precio_unidad ? Number(form.precio_unidad) : undefined,
+      lead_time_propio: form.lead_time_propio ? Number(form.lead_time_propio) : undefined,
       area_ids: [Number(form.area_id)],
       presentaciones,
     })
@@ -603,10 +617,37 @@ function CreateProductoDialog({
 
   function handlePresChange(nombre: string) {
     const found = presFormatos.find(p => p.nombre === nombre)
-    setForm(f => ({
-      ...f,
-      pres_nombre: nombre,
-      pres_nombre_plural: found?.nombre_plural || (nombre ? autoPlural(nombre) : '')
+    const factorValue = found ? String(found.factor_defecto) : form.pres_factor
+    setForm(f => {
+      const pu = parseFloat(f.precio_unidad) || 0
+      const factor = parseFloat(factorValue) || 1
+      return {
+        ...f,
+        pres_nombre: nombre,
+        pres_nombre_plural: found?.nombre_plural || (nombre ? autoPlural(nombre) : ''),
+        pres_factor: factorValue,
+        precio_pres: f.precio_unidad ? (pu * factor).toFixed(2) : ''
+      }
+    })
+  }
+
+  function handlePrecioUnidadChange(val: string) {
+    const pu = parseFloat(val) || 0
+    const factor = parseFloat(form.pres_factor) || 1
+    setForm(f => ({ 
+      ...f, 
+      precio_unidad: val, 
+      precio_pres: val ? (pu * factor).toFixed(2) : '' 
+    }))
+  }
+
+  function handlePrecioPresChange(val: string) {
+    const pp = parseFloat(val) || 0
+    const factor = parseFloat(form.pres_factor) || 1
+    setForm(f => ({ 
+      ...f, 
+      precio_pres: val, 
+      precio_unidad: val ? (pp / factor).toFixed(4) : '' 
     }))
   }
 
@@ -704,6 +745,37 @@ function CreateProductoDialog({
                 placeholder="Seleccionar proveedor..."
                 allLabel="Sin proveedor"
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Stock mínimo</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                </label>
+                <input
+                  type="number"
+                  className="input input-bordered input-sm h-9"
+                  value={form.stock_minimo}
+                  onChange={(e) => setForm((f) => ({ ...f, stock_minimo: e.target.value }))}
+                  placeholder="Ej: 10"
+                  min="0"
+                />
+              </div>
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Lead Time (Días)</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                </label>
+                <input
+                  type="number"
+                  className="input input-bordered input-sm h-9"
+                  value={form.lead_time_propio}
+                  onChange={(e) => setForm((f) => ({ ...f, lead_time_propio: e.target.value }))}
+                  placeholder="Ej: 5"
+                  min="0"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -830,6 +902,50 @@ function CreateProductoDialog({
 
           <div className="divider my-0" />
 
+          {/* ── Precio ── */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Precio de Referencia (Neto)</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 bg-base-200/40 p-3 rounded-lg">
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Precio por unidad base</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs opacity-40">$</span>
+                  <input
+                    type="number"
+                    className="input input-bordered input-sm h-9 w-full pl-6"
+                    value={form.precio_unidad}
+                    onChange={(e) => handlePrecioUnidadChange(e.target.value)}
+                    placeholder="0.00"
+                    step="0.0001"
+                  />
+                </div>
+              </div>
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Precio por {form.pres_nombre || 'presentación'}</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs opacity-40">$</span>
+                  <input
+                    type="number"
+                    className="input input-bordered input-sm h-9 w-full pl-6"
+                    value={form.precio_pres}
+                    onChange={(e) => handlePrecioPresChange(e.target.value)}
+                    placeholder="0.00"
+                    step="0.01"
+                    disabled={!form.pres_nombre}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="divider my-0" />
+
           {/* ── Información adicional ── */}
           <div className="space-y-3">
             <div className="flex items-center gap-1.5">
@@ -873,10 +989,12 @@ function CreateProductoDialog({
         onCreated={(a) => { setForm((f) => ({ ...f, area_id: String(a.id) })); setNewAreaOpen(false) }}
       />
       <Dialog open={scannerOpen} onClose={() => setScannerOpen(false)} title="Escanear código de barras">
-        <BarcodeScanner
-          onScan={(code) => { setForm((f) => ({ ...f, pres_codigo_barras: code })); setScannerOpen(false) }}
-          onClose={() => setScannerOpen(false)}
-        />
+        {scannerOpen && (
+          <BarcodeScanner
+            onScan={(code) => { setForm((f) => ({ ...f, pres_codigo_barras: code })); setScannerOpen(false) }}
+            onClose={() => setScannerOpen(false)}
+          />
+        )}
       </Dialog>
     </>
   )
@@ -898,6 +1016,8 @@ function EditProductoDialog({
   const [presFormatos] = useState<PresFormato[]>(() => getPresFormatos())
   const [newAreaOpen, setNewAreaOpen] = useState(false)
   const [scannerOpen, setScannerOpen] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const imageInputRef = useRef<HTMLInputElement>(null)
 
   const { data: producto, isLoading } = useQuery({
     queryKey: ['producto-detail', productoId],
@@ -914,6 +1034,9 @@ function EditProductoDialog({
     codigo_proveedor: '',
     codigo_maestro: '',
     stock_minimo: '0',
+    precio_unidad: '',
+    precio_pres: '',
+    lead_time_propio: '0',
     pres_id: '',
     pres_version: 0,
     pres_nombre: '',
@@ -939,6 +1062,9 @@ function EditProductoDialog({
         codigo_proveedor: producto.codigo_proveedor ?? '',
         codigo_maestro: producto.codigo_maestro ?? '',
         stock_minimo: String(Math.round(Number(producto.stock_minimo))),
+        precio_unidad: producto.precio_unidad ? String(producto.precio_unidad) : '',
+        precio_pres: (producto.precio_unidad && firstPres) ? (Number(producto.precio_unidad) * Number(firstPres.factor_conversion)).toFixed(2) : '',
+        lead_time_propio: String(producto.lead_time_propio ?? 0),
         pres_id: firstPres ? String(firstPres.id) : '',
         pres_version: firstPres?.version ?? 0,
         pres_nombre: firstPres?.nombre ?? '',
@@ -975,6 +1101,8 @@ function EditProductoDialog({
       codigo_proveedor: form.codigo_proveedor.trim() || undefined,
       codigo_maestro: form.codigo_maestro.trim() || undefined,
       stock_minimo: Number(form.stock_minimo),
+      precio_unidad: form.precio_unidad ? Number(form.precio_unidad) : undefined,
+      lead_time_propio: Number(form.lead_time_propio) || 0,
       area_ids: form.area_id ? [Number(form.area_id)] : undefined,
       version: producto.version,
     }
@@ -1016,11 +1144,70 @@ function EditProductoDialog({
 
   function handlePresChange(nombre: string) {
     const found = presFormatos.find(p => p.nombre === nombre)
+    const factorValue = found ? String(found.factor_defecto) : form.pres_factor
+    setForm(f => {
+      const pu = parseFloat(f.precio_unidad) || 0
+      const factor = parseFloat(factorValue) || 1
+      return {
+        ...f,
+        pres_nombre: nombre,
+        pres_nombre_plural: found?.nombre_plural || (nombre ? autoPlural(nombre) : ''),
+        pres_factor: factorValue,
+        precio_pres: f.precio_unidad ? (pu * factor).toFixed(2) : ''
+      }
+    })
+  }
+
+  function handlePrecioUnidadChange(val: string) {
+    const pu = parseFloat(val) || 0
+    const factor = parseFloat(form.pres_factor) || 1
+    setForm(f => ({ 
+      ...f, 
+      precio_unidad: val, 
+      precio_pres: val ? (pu * factor).toFixed(2) : '' 
+    }))
+  }
+
+  function handlePrecioPresChange(val: string) {
+    const pp = parseFloat(val) || 0
+    const factor = parseFloat(form.pres_factor) || 1
     setForm(f => ({
       ...f,
-      pres_nombre: nombre,
-      pres_nombre_plural: found?.nombre_plural || (nombre ? autoPlural(nombre) : '')
+      precio_pres: val,
+      precio_unidad: val ? (pp / factor).toFixed(4) : ''
     }))
+  }
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    try {
+      setUploadingImage(true)
+      const dataUrl = await comprimirImagen(file)
+      await api.put(`/productos/${productoId}/imagen`, { data_url: dataUrl })
+      queryClient.invalidateQueries({ queryKey: ['productos'] })
+      queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
+      toast.success('Imagen actualizada')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error subiendo imagen')
+    } finally {
+      setUploadingImage(false)
+    }
+  }
+
+  async function handleImageDelete() {
+    try {
+      setUploadingImage(true)
+      await api.delete(`/productos/${productoId}/imagen`)
+      queryClient.invalidateQueries({ queryKey: ['productos'] })
+      queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
+      toast.success('Imagen eliminada')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error eliminando imagen')
+    } finally {
+      setUploadingImage(false)
+    }
   }
 
   return (
@@ -1113,6 +1300,37 @@ function EditProductoDialog({
               <div className="grid grid-cols-2 gap-3">
                 <div className="form-control">
                   <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Stock mínimo</span>
+                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                  </label>
+                  <input
+                    type="number"
+                    className="input input-bordered input-sm h-9"
+                    value={form.stock_minimo}
+                    onChange={(e) => setForm((f) => ({ ...f, stock_minimo: e.target.value }))}
+                    placeholder="Ej: 10"
+                    min="0"
+                  />
+                </div>
+                <div className="form-control">
+                  <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Lead Time (Días)</span>
+                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                  </label>
+                  <input
+                    type="number"
+                    className="input input-bordered input-sm h-9"
+                    value={form.lead_time_propio}
+                    onChange={(e) => setForm((f) => ({ ...f, lead_time_propio: e.target.value }))}
+                    placeholder="Ej: 5"
+                    min="0"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-control">
+                  <label className="label py-0.5">
                     <span className="label-text text-sm font-medium">Código proveedor</span>
                     <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
                   </label>
@@ -1135,26 +1353,55 @@ function EditProductoDialog({
                     className="input input-bordered input-sm h-9 font-mono"
                     value={form.codigo_maestro}
                     onChange={(e) => setForm((f) => ({ ...f, codigo_maestro: e.target.value }))}
-                    placeholder="Cód. interno de bodega"
+                    placeholder="Cód. interno"
                   />
-                  <p className="text-[10px] text-base-content/40 mt-0.5">Código interno maestro del laboratorio</p>
                 </div>
-              </div>
+            </div>
+          </div>
 
+          <div className="divider my-0" />
+
+          {/* ── Precio ── */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Precio de Referencia (Neto)</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 bg-base-200/40 p-3 rounded-lg">
               <div className="form-control">
                 <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Stock mínimo</span>
+                  <span className="label-text text-sm font-medium">Precio por unidad base</span>
                 </label>
-                <input
-                  type="number"
-                  className="input input-bordered input-sm h-9 w-32"
-                  value={form.stock_minimo}
-                  onChange={(e) => setForm((f) => ({ ...f, stock_minimo: e.target.value }))}
-                  min="0"
-                  step="1"
-                />
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs opacity-40">$</span>
+                  <input
+                    type="number"
+                    className="input input-bordered input-sm h-9 w-full pl-6"
+                    value={form.precio_unidad}
+                    onChange={(e) => handlePrecioUnidadChange(e.target.value)}
+                    placeholder="0.00"
+                    step="0.0001"
+                  />
+                </div>
+              </div>
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Precio por {form.pres_nombre || 'presentación'}</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs opacity-40">$</span>
+                  <input
+                    type="number"
+                    className="input input-bordered input-sm h-9 w-full pl-6"
+                    value={form.precio_pres}
+                    onChange={(e) => handlePrecioPresChange(e.target.value)}
+                    placeholder="0.00"
+                    step="0.01"
+                    disabled={!form.pres_nombre}
+                  />
+                </div>
               </div>
             </div>
+          </div>
 
             <div className="divider my-0" />
 
@@ -1264,6 +1511,61 @@ function EditProductoDialog({
 
             <div className="divider my-0" />
 
+            {/* ── Imagen ── */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-1.5">
+                <ImagePlus className="h-3.5 w-3.5 text-base-content/30" />
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Imagen del producto</span>
+              </div>
+              <div className="flex items-center gap-3">
+                {producto?.imagen_url ? (
+                  <ProductoImage src={producto.imagen_url} size="lg" />
+                ) : (
+                  <button
+                    type="button"
+                    className="flex flex-col items-center justify-center gap-1 text-base-content/40 border-2 border-dashed border-base-300 rounded-xl cursor-pointer hover:border-primary/40 transition-colors"
+                    style={{ width: 72, height: 72 }}
+                    onClick={() => imageInputRef.current?.click()}
+                  >
+                    <ImagePlus className="h-5 w-5" />
+                    <span className="text-[9px]">Subir foto</span>
+                  </button>
+                )}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline btn-primary gap-1"
+                      onClick={() => imageInputRef.current?.click()}
+                      disabled={uploadingImage}
+                    >
+                      {uploadingImage ? <span className="loading loading-spinner loading-xs" /> : <Camera className="h-3.5 w-3.5" />}
+                      {producto?.imagen_url ? 'Cambiar foto' : 'Subir foto'}
+                    </button>
+                    {producto?.imagen_url && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-ghost text-error gap-1"
+                        onClick={handleImageDelete}
+                        disabled={uploadingImage}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Quitar
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[9px] text-base-content/40 leading-tight">JPG o PNG · se comprimirá a 400×400px</p>
+                </div>
+              </div>
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/jpeg,image/png"
+                className="hidden"
+                onChange={handleImageUpload}
+              />
+            </div>
+
             {/* ── Descripción ── */}
             <div className="space-y-3">
               <div className="flex items-center gap-1.5">
@@ -1297,10 +1599,12 @@ function EditProductoDialog({
         onCreated={(a) => { setForm((f) => ({ ...f, area_id: String(a.id) })); setNewAreaOpen(false) }}
       />
       <Dialog open={scannerOpen} onClose={() => setScannerOpen(false)} title="Escanear código de barras">
-        <BarcodeScanner
-          onScan={(code) => { setForm((f) => ({ ...f, pres_codigo_barras: code })); setScannerOpen(false) }}
-          onClose={() => setScannerOpen(false)}
-        />
+        {scannerOpen && (
+          <BarcodeScanner
+            onScan={(code) => { setForm((f) => ({ ...f, pres_codigo_barras: code })); setScannerOpen(false) }}
+            onClose={() => setScannerOpen(false)}
+          />
+        )}
       </Dialog>
     </>
   )
@@ -1340,6 +1644,19 @@ function ProductoDetail({ id }: { id: string }) {
         <DetailRow label="Categoría" value={categoriaNombre} />
         <DetailRow label="Unidad base" value={producto.unidad_base?.nombre ?? '--'} />
         <DetailRow label="Stock mínimo" value={String(Math.round(Number(producto.stock_minimo)))} mono />
+        {producto.precio_unidad && (
+          <div className="flex justify-between items-start gap-3 border-b border-base-200/40 pb-1.5 last:border-none">
+            <span className="text-[11px] opacity-40 shrink-0 font-medium uppercase tracking-wider text-primary font-bold">Precio de ref.</span>
+            <div className="flex flex-col items-end">
+              <span className="text-sm font-mono">${Number(producto.precio_unidad).toFixed(4)} / {producto.unidad_base?.nombre || 'unidad'}</span>
+              {producto.presentaciones?.length === 1 && (
+                <span className="text-[10px] opacity-40 font-mono">
+                  ${(Number(producto.precio_unidad) * Number(producto.presentaciones[0].factor_conversion)).toFixed(2)} por {producto.presentaciones[0].nombre}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
         <DetailRow label="Estado" value={producto.activo ? 'Activo' : 'Inactivo'} />
 
         {producto.proveedor && (

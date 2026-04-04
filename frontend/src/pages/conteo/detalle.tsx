@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, PackageOpen, MoreHorizontal } from 'lucide-react'
+import { ProductoImage } from '@/components/ui/producto-image'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { useConteoSession } from '@/features/conteo/hooks/use-conteo-session'
 import { useQuery } from '@tanstack/react-query'
@@ -9,15 +10,20 @@ import type { ConteoItem } from '@/types'
 import { cn, formatDate, formatCantidad, formatStockHumano } from '@/lib/utils'
 
 interface Configuracion {
+  nombre_laboratorio: string
+  logo_base64: string
+  pin_kiosko: string
   conteo_ciego: boolean
+  dias_autonomia_objetivo: number
+  lead_time_default: number
 }
 
 // Agrupa items por producto (mantenemos esta utilidad local o se podría mover a utils)
 function agruparPorProducto(items: ConteoItem[]) {
-  const grupos: Record<string, { producto_nombre: string; items: ConteoItem[] }> = {}
+  const grupos: Record<string, { producto_nombre: string; imagen_url?: string | null; items: ConteoItem[] }> = {}
   for (const item of items) {
     if (!grupos[item.producto_id]) {
-      grupos[item.producto_id] = { producto_nombre: item.producto_nombre, items: [] }
+      grupos[item.producto_id] = { producto_nombre: item.producto_nombre, imagen_url: item.imagen_url, items: [] }
     }
     grupos[item.producto_id].items.push(item)
   }
@@ -142,7 +148,10 @@ export default function ConteoDetallePage() {
               className="w-full flex items-center justify-between px-4 py-3 text-left"
               onClick={() => toggleColapsar(productoId)}
             >
-              <span className="font-semibold text-sm">{grupo.producto_nombre}</span>
+              <div className="flex items-center gap-2">
+                <ProductoImage src={grupo.imagen_url} size="sm" />
+                <span className="font-semibold text-sm">{grupo.producto_nombre}</span>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs opacity-40">{formatCantidad(grupo.items.length, 'lote')}</span>
                 {colapsados[productoId] ? <ChevronDown className="h-4 w-4 opacity-40" /> : <ChevronUp className="h-4 w-4 opacity-40" />}
@@ -347,7 +356,7 @@ function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange
               <>
                 <span className="text-[9px] font-black opacity-30 uppercase tracking-tighter">Total</span>
                 <span className="text-xs font-bold font-mono">
-                  {item.cantidad_contada || 0}
+                  {Number(item.cantidad_contada || 0).toString()}
                 </span>
               </>
             )}
@@ -377,8 +386,9 @@ function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange
 
 function DifBadge({ diferencia }: { diferencia: number }) {
   if (Math.abs(diferencia) < 0.001) return <span className="badge badge-success badge-sm">±0</span>
-  if (diferencia > 0) return <span className="badge badge-info badge-sm">+{diferencia.toFixed(2)}</span>
-  return <span className="badge badge-error badge-sm">{diferencia.toFixed(2)}</span>
+  const label = Math.abs(diferencia - Math.round(diferencia)) < 0.0001 ? Math.round(diferencia).toString() : diferencia.toFixed(2)
+  if (diferencia > 0) return <span className="badge badge-info badge-sm">+{label}</span>
+  return <span className="badge badge-error badge-sm">{label}</span>
 }
 
 function ResumenRow({ label, value, className, icon }: { label: string; value: number; className?: string; icon: string }) {

@@ -1,4 +1,6 @@
-// --- Auth ---
+export * from './generated'
+
+// --- Auth (Frontend Specific or Not Yet Generated) ---
 export interface LoginRequest {
   email: string
   password: string
@@ -20,91 +22,7 @@ export interface MeResponse {
   version: number
 }
 
-// --- Models ---
-export interface Usuario {
-  id: string
-  nombre: string
-  email: string
-  rol: 'admin' | 'tecnologo' | 'consulta' | string
-  area_ids: number[]
-  version: number
-}
-
-export interface Area {
-  id: number
-  nombre: string
-  es_bodega: boolean
-  activa: boolean
-  conteo_frecuencia_dias: number
-  version: number
-}
-
-export interface Categoria {
-  id: number
-  nombre: string
-  descripcion: string | null
-  version: number
-}
-
-export interface UnidadBasica {
-  id: number
-  nombre: string
-  nombre_plural: string
-  version: number
-}
-
-export interface Proveedor {
-  id: number
-  nombre: string
-  contacto: string | null
-  telefono: string | null
-  email: string | null
-  icono: string | null
-  dias_despacho_aereo: number | null
-  dias_despacho_tierra: number | null
-  activo: boolean
-  version: number
-}
-
-export interface Producto {
-  id: string
-  nombre: string
-  descripcion?: string | null
-  codigo: string | null
-  categoria_id: number | null
-  categoria_nombre?: string | null
-  unidad_base_id: number
-  unidad_base_nombre?: string
-  stock_minimo: number
-  lead_time_propio?: number
-  activo: boolean
-  version: number
-  presentaciones?: Presentacion[]
-}
-
-export interface Presentacion {
-  id: number
-  producto_id: string
-  nombre: string
-  nombre_plural: string
-  factor_conversion: number
-  codigo_barras?: string | null
-  version: number
-}
-
-export interface Lote {
-  id: number
-  producto_id: string
-  producto_nombre?: string
-  codigo_lote: string
-  codigo_interno: string | null
-  fecha_vencimiento: string
-  proveedor_id: number | null
-  proveedor_nombre?: string
-  recepcion_id: number | null
-  notas: string | null
-  created_at: string
-}
+// --- Frontend Specific Models or Complex Joins ---
 
 export interface StockItem {
   producto_id: string
@@ -120,6 +38,7 @@ export interface StockItem {
   proximo_vencimiento: string | null
   proveedor_nombre: string | null
   proveedor_icono: string | null
+  imagen_url?: string | null
 }
 
 export interface StockPorArea {
@@ -215,57 +134,17 @@ export interface RecepcionDetalle {
   area_destino_nombre?: string
 }
 
-// --- Solicitudes de Compra ---
-export interface SolicitudCompra {
-  id: string
-  numero_documento: string
-  fecha_creacion: string
-  estado: 'borrador' | 'pendiente' | 'aprobada' | 'rechazada' | 'enviada' | 'completada' | 'cancelada'
-  usuario_nombre: string
-  items_count: number
-  nota?: string
-  nota_revision?: string
-}
+// --- Solicitudes de Compra (Local/Extended) ---
 
-export interface SolicitudCompraDetalle {
-  id: string
+export interface EnCaminoItem {
+  producto_id: string
+  producto_nombre: string
+  cantidad_total: number
+  unidad: string
+  proveedor_nombre?: string | null
   numero_documento: string
   fecha_creacion: string
   estado: string
-  usuario_nombre: string
-  nota: string | null
-  nota_revision: string | null
-  fecha_revision: string | null
-  revisado_por_nombre: string | null
-  items: SolicitudCompraItem[]
-}
-
-export interface SolicitudCompraItem {
-  producto_id: string
-  producto_nombre: string
-  cantidad_sugerida: number
-  unidad: string
-  codigo_proveedor?: string | null
-  codigo_maestro?: string | null
-  proveedor_nombre?: string | null
-  presentacion_nombre?: string | null
-  presentacion_nombre_plural?: string | null
-  factor_conversion?: number | null
-  precio_unitario?: number | null
-  presentacion_id?: number | null
-  cantidad_presentaciones?: number | null
-}
-
-export interface CreateSolicitudRequest {
-  nota?: string
-  items: {
-    producto_id: string
-    cantidad_sugerida: number
-    unidad: string
-    precio_unitario?: number
-    presentacion_id?: number
-    cantidad_presentaciones?: number
-  }[]
 }
 
 // Ítem en el borrador (estado local del componente)
@@ -287,31 +166,6 @@ export interface SolicitudItem {
   precio_unitario: number
 }
 
-// Respuesta del endpoint GET /recomendaciones
-export interface ItemRecomendado {
-  producto_id: string
-  producto_nombre: string
-  codigo_proveedor: string | null
-  codigo_maestro: string | null
-  proveedor_id: number | null
-  proveedor_nombre: string | null
-  lead_time: number
-  autonomia_dias: number | null
-  nivel_urgencia: 'critico' | 'urgente' | 'planificar'
-  stock_actual: number
-  stock_minimo: number
-  consumo_diario_30d: number
-  cantidad_sugerida_base: number
-  presentacion_id: number | null
-  presentacion_nombre: string | null
-  presentacion_nombre_plural: string | null
-  factor_conversion: number | null
-  cantidad_sugerida_presentacion: number | null
-  precio_ultima_recepcion: number | null
-  unidad_base: string
-  unidad_base_plural: string | null
-}
-
 // --- Pagination ---
 export interface PaginatedResponse<T> {
   data: T[]
@@ -321,15 +175,7 @@ export interface PaginatedResponse<T> {
   total_pages: number
 }
 
-// --- Request DTOs ---
-export interface ConsumoRequest {
-  producto_id: string
-  area_id: number
-  cantidad: number
-  lote_id?: number
-  notas?: string
-}
-
+// --- Request DTOs (Specific complex ones) ---
 export interface ConsumoBatchRequest {
   area_id?: number
   items: {
@@ -367,89 +213,6 @@ export interface DescarteRequest {
   }[]
 }
 
-// --- Catalog DTOs ---
-export interface CreateCategoria {
-  nombre: string
-  descripcion?: string
-}
-
-export interface UpdateCategoria {
-  nombre?: string
-  descripcion?: string
-  version: number
-}
-
-export interface CreateUnidadBasica {
-  nombre: string
-  nombre_plural: string
-}
-
-export interface UpdateUnidadBasica {
-  nombre?: string
-  nombre_plural?: string
-  version: number
-}
-
-export interface CreateArea {
-  nombre: string
-  es_bodega?: boolean
-}
-
-export interface UpdateArea {
-  nombre?: string
-  es_bodega?: boolean
-  conteo_frecuencia_dias?: number
-  version: number
-}
-
-export interface CreateProveedor {
-  nombre: string
-  contacto?: string
-  telefono?: string
-  email?: string
-  icono?: string
-  dias_despacho_aereo?: number
-  dias_despacho_tierra?: number
-}
-
-export interface UpdateProveedor {
-  nombre?: string
-  contacto?: string
-  telefono?: string
-  email?: string
-  icono?: string
-  dias_despacho_aereo?: number
-  dias_despacho_tierra?: number
-  version: number
-}
-
-export interface CreateProducto {
-  nombre: string
-  descripcion?: string
-  categoria_id?: number
-  unidad_base_id: number
-  proveedor_id?: number
-  codigo_proveedor?: string
-  codigo_maestro?: string
-  stock_minimo?: number
-  lead_time_propio?: number
-  presentaciones?: { nombre: string; nombre_plural: string; factor_conversion: number; codigo_barras?: string }[]
-  area_ids?: number[]
-}
-
-export interface UpdateProducto {
-  nombre?: string
-  descripcion?: string
-  categoria_id?: number
-  proveedor_id?: number
-  codigo_proveedor?: string
-  codigo_maestro?: string
-  stock_minimo?: number
-  lead_time_propio?: number
-  area_ids?: number[]
-  version: number
-}
-
 // --- Conteo de Inventario ---
 export interface SesionConteo {
   id: string
@@ -476,13 +239,14 @@ export interface ConteoItem {
   cantidad_contada: number | null
   estado_item: 'pendiente' | 'contado' | 'no_contado'
   version: number
+  imagen_url?: string | null
 }
 
 export interface ConteoDetalle {
   sesion: SesionConteo
   nota: string | null
   items: ConteoItem[]
-  presentaciones: Presentacion[]
+  presentaciones: any[] // TODO: Usar Presentacion de generated
 }
 
 export interface PaginatedSesiones {

@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { X } from 'lucide-react'
 import QRCode from 'qrcode'
 import api from '@/lib/api'
+import { ProductoImage } from '@/components/ui/producto-image'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import type { Area } from '@/types'
 import { formatCantidad } from '@/lib/utils'
@@ -21,6 +22,7 @@ interface ScanResult {
   unidad_base_nombre_plural?: string
   presentacion_id?: number | null
   presentacion_nombre?: string | null
+  imagen_url?: string | null
   factor_conversion?: number | null
   stock_total?: number | null
 }
@@ -308,6 +310,9 @@ export default function KioskPage() {
           ) : (
             <div className="w-full space-y-4">
               <div className="bg-base-100 rounded-2xl p-6 text-center shadow-sm border border-base-200">
+                <div className="flex justify-center mb-3">
+                  <ProductoImage src={scanResult.imagen_url} size="lg" />
+                </div>
                 <p className="text-sm opacity-40 uppercase font-bold tracking-wider mb-1">Producto identificado</p>
                 <p className="text-2xl font-black">{scanResult.producto_nombre}</p>
                 {scanResult.presentacion_nombre && (
@@ -360,7 +365,7 @@ export default function KioskPage() {
                 <button
                   className="btn btn-primary flex-1 h-16 text-lg font-bold"
                   onClick={() => consumoMut.mutate()}
-                  disabled={!cantidad || parseFloat(cantidad) <= 0 || consumoMut.isPending}
+                  disabled={!cantidad || parseFloat(cantidad) <= 0 || (scanResult.stock_total ?? 0) <= 0 || consumoMut.isPending}
                 >
                   {consumoMut.isPending
                     ? <span className="loading loading-spinner" />

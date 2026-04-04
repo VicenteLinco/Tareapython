@@ -100,15 +100,15 @@ async fn listar(
         _ => ""
     };
 
-    // Base query using CTEs for cleaner logic and to include 0-stock items
+    // Base query using the already updated 'stock' table
     let sql = format!(
         r#"WITH stock_stats AS (
                SELECT 
                    l.producto_id,
                    SUM(s.cantidad) AS total,
                    MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0) AS proxima_fecha_venc
-               FROM lotes l
-               LEFT JOIN stock s ON s.lote_id = l.id
+               FROM stock s
+               JOIN lotes l ON l.id = s.lote_id
                WHERE 1=1 {}
                GROUP BY l.producto_id
            ),
@@ -122,7 +122,7 @@ async fn listar(
                    COUNT(DISTINCT CASE WHEN m.tipo = 'CONSUMO' THEN m.created_at::date END) AS dias_con_consumo,
                    EXTRACT(DAY FROM (NOW() - MIN(m.created_at)))::INT + 1 AS dias_vida_sistema
                FROM lotes l
-               JOIN movimientos m ON m.lote_id = l.id
+               LEFT JOIN movimientos m ON m.lote_id = l.id AND m.tipo = 'CONSUMO' AND m.created_at >= NOW() - INTERVAL '30 days'
                GROUP BY l.producto_id
            ),
            fefo_prov AS (
@@ -144,9 +144,11 @@ async fn listar(
                    um.nombre_plural as unidad_plural,
                    COALESCE(ss.total, 0) as stock_total,
                    p.stock_minimo,
+                   p.lead_time_propio,
                    ss.proxima_fecha_venc as proximo_vencimiento,
                    fp.nombre as proveedor_nombre,
                    fp.icono as proveedor_icono,
+                   p.imagen_url,
                    CASE 
                        WHEN ms.dias_vida_sistema < 30 AND ms.dias_con_consumo >= 3 THEN
                            COALESCE(ms.consumo_diario_ponderado * (30.0 / NULLIF(ms.dias_vida_sistema, 0)), 0)::NUMERIC(15,4)
@@ -249,6 +251,9 @@ struct StockItemRow {
     proximo_vencimiento: Option<NaiveDate>,
     proveedor_nombre: Option<String>,
     proveedor_icono: Option<String>,
+    imagen_url: Option<String>,
+    consumo_diario_ajustado: Decimal,
+    lead_time_propio: Option<i32>,
     #[serde(skip)]
     full_count: i64,
 }
@@ -470,9 +475,10 @@ async fn alertas(
                    p.id as producto_id,
                    p.nombre,
                    p.stock_minimo,
+                   p.lead_time_propio,
                    p.proveedor_id,
                    pv.nombre AS proveedor_nombre,
-                   COALESCE(pv.dias_despacho_tierra, pv.dias_despacho_aereo, 7) AS dias_despacho,
+                   COALESCE(p.lead_time_propio, pv.dias_despacho_tierra, pv.dias_despacho_aereo, 7) AS dias_despacho,
                    ub.nombre AS unidad,
                    ub.nombre_plural AS unidad_plural,
                    COALESCE(ss.total, 0) AS total,
@@ -502,6 +508,7 @@ async fn alertas(
                    unidad_plural,
                    proxima_fecha_venc,
                    stock_minimo,
+                   lead_time_propio,
                    total_en_camino,
                    (total_en_camino > 0) AS tiene_pedido_pendiente,
                    proveedor_id,
@@ -522,7 +529,7 @@ async fn alertas(
                    UNION ALL
                    SELECT 'sin_stock' WHERE total <= 0 AND stock_minimo > 0
                    UNION ALL
-                   SELECT 'agotamiento_proximo' WHERE consumo_diario_ajustado > 0.0001 AND dias_con_consumo >= 3 AND (total / consumo_diario_ajustado) <= 7 AND total > 0
+                   SELECT 'agotamiento_proximo' WHERE consumo_diario_ajustado > 0.0001 AND dias_con_consumo >= 3 AND (total / consumo_diario_ajustado) <= COALESCE(dias_despacho, 7) AND total > 0
                    UNION ALL
                    SELECT 'vence_30d' WHERE proxima_fecha_venc >= CURRENT_DATE AND proxima_fecha_venc <= CURRENT_DATE + INTERVAL '30 days'
                    UNION ALL

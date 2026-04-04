@@ -6,12 +6,17 @@ import {
   Plus, Trash2, Save, CheckCircle, ArrowLeft, ArrowRight,
   Camera, Keyboard, ScanLine, X, Search, Minus,
   ChevronDown, ChevronRight, Package, Copy, Tag, CalendarDays, MapPin, Printer,
+  ShoppingCart, ClipboardList
 } from 'lucide-react'
+import { ProductoImage } from '@/components/ui/producto-image'
 import { Html5Qrcode } from 'html5-qrcode'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
-import type { Proveedor, Producto, Presentacion, Area } from '@/types'
+import type { Proveedor, Producto, Presentacion, Area, SolicitudCompra, SolicitudCompraDetalle } from '@/types'
 import { formatCantidad, autoPlural } from '@/lib/utils'
+import { Dialog } from '@/components/ui/dialog'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 
 // Payload que coincide exactamente con el struct Rust del backend
 interface RecepcionPayload {
@@ -20,6 +25,7 @@ interface RecepcionPayload {
   fecha_recepcion: string   // ISO 8601 DateTime
   nota?: string
   estado?: string
+  solicitud_id?: string
   detalle: {
     producto_id: string       // UUID
     numero_lote: string
@@ -27,6 +33,8 @@ interface RecepcionPayload {
     presentacion_id?: number | null  // null = unidad base
     cantidad_presentaciones: number
     area_destino_id: number
+    costo_unitario?: number
+    precio_unitario?: number
   }[]
 }
 import { toast } from 'sonner'
@@ -49,6 +57,9 @@ interface DetalleLineUI {
   area_destino_id: number | null
   area_destino_nombre: string
   presentaciones: Presentacion[]
+  costo_unitario: string   // para el lote (neto base)
+  precio_unitario: string  // para el detalle (neto pres)
+  precio_referencia_base?: number
 }
 
 
@@ -69,6 +80,66 @@ export default function NuevaRecepcionPage() {
 
   // ── Wizard step ──────────────────────────────────────────────────────────
   const [step, setStep] = useState(1)
+  const [solicitudId, setSolicitudId] = useState<string | null>(null)
+  const [solicitudModalOpen, setSolicitudModalOpen] = useState(false)
+
+  // Fetch pending/approved solicitudes
+  const { data: solicitudesPendientes } = useQuery({
+    queryKey: ['solicitudes-activas'],
+    queryFn: () => api.get<{ data: SolicitudCompra[] }>('/solicitudes-compra').then(r =>
+      (r.data.data ?? []).filter(s => ['aprobada', 'enviada'].includes(s.estado))
+    ),
+    enabled: step === 1,
+  })
+
+  async function handleLoadSolicitud(sol: SolicitudCompra) {
+    try {
+      const detail = await api.get<SolicitudCompraDetalle>(`/solicitudes-compra/${sol.id}`).then(r => r.data)
+
+      // 1. Vincular ID
+      setSolicitudId(sol.id)
+
+      // 2. Intentar buscar el proveedor si todos los items son del mismo o si el primero tiene uno
+      if (detail.items.length > 0 && detail.items[0].proveedor_nombre) {
+         const provs = await api.get<Proveedor[]>('/proveedores').then(r => r.data)
+         const found = provs.find(p => p.nombre === detail.items[0].proveedor_nombre)
+         if (found) setProveedorId(found.id)
+      }
+
+      // 3. Mapear items a la UI
+      const defaultAreaNombre = areas?.find(a => a.id === areaGlobalId)?.nombre ?? ''
+      const newLines: DetalleLineUI[] = detail.items.map(item => {
+        const factor = item.factor_conversion ? Number(item.factor_conversion) : 1
+        const costo_base = item.precio_unitario ? Number(item.precio_unitario) : 0
+
+        return {
+          id: uuidv4(),
+          producto_id: item.producto_id,
+          producto_nombre: item.producto_nombre,
+          presentacion_id: item.presentacion_id ?? null,
+          presentacion_nombre: item.presentacion_nombre ?? '',
+          presentacion_nombre_plural: item.presentacion_nombre_plural ?? (item.presentacion_nombre ? autoPlural(item.presentacion_nombre) : ''),
+          cantidad_presentacion: item.cantidad_presentaciones ? Number(item.cantidad_presentaciones) : Number(item.cantidad_sugerida),
+          factor_conversion: factor,
+          unidad_base_nombre: item.unidad,
+          unidad_base_nombre_plural: autoPlural(item.unidad),
+          codigo_lote: '',
+          fecha_vencimiento: '',
+          area_destino_id: areaGlobalId,
+          area_destino_nombre: defaultAreaNombre,
+          presentaciones: [],
+          costo_unitario: costo_base > 0 ? String(costo_base) : '',
+          precio_unitario: costo_base > 0 ? (costo_base * factor).toFixed(2) : '',
+        }
+      })
+
+      setDetalles(newLines)
+      setSolicitudModalOpen(false)
+      toast.success(`Cargados ${newLines.length} ítems de la solicitud ${sol.numero_documento}`)
+    } catch (err) {
+      toast.error('Error al cargar detalle de la solicitud')
+    }
+  }
 
   // ── Paso 1 ───────────────────────────────────────────────────────────────
   const [guiaDespacho, setGuiaFactura] = useState('')
@@ -185,7 +256,7 @@ export default function NuevaRecepcionPage() {
   const uploadFoto = async (recepcionId: string) => {
     if (!fotoPreview) return
     try {
-      await api.put(`/recepciones/${recepcionId}/foto`, { data_url: fotoPreview })
+      await api.post(`/recepciones/${recepcionId}/foto`, { data_url: fotoPreview })
     } catch {
       toast.warning('Recepción guardada, pero no se pudo adjuntar la foto')
     }
@@ -249,6 +320,10 @@ export default function NuevaRecepcionPage() {
       const unidad_base_nombre: string = fullProd.unidad_base?.nombre ?? (fullProd as any).unidad_base_nombre ?? ''
       const unidad_base_nombre_plural: string = fullProd.unidad_base?.nombre_plural ?? unidad_base_nombre
 
+      const factor = Number(pres?.factor_conversion ?? 1)
+      const precio_ref_base = Number((fullProd as any).precio_unidad || 0)
+      const precio_pres_inicial = precio_ref_base ? (precio_ref_base * factor).toFixed(2) : ''
+
       const line: DetalleLineUI = {
         id: uuidv4(),
         producto_id: String(prod.id),
@@ -258,7 +333,7 @@ export default function NuevaRecepcionPage() {
         presentacion_nombre_plural: pres?.nombre_plural ?? (pres ? autoPlural(pres.nombre) : ''),
         cantidad_presentacion: 1,
         // serde-with-str serializes Decimal as string — convert to number
-        factor_conversion: Number(pres?.factor_conversion ?? 1),
+        factor_conversion: factor,
         unidad_base_nombre,
         unidad_base_nombre_plural,
         codigo_lote: '',
@@ -266,6 +341,9 @@ export default function NuevaRecepcionPage() {
         area_destino_id: areaGlobalId,
         area_destino_nombre: defaultAreaNombre,
         presentaciones,
+        costo_unitario: precio_ref_base ? String(precio_ref_base) : '',
+        precio_unitario: precio_pres_inicial,
+        precio_referencia_base: precio_ref_base,
       }
 
       setDetalles((prev) => [line, ...prev])
@@ -286,7 +364,7 @@ export default function NuevaRecepcionPage() {
   useEffect(() => {
     addProductoRef.current = (code: string) => {
       if (!productos) return
-      const found = productos.find((p) => p.codigo === code) ??
+      const found = productos.find((p) => p.codigo_interno === code) ??
         productos.find((p) => p.nombre.toLowerCase() === code.toLowerCase())
       if (found) addProductoDirecto(found)
       else { setScanNotFound(true); setScanCode(code) }
@@ -300,7 +378,7 @@ export default function NuevaRecepcionPage() {
     if (!value.trim() || !productos) { setSuggestions([]); setShowSuggestions(false); return }
     const q = value.toLowerCase()
     const results = productos
-      .filter((p) => p.activo && (p.nombre.toLowerCase().includes(q) || (p.codigo && p.codigo.toLowerCase().includes(q))))
+      .filter((p) => p.activo && (p.nombre.toLowerCase().includes(q) || p.codigo_interno.toLowerCase().includes(q)))
       .slice(0, 8)
     setSuggestions(results)
     setShowSuggestions(results.length > 0)
@@ -310,7 +388,7 @@ export default function NuevaRecepcionPage() {
     const code = scanCode.trim()
     if (!code || !productos) return
     setShowSuggestions(false)
-    const found = productos.find((p) => p.codigo === code) ??
+    const found = productos.find((p) => p.codigo_interno === code) ??
       productos.find((p) => p.nombre.toLowerCase() === code.toLowerCase())
     if (found) addProductoDirecto(found)
     else setScanNotFound(true)
@@ -327,6 +405,12 @@ export default function NuevaRecepcionPage() {
           updated.factor_conversion = Number(pres?.factor_conversion ?? 1)
           updated.presentacion_nombre = pres?.nombre ?? ''
           updated.presentacion_nombre_plural = pres?.nombre_plural ?? (pres ? autoPlural(pres.nombre) : '')
+          
+          // Recalcular precio_unitario (para la presentación) basado en el costo_unitario (base)
+          const basePrice = parseFloat(updated.costo_unitario) || 0
+          if (basePrice > 0) {
+            updated.precio_unitario = (basePrice * updated.factor_conversion).toFixed(2)
+          }
         }
         if (updates.area_destino_id !== undefined) {
           const area = areas?.find((a) => a.id === updates.area_destino_id)
@@ -405,6 +489,7 @@ export default function NuevaRecepcionPage() {
       proveedor_id: proveedorId,
       guia_despacho: guiaDespacho || undefined,
       fecha_recepcion: fechaHoraISO,
+      solicitud_id: solicitudId || undefined,
       detalle: valid.map((d) => ({
         producto_id: String(d.producto_id),           // UUID como string
         numero_lote: d.codigo_lote,                   // renombrado
@@ -412,6 +497,8 @@ export default function NuevaRecepcionPage() {
         presentacion_id: d.presentacion_id, // null se serializa como null → backend lo recibe como None
         cantidad_presentaciones: d.cantidad_presentacion, // renombrado
         area_destino_id: d.area_destino_id!,
+        costo_unitario: d.costo_unitario ? parseFloat(d.costo_unitario) : undefined,
+        precio_unitario: d.precio_unitario ? parseFloat(d.precio_unitario) : undefined,
       })),
     }
   }
@@ -567,6 +654,18 @@ export default function NuevaRecepcionPage() {
                 </div>
               </fieldset>
 
+              <fieldset className="fieldset">
+                <legend className="fieldset-legend">¿Viene de una Solicitud?</legend>
+                <Button 
+                  variant="outline" 
+                  className={cn("w-full h-12 gap-2 border-dashed", solicitudId && "border-success bg-success/5 text-success")}
+                  onClick={() => setSolicitudModalOpen(true)}
+                >
+                  <ShoppingCart className="h-4 w-4" />
+                  {solicitudId ? 'Solicitud Vinculada' : 'Cargar desde Solicitud'}
+                </Button>
+              </fieldset>
+
               {/* Área destino por defecto – aplica a todas las líneas */}
               <fieldset className="fieldset md:col-span-2">
                 <legend className="fieldset-legend">
@@ -654,7 +753,7 @@ export default function NuevaRecepcionPage() {
                         <button key={prod.id} type="button"
                           className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-base-200 transition-colors"
                           onMouseDown={(e) => { e.preventDefault(); addProductoDirecto(prod) }}>
-                          <Package className="h-4 w-4 shrink-0 opacity-40" />
+                          <ProductoImage src={prod.imagen_url} size="sm" />
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium">{prod.nombre}</p>
                             {prod.codigo && <p className="text-xs opacity-50">{prod.codigo}</p>}
@@ -875,19 +974,37 @@ export default function NuevaRecepcionPage() {
 
                                 <div className="flex items-center gap-1.5">
                                   <CalendarDays className="h-3.5 w-3.5 shrink-0 text-base-content/30" />
-                                  <span className="text-xs text-base-content/40 shrink-0">Fecha venc.</span>
+                                  <span className="text-xs text-base-content/40 shrink-0">Venc.</span>
                                   <input
                                     type="date"
-                                    className={`input input-sm input-bordered w-36 ${!d.fecha_vencimiento ? 'input-warning' : ''}`}
+                                    className={`input input-sm input-bordered w-32 ${!d.fecha_vencimiento ? 'input-warning' : ''}`}
                                     value={d.fecha_vencimiento}
                                     onChange={(e) => updateLine(d.id, { fecha_vencimiento: e.target.value })}
+                                  />
+                                </div>
+
+                                <div className="flex items-center gap-1.5 w-32">
+                                  <span className="text-xs opacity-40">$</span>
+                                  <input
+                                    type="number"
+                                    className="input input-sm input-bordered w-full"
+                                    placeholder={d.presentacion_id ? 'Precio pack' : 'Precio un.'}
+                                    value={d.precio_unitario}
+                                    onChange={(e) => {
+                                      const p_pres = e.target.value
+                                      const factor = d.factor_conversion || 1
+                                      updateLine(d.id, { 
+                                        precio_unitario: p_pres,
+                                        costo_unitario: p_pres ? (parseFloat(p_pres) / factor).toFixed(4) : ''
+                                      })
+                                    }}
                                   />
                                 </div>
 
                                 <div className="flex items-center gap-1.5">
                                   <MapPin className="h-3.5 w-3.5 shrink-0 text-base-content/30" />
                                   <select
-                                    className={`select select-sm select-bordered max-w-[180px] ${!d.area_destino_id ? 'select-warning' : ''}`}
+                                    className={`select select-sm select-bordered max-w-[150px] ${!d.area_destino_id ? 'select-warning' : ''}`}
                                     value={d.area_destino_id ?? ''}
                                     onChange={(e) => updateLine(d.id, { area_destino_id: e.target.value ? Number(e.target.value) : null })}
                                   >
@@ -961,6 +1078,49 @@ export default function NuevaRecepcionPage() {
           </div>
         )}
       </div>
+
+      {/* DIALOG SELECCIÓN SOLICITUD */}
+      <Dialog
+        open={solicitudModalOpen}
+        onClose={() => setSolicitudModalOpen(false)}
+        title="Cargar ítems desde Solicitud"
+        className="max-w-2xl"
+      >
+        <div className="space-y-4 py-2">
+          {!solicitudesPendientes || solicitudesPendientes.length === 0 ? (
+            <div className="py-10 text-center opacity-30 italic text-sm">
+              No hay solicitudes aprobadas o enviadas pendientes de recepción
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-2 max-h-[400px] overflow-y-auto pr-1">
+              {solicitudesPendientes.map(sol => (
+                <button
+                  key={sol.id}
+                  className="flex flex-col p-4 bg-base-100 hover:bg-base-200 border border-base-200 rounded-2xl transition-all text-left group"
+                  onClick={() => handleLoadSolicitud(sol)}
+                >
+                  <div className="flex justify-between items-center w-full mb-1">
+                    <span className="font-mono font-bold text-primary">{sol.numero_documento}</span>
+                    <Badge variant="secondary" className="uppercase text-[9px]">{sol.estado}</Badge>
+                  </div>
+                  <div className="flex justify-between items-center w-full text-xs">
+                    <span className="opacity-60">{sol.usuario_nombre} · {formatDate(sol.fecha_creacion)}</span>
+                    <span className="font-bold">{sol.items_count} ítems</span>
+                  </div>
+                  {sol.nota && (
+                    <p className="text-[10px] opacity-40 mt-2 italic truncate w-full">"{sol.nota}"</p>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end pt-2">
+            <Button variant="ghost" onClick={() => setSolicitudModalOpen(false)}>
+              Cerrar
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   )
 }

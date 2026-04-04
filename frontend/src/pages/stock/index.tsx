@@ -15,6 +15,7 @@ import {
   ShoppingCart
 } from 'lucide-react'
 import api from '@/lib/api'
+import { ProductoImage } from '@/components/ui/producto-image'
 import type { StockItem, PaginatedResponse, Categoria, Proveedor, Area } from '@/types'
 import { autoPlural, cn, daysUntil } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -267,9 +268,12 @@ export default function StockPage() {
                       onClick={() => setSelectedId(item.producto_id)}
                     >
                       <td className="pl-6 py-4">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-sm text-base-content group-hover:text-primary transition-colors">{item.producto_nombre}</span>
-                          <span className="text-[10px] font-mono opacity-40 uppercase tracking-tighter">#{item.codigo_interno}</span>
+                        <div className="flex items-center gap-2.5">
+                          <ProductoImage src={item.imagen_url} size="sm" />
+                          <div className="flex flex-col">
+                            <span className="font-bold text-sm text-base-content group-hover:text-primary transition-colors">{item.producto_nombre}</span>
+                            <span className="text-[10px] font-mono opacity-40 uppercase tracking-tighter">#{item.codigo_interno}</span>
+                          </div>
                         </div>
                       </td>
                       <td>
@@ -304,9 +308,7 @@ export default function StockPage() {
                   )}
                 >
                   <div className="flex justify-between items-start mb-4">
-                    <div className="p-3 bg-base-200 rounded-2xl group-hover:bg-primary/10 transition-colors">
-                      <Package className="w-6 h-6 opacity-40 group-hover:text-primary transition-colors" />
-                    </div>
+                    <ProductoImage src={item.imagen_url} size="md" className="group-hover:ring-2 group-hover:ring-primary/20" />
                     <StockBadge item={item} />
                   </div>
                   <h3 className="font-bold text-base leading-tight mb-1 line-clamp-2">{item.producto_nombre}</h3>
@@ -387,7 +389,8 @@ export default function StockPage() {
 
 function StockBadge({ item }: { item: StockItem }) {
   const stock = item.stock_total ?? 0
-  const min = item.stock_minimo ?? 0
+  const dias = item.dias_autonomia ?? 999
+  const leadTime = item.lead_time_propio ?? 3
 
   if (stock <= 0) return (
     <div className="flex flex-col items-end gap-1">
@@ -398,12 +401,21 @@ function StockBadge({ item }: { item: StockItem }) {
     </div>
   )
   
-  if (stock <= min) return (
+  if (dias <= leadTime) return (
     <div className="flex flex-col items-end gap-1">
-        <Badge variant="destructive" className="gap-1 text-[10px] font-bold uppercase px-2">
+        <Badge variant="destructive" className="gap-1 text-[10px] font-bold uppercase px-2 animate-pulse">
             <AlertTriangle className="h-3 w-3" /> Crítico
         </Badge>
-        <span className="text-[9px] font-bold text-error opacity-70 uppercase tracking-tighter">Bajo el mínimo ({min})</span>
+        <span className="text-[9px] font-bold text-error opacity-70 uppercase tracking-tighter">Quedan ~{Math.round(dias)} días</span>
+    </div>
+  )
+
+  if (dias <= leadTime + 7) return (
+    <div className="flex flex-col items-end gap-1">
+        <Badge variant="warning" className="gap-1 text-[10px] font-bold uppercase px-2">
+            <Clock className="h-3 w-3" /> Reponer
+        </Badge>
+        <span className="text-[9px] font-bold text-warning opacity-70 uppercase tracking-tighter">Quedan ~{Math.round(dias)} días</span>
     </div>
   )
 
@@ -425,19 +437,16 @@ function StockBadge({ item }: { item: StockItem }) {
             <span className="text-[9px] font-bold text-warning uppercase">Vence en {days} días</span>
         </div>
     )
-    if (days !== null && days <= 90) return (
-        <div className="flex flex-col items-end gap-1">
-            <Badge variant="warning" className="gap-1 text-[10px] font-bold px-2">
-                Próximo
-            </Badge>
-            <span className="text-[9px] font-bold text-warning opacity-60 uppercase">Vence en {days} días</span>
-        </div>
-    )
   }
 
-  if (stock <= min * 2) return <Badge variant="warning" className="text-[10px] font-bold uppercase px-2">Atención</Badge>
-
-  return <Badge variant="outline" className="text-[10px] font-bold uppercase px-2 text-success border-success/20 bg-success/5">Saludable</Badge>
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Badge variant="outline" className="text-[10px] font-bold uppercase px-2 text-success border-success/20 bg-success/5">
+        OK
+      </Badge>
+      <span className="text-[9px] font-bold opacity-40 uppercase tracking-tighter">~{Math.round(dias)} días de stock</span>
+    </div>
+  )
 }
 
 function PdfExportModal({

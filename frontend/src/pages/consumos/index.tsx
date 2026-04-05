@@ -60,7 +60,7 @@ export default function ConsumosPage() {
     queryKey: ['stock-list', searchQuery],
     queryFn: () => api.get<PaginatedResponse<StockItem>>('/stock', {
       params: {
-        ...(searchQuery.length > 2 && { q: searchQuery }),
+        ...(searchQuery.length >= 2 && { q: searchQuery }),
         per_page: 100
       }
     }).then(r => r.data),

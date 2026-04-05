@@ -3,8 +3,10 @@ import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Package, FileDown, FileText, X, Upload, Info,
-  AlertTriangle, CheckCircle2, Clock,
+  AlertTriangle, CheckCircle2, Clock, Smartphone,
 } from 'lucide-react'
+import { EnCaminoModal } from './en-camino-modal'
+import { QrScannerSession } from './qr-scanner-session'
 import { Badge } from '@/components/ui/badge'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
@@ -14,6 +16,7 @@ import { toast } from 'sonner'
 interface RecepcionHeader {
   id: string
   numero_documento: string
+  proveedor_id: number
   proveedor_nombre: string
   proveedor_icono: string | null
   guia_despacho: string | null
@@ -52,6 +55,8 @@ export default function RecepcionDetallePage() {
   const queryClient = useQueryClient()
   const [fotoOpen, setFotoOpen] = useState(false)
   const [confirmReplace, setConfirmReplace] = useState(false)
+  const [showEnCaminoModal, setShowEnCaminoModal] = useState(false)
+  const [showQrScanner, setShowQrScanner] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const fileInputFirstRef = useRef<HTMLInputElement>(null)
 
@@ -65,6 +70,17 @@ export default function RecepcionDetallePage() {
       setConfirmReplace(false)
     },
     onError: () => toast.error('No se pudo guardar la foto'),
+  })
+
+  const confirmarMutation = useMutation({
+    mutationFn: () => api.post(`/recepciones/${id}/confirmar`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recepcion', id] })
+      queryClient.invalidateQueries({ queryKey: ['recepciones'] })
+      toast.success('Recepción confirmada')
+      setShowEnCaminoModal(true)
+    },
+    onError: () => toast.error('Error al confirmar recepción'),
   })
 
   function handleFotoFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -94,7 +110,7 @@ export default function RecepcionDetallePage() {
       const qty = parseFloat(item.cantidad_unidades_base)
       const qtyPres = parseFloat(item.cantidad_presentaciones)
       const factor = parseFloat(item.factor_conversion_usado)
-      const qtyPresStr = qtyPres % 1 === 0 ? Math.floor(qtyPres) : parseFloat(qtyPres.toFixed(2))
+      const qtyPresStr = Math.abs(qtyPres - Math.round(qtyPres)) < 0.0001 ? Math.round(qtyPres).toString() : qtyPres.toFixed(2)
       const cantidadCell = factor !== 1
         ? `<div style="font-weight:600">${qtyPresStr} ${item.presentacion_nombre}</div>
            <div style="color:#6b7280;font-size:11px;margin-top:1px">= ${formatCantidad(qty, item.unidad_base_nombre, item.unidad_base_nombre_plural)}</div>`
@@ -281,6 +297,27 @@ export default function RecepcionDetallePage() {
             <FileDown className="h-4 w-4" />
             Exportar PDF
           </button>
+
+          {!esConfirmada && (
+            <>
+              <button
+                className="btn btn-outline btn-sm gap-2"
+                onClick={() => setShowQrScanner(true)}
+              >
+                <Smartphone className="h-4 w-4" /> Escanear con celular
+              </button>
+              <button
+                className="btn btn-success btn-sm gap-2"
+                disabled={confirmarMutation.isPending}
+                onClick={() => confirmarMutation.mutate()}
+              >
+                {confirmarMutation.isPending
+                  ? <span className="loading loading-spinner loading-sm" />
+                  : <><CheckCircle2 className="h-4 w-4" />Confirmar recepción</>
+                }
+              </button>
+            </>
+          )}
         </div>
 
         {/* Confirmación reemplazo: alerta separada */}
@@ -407,7 +444,7 @@ export default function RecepcionDetallePage() {
                   const qty = parseFloat(item.cantidad_unidades_base)
                   const qtyPres = parseFloat(item.cantidad_presentaciones)
                   const factor = parseFloat(item.factor_conversion_usado)
-                  const qtyPresStr = qtyPres % 1 === 0 ? Math.floor(qtyPres) : parseFloat(qtyPres.toFixed(2))
+                  const qtyPresStr = Math.abs(qtyPres - Math.round(qtyPres)) < 0.0001 ? Math.round(qtyPres).toString() : qtyPres.toFixed(2)
                   const tienePresent = factor !== 1
 
                   return (
@@ -448,6 +485,23 @@ export default function RecepcionDetallePage() {
           </div>
         )}
       </div>
+
+      {showEnCaminoModal && data && (
+        <EnCaminoModal
+          recepcionId={data.recepcion?.id || id || ''}
+          proveedorId={data.recepcion?.proveedor_id || null}
+          onClose={() => setShowEnCaminoModal(false)}
+          onDone={() => setShowEnCaminoModal(false)}
+        />
+      )}
+      {showQrScanner && (
+        <QrScannerSession
+          onItemsScanned={(items) => {
+            toast.success(`${items.length} producto(s) escaneados`)
+          }}
+          onClose={() => setShowQrScanner(false)}
+        />
+      )}
     </div>
   )
 }

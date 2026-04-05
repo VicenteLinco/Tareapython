@@ -98,7 +98,7 @@ export default function SolicitudesCompraPage() {
   const { data: searchResults, isLoading: isSearching } = useQuery({
     queryKey: ['productos-search', productSearch],
     queryFn: () => api.get<PaginatedResponse<Producto>>('/productos', { params: { q: productSearch, per_page: 5 } }).then(r => r.data),
-    enabled: productSearch.length > 2
+    enabled: productSearch.length >= 2
   })
 
   const { data: historial, isLoading: isLoadingHistorial } = useQuery({

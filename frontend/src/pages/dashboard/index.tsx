@@ -275,15 +275,15 @@ const quebrados = alerts.filter(a => a.tipo_alerta === 'sin_stock').length
                <TrendingUp className="w-20 h-20" />
              </div>
              <div className="relative z-10">
-               <h3 className="text-primary font-black text-sm mb-1 uppercase tracking-tight">Estado Operativo</h3>
+               <h3 className="text-primary font-bold text-sm mb-1 uppercase tracking-tight">Estado Operativo</h3>
                <p className="text-xs opacity-70 mb-4 font-medium italic">Todo el sistema está sincronizado correctamente.</p>
                <div className="flex items-center gap-4">
                   <div className="text-center px-4 border-r border-primary/10">
-                    <p className="text-xl font-black text-primary">{totalItems}</p>
+                    <p className="text-xl font-bold text-primary">{totalItems}</p>
                     <p className="text-xs font-bold uppercase opacity-50">SKUs</p>
                   </div>
                   <div className="text-center px-4">
-                    <p className="text-xl font-black text-error">{quebrados}</p>
+                    <p className="text-xl font-bold text-error">{quebrados}</p>
                     <p className="text-xs font-bold uppercase opacity-50">Críticos</p>
                   </div>
                </div>
@@ -513,7 +513,7 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
                 <button
                 onClick={() => navigate(config.path(alerta))}
                 className={cn(
-                    "btn btn-sm h-10 px-4 rounded-xl font-black transition-all flex items-center gap-2",
+                    "btn btn-sm h-10 px-4 rounded-xl font-bold transition-all flex items-center gap-2",
                     config.actionClass || "btn-ghost border-base-200"
                 )}
                 >

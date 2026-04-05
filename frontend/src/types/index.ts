@@ -217,7 +217,7 @@ export interface ConsumoBatchRequest {
     cantidad: number
     unidad: 'base' | 'presentacion'
     presentacion_id?: number
-    lote_id?: number
+    lote_id?: string
     area_id?: number
   }[]
   nota?: string

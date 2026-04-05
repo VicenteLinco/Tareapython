@@ -35,6 +35,8 @@ struct ConsumoBatchItem {
     cantidad: Decimal,
     unidad: String,
     presentacion_id: Option<i32>,
+    area_id: Option<i32>,   // NEW: per-item area override
+    lote_id: Option<Uuid>,  // NEW: specific lote override (bypasses FEFO)
 }
 
 /// Convierte cantidad a unidades base si se especificó presentación
@@ -171,18 +173,18 @@ async fn consumo_batch(
     }
 
     // Convertir todas las cantidades a base
-    let mut items_base = Vec::with_capacity(req.items.len());
+    let mut item_pairs: Vec<(&ConsumoBatchItem, Decimal)> = Vec::with_capacity(req.items.len());
     for item in &req.items {
         let cantidad = convertir_a_base(&state.pool, item.producto_id, item.cantidad, &item.unidad, item.presentacion_id).await?;
         if cantidad <= Decimal::ZERO {
             idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
             return Err(AppError::Validation("Todas las cantidades deben ser mayor a 0".into()));
         }
-        items_base.push((item.producto_id, cantidad));
+        item_pairs.push((item, cantidad));
     }
 
     // ORDENAR por producto_id para evitar deadlocks en base de datos al hacer FOR UPDATE
-    items_base.sort_by_key(|&(prod_id, _)| prod_id);
+    item_pairs.sort_by_key(|(item, _)| item.producto_id);
 
     let mut tx = state.pool.begin().await?;
     let grupo = Uuid::new_v4();
@@ -191,21 +193,51 @@ async fn consumo_batch(
     let mut items_fallidos = Vec::new();
     let mut lotes_por_item = Vec::new();
 
-    for (producto_id, cantidad) in &items_base {
-        let lotes = match req.area_id {
-            Some(area_id) => stock_ops::lotes_fefo(&mut tx, *producto_id, area_id).await?,
-            None => stock_ops::lotes_fefo_global(&mut tx, *producto_id).await?,
+    for (item, cantidad) in &item_pairs {
+        let effective_area_id = item.area_id.or(req.area_id);
+
+        let lotes = if let Some(lote_id) = item.lote_id {
+            // Pinned lote: validate it exists and has enough stock
+            let pinned = sqlx::query_as::<_, stock_ops::LoteFefo>(
+                r#"SELECT s.id as stock_id, s.lote_id, s.cantidad, s.area_id
+                   FROM stock s
+                   WHERE s.lote_id = $1
+                     AND ($2::integer IS NULL OR s.area_id = $2)
+                     AND s.cantidad > 0
+                   LIMIT 1"#,
+            )
+            .bind(lote_id)
+            .bind(effective_area_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+            match pinned {
+                Some(l) => vec![l],
+                None => {
+                    tx.rollback().await?;
+                    idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
+                    return Err(AppError::Validation(format!(
+                        "Lote {} no tiene stock disponible en el área indicada",
+                        lote_id
+                    )));
+                }
+            }
+        } else {
+            match effective_area_id {
+                Some(area_id) => stock_ops::lotes_fefo(&mut tx, item.producto_id, area_id).await?,
+                None => stock_ops::lotes_fefo_global(&mut tx, item.producto_id).await?,
+            }
         };
+
         let disponible = stock_ops::stock_total(&lotes);
 
         if disponible < *cantidad {
             let nombre: Option<String> =
                 sqlx::query_scalar("SELECT nombre FROM productos WHERE id = $1")
-                    .bind(producto_id)
+                    .bind(item.producto_id)
                     .fetch_optional(&mut *tx)
                     .await?;
             items_fallidos.push(serde_json::json!({
-                "producto_id": producto_id,
+                "producto_id": item.producto_id,
                 "producto": nombre.unwrap_or_default(),
                 "stock_disponible": disponible,
                 "cantidad_pedida": cantidad,
@@ -227,7 +259,8 @@ async fn consumo_batch(
     let mut total_movimientos = 0u32;
     let mut resumen = Vec::new();
 
-    for (i, (producto_id, cantidad)) in items_base.iter().enumerate() {
+    for (i, (item, cantidad)) in item_pairs.iter().enumerate() {
+        let effective_area_id = item.area_id.or(req.area_id);
         let movs = stock_ops::aplicar_salida_fefo(
             &mut tx,
             &lotes_por_item[i],
@@ -242,36 +275,30 @@ async fn consumo_batch(
 
         total_movimientos += movs.len() as u32;
 
-        let stock_restante: Option<Decimal> = match req.area_id {
+        let stock_restante: Option<Decimal> = match effective_area_id {
             Some(area_id) => sqlx::query_scalar(
                 r#"SELECT SUM(s.cantidad) FROM stock s
                    JOIN lotes l ON l.id = s.lote_id
                    WHERE l.producto_id = $1 AND s.area_id = $2 AND s.cantidad > 0"#,
             )
-            .bind(producto_id)
+            .bind(item.producto_id)
             .bind(area_id)
-            .fetch_one(&mut *tx)
+            .fetch_optional(&mut *tx)
             .await?,
             None => sqlx::query_scalar(
                 r#"SELECT SUM(s.cantidad) FROM stock s
                    JOIN lotes l ON l.id = s.lote_id
                    WHERE l.producto_id = $1 AND s.cantidad > 0"#,
             )
-            .bind(producto_id)
-            .fetch_one(&mut *tx)
+            .bind(item.producto_id)
+            .fetch_optional(&mut *tx)
             .await?,
         };
 
-        let nombre: Option<String> =
-            sqlx::query_scalar("SELECT nombre FROM productos WHERE id = $1")
-                .bind(producto_id)
-                .fetch_optional(&mut *tx)
-                .await?;
-
         resumen.push(serde_json::json!({
-            "producto": nombre.unwrap_or_default(),
-            "cantidad_consumida": cantidad,
-            "stock_restante": stock_restante.unwrap_or(Decimal::ZERO),
+            "producto_id": item.producto_id,
+            "movimientos": movs.len(),
+            "stock_restante": stock_restante,
         }));
     }
 

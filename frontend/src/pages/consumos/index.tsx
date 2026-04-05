@@ -86,29 +86,47 @@ export default function ConsumosPage() {
           unidad: p.unidad,
           unidad_plural: p.unidad_plural || p.unidad,
           stock_total: p.stock_total || 0,
-          area_id: p.area_id!,
+          area_id: p.area_id ?? areaFiltro ?? 0,
           area_nombre: p.area_nombre || '',
           imagen_url: p.imagen_url,
-          categoria: p.categoria || null,
-          lotes: ((p as any).lotes || []).map((l: any) => ({
-            lote_id: l.lote_id,
-            numero_lote: l.numero_lote,
-            stock: l.stock,
-            fecha_vencimiento: l.fecha_vencimiento,
-            area_id: p.area_id!,
-            area_nombre: p.area_nombre || '',
-          })),
+          categoria: (p as any).categoria || null,
+          lotes: [],
           lote_elegido_id: null,
           cantidad_descontar: 1,
         }
       }
     })
     toast.success(`${p.producto_nombre} añadido`)
+
+    // Fetch lotes for this product to populate the lot selector
+    api.get<{ id: string; numero_lote: string; stock_total: string | null; fecha_vencimiento: string }[]>('/lotes', {
+      params: {
+        producto_id: p.producto_id,
+        con_stock: true,
+        vencido: false,
+        ...(areaFiltro && { area_id: areaFiltro }),
+      }
+    }).then(res => {
+      const lotes: LoteDisponible[] = res.data.map(l => ({
+        lote_id: l.id,
+        numero_lote: l.numero_lote,
+        stock: parseFloat(l.stock_total ?? '0'),
+        fecha_vencimiento: l.fecha_vencimiento,
+        area_id: areaFiltro ?? p.area_id ?? 0,
+        area_nombre: p.area_nombre || '',
+      }))
+      setCart(prev => {
+        if (!prev[cartKey]) return prev
+        return { ...prev, [cartKey]: { ...prev[cartKey], lotes } }
+      })
+    }).catch(() => {}) // lote list is optional; FEFO still works without it
   }
 
   const handleScan = async (code: string) => {
     try {
-      const stockRes = await api.get<PaginatedResponse<StockItem>>('/stock', { params: { q: code } })
+      const stockRes = await api.get<PaginatedResponse<StockItem>>('/stock', {
+        params: { q: code, ...(areaFiltro && { area_id: areaFiltro }) }
+      })
       const items = stockRes.data.data
       if (items.length === 0) {
         toast.error('Producto sin stock en ninguna área')
@@ -131,8 +149,8 @@ export default function ConsumosPage() {
         producto_id: i.producto_id,
         cantidad: i.cantidad_descontar,
         unidad: 'base',
-        area_id: i.area_id,
-        ...(i.lote_elegido_id && { lote_id: i.lote_elegido_id as any }),
+        area_id: i.area_id || undefined,
+        ...(i.lote_elegido_id && { lote_id: i.lote_elegido_id }),
       })),
       nota: notas || undefined,
     })

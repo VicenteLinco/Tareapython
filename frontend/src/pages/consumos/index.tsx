@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { v4 as uuidv4 } from 'uuid'
 import {
-  Search, Plus, Minus, Trash2, Send,
-  Zap, AlertTriangle,
+  Search, Plus, Minus,
+  Zap,
   Camera, X, Check, Package
 } from 'lucide-react'
 import { ProductoImage } from '@/components/ui/producto-image'

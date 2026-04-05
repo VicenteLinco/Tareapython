@@ -22,6 +22,8 @@ import ConteoPage from '@/pages/conteo/index'
 import ConteoDetallePage from '@/pages/conteo/detalle'
 import KioskPage from '@/pages/kiosk'
 import ModoQrPage from '@/pages/modo-qr'
+import AuditLogPage from '@/pages/audit-log'
+import ScanPage from './pages/scan/index'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,8 +33,6 @@ const queryClient = new QueryClient({
     },
   },
 })
-
-import AuditLogPage from '@/pages/audit-log'
 
 export default function App() {
   useEffect(() => {
@@ -72,6 +72,7 @@ export default function App() {
           {/* Standalone routes (no sidebar/header) */}
           <Route path="/kiosk" element={<KioskPage />} />
           <Route path="/qr" element={<ModoQrPage />} />
+          <Route path="/scan/:token" element={<ScanPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

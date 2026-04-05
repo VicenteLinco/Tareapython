@@ -1,14 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
-import { useQuery, keepPreviousData } from '@tanstack/react-query'
-import { Plus, Search, CalendarRange, FileText, FileX, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import { Plus, Search, FileText, FileX, ChevronLeft, ChevronRight, Trash2, CheckCircle2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
-import { DataTable } from '@/components/ui/data-table'
 import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
-import type { Proveedor, Area } from '@/types'
+import type { Proveedor } from '@/types'
 import { formatDate } from '@/lib/utils'
-import { useAreaStore } from '@/hooks/use-area-store'
+import { toast } from 'sonner'
 
 const PAGE_SIZE = 15
 
@@ -34,52 +33,42 @@ interface RecepcionRow {
   tiene_foto: boolean
 }
 
+type TabActivo = 'borradores' | 'confirmadas' | 'todas'
+
 export default function RecepcionesPage() {
-  const { selectedAreaId } = useAreaStore()
-
-  const [proveedorId, setProveedorId] = useState('')
-  const [estado, setEstado] = useState('')
-  const [busquedaInput, setBusquedaInput] = useState('')
-  const [busqueda, setBusqueda] = useState('')
-  const [fechaDesde, setFechaDesde] = useState('')
-  const [fechaHasta, setFechaHasta] = useState('')
-  const [areaId, setAreaId] = useState(selectedAreaId ? String(selectedAreaId) : '')
-
-  // Sync with global area filter
-  useEffect(() => {
-    setAreaId(selectedAreaId ? String(selectedAreaId) : '')
-    setPage(1)
-  }, [selectedAreaId])
+  const [tabActivo, setTabActivo] = useState<TabActivo>('borradores')
+  const [search, setSearch] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [proveedorFiltro, setProveedorFiltro] = useState<number | null>(null)
   const [page, setPage] = useState(1)
   const navigate = useNavigate()
-
-  // Debounce search input — 350ms
+  const queryClient = useQueryClient()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Debounce search input
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      setBusqueda(busquedaInput)
+      setSearch(searchInput)
       setPage(1)
     }, 350)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [busquedaInput])
+  }, [searchInput])
 
-  // Reset page when filters change
-  useEffect(() => { setPage(1) }, [proveedorId, estado, fechaDesde, fechaHasta, areaId])
+  // Reset page on tab/filter change
+  useEffect(() => { setPage(1) }, [tabActivo, proveedorFiltro])
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['recepciones', { proveedorId, estado, busqueda, fechaDesde, fechaHasta, areaId, page }],
+    queryKey: ['recepciones', { tab: tabActivo, search, proveedorFiltro, page }],
     queryFn: () =>
       api.get<PaginatedRecepciones>('/recepciones', {
         params: {
-          proveedor_id: proveedorId || undefined,
-          estado: estado || undefined,
-          busqueda: busqueda || undefined,
-          desde: fechaDesde || undefined,
-          hasta: fechaHasta || undefined,
-          area_id: areaId || undefined,
-          page,
+          estado: tabActivo === 'borradores' ? 'borrador' :
+                  tabActivo === 'confirmadas' ? 'confirmada' : undefined,
+          q: search || undefined,
+          proveedor_id: proveedorFiltro || undefined,
           per_page: PAGE_SIZE,
+          page,
         },
       }).then((r) => r.data),
     placeholderData: keepPreviousData,
@@ -90,74 +79,32 @@ export default function RecepcionesPage() {
     queryFn: () => api.get<Proveedor[]>('/proveedores').then((r) => r.data),
   })
 
-  const { data: areas } = useQuery({
-    queryKey: ['areas'],
-    queryFn: () => api.get<Area[]>('/areas').then((r) => r.data),
+  const confirmarMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/recepciones/${id}/confirmar`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recepciones'] })
+      toast.success('Recepción confirmada')
+    },
+    onError: () => toast.error('Error al confirmar recepción'),
+  })
+
+  const eliminarMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/recepciones/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recepciones'] })
+      toast.success('Borrador eliminado')
+    },
+    onError: () => toast.error('Error al eliminar borrador'),
   })
 
   const pageRows = data?.data ?? []
   const total = data?.total ?? 0
   const totalPages = data?.total_pages ?? 1
 
-  const columns = [
-    {
-      key: 'numero_documento',
-      header: 'N° Documento',
-      render: (item: RecepcionRow) => (
-        <span className="font-mono text-sm font-medium">{item.numero_documento}</span>
-      ),
-    },
-    {
-      key: 'guia_despacho',
-      header: 'Guía Despacho',
-      className: 'hidden md:table-cell',
-      render: (item: RecepcionRow) => (
-        <span className="font-mono text-sm opacity-70">{item.guia_despacho ?? '—'}</span>
-      ),
-    },
-    {
-      key: 'proveedor_nombre',
-      header: 'Proveedor',
-      render: (item: RecepcionRow) => (
-        <div className="flex items-center gap-2">
-          <ProveedorIcon proveedor={{ nombre: item.proveedor_nombre, icono: item.proveedor_icono }} className="h-5 w-5" />
-          <span className="text-sm">{item.proveedor_nombre}</span>
-        </div>
-      ),
-    },
-    {
-      key: 'fecha_recepcion',
-      header: 'Fecha',
-      render: (item: RecepcionRow) => formatDate(item.fecha_recepcion),
-    },
-    {
-      key: 'areas_destino',
-      header: 'Sección / Área',
-      className: 'hidden lg:table-cell',
-      render: (item: RecepcionRow) => (
-        <span className="text-sm opacity-70">{item.areas_destino ?? '—'}</span>
-      ),
-    },
-    {
-      key: 'estado',
-      header: 'Estado',
-      render: (item: RecepcionRow) => (
-        <Badge variant={item.estado === 'completa' || item.estado === 'confirmada' ? 'success' : 'secondary'}>
-          {item.estado === 'completa' || item.estado === 'confirmada' ? 'Confirmada' : 'Borrador'}
-        </Badge>
-      ),
-    },
-    {
-      key: 'tiene_foto',
-      header: '',
-      render: (item: RecepcionRow) =>
-        item.tiene_foto ? (
-          <FileText className="h-4 w-4 text-primary/60" />
-        ) : (
-          <FileX className="h-4 w-4 text-base-content/20" />
-        ),
-    },
-    { key: 'usuario_nombre', header: 'Usuario', className: 'hidden md:table-cell' },
+  const tabs: { key: TabActivo; label: string }[] = [
+    { key: 'borradores', label: 'Borradores' },
+    { key: 'confirmadas', label: 'Confirmadas' },
+    { key: 'todas', label: 'Todas' },
   ]
 
   return (
@@ -170,9 +117,22 @@ export default function RecepcionesPage() {
         </button>
       </div>
 
+      {/* Tabs */}
+      <div role="tablist" className="tabs tabs-boxed w-fit">
+        {tabs.map(tab => (
+          <button
+            key={tab.key}
+            role="tab"
+            className={`tab ${tabActivo === tab.key ? 'tab-active' : ''}`}
+            onClick={() => setTabActivo(tab.key)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* Filtros */}
       <div className="rounded-xl border border-base-200 bg-base-100 p-3 flex flex-wrap gap-2 items-end">
-
         {/* Buscador */}
         <fieldset className="fieldset p-0 gap-1 min-w-[200px] flex-1">
           <legend className="fieldset-legend text-[10px]">Buscar</legend>
@@ -182,8 +142,8 @@ export default function RecepcionesPage() {
               type="text"
               className="grow text-sm min-w-0"
               placeholder="N° doc, proveedor, guía…"
-              value={busquedaInput}
-              onChange={(e) => setBusquedaInput(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
             />
             {isFetching && (
               <span className="loading loading-spinner loading-xs opacity-40" />
@@ -195,71 +155,14 @@ export default function RecepcionesPage() {
         <fieldset className="fieldset p-0 gap-1">
           <legend className="fieldset-legend text-[10px]">Proveedor</legend>
           <ProveedorSelect
-            value={proveedorId}
-            onChange={(v) => setProveedorId(v)}
+            value={proveedorFiltro ? String(proveedorFiltro) : ''}
+            onChange={(v) => setProveedorFiltro(v ? Number(v) : null)}
             proveedores={proveedores ?? []}
             allLabel="Todos"
             className="w-44 h-9"
             size="md"
           />
         </fieldset>
-
-        {/* Área */}
-        <fieldset className="fieldset p-0 gap-1">
-          <legend className="fieldset-legend text-[10px]">Sección / Área</legend>
-          <select
-            className="select select-bordered w-44 h-9 text-sm"
-            value={areaId}
-            onChange={(e) => setAreaId(e.target.value)}
-          >
-            <option value="">Todas las áreas</option>
-            {(areas ?? []).map((a) => (
-              <option key={a.id} value={a.id}>{a.nombre}</option>
-            ))}
-          </select>
-        </fieldset>
-
-        {/* Estado */}
-        <fieldset className="fieldset p-0 gap-1">
-          <legend className="fieldset-legend text-[10px]">Estado</legend>
-          <select
-            className="select select-bordered w-36 h-9 text-sm"
-            value={estado}
-            onChange={(e) => setEstado(e.target.value)}
-          >
-            <option value="">Todos</option>
-            <option value="borrador">Borrador</option>
-            <option value="completa">Confirmada</option>
-          </select>
-        </fieldset>
-
-        {/* Rango de fechas */}
-        <fieldset className="fieldset p-0 gap-1">
-          <legend className="fieldset-legend text-[10px] flex items-center gap-1">
-            <CalendarRange className="h-3 w-3" />
-            Rango de fechas
-          </legend>
-          <div className="join">
-            <input
-              type="date"
-              className="input input-bordered join-item h-9 w-36 text-sm"
-              value={fechaDesde}
-              onChange={(e) => setFechaDesde(e.target.value)}
-              title="Desde"
-            />
-            <span className="join-item flex items-center px-2 bg-base-200 border border-base-300 text-xs opacity-50 select-none">
-              →
-            </span>
-            <input
-              type="date"
-              className="input input-bordered join-item h-9 w-36 text-sm"
-              value={fechaHasta}
-              onChange={(e) => setFechaHasta(e.target.value)}
-              title="Hasta"
-            />
-          </div>
-        </fieldset>
-
       </div>
 
       {isLoading ? (
@@ -268,12 +171,86 @@ export default function RecepcionesPage() {
         </div>
       ) : (
         <>
-          <DataTable
-            columns={columns as any}
-            data={pageRows as unknown as Record<string, unknown>[]}
-            onRowClick={(item) => navigate(`/recepciones/${(item as unknown as RecepcionRow).id}`)}
-            emptyMessage="No hay recepciones"
-          />
+          <div className="rounded-xl border border-base-200 overflow-hidden">
+            <table className="table table-sm w-full">
+              <thead className="bg-base-200/60 text-[11px] uppercase tracking-wider">
+                <tr>
+                  <th className="font-semibold opacity-60">N° Documento</th>
+                  <th className="font-semibold opacity-60">Proveedor</th>
+                  <th className="font-semibold opacity-60">Fecha</th>
+                  <th className="font-semibold opacity-60 hidden md:table-cell">Usuario</th>
+                  <th className="font-semibold opacity-60">Estado</th>
+                  <th className="font-semibold opacity-60 w-4"></th>
+                  {tabActivo === 'borradores' && (
+                    <th className="font-semibold opacity-60 text-right">Acciones</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={tabActivo === 'borradores' ? 7 : 6} className="text-center py-8 text-sm opacity-40">
+                      No hay recepciones
+                    </td>
+                  </tr>
+                ) : (
+                  pageRows.map((item) => (
+                    <tr
+                      key={item.id}
+                      className="hover:bg-base-200/30 border-base-200/60 cursor-pointer"
+                      onClick={() => navigate(`/recepciones/${item.id}`)}
+                    >
+                      <td>
+                        <span className="font-mono text-sm font-medium">{item.numero_documento}</span>
+                      </td>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <ProveedorIcon proveedor={{ nombre: item.proveedor_nombre, icono: item.proveedor_icono }} className="h-5 w-5" />
+                          <span className="text-sm">{item.proveedor_nombre}</span>
+                        </div>
+                      </td>
+                      <td className="text-sm">{formatDate(item.fecha_recepcion)}</td>
+                      <td className="text-sm hidden md:table-cell">{item.usuario_nombre}</td>
+                      <td>
+                        <Badge variant={item.estado === 'completa' || item.estado === 'confirmada' ? 'success' : 'secondary'}>
+                          {item.estado === 'completa' || item.estado === 'confirmada' ? 'Confirmada' : 'Borrador'}
+                        </Badge>
+                      </td>
+                      <td>
+                        {item.tiene_foto
+                          ? <FileText className="h-4 w-4 text-primary/60" />
+                          : <FileX className="h-4 w-4 text-base-content/20" />
+                        }
+                      </td>
+                      {tabActivo === 'borradores' && (
+                        <td className="text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              className="btn btn-xs btn-success gap-1"
+                              disabled={confirmarMutation.isPending}
+                              onClick={() => confirmarMutation.mutate(item.id)}
+                            >
+                              <CheckCircle2 className="h-3 w-3" />
+                              Confirmar
+                            </button>
+                            <button
+                              className="btn btn-xs btn-ghost text-error"
+                              disabled={eliminarMutation.isPending}
+                              onClick={() => {
+                                if (confirm('¿Eliminar este borrador?')) eliminarMutation.mutate(item.id)
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
 
           {/* Paginación */}
           <div className="flex items-center justify-between text-sm">

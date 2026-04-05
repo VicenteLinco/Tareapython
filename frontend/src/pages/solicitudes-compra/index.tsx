@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import {
   Search,
   Plus,
@@ -69,7 +69,8 @@ export default function SolicitudesCompraPage() {
   const { usuario } = useAuthStore()
   const queryClient = useQueryClient()
   const location = useLocation()
-  
+  const [searchParams] = useSearchParams()
+
   // States
   const [view, setView] = useState<'crear' | 'historial'>('crear')
   const [items, setItems] = useState<SolicitudItem[]>([])
@@ -143,6 +144,38 @@ export default function SolicitudesCompraPage() {
         })
     }
   }, [view, items.length])
+
+  // Pre-add product from URL ?select=PRODUCTO_ID
+  useEffect(() => {
+    const productoId = searchParams.get('select')
+    if (!productoId || items.some(i => i.producto_id === productoId)) return
+
+    api.get<Producto>(`/productos/${productoId}`)
+        .then(res => {
+            const p = res.data
+            if (!p) return
+            const newItem: SolicitudItem = {
+                producto_id: p.id,
+                producto_nombre: p.nombre,
+                codigo_proveedor: p.codigo_proveedor,
+                codigo_maestro: p.codigo_maestro,
+                proveedor_id: p.proveedor_id,
+                proveedor_nombre: 'Manual',
+                lead_time: p.lead_time_propio || 0,
+                presentacion_id: null,
+                presentacion_nombre: null,
+                presentacion_nombre_plural: null,
+                factor_conversion: null,
+                unidad_base: 'u',
+                unidad_base_plural: 'u',
+                cantidad: 1,
+                precio_unitario: p.precio_unidad ? parseFloat(String(p.precio_unidad)) : 0,
+            }
+            setItems(prev => [...prev, newItem])
+            setView('crear')
+        })
+        .catch(() => {})
+  }, [searchParams])
 
   // Mutation: Guardar Borrador
   const saveMutation = useMutation({

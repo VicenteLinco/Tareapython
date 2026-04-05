@@ -50,7 +50,7 @@ export function useConteoList() {
     staleTime: 60000,
   })
 
-  // Mutation: Crear nueva sesión
+  // Mutation: Crear nueva sesión (navegación automática — para botón individual)
   const crearMutation = useMutation({
     mutationFn: (area_id: number) =>
       api.post<{ id: string; total_items: number }>('/conteo', { area_id }).then((r) => r.data),
@@ -67,6 +67,40 @@ export function useConteoList() {
 
   const handleCrear = (areaId: number) => {
     crearMutation.mutate(areaId)
+  }
+
+  const { data: configuracion } = useQuery({
+    queryKey: ['configuracion'],
+    queryFn: () => api.get<{ conteo_periodo_dias: number }>('/configuracion').then(r => r.data),
+    staleTime: 300_000,
+  })
+  const periodoGlobalDias = configuracion?.conteo_periodo_dias ?? 30
+
+  // Crear múltiples sesiones (sin navegación automática — para el modal)
+  const [isCreatingMultiple, setIsCreatingMultiple] = useState(false)
+
+  const handleCrearMultiple = async (areaIds: number[]) => {
+    if (areaIds.length === 0) return
+    if (areaIds.length === 1) {
+      handleCrear(areaIds[0])
+      return
+    }
+    setIsCreatingMultiple(true)
+    let vacias = 0
+    try {
+      for (const area_id of areaIds) {
+        const data = await api.post<{ id: string; total_items: number }>('/conteo', { area_id }).then((r) => r.data)
+        if (data.total_items === 0) vacias++
+      }
+      queryClient.invalidateQueries({ queryKey: ['conteo'] })
+      queryClient.invalidateQueries({ queryKey: ['conteo-pendientes'] })
+      toast.success(`${areaIds.length} sesiones de conteo creadas`)
+      if (vacias > 0) toast.warning(`${vacias} área${vacias > 1 ? 's' : ''} sin stock en sistema`)
+    } catch {
+      toast.error('Error al crear alguna sesión de conteo')
+    } finally {
+      setIsCreatingMultiple(false)
+    }
   }
 
   const handleAreaFilterChange = (areaId: number | null) => {
@@ -94,7 +128,9 @@ export function useConteoList() {
       setArea: handleAreaFilterChange,
       setPage,
       crear: handleCrear,
+      crearMultiple: handleCrearMultiple,
     },
-    isCreating: crearMutation.isPending,
+    isCreating: crearMutation.isPending || isCreatingMultiple,
+    periodoGlobalDias,
   }
 }

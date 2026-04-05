@@ -12,16 +12,44 @@ const ESTADO_CONFIG = {
   cancelado:    { label: 'Cancelado',    icon: XCircle,       className: 'badge-ghost' },
 } as const
 
+interface AreaUrgencia {
+  pct: number
+  color: 'error' | 'warning' | 'success'
+  label: string
+}
+
+function getAreaUrgencia(area: { conteo_frecuencia_dias: number }, pendiente: { dias_desde_ultimo: number | null } | undefined, periodoMax: number): AreaUrgencia {
+  const periodo = area.conteo_frecuencia_dias > 0 ? area.conteo_frecuencia_dias : periodoMax
+  const dias = pendiente?.dias_desde_ultimo ?? null
+  if (dias === null) return { pct: 100, color: 'error', label: 'Nunca contada' }
+  const pct = Math.min((dias / periodo) * 100, 120)
+  if (pct >= 100) return { pct, color: 'error', label: `${Math.round(dias)}d · límite ${periodo}d` }
+  if (pct >= 70) return { pct, color: 'warning', label: `${Math.round(dias)} de ${periodo} días` }
+  return { pct, color: 'success', label: `${Math.round(dias)} de ${periodo} días` }
+}
+
 export default function ConteoPage() {
   const navigate = useNavigate()
-  const { sesiones, isLoading, areas, pendientes, filters, actions, isCreating } = useConteoList()
+  const { sesiones, isLoading, areas, pendientes, filters, actions, isCreating, periodoGlobalDias } = useConteoList()
   const [showModal, setShowModal] = useState(false)
-  const [areaIdModal, setAreaIdModal] = useState('')
+  const [selectedAreaIds, setSelectedAreaIds] = useState<number[]>([])
+  const [ocultarSinStock, setOcultarSinStock] = useState(true)
+
+  const toggleArea = (id: number) => {
+    setSelectedAreaIds(prev =>
+      prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]
+    )
+  }
 
   const handleCrear = (overrideAreaId?: number) => {
-    const id = overrideAreaId ?? (areaIdModal ? Number(areaIdModal) : null)
-    if (!id) return
-    actions.crear(id)
+    if (overrideAreaId != null) {
+      actions.crear(overrideAreaId)
+      return
+    }
+    if (selectedAreaIds.length === 0) return
+    actions.crearMultiple(selectedAreaIds)
+    setShowModal(false)
+    setSelectedAreaIds([])
   }
 
   return (
@@ -158,42 +186,106 @@ export default function ConteoPage() {
       {/* Modal nueva sesión */}
       {showModal && (
         <div className="modal modal-open">
-          <div className="modal-box max-w-sm">
-            <h3 className="font-bold text-lg mb-4">Nueva sesión de conteo</h3>
-            <div className="form-control mb-4">
-              <label className="label">
-                <span className="label-text font-medium">Área a contar</span>
-              </label>
-              <select
-                className="select select-bordered w-full"
-                value={areaIdModal}
-                onChange={(e) => setAreaIdModal(e.target.value)}
-              >
-                <option value="">Seleccionar área...</option>
-                {areas.filter((a) => a.activa).map((a) => (
-                  <option key={a.id} value={a.id}>{a.nombre}</option>
-                ))}
-              </select>
+            <div className="modal-box max-w-md">
+                <h3 className="font-bold text-lg mb-1">Nueva sesión de conteo</h3>
+                <p className="text-sm opacity-50 mb-3">Selecciona las áreas a contar</p>
+
+                <label className="flex items-center gap-2 text-sm mb-3 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        className="checkbox checkbox-sm"
+                        checked={ocultarSinStock}
+                        onChange={e => setOcultarSinStock(e.target.checked)}
+                    />
+                    <span className="opacity-60">Ocultar áreas sin stock</span>
+                </label>
+
+                <div className="space-y-2 max-h-72 overflow-y-auto mb-4">
+                    {areas
+                        .filter(a => a.activa)
+                        .filter(a => {
+                            const sinStock = ((a as any).total_items_stock ?? 0) === 0
+                            return !ocultarSinStock || !sinStock
+                        })
+                        .sort((a, b) => {
+                            const pa = pendientes.find(p => p.area_id === a.id)
+                            const pb = pendientes.find(p => p.area_id === b.id)
+                            const ua = getAreaUrgencia(a, pa, periodoGlobalDias)
+                            const ub = getAreaUrgencia(b, pb, periodoGlobalDias)
+                            return ub.pct - ua.pct
+                        })
+                        .map(a => {
+                            const pendiente = pendientes.find(p => p.area_id === a.id)
+                            const sinStock = ((a as any).total_items_stock ?? 0) === 0
+                            const urgencia = getAreaUrgencia(a, pendiente, periodoGlobalDias)
+                            const selected = selectedAreaIds.includes(a.id)
+                            return (
+                                <label
+                                    key={a.id}
+                                    className={cn(
+                                        'flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors',
+                                        sinStock ? 'opacity-40 cursor-not-allowed bg-base-200/50' :
+                                        selected ? 'bg-primary/10 border border-primary/30' :
+                                        'hover:bg-base-200 border border-transparent'
+                                    )}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        className="checkbox checkbox-sm checkbox-primary"
+                                        checked={selected}
+                                        disabled={sinStock}
+                                        onChange={() => !sinStock && toggleArea(a.id)}
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-sm font-semibold">{a.nombre}</span>
+                                            {sinStock && <span className="badge badge-xs badge-ghost">Sin stock</span>}
+                                        </div>
+                                        {!sinStock && (
+                                            <>
+                                                <div className="w-full bg-base-200 rounded-full h-1.5 mb-1">
+                                                    <div
+                                                        className={cn(
+                                                            'h-1.5 rounded-full transition-all',
+                                                            urgencia.color === 'error' ? 'bg-error' :
+                                                            urgencia.color === 'warning' ? 'bg-warning' : 'bg-success'
+                                                        )}
+                                                        style={{ width: `${Math.min(urgencia.pct, 100)}%` }}
+                                                    />
+                                                </div>
+                                                <span className={cn(
+                                                    'text-[10px] font-medium',
+                                                    urgencia.color === 'error' ? 'text-error' :
+                                                    urgencia.color === 'warning' ? 'text-warning' : 'text-base-content/40'
+                                                )}>{urgencia.label}</span>
+                                            </>
+                                        )}
+                                    </div>
+                                </label>
+                            )
+                        })
+                    }
+                </div>
+
+                <div className="modal-action">
+                    <button className="btn btn-ghost" onClick={() => { setShowModal(false); setSelectedAreaIds([]) }}>
+                        Cancelar
+                    </button>
+                    <button
+                        className="btn btn-primary"
+                        disabled={selectedAreaIds.length === 0 || isCreating}
+                        onClick={() => handleCrear()}
+                    >
+                        {isCreating
+                            ? <span className="loading loading-spinner loading-sm" />
+                            : selectedAreaIds.length > 1
+                                ? `Iniciar ${selectedAreaIds.length} conteos`
+                                : 'Iniciar conteo'
+                        }
+                    </button>
+                </div>
             </div>
-            <div className="modal-action">
-              <button
-                className="btn btn-ghost"
-                onClick={() => { setShowModal(false); setAreaIdModal('') }}
-              >
-                Cancelar
-              </button>
-              <button
-                className="btn btn-primary"
-                disabled={!areaIdModal || isCreating}
-                onClick={() => handleCrear()}
-              >
-                {isCreating
-                  ? <span className="loading loading-spinner loading-sm" />
-                  : 'Iniciar conteo'}
-              </button>
-            </div>
-          </div>
-          <div className="modal-backdrop" onClick={() => setShowModal(false)} />
+            <div className="modal-backdrop" onClick={() => { setShowModal(false); setSelectedAreaIds([]) }} />
         </div>
       )}
     </div>

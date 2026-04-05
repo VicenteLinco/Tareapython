@@ -204,7 +204,7 @@ export default function ConteoPage() {
                     {areas
                         .filter(a => a.activa)
                         .filter(a => {
-                            const sinStock = ((a as any).total_items_stock ?? 0) === 0
+                            const sinStock = (a.total_items_stock ?? 0) === 0
                             return !ocultarSinStock || !sinStock
                         })
                         .sort((a, b) => {
@@ -216,7 +216,7 @@ export default function ConteoPage() {
                         })
                         .map(a => {
                             const pendiente = pendientes.find(p => p.area_id === a.id)
-                            const sinStock = ((a as any).total_items_stock ?? 0) === 0
+                            const sinStock = (a.total_items_stock ?? 0) === 0
                             const urgencia = getAreaUrgencia(a, pendiente, periodoGlobalDias)
                             const selected = selectedAreaIds.includes(a.id)
                             return (

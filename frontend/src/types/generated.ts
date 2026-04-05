@@ -2,7 +2,7 @@
 // Ejecutar `cargo run --bin export_types` para regenerar.
 // NO editar manualmente.
 
-export type Area = { id: number; nombre: string; es_bodega: boolean; activa: boolean; created_at: string; conteo_frecuencia_dias: number; version: number }
+export type Area = { id: number; nombre: string; es_bodega: boolean; activa: boolean; created_at: string; conteo_frecuencia_dias: number; version: number; total_items_stock: number | null }
 export type Categoria = { id: number; nombre: string; descripcion: string | null; created_at: string; version: number }
 export type UnidadBasica = { id: number; nombre: string; nombre_plural: string; version: number }
 export type Proveedor = { id: number; nombre: string; contacto: string | null; telefono: string | null; email: string | null; icono: string | null; dias_despacho_aereo: number | null; dias_despacho_tierra: number | null; activa: boolean; version: number; created_at: string }

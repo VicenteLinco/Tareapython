@@ -10,4 +10,5 @@ pub struct Area {
     pub created_at: DateTime<Utc>,
     pub conteo_frecuencia_dias: i32,
     pub version: i32,
+    pub total_items_stock: Option<i32>,
 }

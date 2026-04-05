@@ -221,7 +221,7 @@ const quebrados = alerts.filter(a => a.tipo_alerta === 'sin_stock').length
                   <AlertTriangle className="w-10 h-10" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-warning">Error al cargar alertas</h3>
+                  <h3 className="text-base font-bold text-warning">Error al cargar alertas</h3>
                   <p className="text-xs opacity-50 mt-1 max-w-xs mx-auto">No se pudo conectar con el servicio de alertas. Verifica que el backend esté funcionando correctamente.</p>
                 </div>
                 <button
@@ -259,7 +259,7 @@ const quebrados = alerts.filter(a => a.tipo_alerta === 'sin_stock').length
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold truncate text-success">{res.producto_nombre}</p>
-                      <p className="text-[10px] opacity-60 font-medium">Stock normalizado por {res.tipo}</p>
+                      <p className="text-xs opacity-60 font-medium">Stock normalizado por {res.tipo}</p>
                     </div>
                     <div className="text-xs opacity-40 font-bold">
                        {res.created_at && formatDistanceSimple(res.created_at)}
@@ -280,11 +280,11 @@ const quebrados = alerts.filter(a => a.tipo_alerta === 'sin_stock').length
                <div className="flex items-center gap-4">
                   <div className="text-center px-4 border-r border-primary/10">
                     <p className="text-xl font-black text-primary">{totalItems}</p>
-                    <p className="text-[9px] font-bold uppercase opacity-50">SKUs</p>
+                    <p className="text-xs font-bold uppercase opacity-50">SKUs</p>
                   </div>
                   <div className="text-center px-4">
                     <p className="text-xl font-black text-error">{quebrados}</p>
-                    <p className="text-[9px] font-bold uppercase opacity-50">Críticos</p>
+                    <p className="text-xs font-bold uppercase opacity-50">Críticos</p>
                   </div>
                </div>
              </div>
@@ -340,7 +340,7 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
           <CheckCircle2 className="w-12 h-12" />
         </div>
         <div>
-          <h3 className="text-lg font-black italic">¡Todo bajo control!</h3>
+          <h3 className="text-lg font-bold italic">¡Todo bajo control!</h3>
           <p className="text-sm opacity-40 max-w-xs mx-auto">No hay alertas críticas en este momento. El inventario está operando normalmente.</p>
         </div>
       </div>
@@ -463,12 +463,12 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
                 {group.map(a => {
                    const aConfig = severityConfig[a.tipo_alerta as keyof typeof severityConfig] ?? severityConfig.vence_90d
                    return (
-                     <span key={a.tipo_alerta} className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider', aConfig.bg)}>
+                     <span key={a.tipo_alerta} className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-bold uppercase tracking-wider', aConfig.bg)}>
                        {aConfig.label}
                      </span>
                    )
                 })}
-                <span className="text-sm font-black truncate group-hover:text-primary transition-colors" title={alerta.nombre}>{alerta.nombre}</span>
+                <span className="text-sm font-bold truncate group-hover:text-primary transition-colors" title={alerta.nombre}>{alerta.nombre}</span>
               </div>
 
               <p className="text-sm opacity-60 font-medium">
@@ -506,7 +506,7 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
             
             <div className="flex items-center gap-2">
                {alerta.tiene_pedido_pendiente && (
-                  <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-info/10 text-info border border-info/20 text-[10px] font-bold animate-pulse">
+                  <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-info/10 text-info border border-info/20 text-xs font-bold animate-pulse">
                     <Truck className="w-3 h-3" /> EN CAMINO
                   </div>
                 )}

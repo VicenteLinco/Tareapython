@@ -318,7 +318,7 @@ export default function SolicitudesCompraPage() {
               {isSearching && <span className="loading loading-spinner loading-sm absolute right-4 top-1/2 -translate-y-1/2 opacity-30"></span>}
               
               {/* Resultados búsqueda */}
-              {searchResults && productSearch.length > 2 && (
+              {searchResults && productSearch.length >= 2 && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-base-100 border border-base-300 rounded-2xl shadow-xl z-50 p-2 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                   {searchResults.data.map(p => (
                     <button 

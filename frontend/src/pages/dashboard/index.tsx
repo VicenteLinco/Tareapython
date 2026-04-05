@@ -23,9 +23,11 @@ import type { Alerta, PaginatedResponse, StockItem, Movimiento } from '@/types'
 import { cn, daysUntil, autoPlural } from '@/lib/utils'
 
 // Helpers nativos para evitar dependencias externas
-const formatStock = (val: number | null) => {
-  if (val === null) return '0'
-  return val % 1 === 0 ? val.toString() : val.toFixed(2)
+const formatStock = (val: number | string | null) => {
+  if (val === null || val === undefined) return '0'
+  const num = Number(val)
+  if (isNaN(num)) return '0'
+  return Math.abs(num - Math.round(num)) < 0.0001 ? Math.round(num).toString() : num.toFixed(2)
 }
 
 const formatDate = (dateStr: string) => {
@@ -126,13 +128,13 @@ const quebrados = alerts.filter(a => a.tipo_alerta === 'sin_stock').length
     <div className="p-4 sm:p-6 space-y-8 max-w-[1600px] mx-auto animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-base-200 pb-6">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-base-content flex items-center gap-3">
+          <h1 className="text-2xl font-bold tracking-tight text-base-content flex items-center gap-3">
             <div className="p-2 bg-primary/10 rounded-xl">
               <Package className="w-7 h-7 text-primary" />
             </div>
             Panel de Control
           </h1>
-          <p className="text-sm opacity-50 mt-1 font-medium">Gestión inteligente de inventario y alertas prioritarias</p>
+          <p className="text-sm text-base-content/50 mt-1">Gestión inteligente de inventario y alertas prioritarias</p>
         </div>
         <div className="flex items-center gap-2">
            <button 
@@ -193,7 +195,7 @@ const quebrados = alerts.filter(a => a.tipo_alerta === 'sin_stock').length
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         <div className="xl:col-span-8 space-y-4">
           <div className="flex items-center justify-between px-2">
-            <h2 className="text-lg font-black flex items-center gap-2">
+            <h2 className="text-base font-bold flex items-center gap-2">
               Alertas que requieren atención
               {alerts.length > 0 && (
                 <span className="badge badge-error badge-sm font-bold text-white">{alerts.length}</span>
@@ -237,7 +239,7 @@ const quebrados = alerts.filter(a => a.tipo_alerta === 'sin_stock').length
 
         <div className="xl:col-span-4 space-y-6">
           <div className="bg-base-100/40 rounded-3xl border border-base-200/60 p-5 shadow-sm backdrop-blur-sm">
-            <h2 className="text-sm font-black uppercase tracking-widest opacity-40 mb-4 flex items-center gap-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wide opacity-50 mb-4 flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4" />
               Recuperaciones Recientes
             </h2>
@@ -256,10 +258,10 @@ const quebrados = alerts.filter(a => a.tipo_alerta === 'sin_stock').length
                       <ArrowDownLeft className="w-4 h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[11px] font-bold truncate text-success">{res.producto_nombre}</p>
-                      <p className="text-[9px] opacity-60 font-medium">Stock normalizado por {res.tipo}</p>
+                      <p className="text-sm font-bold truncate text-success">{res.producto_nombre}</p>
+                      <p className="text-[10px] opacity-60 font-medium">Stock normalizado por {res.tipo}</p>
                     </div>
-                    <div className="text-[10px] opacity-40 font-bold">
+                    <div className="text-xs opacity-40 font-bold">
                        {res.created_at && formatDistanceSimple(res.created_at)}
                     </div>
                   </div>
@@ -315,9 +317,9 @@ function StatCard({ label, value, icon, color, loading, alert, onClick }: any) {
       {loading ? (
         <div className="h-8 w-16 bg-base-300/30 animate-pulse rounded-lg mb-1" />
       ) : (
-        <p className={cn("text-3xl font-black tabular-nums tracking-tighter", alert && "text-error")}>{value}</p>
+        <p className={cn("text-2xl font-bold tabular-nums", alert && "text-error")}>{value}</p>
       )}
-      <p className="text-[11px] font-black uppercase tracking-widest opacity-40">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-wide opacity-50">{label}</p>
       
       <div className="absolute top-0 right-0 -mr-4 -mt-4 opacity-5 group-hover:opacity-10 transition-opacity">
         {icon && React.cloneElement(icon as React.ReactElement<{ className?: string }>, { className: "w-24 h-24" })}
@@ -461,7 +463,7 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
                 {group.map(a => {
                    const aConfig = severityConfig[a.tipo_alerta as keyof typeof severityConfig] ?? severityConfig.vence_90d
                    return (
-                     <span key={a.tipo_alerta} className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider', aConfig.bg)}>
+                     <span key={a.tipo_alerta} className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider', aConfig.bg)}>
                        {aConfig.label}
                      </span>
                    )
@@ -469,7 +471,7 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
                 <span className="text-sm font-black truncate group-hover:text-primary transition-colors" title={alerta.nombre}>{alerta.nombre}</span>
               </div>
 
-              <p className="text-[11px] opacity-60 font-medium">
+              <p className="text-sm opacity-60 font-medium">
                 {isSinStock ? (
                   <span className="font-bold text-error uppercase italic ring-1 ring-error/20 px-1 rounded bg-error/5 flex items-center gap-1 w-fit">
                     <AlertCircle className="w-3 h-3" /> ¡Producto totalmente agotado!
@@ -504,7 +506,7 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
             
             <div className="flex items-center gap-2">
                {alerta.tiene_pedido_pendiente && (
-                  <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-info/10 text-info border border-info/20 text-[9px] font-bold animate-pulse">
+                  <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-info/10 text-info border border-info/20 text-[10px] font-bold animate-pulse">
                     <Truck className="w-3 h-3" /> EN CAMINO
                   </div>
                 )}

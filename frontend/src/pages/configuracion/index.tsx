@@ -9,6 +9,11 @@ interface Configuracion {
   logo_base64: string
   pin_kiosko: string
   conteo_ciego: boolean
+  dias_autonomia_objetivo: number
+  lead_time_default: number
+  moneda_codigo: string
+  moneda_simbolo: string
+  conteo_periodo_dias: number
 }
 
 export default function ConfiguracionPage() {
@@ -25,6 +30,11 @@ export default function ConfiguracionPage() {
   const [preview, setPreview] = useState('')
   const [pinKiosko, setPinKiosko] = useState('')
   const [conteoCiego, setConteoCiego] = useState(false)
+  const [diasAutonomia, setDiasAutonomia] = useState(15)
+  const [leadTime, setLeadTime] = useState(3)
+  const [monedaCodigo, setMonedaCodigo] = useState('CLP')
+  const [monedaSimbolo, setMonedaSimbolo] = useState('$')
+  const [conteoPeriodoDias, setConteoPeriodoDias] = useState(30)
   const [showPin, setShowPin] = useState(false)
 
   // Sync con datos cargados
@@ -35,11 +45,26 @@ export default function ConfiguracionPage() {
     setPreview(data.logo_base64)
     setPinKiosko(data.pin_kiosko || '')
     setConteoCiego(!!data.conteo_ciego)
+    setDiasAutonomia(data.dias_autonomia_objetivo || 15)
+    setLeadTime(data.lead_time_default || 3)
+    setMonedaCodigo(data.moneda_codigo || 'CLP')
+    setMonedaSimbolo(data.moneda_simbolo || '$')
+    setConteoPeriodoDias(data.conteo_periodo_dias || 30)
     initialized.current = true
   }
 
   const mutation = useMutation({
-    mutationFn: (payload: { nombre_laboratorio: string; logo_base64: string; pin_kiosko: string; conteo_ciego: boolean }) =>
+    mutationFn: (payload: {
+      nombre_laboratorio: string;
+      logo_base64: string;
+      pin_kiosko: string;
+      conteo_ciego: boolean;
+      dias_autonomia_objetivo: number;
+      lead_time_default: number;
+      moneda_codigo: string;
+      moneda_simbolo: string;
+      conteo_periodo_dias: number;
+    }) =>
       api.put<Configuracion>('/configuracion', payload).then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['configuracion'] })
@@ -76,11 +101,16 @@ export default function ConfiguracionPage() {
       toast.error('El nombre del laboratorio es requerido')
       return
     }
-    mutation.mutate({ 
-      nombre_laboratorio: nombre.trim(), 
-      logo_base64: logo, 
+    mutation.mutate({
+      nombre_laboratorio: nombre.trim(),
+      logo_base64: logo,
       pin_kiosko: pinKiosko.trim(),
-      conteo_ciego: conteoCiego
+      conteo_ciego: conteoCiego,
+      dias_autonomia_objetivo: diasAutonomia,
+      lead_time_default: leadTime,
+      moneda_codigo: monedaCodigo,
+      moneda_simbolo: monedaSimbolo,
+      conteo_periodo_dias: conteoPeriodoDias,
     })
   }
 
@@ -186,6 +216,106 @@ export default function ConfiguracionPage() {
               {showPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           </label>
+        </div>
+
+        {/* Moneda */}
+        <div className="card bg-base-100 shadow-sm border border-base-200 p-6">
+          <h3 className="font-semibold text-base mb-4 flex items-center gap-2">
+            <span>💱</span> Moneda del Sistema
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium opacity-70 mb-1 block">Código ISO</label>
+              <select
+                className="select select-bordered w-full"
+                value={monedaCodigo}
+                onChange={(e) => setMonedaCodigo(e.target.value)}
+              >
+                <option value="CLP">CLP — Peso Chileno</option>
+                <option value="USD">USD — Dólar Estadounidense</option>
+                <option value="PEN">PEN — Sol Peruano</option>
+                <option value="COP">COP — Peso Colombiano</option>
+                <option value="MXN">MXN — Peso Mexicano</option>
+                <option value="ARS">ARS — Peso Argentino</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium opacity-70 mb-1 block">Símbolo</label>
+              <input
+                type="text"
+                className="input input-bordered w-full"
+                value={monedaSimbolo}
+                onChange={(e) => setMonedaSimbolo(e.target.value)}
+                placeholder="$"
+                maxLength={5}
+              />
+              <p className="text-xs opacity-50 mt-1">Aparece en precios, solicitudes y PDF</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Período de Conteo */}
+        <div className="card bg-base-100 shadow-sm border border-base-200 p-6">
+          <h3 className="font-semibold text-base mb-4 flex items-center gap-2">
+            <span>📋</span> Período de Conteo
+          </h3>
+          <div>
+            <label className="text-sm font-medium opacity-70 mb-1 block">
+              Días máximos entre conteos (global)
+            </label>
+            <input
+              type="number"
+              className="input input-bordered w-40"
+              value={conteoPeriodoDias}
+              onChange={(e) => setConteoPeriodoDias(parseInt(e.target.value) || 30)}
+              min={1}
+              max={365}
+            />
+            <p className="text-xs opacity-50 mt-1">
+              Cada área puede tener su propio período. Este valor aplica si no tiene uno configurado.
+            </p>
+          </div>
+        </div>
+
+        {/* Inteligencia de Inventario */}
+        <div className="space-y-4 p-6 bg-primary/5 rounded-[2rem] border border-primary/10">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-2 bg-primary/10 rounded-xl text-primary">
+              <Save className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm">Inteligencia de Inventario</h3>
+              <p className="text-[10px] opacity-50">Configura cómo el sistema predice tus necesidades</p>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold opacity-60 ml-1">Días de Autonomía Objetivo</label>
+              <input 
+                type="number"
+                className="input input-bordered w-full h-11 rounded-xl font-bold"
+                value={diasAutonomia}
+                onChange={e => setDiasAutonomia(Number(e.target.value))}
+                min={1}
+                max={365}
+              />
+              <p className="text-[9px] opacity-40 px-1">Días de stock que deseas tener siempre protegidos.</p>
+            </div>
+            
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold opacity-60 ml-1">Lead Time por Defecto (Días)</label>
+              <input 
+                type="number"
+                className="input input-bordered w-full h-11 rounded-xl font-bold"
+                value={leadTime}
+                onChange={e => setLeadTime(Number(e.target.value))}
+                min={0}
+                max={90}
+              />
+              <p className="text-[9px] opacity-40 px-1">Días que tardan los proveedores si no se especifica en el producto.</p>
+            </div>
+          </div>
         </div>
 
         {/* Conteo Ciego */}

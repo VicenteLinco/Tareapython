@@ -51,14 +51,26 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
   doc.setFillColor(...C.primary)
   doc.rect(0, 0, W, 35, 'F')
   
+  const hasLogo = !!(options.logoBase64 && options.logoBase64.startsWith('data:image'))
+  const textX = hasLogo ? 40 : 15
+
+  // Render logo in top-left, reserving space to the right for title text
+  if (hasLogo) {
+    try {
+      doc.addImage(options.logoBase64!, 'AUTO', 10, 6, 22, 22)
+    } catch (_) {
+      // Ignore if logo rendering fails
+    }
+  }
+
   doc.setTextColor(...C.white)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(22)
-  doc.text('SOLICITUD DE COMPRA', 15, 18)
-  
+  doc.text('SOLICITUD DE COMPRA', textX, 18)
+
   doc.setFontSize(9)
   doc.setFont('helvetica', 'normal')
-  doc.text('SISTEMA DE GESTIÓN DE INVENTARIO E INSUMOS CLÍNICOS', 15, 25)
+  doc.text('SISTEMA DE GESTIÓN DE INVENTARIO E INSUMOS CLÍNICOS', textX, 25)
 
   // Cuadro de Información del Documento
   doc.setFillColor(255, 255, 255, 0.1)
@@ -70,15 +82,6 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
   doc.setFontSize(7)
   doc.setFont('helvetica', 'normal')
   doc.text('REFERENCIA INTERNA', W - 45, 22, { align: 'center' })
-
-  // Render logo if provided
-  if (options.logoBase64 && options.logoBase64.startsWith('data:image')) {
-    try {
-      doc.addImage(options.logoBase64, 'AUTO', 12, 7, 20, 20)
-    } catch (_) {
-      // Ignore if logo rendering fails
-    }
-  }
 
   // --- INFO DE EMISIÓN ---
   let y = 45

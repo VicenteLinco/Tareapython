@@ -115,46 +115,42 @@ export default function SolicitudesCompraPage() {
     enabled: view === 'crear'
   })
 
-  // Cargar borrador inicial si existe
+  // Cargar borrador inicial si existe; si viene ?select=ID, agregar ese producto al final
   useEffect(() => {
-    if (view === 'crear' && items.length === 0) {
-      api.get<{ borrador: SolicitudDetalle | null }>('/solicitudes-compra/borrador')
-        .then(res => {
-          const b = res.data.borrador
-          if (b) {
-            setSolicitudId(b.id)
-            setItems(b.items.map(item => ({
-              producto_id: item.producto_id,
-              producto_nombre: item.producto_nombre,
-              codigo_proveedor: item.codigo_proveedor,
-              codigo_maestro: item.codigo_maestro,
-              proveedor_id: null, // No viene en el detalle de item por ahora
-              proveedor_nombre: item.proveedor_nombre || 'Desconocido',
-              lead_time: 0,
-              presentacion_id: item.presentacion_id,
-              presentacion_nombre: item.presentacion_nombre,
-              presentacion_nombre_plural: item.presentacion_nombre_plural,
-              factor_conversion: item.factor_conversion ? parseFloat(item.factor_conversion) : null,
-              unidad_base: item.unidad,
-              unidad_base_plural: autoPlural(item.unidad),
-              cantidad: parseFloat(item.cantidad_sugerida),
-              precio_unitario: item.precio_unitario ? parseFloat(item.precio_unitario) : 0
-            })))
-          }
-        })
-    }
-  }, [view, items.length])
+    if (view !== 'crear' || items.length > 0) return
 
-  // Pre-add product from URL ?select=PRODUCTO_ID
-  useEffect(() => {
     const productoId = searchParams.get('select')
-    if (!productoId || items.some(i => i.producto_id === productoId)) return
 
-    api.get<Producto>(`/productos/${productoId}`)
-        .then(res => {
-            const p = res.data
-            if (!p) return
-            const newItem: SolicitudItem = {
+    api.get<{ borrador: SolicitudDetalle | null }>('/solicitudes-compra/borrador')
+      .then(res => {
+        const b = res.data.borrador
+        const borradorItems: SolicitudItem[] = b ? b.items.map(item => ({
+          producto_id: item.producto_id,
+          producto_nombre: item.producto_nombre,
+          codigo_proveedor: item.codigo_proveedor,
+          codigo_maestro: item.codigo_maestro,
+          proveedor_id: null,
+          proveedor_nombre: item.proveedor_nombre || 'Desconocido',
+          lead_time: 0,
+          presentacion_id: item.presentacion_id,
+          presentacion_nombre: item.presentacion_nombre,
+          presentacion_nombre_plural: item.presentacion_nombre_plural,
+          factor_conversion: item.factor_conversion ? parseFloat(item.factor_conversion) : null,
+          unidad_base: item.unidad,
+          unidad_base_plural: autoPlural(item.unidad),
+          cantidad: parseFloat(item.cantidad_sugerida),
+          precio_unitario: item.precio_unitario ? parseFloat(item.precio_unitario) : 0
+        })) : []
+
+        if (b) setSolicitudId(b.id)
+
+        // Si hay ?select=, agregar ese producto si no está ya en el borrador
+        if (productoId && !borradorItems.some(i => i.producto_id === productoId)) {
+          api.get<Producto>(`/productos/${productoId}`)
+            .then(res2 => {
+              const p = res2.data
+              if (!p) { setItems(borradorItems); return }
+              const newItem: SolicitudItem = {
                 producto_id: p.id,
                 producto_nombre: p.nombre,
                 codigo_proveedor: p.codigo_proveedor,
@@ -166,16 +162,20 @@ export default function SolicitudesCompraPage() {
                 presentacion_nombre: null,
                 presentacion_nombre_plural: null,
                 factor_conversion: null,
-                unidad_base: 'u',
+                unidad_base: 'u', // Producto type only exposes unidad_base_id; 'u' is a display placeholder until draft is saved and refetched
                 unidad_base_plural: 'u',
                 cantidad: 1,
                 precio_unitario: p.precio_unidad ? parseFloat(String(p.precio_unidad)) : 0,
-            }
-            setItems(prev => [...prev, newItem])
-            setView('crear')
-        })
-        .catch(() => {})
-  }, [searchParams])
+              }
+              setItems([...borradorItems, newItem])
+              setView('crear')
+            })
+            .catch(() => { setItems(borradorItems) })
+        } else {
+          setItems(borradorItems)
+        }
+      })
+  }, [view, items.length, searchParams])
 
   // Mutation: Guardar Borrador
   const saveMutation = useMutation({
@@ -736,6 +736,9 @@ export default function SolicitudesCompraPage() {
                             codigo_proveedor: i.codigo_proveedor,
                             proveedor_nombre: i.proveedor_nombre,
                             presentacion_nombre: i.presentacion_nombre,
+                            presentacion_nombre_plural: i.presentacion_nombre_plural,
+                            factor_conversion: i.factor_conversion ? parseFloat(i.factor_conversion) : null,
+                            cantidad_presentaciones: i.cantidad_presentaciones ? parseFloat(i.cantidad_presentaciones) : null,
                             precio_unitario: i.precio_unitario ? parseFloat(i.precio_unitario) : null,
                         }))
                     })

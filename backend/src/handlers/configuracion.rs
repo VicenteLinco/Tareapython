@@ -14,6 +14,11 @@ struct ConfiguracionResponse {
     logo_base64: String,
     pin_kiosko: String,
     conteo_ciego: bool,
+    dias_autonomia_objetivo: i32,
+    lead_time_default: i32,
+    moneda_codigo: String,
+    moneda_simbolo: String,
+    conteo_periodo_dias: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -22,6 +27,11 @@ struct UpdateConfiguracion {
     logo_base64: Option<String>,
     pin_kiosko: Option<String>,
     conteo_ciego: Option<bool>,
+    dias_autonomia_objetivo: Option<i32>,
+    lead_time_default: Option<i32>,
+    moneda_codigo: Option<String>,
+    moneda_simbolo: Option<String>,
+    conteo_periodo_dias: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -34,7 +44,11 @@ async fn obtener(
     State(state): State<AppState>,
 ) -> Result<Json<ConfiguracionResponse>, AppError> {
     let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT clave, valor_texto FROM configuracion WHERE clave IN ('nombre_laboratorio', 'logo_base64', 'pin_kiosko', 'conteo_ciego')",
+        "SELECT clave, valor_texto FROM configuracion WHERE clave IN (
+            'nombre_laboratorio','logo_base64','pin_kiosko','conteo_ciego',
+            'dias_autonomia_objetivo','lead_time_default',
+            'moneda_codigo','moneda_simbolo','conteo_periodo_dias'
+        )",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -43,6 +57,11 @@ async fn obtener(
     let mut logo_base64 = String::new();
     let mut pin_kiosko = String::new();
     let mut conteo_ciego = false;
+    let mut dias_autonomia_objetivo = 15;
+    let mut lead_time_default = 3;
+    let mut moneda_codigo = "CLP".to_string();
+    let mut moneda_simbolo = "$".to_string();
+    let mut conteo_periodo_dias = 30;
 
     for (clave, valor) in rows {
         match clave.as_str() {
@@ -50,11 +69,26 @@ async fn obtener(
             "logo_base64" => logo_base64 = valor,
             "pin_kiosko" => pin_kiosko = valor,
             "conteo_ciego" => conteo_ciego = valor == "true",
+            "dias_autonomia_objetivo" => dias_autonomia_objetivo = valor.parse().unwrap_or(15),
+            "lead_time_default" => lead_time_default = valor.parse().unwrap_or(3),
+            "moneda_codigo" => moneda_codigo = valor,
+            "moneda_simbolo" => moneda_simbolo = valor,
+            "conteo_periodo_dias" => conteo_periodo_dias = valor.parse().unwrap_or(30),
             _ => {}
         }
     }
 
-    Ok(Json(ConfiguracionResponse { nombre_laboratorio, logo_base64, pin_kiosko, conteo_ciego }))
+    Ok(Json(ConfiguracionResponse {
+        nombre_laboratorio,
+        logo_base64,
+        pin_kiosko,
+        conteo_ciego,
+        dias_autonomia_objetivo,
+        lead_time_default,
+        moneda_codigo,
+        moneda_simbolo,
+        conteo_periodo_dias,
+    }))
 }
 
 /// PUT /api/v1/configuracion — Actualizar configuración (solo admin)
@@ -116,6 +150,61 @@ async fn actualizar(
         if ant.as_deref() != Some(val) {
             log_changes.push(("conteo_ciego", ant.unwrap_or_else(|| "false".to_string()), val.to_string()));
         }
+    }
+
+    if let Some(dias) = body.dias_autonomia_objetivo {
+        let val = dias.to_string();
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('dias_autonomia_objetivo', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+        )
+        .bind(&val)
+        .execute(&state.pool)
+        .await?;
+        log_changes.push(("dias_autonomia_objetivo", "old".to_string(), val));
+    }
+
+    if let Some(lead) = body.lead_time_default {
+        let val = lead.to_string();
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('lead_time_default', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+        )
+        .bind(&val)
+        .execute(&state.pool)
+        .await?;
+        log_changes.push(("lead_time_default", "old".to_string(), val));
+    }
+
+    if let Some(codigo) = &body.moneda_codigo {
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('moneda_codigo', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+        )
+        .bind(codigo)
+        .execute(&state.pool)
+        .await?;
+    }
+
+    if let Some(simbolo) = &body.moneda_simbolo {
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('moneda_simbolo', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+        )
+        .bind(simbolo)
+        .execute(&state.pool)
+        .await?;
+    }
+
+    if let Some(periodo) = body.conteo_periodo_dias {
+        let val = periodo.to_string();
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('conteo_periodo_dias', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+        )
+        .bind(&val)
+        .execute(&state.pool)
+        .await?;
     }
 
     for (clave, ant, nuev) in log_changes {

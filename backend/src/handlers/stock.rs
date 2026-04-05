@@ -60,7 +60,7 @@ async fn listar(
     let area_filter = if let Some(aid) = params.area_id {
         param_idx += 1;
         binds.push(aid.to_string());
-        format!("AND s.area_id = ${}", param_idx)
+        format!("AND s.area_id = ${}::integer", param_idx)
     } else {
         "".to_string()
     };
@@ -76,7 +76,7 @@ async fn listar(
     let cat_filter = if let Some(cat_id) = params.categoria_id {
         param_idx += 1;
         binds.push(cat_id.to_string());
-        format!("AND p.categoria_id = ${}", param_idx)
+        format!("AND p.categoria_id = ${}::integer", param_idx)
     } else {
         "".to_string()
     };
@@ -84,7 +84,7 @@ async fn listar(
     let prov_filter = if let Some(prov_id) = params.proveedor_id {
         param_idx += 1;
         binds.push(prov_id.to_string());
-        format!("AND p.proveedor_id = ${}", param_idx)
+        format!("AND p.proveedor_id = ${}::integer", param_idx)
     } else {
         "".to_string()
     };

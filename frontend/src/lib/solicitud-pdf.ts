@@ -24,6 +24,8 @@ interface SolicitudPdfOptions {
     cantidad_presentaciones?: number | null
   }[]
   nombreLaboratorio: string
+  logoBase64?: string | null
+  monedaSimbolo?: string
 }
 
 const C = {
@@ -39,6 +41,7 @@ const C = {
 
 export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promise<void> {
   const { numero_documento, fecha_creacion, usuario_nombre, nota, items, nombreLaboratorio, subtotal_neto, iva, total_con_iva } = options
+  const sym = options.monedaSimbolo || '$'
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' })
   const W = doc.internal.pageSize.getWidth()
@@ -67,6 +70,15 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
   doc.setFontSize(7)
   doc.setFont('helvetica', 'normal')
   doc.text('REFERENCIA INTERNA', W - 45, 22, { align: 'center' })
+
+  // Render logo if provided
+  if (options.logoBase64 && options.logoBase64.startsWith('data:image')) {
+    try {
+      doc.addImage(options.logoBase64, 'AUTO', 12, 7, 20, 20)
+    } catch (_) {
+      // Ignore if logo rendering fails
+    }
+  }
 
   // --- INFO DE EMISIÓN ---
   let y = 45
@@ -146,8 +158,8 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
         item.codigo_proveedor ?? '—',
         item.codigo_maestro ?? '—',
         { content: cantDisplay, styles: { fontSize: 7 } },
-        item.precio_unitario ? `$${Math.round(item.precio_unitario).toLocaleString('es-CL')}` : '—',
-        totalLinea ? `$${Math.round(totalLinea).toLocaleString('es-CL')}` : '—',
+        item.precio_unitario ? `${sym}${Math.round(item.precio_unitario).toLocaleString('es-CL')}` : '—',
+        totalLinea ? `${sym}${Math.round(totalLinea).toLocaleString('es-CL')}` : '—',
       ]
     }),
     theme: 'grid',
@@ -189,8 +201,8 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
 
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(...C.textMain)
-  doc.text(`$${Math.round(subtotal_neto).toLocaleString('es-CL')}`, W - 20, ty + 7, { align: 'right' })
-  doc.text(`$${Math.round(iva).toLocaleString('es-CL')}`, W - 20, ty + 14, { align: 'right' })
+  doc.text(`${sym}${Math.round(subtotal_neto).toLocaleString('es-CL')}`, W - 20, ty + 7, { align: 'right' })
+  doc.text(`${sym}${Math.round(iva).toLocaleString('es-CL')}`, W - 20, ty + 14, { align: 'right' })
 
   // Separator line
   doc.setDrawColor(...C.secondary)
@@ -200,7 +212,7 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
   doc.setFontSize(10)
   doc.setTextColor(...C.secondary)
   doc.text('Total con IVA:', boxX + 4, ty + 24)
-  doc.text(`$${Math.round(total_con_iva).toLocaleString('es-CL')}`, W - 20, ty + 24, { align: 'right' })
+  doc.text(`${sym}${Math.round(total_con_iva).toLocaleString('es-CL')}`, W - 20, ty + 24, { align: 'right' })
 
   const finalY = ty + 33
 

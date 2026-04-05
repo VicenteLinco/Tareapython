@@ -258,6 +258,13 @@ export default function SolicitudesCompraPage() {
     }
   })
 
+  // Configuración del sistema
+  const { data: configuracion } = useQuery({
+    queryKey: ['configuracion'],
+    queryFn: () => api.get<{ nombre_laboratorio: string; logo_base64: string; moneda_simbolo: string }>('/configuracion').then(r => r.data),
+    staleTime: 300_000,
+  })
+
   // Render Detalle Modal
   const { data: detail, isLoading: isLoadingDetail } = useQuery({
     queryKey: ['solicitud-detail', selectedSolicitudId],
@@ -706,7 +713,33 @@ export default function SolicitudesCompraPage() {
                 {formatPesos(detail.items.reduce((acc, i) => acc + (parseFloat(i.cantidad_sugerida) * (i.precio_unitario ? parseFloat(i.precio_unitario) : 0)), 0))}
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" className="rounded-xl h-10 gap-2" onClick={() => exportarSolicitudPDF(detail)}>
+                <Button variant="outline" className="rounded-xl h-10 gap-2" onClick={() => {
+                    const subtotal = detail.items.reduce((acc, i) =>
+                        acc + parseFloat(i.cantidad_sugerida) * (i.precio_unitario ? parseFloat(i.precio_unitario) : 0), 0)
+                    const iva = subtotal * 0.19
+                    exportarSolicitudPDF({
+                        numero_documento: detail.numero_documento,
+                        fecha_creacion: detail.fecha_creacion,
+                        usuario_nombre: detail.usuario_nombre,
+                        nota: detail.nota,
+                        subtotal_neto: subtotal,
+                        iva,
+                        total_con_iva: subtotal + iva,
+                        nombreLaboratorio: configuracion?.nombre_laboratorio || 'Laboratorio Clínico',
+                        logoBase64: configuracion?.logo_base64 || null,
+                        monedaSimbolo: configuracion?.moneda_simbolo || '$',
+                        items: detail.items.map(i => ({
+                            producto_nombre: i.producto_nombre,
+                            cantidad_sugerida: parseFloat(i.cantidad_sugerida),
+                            unidad: i.unidad,
+                            codigo_maestro: i.codigo_maestro,
+                            codigo_proveedor: i.codigo_proveedor,
+                            proveedor_nombre: i.proveedor_nombre,
+                            presentacion_nombre: i.presentacion_nombre,
+                            precio_unitario: i.precio_unitario ? parseFloat(i.precio_unitario) : null,
+                        }))
+                    })
+                }}>
                   <FileDown className="h-4 w-4" /> PDF
                 </Button>
                 <Button className="rounded-xl h-10" onClick={() => setSelectedSolicitudId(null)}>Cerrar</Button>

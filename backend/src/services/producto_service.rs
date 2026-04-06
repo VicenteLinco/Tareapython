@@ -372,6 +372,7 @@ impl ProductoService {
         if let Some(r) = row {
             return Ok(json!({
                 "encontrado": true,
+                "tipo": "presentacion",
                 "producto_id": r.producto_id,
                 "producto_nombre": r.producto_nombre,
                 "unidad_base_nombre": r.unidad_base_nombre,

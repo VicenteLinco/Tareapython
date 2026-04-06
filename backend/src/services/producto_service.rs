@@ -394,7 +394,7 @@ impl ProductoService {
             imagen_url: Option<String>,
         }
 
-        // 2. Buscar por código interno
+        // 2. Buscar por código interno del producto
         let row2 = sqlx::query_as::<_, Row2>(
             r#"SELECT
                  p.id as producto_id, p.nombre as producto_nombre,
@@ -413,6 +413,7 @@ impl ProductoService {
         if let Some(r) = row2 {
             return Ok(json!({
                 "encontrado": true,
+                "tipo": "producto",
                 "producto_id": r.producto_id,
                 "producto_nombre": r.producto_nombre,
                 "unidad_base_nombre": r.unidad_base_nombre,
@@ -421,6 +422,76 @@ impl ProductoService {
                 "presentacion_nombre": null,
                 "factor_conversion": null,
                 "stock_total": r.stock_total,
+                "imagen_url": r.imagen_url,
+            }));
+        }
+
+        // 3. Buscar por codigo_interno del lote (para escanear etiquetas impresas en recepción)
+        #[derive(sqlx::FromRow)]
+        struct Row3 {
+            lote_id: Uuid,
+            codigo_interno_lote: String,
+            numero_lote: String,
+            fecha_vencimiento: chrono::NaiveDate,
+            producto_id: Uuid,
+            producto_nombre: String,
+            unidad_base_nombre: String,
+            unidad_base_nombre_plural: String,
+            presentacion_id: Option<i32>,
+            presentacion_nombre: Option<String>,
+            area_id: Option<i32>,
+            area_nombre: Option<String>,
+            imagen_url: Option<String>,
+        }
+
+        let row3 = sqlx::query_as::<_, Row3>(
+            r#"SELECT
+                 l.id as lote_id,
+                 l.codigo_interno as codigo_interno_lote,
+                 l.numero_lote,
+                 l.fecha_vencimiento,
+                 p.id as producto_id,
+                 p.nombre as producto_nombre,
+                 ub.nombre as unidad_base_nombre,
+                 ub.nombre_plural as unidad_base_nombre_plural,
+                 (SELECT pr.id FROM presentaciones pr
+                  WHERE pr.producto_id = p.id AND pr.activa = true
+                  ORDER BY pr.id ASC LIMIT 1) as presentacion_id,
+                 (SELECT pr.nombre FROM presentaciones pr
+                  WHERE pr.producto_id = p.id AND pr.activa = true
+                  ORDER BY pr.id ASC LIMIT 1) as presentacion_nombre,
+                 (SELECT s.area_id FROM stock s WHERE s.lote_id = l.id AND s.cantidad > 0
+                  ORDER BY s.cantidad DESC LIMIT 1) as area_id,
+                 (SELECT a.nombre FROM stock s JOIN areas a ON a.id = s.area_id
+                  WHERE s.lote_id = l.id AND s.cantidad > 0
+                  ORDER BY s.cantidad DESC LIMIT 1) as area_nombre,
+                 p.imagen_url
+               FROM lotes l
+               JOIN productos p ON p.id = l.producto_id
+               JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
+               WHERE l.codigo_interno = $1 AND p.activo = true
+               LIMIT 1"#,
+        )
+        .bind(codigo)
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some(r) = row3 {
+            return Ok(json!({
+                "encontrado": true,
+                "tipo": "lote",
+                "lote_id": r.lote_id,
+                "codigo_interno_lote": r.codigo_interno_lote,
+                "numero_lote": r.numero_lote,
+                "fecha_vencimiento": r.fecha_vencimiento,
+                "producto_id": r.producto_id,
+                "producto_nombre": r.producto_nombre,
+                "unidad_base_nombre": r.unidad_base_nombre,
+                "unidad_base_nombre_plural": r.unidad_base_nombre_plural,
+                "presentacion_id": r.presentacion_id,
+                "presentacion_nombre": r.presentacion_nombre,
+                "area_id": r.area_id,
+                "area_nombre": r.area_nombre,
                 "imagen_url": r.imagen_url,
             }));
         }

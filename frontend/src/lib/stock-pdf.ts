@@ -93,13 +93,19 @@ async function fetchStockForArea(areaId: number, filters?: PdfOptions['filters']
     page: 1,
   }
   const first = await api.get<StockResponse>('/stock', { params }).then(r => r.data)
-  if (first.total_pages <= 1) return first.data
-  const rest = await Promise.all(
-    Array.from({ length: first.total_pages - 1 }, (_, i) =>
-      api.get<StockResponse>('/stock', { params: { ...params, page: i + 2 } }).then(r => r.data.data)
-    )
-  )
-  return [...first.data, ...rest.flat()]
+  const all = first.total_pages <= 1
+    ? first.data
+    : [
+        ...first.data,
+        ...await Promise.all(
+          Array.from({ length: first.total_pages - 1 }, (_, i) =>
+            api.get<StockResponse>('/stock', { params: { ...params, page: i + 2 } }).then(r => r.data.data)
+          )
+        ).then(pages => pages.flat()),
+      ]
+  // El endpoint /stock?area_id=X tiene un LEFT JOIN que devuelve productos con
+  // stock_minimo > 0 aunque no tengan stock real en esa área. Filtrar explícitamente.
+  return all.filter(i => (i.stock_total ?? 0) > 0)
 }
 
 // ─── drawHeader ───────────────────────────────────────────────────────────

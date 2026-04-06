@@ -71,15 +71,15 @@ async fn crear(
         return Ok((StatusCode::CREATED, Json(body)));
     }
 
-    let id = match recepcion_service::crear_recepcion(&state.pool, req, claims.sub).await {
-        Ok(id) => id,
+    let (id, lotes) = match recepcion_service::crear_recepcion(&state.pool, req, claims.sub).await {
+        Ok(result) => result,
         Err(e) => {
             idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
             return Err(e);
         }
     };
 
-    let response = serde_json::json!({ "id": id });
+    let response = serde_json::json!({ "id": id, "lotes": lotes });
     idempotency::save_response(&state.pool, &idem_key, 201, &response).await?;
 
     Ok((StatusCode::CREATED, Json(response)))

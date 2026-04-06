@@ -15,6 +15,7 @@ pub struct Recepcion {
     pub guia_despacho_archivo: Option<String>,
     pub usuario_id: Uuid,
     pub nota: Option<String>,
+    pub motivo_rechazo: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -25,7 +26,7 @@ pub struct RecepcionDetalle {
     pub recepcion_id: Uuid,
     pub producto_id: Uuid,
     pub lote_id: Uuid,
-    pub presentacion_id: i32,
+    pub presentacion_id: Option<i32>,
     pub area_destino_id: i32,
     pub cantidad_presentaciones: Decimal,
     pub factor_conversion_usado: Decimal,

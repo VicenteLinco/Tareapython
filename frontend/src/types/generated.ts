@@ -41,6 +41,14 @@ export type RecepcionQuery = { proveedor_id: number | null; estado: string | nul
 export type PaginatedRecepciones = { data: RecepcionListItem[]; total: number; page: number; per_page: number; total_pages: number }
 export type RecepcionListItem = { id: string; numero_documento: string; proveedor_nombre: string; proveedor_icono: string | null; guia_despacho: string | null; estado: string; fecha_recepcion: string; usuario_nombre: string; created_at: string; areas_destino: string | null; tiene_foto: boolean; solicitud_id: string | null }
 export type SubirFotoInput = { data_url: string }
-export type CreateRecepcion = { proveedor_id: number; guia_despacho: string | null; estado: string | null; fecha_recepcion: string; nota: string | null; solicitud_id: string | null; detalle: DetalleRecepcionInput[] }
+export type CreateRecepcion = { proveedor_id: number; guia_despacho: string | null; 
+/**
+ * "completa" | "parcial" | "rechazada" — default "completa"
+ */
+estado: string | null; fecha_recepcion: string; nota: string | null; motivo_rechazo: string | null; solicitud_id: string | null; detalle: DetalleRecepcionInput[] }
 export type DetalleRecepcionInput = { producto_id: string; numero_lote: string; fecha_vencimiento: string; presentacion_id: number | null; cantidad_presentaciones: string; area_destino_id: number; costo_unitario: string | null; precio_unitario: string | null }
 export type DetalleRecepcionRow = { id: number; producto_nombre: string; numero_lote: string; fecha_vencimiento: string; presentacion_nombre: string | null; cantidad_presentaciones: string; factor_conversion_usado: string; cantidad_unidades_base: string; unidad_base_nombre: string; unidad_base_nombre_plural: string; area_destino: string }
+/**
+ * Información del lote creado durante la recepción, para generar etiquetas QR
+ */
+export type LoteCreado = { lote_id: string; codigo_interno: string; numero_lote: string; fecha_vencimiento: string; producto_id: string; producto_nombre: string; presentacion_nombre: string | null; area_nombre: string; cantidad: string }

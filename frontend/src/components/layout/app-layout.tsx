@@ -4,11 +4,14 @@ import { Sidebar } from './sidebar'
 import { Header } from './header'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { getDeviceMode } from '@/lib/device-mode'
+import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout'
+import { InactivityWarningDialog } from '@/components/auth/InactivityWarningDialog'
 
 export function AppLayout() {
   const accessToken = useAuthStore((s) => s.accessToken)
   const navigate = useNavigate()
   const location = useLocation()
+  const { dialogOpen, secondsLeft, onContinue } = useInactivityTimeout()
 
   useEffect(() => {
     if (!accessToken) return  // Not authenticated — let Navigate below handle it
@@ -33,6 +36,11 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <InactivityWarningDialog
+        open={dialogOpen}
+        secondsLeft={secondsLeft}
+        onContinue={onContinue}
+      />
     </div>
   )
 }

@@ -102,6 +102,7 @@ export default function NuevaRecepcionPage() {
       const pres = presentaciones[0] || null
 
       const catalogoArea = full.areas?.[0]
+      const initialCantidadPresentacion = 1
       const line: DetalleLineUI = {
         id: uuidv4(),
         producto_id: String(prod.id),
@@ -110,7 +111,7 @@ export default function NuevaRecepcionPage() {
         presentacion_id: pres?.id || null,
         presentacion_nombre: pres?.nombre || '',
         presentacion_nombre_plural: pres?.nombre_plural || '',
-        cantidad_presentacion: 1,
+        cantidad_presentacion: initialCantidadPresentacion,
         factor_conversion: Number(pres?.factor_conversion || 1),
         unidad_base_nombre: full.unidad_base?.nombre || '',
         unidad_base_nombre_plural: full.unidad_base?.nombre_plural || '',
@@ -122,7 +123,7 @@ export default function NuevaRecepcionPage() {
         precio_unitario: full.precio_unidad ? String((full.precio_unidad * Number(pres?.factor_conversion || 1)).toFixed(2)) : '',
         imagen_url: full.imagen_url,
         incluir_etiqueta: false,
-        cantidad_etiquetas: 1, // pre-filled with cantidad_presentacion (initially 1)
+        cantidad_etiquetas: initialCantidadPresentacion,
       }
       setDetalles(prev => [line, ...prev])
       toast.success(`${prod.nombre} añadido`)
@@ -158,6 +159,7 @@ export default function NuevaRecepcionPage() {
           ? [{ id: data.presentacion_id, nombre: data.presentacion_nombre, nombre_plural: data.presentacion_nombre + 's', factor_conversion: 1, activa: true, version: 1 }]
           : []
 
+        const initialCantidadPresentacion = 1
         const line: DetalleLineUI = {
           id: uuidv4(),
           producto_id: String(data.producto_id),
@@ -166,7 +168,7 @@ export default function NuevaRecepcionPage() {
           presentacion_id: data.presentacion_id || null,
           presentacion_nombre: data.presentacion_nombre || '',
           presentacion_nombre_plural: data.presentacion_nombre ? data.presentacion_nombre + 's' : '',
-          cantidad_presentacion: 1,
+          cantidad_presentacion: initialCantidadPresentacion,
           factor_conversion: 1,
           unidad_base_nombre: data.unidad_base_nombre || '',
           unidad_base_nombre_plural: data.unidad_base_nombre_plural || '',
@@ -178,7 +180,7 @@ export default function NuevaRecepcionPage() {
           precio_unitario: '',
           imagen_url: data.imagen_url || null,
           incluir_etiqueta: false,
-          cantidad_etiquetas: 1,
+          cantidad_etiquetas: initialCantidadPresentacion,
         }
         setDetalles(prev => [line, ...prev])
         toast.success(`Lote ${data.numero_lote} añadido`)

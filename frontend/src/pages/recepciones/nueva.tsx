@@ -13,6 +13,7 @@ import { ProveedorSelect } from '@/components/ui/proveedor-select'
 import { toast } from 'sonner'
 import { ReceptionItemCard, type DetalleLineUI } from './components/item-card'
 import { LabelsSection } from './components/labels-section'
+import { QrScannerSession } from './qr-scanner-session'
 import { imprimirEtiquetas, type LoteParaEtiqueta } from '@/lib/label-print'
 import type { Proveedor, Produto, Area, SolicitudResumen } from '@/types'
 
@@ -31,8 +32,6 @@ interface LoteConfirmadoApi {
   cantidad: number
 }
 
-const TODAY = new Date().toISOString().split('T')[0]
-const NOW_TIME = new Date().toTimeString().slice(0, 5)
 
 const MOTIVOS_RECHAZO = [
   { id: 'temperatura', label: '🌡️ Cadena de frío rota' },
@@ -50,12 +49,14 @@ export default function NuevaRecepcionPage() {
   // Estado cabecera
   const [proveedorId, setProveedorId] = useState<number | null>(null)
   const [guiaDespacho, setGuiaDespacho] = useState('')
+  const [fechaRecepcion, setFechaRecepcion] = useState(() => new Date().toISOString().slice(0, 16))
   const [solicitudId, setSolicitudId] = useState<string | null>(null)
   const [solicitudModalOpen, setSolicitudModalOpen] = useState(false)
 
   // Estado ítems
   const [detalles, setDetalles] = useState<DetalleLineUI[]>([])
   const [searchValue, setSearchValue] = useState('')
+  const [scannerOpen, setScannerOpen] = useState(false)
 
   // Estado decisión
   const [decision, setDecision] = useState<Decision>('completa')
@@ -105,6 +106,7 @@ export default function NuevaRecepcionPage() {
         id: uuidv4(),
         producto_id: String(prod.id),
         producto_nombre: prod.nombre,
+        codigo_interno: prod.codigo_interno ?? '',
         presentacion_id: pres?.id || null,
         presentacion_nombre: pres?.nombre || '',
         presentacion_nombre_plural: pres?.nombre_plural || '',
@@ -120,7 +122,7 @@ export default function NuevaRecepcionPage() {
         precio_unitario: full.precio_unidad ? String((full.precio_unidad * Number(pres?.factor_conversion || 1)).toFixed(2)) : '',
         imagen_url: full.imagen_url,
         incluir_etiqueta: false,
-        cantidad_etiquetas: 1,
+        cantidad_etiquetas: 1, // pre-filled with cantidad_presentacion (initially 1)
       }
       setDetalles(prev => [line, ...prev])
       toast.success(`${prod.nombre} añadido`)
@@ -160,6 +162,7 @@ export default function NuevaRecepcionPage() {
           id: uuidv4(),
           producto_id: String(data.producto_id),
           producto_nombre: data.producto_nombre,
+          codigo_interno: data.codigo_interno || '',
           presentacion_id: data.presentacion_id || null,
           presentacion_nombre: data.presentacion_nombre || '',
           presentacion_nombre_plural: data.presentacion_nombre ? data.presentacion_nombre + 's' : '',
@@ -253,7 +256,7 @@ export default function NuevaRecepcionPage() {
       mutation.mutate({
         proveedor_id: proveedorId,
         guia_despacho: guiaDespacho || undefined,
-        fecha_recepcion: new Date().toISOString(),
+        fecha_recepcion: new Date(fechaRecepcion).toISOString(),
         estado: 'rechazada',
         motivo_rechazo: motivos,
         solicitud_id: solicitudId || undefined,
@@ -273,7 +276,7 @@ export default function NuevaRecepcionPage() {
     mutation.mutate({
       proveedor_id: proveedorId,
       guia_despacho: guiaDespacho || undefined,
-      fecha_recepcion: new Date().toISOString(),
+      fecha_recepcion: new Date(fechaRecepcion).toISOString(),
       estado: decision,
       nota: nota || undefined,
       solicitud_id: solicitudId || undefined,
@@ -309,10 +312,6 @@ export default function NuevaRecepcionPage() {
   }[decision]
 
   const itemsCompletos = detalles.filter(d => d.codigo_lote && d.fecha_vencimiento && d.area_destino_id).length
-
-  // ─── Variables silenciadas (usadas solo en template JSX) ──────────────────
-  void TODAY
-  void NOW_TIME
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
@@ -355,6 +354,16 @@ export default function NuevaRecepcionPage() {
               />
             </div>
 
+            <div>
+              <label className="text-xs opacity-50 block mb-1">Fecha y hora</label>
+              <input
+                type="datetime-local"
+                className="input input-bordered input-sm w-full"
+                value={fechaRecepcion}
+                onChange={e => setFechaRecepcion(e.target.value)}
+              />
+            </div>
+
             <button
               className="btn btn-sm btn-ghost btn-outline w-full border-dashed"
               onClick={() => setSolicitudModalOpen(true)}
@@ -373,6 +382,13 @@ export default function NuevaRecepcionPage() {
                 {itemsCompletos}/{detalles.length} ítems completos
               </p>
             )}
+            <button
+              className="btn btn-sm btn-outline w-full gap-2"
+              onClick={() => setScannerOpen(true)}
+            >
+              <ScanLine className="h-4 w-4" />
+              📷 Escanear
+            </button>
           </div>
 
           {/* Decisión */}
@@ -473,7 +489,7 @@ export default function NuevaRecepcionPage() {
             />
             <ScanLine
               className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-40 cursor-pointer"
-              onClick={() => handleSearch(searchValue)}
+              onClick={() => setScannerOpen(true)}
             />
           </div>
 
@@ -507,6 +523,18 @@ export default function NuevaRecepcionPage() {
           )}
         </div>
       </div>
+
+      {/* QR Scanner session */}
+      {scannerOpen && (
+        <QrScannerSession
+          onItemsScanned={async (items) => {
+            for (const item of items) {
+              await handleSearch(item.codigo)
+            }
+          }}
+          onClose={() => setScannerOpen(false)}
+        />
+      )}
 
       {/* Modal vincular solicitud */}
       <Dialog open={solicitudModalOpen} onClose={() => setSolicitudModalOpen(false)} title="Vincular Solicitud">

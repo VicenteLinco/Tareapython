@@ -1,4 +1,4 @@
-/// Genera tipos TypeScript desde los modelos Rust usando specta.
+/// Genera tipos TypeScript desde los modelos y DTOs Rust usando specta.
 /// Ejecutar con: cargo run --bin export_types
 use inventario_lab_backend::models::{
     area::Area,
@@ -10,6 +10,17 @@ use inventario_lab_backend::models::{
     unidad_basica::UnidadBasica,
     usuario::Usuario,
 };
+use inventario_lab_backend::dto::{
+    area::{CreateArea, UpdateArea, ProductoAreaRow, AsignarProductosRequest},
+    proveedor::{CreateProveedor, UpdateProveedor, ProveedorQuery},
+    usuario::{CreateUsuario, UpdateUsuario, UsuarioResponse, AreaSimple, UsuarioQuery, ResetPasswordRequest},
+    categoria::{CreateCategoria, UpdateCategoria},
+    unidad_basica::{CreateUnidadBasica, UpdateUnidadBasica},
+    solicitud::{ItemRecomendado, UpdateSolicitudRequest, CreateSolicitudItem, SolicitudResumen, SolicitudDetalle, SolicitudDetalleItem},
+    descarte::{DescarteRequest, DescarteItem, DescarteResponse},
+    recepcion::{RecepcionQuery, PaginatedRecepciones, RecepcionListItem, SubirFotoInput, CreateRecepcion, DetalleRecepcionInput, DetalleRecepcionRow, LoteCreado},
+};
+use inventario_lab_backend::services::stock_ops::MovimientoGenerado;
 use specta_typescript::{export, Typescript};
 use std::fmt::Write as FmtWrite;
 use std::fs;
@@ -36,6 +47,7 @@ fn main() {
         };
     }
 
+    // Modelos
     append!(Area);
     append!(Categoria);
     append!(UnidadBasica);
@@ -44,6 +56,57 @@ fn main() {
     append!(Presentacion);
     append!(Lote);
     append!(Usuario);
+
+    // DTOs Áreas
+    append!(CreateArea);
+    append!(UpdateArea);
+    append!(ProductoAreaRow);
+    append!(AsignarProductosRequest);
+
+    // DTOs Proveedores
+    append!(CreateProveedor);
+    append!(UpdateProveedor);
+    append!(ProveedorQuery);
+
+    // DTOs Usuarios
+    append!(CreateUsuario);
+    append!(UpdateUsuario);
+    append!(UsuarioResponse);
+    append!(AreaSimple);
+    append!(UsuarioQuery);
+    append!(ResetPasswordRequest);
+
+    // DTOs Categorías
+    append!(CreateCategoria);
+    append!(UpdateCategoria);
+
+    // DTOs Unidades Básicas
+    append!(CreateUnidadBasica);
+    append!(UpdateUnidadBasica);
+
+    // DTOs Solicitudes
+    append!(ItemRecomendado);
+    append!(UpdateSolicitudRequest);
+    append!(CreateSolicitudItem);
+    append!(SolicitudResumen);
+    append!(SolicitudDetalle);
+    append!(SolicitudDetalleItem);
+
+    // DTOs Descartes
+    append!(DescarteRequest);
+    append!(DescarteItem);
+    append!(DescarteResponse);
+    append!(MovimientoGenerado);
+
+    // DTOs Recepciones
+    append!(RecepcionQuery);
+    append!(PaginatedRecepciones);
+    append!(RecepcionListItem);
+    append!(SubirFotoInput);
+    append!(CreateRecepcion);
+    append!(DetalleRecepcionInput);
+    append!(DetalleRecepcionRow);
+    append!(LoteCreado);
 
     match fs::write(out_path, &output) {
         Ok(_) => println!("Tipos exportados a {:?}", out_path),

@@ -187,7 +187,7 @@ pub async fn crear_recepcion(
 
             let factor = if let Some(pres_id) = item.presentacion_id {
                 sqlx::query_scalar::<_, Decimal>(
-                    "SELECT factor_conversion FROM presentaciones WHERE id = $1"
+                    "SELECT factor_conversion FROM presentaciones WHERE id = $1 AND activa = true"
                 )
                 .bind(pres_id)
                 .fetch_one(&mut *tx)
@@ -217,6 +217,14 @@ pub async fn crear_recepcion(
 
             // completa y parcial ambas aplican movimientos de stock
             if estado == "completa" || estado == "parcial" {
+                sqlx::query(
+                    "INSERT INTO producto_area (producto_id, area_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
+                )
+                .bind(item.producto_id)
+                .bind(item.area_destino_id)
+                .execute(&mut *tx)
+                .await?;
+
                 stock_ops::aplicar_ingreso(
                     &mut tx,
                     lote_id,
@@ -247,6 +255,91 @@ pub async fn crear_recepcion(
 
     tx.commit().await?;
     Ok((recepcion_id, lotes_creados))
+}
+
+pub async fn confirmar_borrador(
+    pool: &PgPool,
+    id: Uuid,
+    usuario_id: Uuid,
+) -> Result<Uuid, AppError> {
+    let mut tx = pool.begin().await?;
+
+    // Verificar que existe y es borrador
+    let res: Option<(String, Option<Uuid>)> =
+        sqlx::query_as("SELECT estado, solicitud_id FROM recepciones WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+    let (estado, solicitud_id) = res.ok_or(AppError::NotFound("Recepción no encontrada".into()))?;
+
+    if estado != "borrador" {
+        tx.rollback().await?;
+        return Err(AppError::BusinessLogic(
+            "Solo se pueden confirmar recepciones en estado borrador".into(),
+            "ESTADO_INVALIDO".into(),
+        ));
+    }
+
+    #[derive(sqlx::FromRow)]
+    struct DetalleLine {
+        producto_id: Uuid,
+        lote_id: Uuid,
+        area_destino_id: i32,
+        cantidad_unidades_base: Decimal,
+    }
+
+    let mut lineas = sqlx::query_as::<_, DetalleLine>(
+        "SELECT producto_id, lote_id, area_destino_id, cantidad_unidades_base FROM recepcion_detalle WHERE recepcion_id = $1",
+    )
+    .bind(id)
+    .fetch_all(&mut *tx)
+    .await?;
+
+    lineas.sort_by_key(|l| l.producto_id);
+
+    let nota: Option<String> = sqlx::query_scalar("SELECT nota FROM recepciones WHERE id = $1")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+    for linea in &lineas {
+        sqlx::query(
+            "INSERT INTO producto_area (producto_id, area_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        )
+        .bind(linea.producto_id)
+        .bind(linea.area_destino_id)
+        .execute(&mut *tx)
+        .await?;
+
+        stock_ops::aplicar_ingreso(
+            &mut tx,
+            linea.lote_id,
+            linea.area_destino_id,
+            linea.cantidad_unidades_base,
+            usuario_id,
+            "INGRESO",
+            Some(id),
+            nota.as_deref(),
+            Some("RECEPCION"),
+        )
+        .await?;
+    }
+
+    sqlx::query("UPDATE recepciones SET estado = 'completa' WHERE id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+    if let Some(sid) = solicitud_id {
+        sqlx::query("UPDATE solicitudes_compra SET estado = 'completada' WHERE id = $1")
+            .bind(sid)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+    Ok(id)
 }
 
 pub async fn obtener_detalles(pool: &PgPool, id: Uuid) -> Result<Vec<DetalleRecepcionRow>, AppError> {

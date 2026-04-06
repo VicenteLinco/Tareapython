@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Printer, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { imprimirEtiquetas, type LoteParaEtiqueta } from '@/lib/label-print'
+import { formatCantidad } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { DetalleLineUI } from './item-card'
 
@@ -47,7 +48,7 @@ export function LabelsSection({ detalles, onToggleEtiqueta, onCantidadEtiqueta, 
         </div>
         <Button className="w-full" onClick={handlePrint} disabled={imprimiendo}>
           <Printer className="h-4 w-4 mr-2" />
-          {imprimiendo ? 'Generando…' : `Imprimir ${total} etiqueta${total !== 1 ? 's' : ''}`}
+          {imprimiendo ? 'Generando…' : `Imprimir ${formatCantidad(total, 'etiqueta', 'etiquetas')}`}
         </Button>
       </div>
     )

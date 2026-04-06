@@ -15,7 +15,7 @@ import { ReceptionItemCard, type DetalleLineUI } from './components/item-card'
 import { LabelsSection } from './components/labels-section'
 import { QrScannerSession } from './qr-scanner-session'
 import { imprimirEtiquetas, type LoteParaEtiqueta } from '@/lib/label-print'
-import type { Proveedor, Produto, Area, SolicitudResumen } from '@/types'
+import type { Proveedor, Producto, Area, SolicitudResumen } from '@/types'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -82,7 +82,7 @@ export default function NuevaRecepcionPage() {
 
   const { data: productos } = useQuery({
     queryKey: ['productos-all'],
-    queryFn: () => api.get<{ data: import('@/types').Producto[] }>('/productos', { params: { per_page: 500 } }).then(r => r.data.data),
+    queryFn: () => api.get<{ data: Producto[] }>('/productos', { params: { per_page: 500 } }).then(r => r.data.data),
   })
 
   const { data: solicitudesPendientes } = useQuery({
@@ -94,12 +94,14 @@ export default function NuevaRecepcionPage() {
 
   // ─── Agregar ítem ──────────────────────────────────────────────────────────
 
-  const addProducto = useCallback(async (prod: import('@/types').Producto) => {
+  const addProducto = useCallback(async (prod: Producto, overridePresentacionId?: number) => {
     try {
       const res = await api.get(`/productos/${prod.id}`)
       const full = res.data
       const presentaciones = full.presentaciones || []
-      const pres = presentaciones[0] || null
+      const pres = (overridePresentacionId
+        ? presentaciones.find((p: { id: number }) => p.id === overridePresentacionId)
+        : null) ?? presentaciones[0] ?? null
 
       const catalogoArea = full.areas?.[0]
       const initialCantidadPresentacion = 1
@@ -164,7 +166,7 @@ export default function NuevaRecepcionPage() {
           id: uuidv4(),
           producto_id: String(data.producto_id),
           producto_nombre: data.producto_nombre,
-          codigo_interno: data.codigo_interno || '',
+          codigo_interno: data.codigo_interno_lote || '',
           presentacion_id: data.presentacion_id || null,
           presentacion_nombre: data.presentacion_nombre || '',
           presentacion_nombre_plural: data.presentacion_nombre ? data.presentacion_nombre + 's' : '',
@@ -184,6 +186,10 @@ export default function NuevaRecepcionPage() {
         }
         setDetalles(prev => [line, ...prev])
         toast.success(`Lote ${data.numero_lote} añadido`)
+      } else if (data.tipo === 'presentacion') {
+        // Producto escaneado por código de barras de presentación específica
+        const prod = productos?.find(p => p.id === data.producto_id || String(p.id) === String(data.producto_id))
+        if (prod) await addProducto(prod, data.presentacion_id)
       } else {
         // Producto por código interno o código de barras
         const prod = productos?.find(p => p.id === data.producto_id || String(p.id) === String(data.producto_id))
@@ -296,10 +302,10 @@ export default function NuevaRecepcionPage() {
 
   // ─── Helpers UI ────────────────────────────────────────────────────────────
 
-  const toggleMotivo = (id: string) =>
+  const toggleMotivo = useCallback((id: string) =>
     setMotivosSeleccionados(prev =>
       prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
-    )
+    ), [])
 
   const estadoBadge = {
     completa:  { label: 'Conforme', cls: 'badge-success' },
@@ -389,7 +395,7 @@ export default function NuevaRecepcionPage() {
               onClick={() => setScannerOpen(true)}
             >
               <ScanLine className="h-4 w-4" />
-              📷 Escanear
+              Escanear
             </button>
           </div>
 
@@ -546,13 +552,21 @@ export default function NuevaRecepcionPage() {
               key={s.id}
               className="w-full p-4 border rounded-xl hover:bg-base-200 text-left"
               onClick={async () => {
-                const res = await api.get(`/solicitudes-compra/${s.id}`)
-                setSolicitudId(s.id)
-                setSolicitudModalOpen(false)
-                toast.success('Solicitud vinculada')
-                for (const item of res.data.items) {
-                  const p = productos?.find(x => x.id === item.producto_id)
-                  if (p) await addProducto(p)
+                try {
+                  const res = await api.get(`/solicitudes-compra/${s.id}`)
+                  setSolicitudId(s.id)
+                  setSolicitudModalOpen(false)
+                  toast.success('Solicitud vinculada')
+                  for (const item of res.data.items) {
+                    try {
+                      const p = productos?.find(x => x.id === item.producto_id)
+                      if (p) await addProducto(p)
+                    } catch (e) {
+                      toast.error('Error cargando producto: ' + (e instanceof Error ? e.message : String(e)))
+                    }
+                  }
+                } catch (e) {
+                  toast.error('Error al vincular solicitud: ' + (e instanceof Error ? e.message : String(e)))
                 }
               }}
             >

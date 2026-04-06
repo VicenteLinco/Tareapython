@@ -42,11 +42,9 @@ function isComplete(d: DetalleLineUI): boolean {
 export function ReceptionItemCard({ detalle: d, areas, onChange, onRemove }: Props) {
   const complete = isComplete(d)
 
-  const unidadLabel = formatCantidad(
-    d.cantidad_presentacion,
-    d.presentacion_nombre || d.unidad_base_nombre,
-    d.presentacion_nombre_plural || d.unidad_base_nombre_plural
-  )
+  const unidadNombre = d.cantidad_presentacion === 1
+    ? (d.presentacion_nombre || d.unidad_base_nombre)
+    : (d.presentacion_nombre_plural || d.unidad_base_nombre_plural || d.presentacion_nombre || d.unidad_base_nombre)
 
   const baseEquiv = d.presentacion_id && d.factor_conversion > 1
     ? formatCantidad(
@@ -147,7 +145,7 @@ export function ReceptionItemCard({ detalle: d, areas, onChange, onRemove }: Pro
                 ))}
               </select>
             ) : (
-              <span className="text-xs opacity-50 truncate">{unidadLabel.split(' ').slice(1).join(' ')}</span>
+              <span className="text-xs opacity-50 truncate">{unidadNombre}</span>
             )}
           </div>
           {baseEquiv && (

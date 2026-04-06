@@ -27,6 +27,7 @@ export async function imprimirEtiquetas(lotes: LoteParaEtiqueta[]): Promise<void
     })
 
     const fechaCorta = lote.fecha_vencimiento
+      // Append local midnight to prevent UTC parsing from shifting the date by one day
       ? new Date(lote.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-CL', {
           day: '2-digit', month: '2-digit', year: '2-digit'
         })
@@ -94,8 +95,16 @@ ${filas.join('\n')}
   doc.write(html)
   doc.close()
 
-  // Esperar a que las imágenes QR carguen
-  await new Promise<void>(resolve => setTimeout(resolve, 400))
+  // Esperar a que las imágenes QR carguen antes de imprimir
+  const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
+  if (iframeDoc) {
+    const imgs = Array.from(iframeDoc.querySelectorAll('img'))
+    await Promise.all(imgs.map(img =>
+      img.complete
+        ? Promise.resolve()
+        : new Promise<void>(res => img.addEventListener('load', res, { once: true }))
+    ))
+  }
 
   iframe.contentWindow?.print()
 

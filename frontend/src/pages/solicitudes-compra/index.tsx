@@ -9,13 +9,10 @@ import {
   CheckCircle2,
   History,
   User,
-  XCircle,
   ClipboardCheck,
   ShoppingCart,
-  Clock,
   ArrowRight,
   Minus,
-  AlertTriangle
 } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
@@ -57,16 +54,16 @@ function equivalenciaBase(item: SolicitudItem): string | null {
   return `(${total} ${item.unidad_base_plural || autoPlural(item.unidad_base)})`
 }
 
-function formatPesos(val: number | string | null): string {
+function formatPesos(val: number | string | null, monedaCodigo = 'CLP'): string {
   if (val === null) return '$0'
   const n = typeof val === 'string' ? parseFloat(val) : val
-  return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(n)
+  return new Intl.NumberFormat('es-CL', { style: 'currency', currency: monedaCodigo }).format(n)
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function SolicitudesCompraPage() {
-  const { usuario } = useAuthStore()
+  useAuthStore()
   const queryClient = useQueryClient()
   const location = useLocation()
   const [searchParams] = useSearchParams()
@@ -109,7 +106,7 @@ export default function SolicitudesCompraPage() {
     enabled: view === 'historial'
   })
 
-  const { data: enCamino } = useQuery({
+  useQuery({
     queryKey: ['solicitudes-en-camino'],
     queryFn: () => api.get<{ data: EnCaminoItem[] }>('/solicitudes-compra/en-camino').then(r => r.data),
     enabled: view === 'crear'
@@ -261,9 +258,12 @@ export default function SolicitudesCompraPage() {
   // Configuración del sistema
   const { data: configuracion } = useQuery({
     queryKey: ['configuracion'],
-    queryFn: () => api.get<{ nombre_laboratorio: string; logo_base64: string; moneda_simbolo: string }>('/configuracion').then(r => r.data),
+    queryFn: () => api.get<{ nombre_laboratorio: string; logo_base64: string; moneda_simbolo: string; moneda_codigo: string }>('/configuracion').then(r => r.data),
     staleTime: 300_000,
   })
+
+  const monedaCodigo = configuracion?.moneda_codigo ?? 'CLP'
+  const fmt = (v: number | string | null) => formatPesos(v, monedaCodigo)
 
   // Render Detalle Modal
   const { data: detail, isLoading: isLoadingDetail } = useQuery({
@@ -525,7 +525,7 @@ export default function SolicitudesCompraPage() {
                       <div className="text-right">
                         <p className="text-[10px] font-bold opacity-40 uppercase">Referencia</p>
                         <p className="text-xs font-bold font-mono">
-                          {formatPesos(item.precio_unitario)}/u
+                          {fmt(item.precio_unitario)}/u
                         </p>
                       </div>
                     </div>
@@ -537,8 +537,9 @@ export default function SolicitudesCompraPage() {
             <div className="p-8 bg-base-200/50 border-t border-base-300 space-y-4">
               <div className="flex justify-between items-center text-sm font-bold px-2">
                 <span className="opacity-50 uppercase tracking-widest text-[10px]">Costo Estimado</span>
-                <span className="text-lg">
-                  {formatPesos(items.reduce((acc, i) => acc + (i.cantidad * i.precio_unitario), 0))}
+                <span className="text-lg flex items-center gap-2">
+                  {fmt(items.reduce((acc, i) => acc + (i.cantidad * i.precio_unitario), 0))}
+                  <span className="badge badge-ghost badge-xs font-mono">{monedaCodigo}</span>
                 </span>
               </div>
               
@@ -684,8 +685,8 @@ export default function SolicitudesCompraPage() {
                         <td className="text-[10px] opacity-60">{item.proveedor_nombre}</td>
                         <td className="text-center font-bold">{cant}</td>
                         <td className="text-[10px] uppercase font-bold opacity-50">{item.presentacion_nombre || item.unidad}</td>
-                        <td className="text-right font-mono text-[11px]">{formatPesos(pu)}</td>
-                        <td className="text-right font-bold text-xs">{formatPesos(cant * pu)}</td>
+                        <td className="text-right font-mono text-[11px]">{fmt(pu)}</td>
+                        <td className="text-right font-bold text-xs">{fmt(cant * pu)}</td>
                       </tr>
                     )
                   })}
@@ -708,9 +709,10 @@ export default function SolicitudesCompraPage() {
             )}
 
             <div className="flex justify-between items-center pt-4 border-t">
-              <div className="text-xl font-black">
-                <span className="text-xs opacity-40 font-bold uppercase mr-3">Total Estimado:</span>
-                {formatPesos(detail.items.reduce((acc, i) => acc + (parseFloat(i.cantidad_sugerida) * (i.precio_unitario ? parseFloat(i.precio_unitario) : 0)), 0))}
+              <div className="text-xl font-black flex items-center gap-2">
+                <span className="text-xs opacity-40 font-bold uppercase mr-1">Total Estimado:</span>
+                {fmt(detail.items.reduce((acc, i) => acc + (parseFloat(i.cantidad_sugerida) * (i.precio_unitario ? parseFloat(i.precio_unitario) : 0)), 0))}
+                <span className="badge badge-ghost badge-xs font-mono">{monedaCodigo}</span>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" className="rounded-xl h-10 gap-2" onClick={() => {

@@ -48,6 +48,20 @@ interface StockResponse {
   total_pages: number
 }
 
+interface GlobalStockResponse extends StockResponse {
+  resumen: {
+    total_productos_con_stock: number
+    productos_bajo_minimo: number
+  }
+}
+
+interface GlobalAlertData {
+  totalEnStock: number
+  itemsBajo: StockItem[]
+  itemsPorVencer30: StockItem[]
+  itemsVencidos: StockItem[]
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────────────
 const MESES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC']
 
@@ -74,6 +88,39 @@ function parseLogoBase64(raw: string): { data: string; type: 'PNG' | 'JPEG' } | 
       return { data: raw.split(',')[1], type: 'JPEG' }
     return null
   } catch { return null }
+}
+
+// ─── fetchGlobalResumenData ───────────────────────────────────────────────
+// Obtiene alertas globales (sin filtro de área) para el Resumen Ejecutivo.
+// con_alertas=true devuelve: bajo mínimo (incl. stock=0) + por vencer 90d + vencidos.
+// El campo resumen.total_productos_con_stock es siempre global.
+async function fetchGlobalResumenData(filters?: PdfOptions['filters']): Promise<GlobalAlertData> {
+  const params = { ...filters, con_alertas: true, per_page: 100, page: 1 }
+  const first = await api.get<GlobalStockResponse>('/stock', { params }).then(r => r.data)
+  const allAlerts = first.total_pages <= 1
+    ? first.data
+    : [
+        ...first.data,
+        ...await Promise.all(
+          Array.from({ length: first.total_pages - 1 }, (_, i) =>
+            api.get<GlobalStockResponse>('/stock', { params: { ...params, page: i + 2 } }).then(r => r.data.data)
+          )
+        ).then(pages => pages.flat()),
+      ]
+  return {
+    totalEnStock: first.resumen.total_productos_con_stock,
+    itemsBajo: allAlerts.filter(i => i.stock_minimo > 0 && (i.stock_total ?? 0) < i.stock_minimo),
+    itemsPorVencer30: allAlerts.filter(i => {
+      if (!i.proximo_vencimiento) return false
+      const d = daysUntil(i.proximo_vencimiento)
+      return d !== null && d >= 0 && d <= 30
+    }),
+    itemsVencidos: allAlerts.filter(i => {
+      if (!i.proximo_vencimiento) return false
+      const d = daysUntil(i.proximo_vencimiento)
+      return d !== null && d < 0
+    }),
+  }
 }
 
 // ─── Layout constants ──────────────────────────────────────────────────────
@@ -204,7 +251,7 @@ function drawResumen(
   doc: jsPDF,
   W: number,
   H: number,
-  stockPorArea: { area: Area; items: StockItem[] }[],
+  globalData: GlobalAlertData,
   selectedAreas: Area[],
   nombreLaboratorio: string,
   logo: { data: string; type: 'PNG' | 'JPEG' } | null,
@@ -215,18 +262,7 @@ function drawResumen(
 ) {
   drawHeader(doc, W, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr)
 
-  const allItems    = stockPorArea.flatMap(s => s.items)
-  const itemsBajo   = allItems.filter(i => (i.stock_total ?? 0) > 0 && i.stock_minimo > 0 && (i.stock_total ?? 0) < i.stock_minimo)
-  const itemsVencer = allItems.filter(i => {
-    if (!i.proximo_vencimiento) return false
-    const d = daysUntil(i.proximo_vencimiento)
-    return d !== null && d >= 0 && d <= 30
-  })
-  const itemsVencidos = allItems.filter(i => {
-    if (!i.proximo_vencimiento) return false
-    const d = daysUntil(i.proximo_vencimiento)
-    return d !== null && d < 0
-  })
+  const { totalEnStock, itemsBajo, itemsPorVencer30: itemsVencer, itemsVencidos } = globalData
 
   const bodyTop = HEADER_H + 14
   let y = bodyTop
@@ -263,7 +299,7 @@ function drawResumen(
   const kpiGap = 1
   const kpiW   = (W - MARGIN * 2 - kpiGap * 3) / 4
   const kpis = [
-    { val: allItems.length,      lbl: 'Productos\nen stock', color: C.black },
+    { val: totalEnStock,         lbl: 'Productos\nen stock', color: C.black },
     { val: itemsBajo.length,     lbl: 'Bajo\nmínimo',        color: C.red   },
     { val: itemsVencer.length,   lbl: 'Por vencer\n30 días', color: C.amber },
     { val: itemsVencidos.length, lbl: 'Lotes\nvencidos',     color: C.gray  },
@@ -639,11 +675,17 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
   const { selectedAreas, incluirResumen, nombreLaboratorio, logoBase64, usuarioNombre, filters } = options
 
   // ── Fetch de datos ────────────────────────────────────────────────────────
-  const stockPorArea: { area: Area; items: StockItem[] }[] = []
-  for (const area of selectedAreas) {
-    const items = await fetchStockForArea(area.id, filters)
-    if (items.length > 0) stockPorArea.push({ area, items })
-  }
+  // Resumen global y tablas por área en paralelo
+  const [globalData, ...areaResults] = await Promise.all([
+    incluirResumen
+      ? fetchGlobalResumenData(filters)
+      : Promise.resolve(null as unknown as GlobalAlertData),
+    ...selectedAreas.map(area =>
+      fetchStockForArea(area.id, filters).then(items => ({ area, items }))
+    ),
+  ])
+
+  const stockPorArea = areaResults.filter(r => r.items.length > 0)
 
   if (stockPorArea.length === 0 && !incluirResumen) {
     throw new Error('No hay datos de stock para las áreas seleccionadas')
@@ -659,9 +701,9 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
   const logo     = parseLogoBase64(logoBase64)
   const badgeTxt = badgeDate(now)
 
-  // ── Página 1: Resumen Ejecutivo ───────────────────────────────────────────
+  // ── Página 1: Resumen Ejecutivo (datos globales) ──────────────────────────
   if (incluirResumen) {
-    drawResumen(doc, W, H, stockPorArea, selectedAreas, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr, fechaStr)
+    drawResumen(doc, W, H, globalData, selectedAreas, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr, fechaStr)
     if (stockPorArea.length > 0) doc.addPage()
   }
 

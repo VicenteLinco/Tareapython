@@ -4,25 +4,31 @@ import type { StockItem, Area } from '@/types'
 import { daysUntil, formatDate, formatCantidad } from '@/lib/utils'
 import api from '@/lib/api'
 
-// Paleta de colores
+// ─── Paleta Minimal Pro ────────────────────────────────────────────────────
 const C = {
-  navy:      [15,  23,  42]  as [number, number, number], // slate-900
-  blue:      [37,  99,  235] as [number, number, number], // blue-600
-  blueLight: [219, 234, 254] as [number, number, number], // blue-100
-  grayDark:  [51,  65,  85]  as [number, number, number], // slate-700
-  gray:      [100, 116, 139] as [number, number, number], // slate-500
-  grayLight: [241, 245, 249] as [number, number, number], // slate-100
-  white:     [255, 255, 255] as [number, number, number],
-  red:       [220, 38,  38]  as [number, number, number], // red-600
-  redLight:  [254, 226, 226] as [number, number, number], // red-100
-  redDark:   [153, 27,  27]  as [number, number, number], // red-800
-  amber:     [217, 119, 6]   as [number, number, number], // amber-600
-  amberLight:[254, 243, 199] as [number, number, number], // amber-100
-  amberDark: [120, 53,  15]  as [number, number, number], // amber-900
-  green:     [21,  128, 61]  as [number, number, number], // green-700
-  border:    [226, 232, 240] as [number, number, number], // slate-200
+  black:       [17,  24,  39]  as [number,number,number], // #111827
+  grayDark:    [55,  65,  81]  as [number,number,number], // #374151
+  gray:        [107, 114, 128] as [number,number,number], // #6b7280
+  grayMid:     [156, 163, 175] as [number,number,number], // #9ca3af
+  grayLight:   [249, 250, 251] as [number,number,number], // #f9fafb
+  grayBorder:  [229, 231, 235] as [number,number,number], // #e5e7eb
+  white:       [255, 255, 255] as [number,number,number],
+
+  red:         [220,  38,  38] as [number,number,number], // #dc2626
+  redLight:    [254, 242, 242] as [number,number,number], // #fef2f2
+  redBorder:   [252, 165, 165] as [number,number,number], // #fca5a5
+  redDark:     [185,  28,  28] as [number,number,number], // #b91c1c
+
+  amber:       [217, 119,   6] as [number,number,number], // #d97706
+  amberLight:  [255, 251, 235] as [number,number,number], // #fffbeb
+  amberBorder: [252, 211,  77] as [number,number,number], // #fcd34d
+  amberDark:   [180,  83,   9] as [number,number,number], // #b45309
+
+  green:       [ 34, 197,  94] as [number,number,number], // #22c55e
+  greenOk:     [ 22, 163,  74] as [number,number,number], // #16a34a
 }
 
+// ─── Interfaces ────────────────────────────────────────────────────────────
 interface PdfOptions {
   selectedAreas: Area[]
   incluirResumen: boolean
@@ -42,33 +48,16 @@ interface StockResponse {
   total_pages: number
 }
 
-async function fetchStockForArea(areaId: number, filters?: PdfOptions['filters']): Promise<StockItem[]> {
-  const params = {
-    ...filters,
-    area_id: areaId,
-    per_page: 500,
-    page: 1,
-  }
+// ─── Helpers ───────────────────────────────────────────────────────────────
+const MESES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC']
 
-  const first = await api
-    .get<StockResponse>('/stock', { params })
-    .then((r) => r.data)
-
-  if (first.total_pages <= 1) return first.data
-
-  const rest = await Promise.all(
-    Array.from({ length: first.total_pages - 1 }, (_, i) =>
-      api
-        .get<StockResponse>('/stock', { params: { ...params, page: i + 2 } })
-        .then((r) => r.data.data)
-    )
-  )
-  return [...first.data, ...rest.flat()]
+function badgeDate(d: Date): string {
+  return `Stock · ${String(d.getDate()).padStart(2,'0')} ${MESES[d.getMonth()]} ${d.getFullYear()}`
 }
 
 function getAlerta(item: StockItem): 'bajo' | 'vencer' | null {
   const stock = item.stock_total ?? 0
-  if (stock <= item.stock_minimo) return 'bajo'
+  if (stock <= 0 || (item.stock_minimo > 0 && stock < item.stock_minimo)) return 'bajo'
   if (item.proximo_vencimiento) {
     const d = daysUntil(item.proximo_vencimiento)
     if (d !== null && d <= 30) return 'vencer'
@@ -76,442 +65,627 @@ function getAlerta(item: StockItem): 'bajo' | 'vencer' | null {
   return null
 }
 
-// Convierte hex string o data URL a base64 puro + tipo
 function parseLogoBase64(raw: string): { data: string; type: 'PNG' | 'JPEG' } | null {
   if (!raw || raw.length < 50) return null
   try {
-    if (raw.startsWith('data:image/png')) {
+    if (raw.startsWith('data:image/png'))
       return { data: raw.split(',')[1], type: 'PNG' }
-    }
-    if (raw.startsWith('data:image/jpeg') || raw.startsWith('data:image/jpg')) {
+    if (raw.startsWith('data:image/jpeg') || raw.startsWith('data:image/jpg'))
       return { data: raw.split(',')[1], type: 'JPEG' }
-    }
     return null
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
+// ─── Layout constants ──────────────────────────────────────────────────────
+const HEADER_H  = 50   // altura del header en mm
+const FOOTER_H  = 14   // altura del footer en mm
+const MARGIN    = 18   // margen lateral
+const LOGO_SIZE = 32   // diámetro del logo
+const LOGO_X    = MARGIN
+const LOGO_Y    = (HEADER_H - LOGO_SIZE) / 2  // centrado vertical
+
+// ─── fetchStockForArea ─────────────────────────────────────────────────────
+async function fetchStockForArea(areaId: number, filters?: PdfOptions['filters']): Promise<StockItem[]> {
+  const params = {
+    ...filters,
+    area_id: areaId,
+    per_page: 100,
+    page: 1,
+  }
+  const first = await api.get<StockResponse>('/stock', { params }).then(r => r.data)
+  if (first.total_pages <= 1) return first.data
+  const rest = await Promise.all(
+    Array.from({ length: first.total_pages - 1 }, (_, i) =>
+      api.get<StockResponse>('/stock', { params: { ...params, page: i + 2 } }).then(r => r.data.data)
+    )
+  )
+  return [...first.data, ...rest.flat()]
+}
+
+// ─── drawHeader ───────────────────────────────────────────────────────────
+function drawHeader(
+  doc: jsPDF,
+  W: number,
+  nombreLaboratorio: string,
+  logo: { data: string; type: 'PNG' | 'JPEG' } | null,
+  badgeTxt: string,
+  usuarioNombre: string,
+  horaStr: string
+) {
+  // Fondo blanco
+  doc.setFillColor(...C.white)
+  doc.rect(0, 0, W, HEADER_H, 'F')
+
+  // Círculo del logo (simulado con roundedRect)
+  doc.setFillColor(...C.grayBorder)
+  doc.setDrawColor(...C.grayBorder)
+  doc.roundedRect(LOGO_X, LOGO_Y, LOGO_SIZE, LOGO_SIZE, LOGO_SIZE / 2, LOGO_SIZE / 2, 'F')
+
+  if (logo) {
+    try {
+      doc.addImage(logo.data, logo.type, LOGO_X + 1, LOGO_Y + 1, LOGO_SIZE - 2, LOGO_SIZE - 2)
+    } catch { /* logo inválido, caja vacía */ }
+  }
+
+  // Nombre del lab
+  const textX = LOGO_X + LOGO_SIZE + 8
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  doc.setTextColor(...C.black)
+  doc.text(nombreLaboratorio, textX, HEADER_H / 2 - 2)
+
+  // Subtítulo
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7)
+  doc.setTextColor(...C.grayMid)
+  doc.text('Sistema de Inventario · Reporte de Stock', textX, HEADER_H / 2 + 5)
+
+  // Badge negro (derecha)
+  const badgeH = 8
+  const badgePadX = 7
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(7)
+  const bW = doc.getTextWidth(badgeTxt) + badgePadX * 2
+  const bX = W - MARGIN - bW
+  const bY = HEADER_H / 2 - 8
+  doc.setFillColor(...C.black)
+  doc.roundedRect(bX, bY, bW, badgeH, badgeH / 2, badgeH / 2, 'F')
+  doc.setTextColor(...C.white)
+  doc.text(badgeTxt, bX + badgePadX, bY + 5.5)
+
+  // Meta (usuario · hora)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7)
+  doc.setTextColor(...C.grayMid)
+  doc.text(`${usuarioNombre} · ${horaStr}`, W - MARGIN, HEADER_H / 2 + 5, { align: 'right' })
+
+  // Línea divisora
+  doc.setDrawColor(...C.grayBorder)
+  doc.setLineWidth(0.4)
+  doc.line(0, HEADER_H, W, HEADER_H)
+}
+
+// ─── drawFooterFinal ──────────────────────────────────────────────────────
+function drawFooterFinal(
+  doc: jsPDF,
+  W: number,
+  H: number,
+  pageNum: number,
+  totalPages: number,
+  nombreLaboratorio: string
+) {
+  // Cubrir footer previo (si existe) con rect gris claro
+  doc.setFillColor(...C.grayLight)
+  doc.rect(0, H - FOOTER_H, W, FOOTER_H, 'F')
+
+  // Línea superior del footer
+  doc.setDrawColor(...C.grayBorder)
+  doc.setLineWidth(0.4)
+  doc.line(MARGIN, H - FOOTER_H + 1, W - MARGIN, H - FOOTER_H + 1)
+
+  // Texto izquierda
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(6.5)
+  doc.setTextColor(...C.grayMid)
+  doc.text(nombreLaboratorio, MARGIN, H - 3)
+
+  // Texto derecha
+  doc.text(`Página ${pageNum} de ${totalPages}`, W - MARGIN, H - 3, { align: 'right' })
+}
+
+// ─── drawResumen ──────────────────────────────────────────────────────────
+function drawResumen(
+  doc: jsPDF,
+  W: number,
+  H: number,
+  stockPorArea: { area: Area; items: StockItem[] }[],
+  selectedAreas: Area[],
+  nombreLaboratorio: string,
+  logo: { data: string; type: 'PNG' | 'JPEG' } | null,
+  badgeTxt: string,
+  usuarioNombre: string,
+  horaStr: string,
+  _fechaStr: string
+) {
+  drawHeader(doc, W, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr)
+
+  const allItems    = stockPorArea.flatMap(s => s.items)
+  const itemsBajo   = allItems.filter(i => (i.stock_total ?? 0) > 0 && i.stock_minimo > 0 && (i.stock_total ?? 0) < i.stock_minimo)
+  const itemsVencer = allItems.filter(i => {
+    if (!i.proximo_vencimiento) return false
+    const d = daysUntil(i.proximo_vencimiento)
+    return d !== null && d >= 0 && d <= 30
+  })
+  const itemsVencidos = allItems.filter(i => {
+    if (!i.proximo_vencimiento) return false
+    const d = daysUntil(i.proximo_vencimiento)
+    return d !== null && d < 0
+  })
+
+  const bodyTop = HEADER_H + 14
+  let y = bodyTop
+
+  // ── Título grande ──────────────────────────────────────────────────────
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(20)
+  doc.setTextColor(...C.black)
+  doc.text('Resumen', MARGIN, y)
+  doc.text('Ejecutivo', MARGIN, y + 14)
+
+  // ── Scope (derecha) ────────────────────────────────────────────────────
+  const scopeX = W - MARGIN
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7.5)
+  doc.setTextColor(...C.grayMid)
+  doc.text('Inventario global', scopeX, y, { align: 'right' })
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(7.5)
+  doc.setTextColor(...C.grayDark)
+  doc.text(`${selectedAreas.length} secciones incluidas`, scopeX, y + 6, { align: 'right' })
+  // Lista primeras 3 áreas
+  const areasLabel = selectedAreas.slice(0, 3).map(a => a.nombre).join(' · ')
+    + (selectedAreas.length > 3 ? ' · …' : '')
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(6.5)
+  doc.setTextColor(...C.grayMid)
+  doc.text(areasLabel, scopeX, y + 12, { align: 'right' })
+
+  y += 30
+
+  // ── KPI Strip ─────────────────────────────────────────────────────────
+  const kpiH   = 26
+  const kpiGap = 1
+  const kpiW   = (W - MARGIN * 2 - kpiGap * 3) / 4
+  const kpis = [
+    { val: allItems.length,      lbl: 'Productos\nen stock', color: C.black },
+    { val: itemsBajo.length,     lbl: 'Bajo\nmínimo',        color: C.red   },
+    { val: itemsVencer.length,   lbl: 'Por vencer\n30 días', color: C.amber },
+    { val: itemsVencidos.length, lbl: 'Lotes\nvencidos',     color: C.gray  },
+  ]
+
+  // Fondo unificado gris (separador entre tarjetas)
+  doc.setFillColor(...C.grayBorder)
+  doc.roundedRect(MARGIN, y, W - MARGIN * 2, kpiH, 4, 4, 'F')
+
+  kpis.forEach((kpi, i) => {
+    const kx = MARGIN + i * (kpiW + kpiGap)
+    const ky = y
+
+    // Fondo blanco de la tarjeta
+    doc.setFillColor(...C.white)
+    if (i === 0) {
+      doc.roundedRect(kx, ky, kpiW, kpiH, 4, 4, 'F')
+      // Cubrir esquinas derechas
+      doc.rect(kx + kpiW - 4, ky, 4, kpiH, 'F')
+    } else if (i === 3) {
+      doc.roundedRect(kx, ky, kpiW, kpiH, 4, 4, 'F')
+      // Cubrir esquinas izquierdas
+      doc.rect(kx, ky, 4, kpiH, 'F')
+    } else {
+      doc.rect(kx, ky, kpiW, kpiH, 'F')
+    }
+
+    const cx = kx + kpiW / 2
+
+    // Número grande
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(22)
+    doc.setTextColor(...kpi.color)
+    doc.text(String(kpi.val), cx, ky + 13, { align: 'center' })
+
+    // Label (puede tener salto de línea)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6.5)
+    doc.setTextColor(...C.grayMid)
+    const lblLines = kpi.lbl.split('\n')
+    lblLines.forEach((line, li) => {
+      doc.text(line, cx, ky + 18 + li * 4, { align: 'center' })
+    })
+  })
+
+  y += kpiH + 10
+
+  // ── Columnas de alertas ────────────────────────────────────────────────
+  const colW   = (W - MARGIN * 2 - 14) / 2
+  const colL   = MARGIN
+  const colR   = MARGIN + colW + 14
+  const listMaxY = H - FOOTER_H - 4
+  const ROW_H  = 5.5
+  const MAX_ROWS = Math.floor((listMaxY - y - 12) / ROW_H)
+
+  function drawAlertCol(
+    x: number,
+    titulo: string,
+    count: number,
+    borderColor: [number,number,number],
+    dotColor: [number,number,number],
+    titleColor: [number,number,number],
+    valColor: [number,number,number],
+    rows: { name: string; val: string }[]
+  ) {
+    // Encabezado de columna
+    doc.setFillColor(...dotColor)
+    doc.circle(x + 3, y + 1.5, 2, 'F')
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7.5)
+    doc.setTextColor(...titleColor)
+    doc.text(titulo, x + 8, y + 3)
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7)
+    doc.setTextColor(...titleColor)
+    const countLabel = `${count} ${count === 1 ? 'producto' : 'productos'}`
+    doc.text(countLabel, x + colW, y + 3, { align: 'right' })
+
+    // Línea bajo encabezado
+    doc.setDrawColor(...borderColor)
+    doc.setLineWidth(1)
+    doc.line(x, y + 6, x + colW, y + 6)
+    doc.setLineWidth(0.4)
+
+    const rowsY = y + 10
+
+    if (rows.length === 0) {
+      doc.setFont('helvetica', 'italic')
+      doc.setFontSize(7)
+      doc.setTextColor(...C.grayMid)
+      doc.text('Sin alertas activas', x + colW / 2, rowsY + 4, { align: 'center' })
+      return
+    }
+
+    const visible = rows.slice(0, MAX_ROWS)
+    visible.forEach((row, idx) => {
+      const ry = rowsY + idx * ROW_H
+      if (idx % 2 === 1) {
+        doc.setFillColor(...C.grayLight)
+        doc.rect(x, ry - ROW_H + 1.5, colW, ROW_H, 'F')
+      }
+
+      // Nombre (truncado)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7)
+      doc.setTextColor(...C.grayDark)
+      const valW = doc.getTextWidth(row.val) + 2
+      const maxNomW = colW - valW - 4
+      let nombre = row.name
+      doc.setFont('helvetica', 'normal')
+      while (doc.getTextWidth(nombre) > maxNomW && nombre.length > 4)
+        nombre = nombre.slice(0, -1)
+      if (nombre !== row.name) nombre += '…'
+      doc.text(nombre, x + 2, ry)
+
+      // Valor
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(...valColor)
+      doc.text(row.val, x + colW - 2, ry, { align: 'right' })
+    })
+
+    if (rows.length > MAX_ROWS) {
+      const restY = rowsY + MAX_ROWS * ROW_H
+      doc.setFont('helvetica', 'italic')
+      doc.setFontSize(6.5)
+      doc.setTextColor(...C.grayMid)
+      doc.text(`… y ${rows.length - MAX_ROWS} más`, x + 2, restY)
+    }
+  }
+
+  // Columna izquierda — Bajo mínimo
+  drawAlertCol(
+    colL, 'Stock Bajo Mínimo', itemsBajo.length,
+    C.redBorder, C.red, C.redDark, C.redDark,
+    itemsBajo.map(i => ({
+      name: i.producto_nombre,
+      val:  `${Math.round(i.stock_total ?? 0)} / ${Math.round(i.stock_minimo)} ${i.unidad}`
+    }))
+  )
+
+  // Columna derecha — Por vencer
+  drawAlertCol(
+    colR, 'Por Vencer en 30 días', itemsVencer.length,
+    C.amberBorder, C.amber, C.amberDark, C.amberDark,
+    itemsVencer.map(i => {
+      const d = daysUntil(i.proximo_vencimiento!)
+      const val = d === null ? '—' : d === 0 ? 'hoy' : `vence en ${d} ${d === 1 ? 'día' : 'días'}`
+      return { name: i.producto_nombre, val }
+    })
+  )
+}
+
+// ─── drawAreaPage ──────────────────────────────────────────────────────────
+function drawAreaPage(
+  doc: jsPDF,
+  W: number,
+  H: number,
+  area: Area,
+  items: StockItem[],
+  nombreLaboratorio: string,
+  logo: { data: string; type: 'PNG' | 'JPEG' } | null,
+  badgeTxt: string,
+  usuarioNombre: string,
+  horaStr: string
+) {
+  const SECTION_H = 22   // altura de la sección de título del área
+  const alertas = items.map(getAlerta)
+
+  const bajoCuenta = items.filter(i =>
+    i.stock_minimo > 0 && (i.stock_total ?? 0) < i.stock_minimo
+  ).length
+  const vencerCuenta = items.filter(i => {
+    if (!i.proximo_vencimiento) return false
+    const d = daysUntil(i.proximo_vencimiento)
+    return d !== null && d >= 0 && d <= 30
+  }).length
+
+  const tableBody = items.map(item => {
+    const stock = item.stock_total ?? 0
+    const stockRound = Math.round(stock)
+    const stockStr = formatCantidad(stockRound, item.unidad, item.unidad_plural)
+
+    let vencStr = '—'
+    if (item.proximo_vencimiento) {
+      const d = daysUntil(item.proximo_vencimiento)
+      if (d !== null && d < 0) {
+        vencStr = `${formatDate(item.proximo_vencimiento)} (Vencido)`
+      } else if (d !== null && d <= 30) {
+        vencStr = `${formatDate(item.proximo_vencimiento)} · ${d}d`
+      } else {
+        vencStr = formatDate(item.proximo_vencimiento)
+      }
+    }
+
+    let estadoStr = '✓ OK'
+    const alerta = getAlerta(item)
+    if (alerta === 'bajo')   estadoStr = '⬇ Bajo'
+    if (alerta === 'vencer') estadoStr = '⚠ Vence'
+
+    return [
+      item.producto_nombre,
+      item.codigo_interno ?? '—',
+      item.categoria ?? '—',
+      stockStr,
+      vencStr,
+      estadoStr,
+      '',          // col 6: barra de nivel — texto vacío, se dibuja en didDrawCell
+    ]
+  })
+
+  let isFirstPage = true
+
+  autoTable(doc, {
+    startY: HEADER_H + SECTION_H,
+    head: [['Producto', 'Código', 'Categoría', 'Stock', 'Vencimiento', 'Estado', 'Nivel']],
+    body: tableBody,
+
+    headStyles: {
+      fillColor:   C.black,
+      textColor:   C.white,
+      fontStyle:   'bold',
+      fontSize:    6.5,
+      cellPadding: { top: 4, bottom: 4, left: 6, right: 6 },
+    },
+    bodyStyles: {
+      fontSize:    7,
+      cellPadding: { top: 3.5, bottom: 3.5, left: 6, right: 6 },
+      textColor:   C.grayDark,
+    },
+    alternateRowStyles: { fillColor: C.grayLight },
+    tableLineColor: C.grayBorder,
+    tableLineWidth: 0.2,
+
+    columnStyles: {
+      0: { cellWidth: 'auto',  fontStyle: 'bold', textColor: C.black },
+      1: { cellWidth: 26, font: 'courier', fontSize: 6.5, textColor: C.gray },
+      2: { cellWidth: 30, fontSize: 6.5, textColor: C.gray },
+      3: { cellWidth: 24, halign: 'right' },
+      4: { cellWidth: 36, fontSize: 6.5 },
+      5: { cellWidth: 20, halign: 'center', fontSize: 6.5, fontStyle: 'bold' },
+      6: { cellWidth: 22, halign: 'right' },
+    },
+
+    margin: { left: MARGIN, right: MARGIN, top: HEADER_H + SECTION_H - 2, bottom: FOOTER_H + 2 },
+
+    didParseCell: (data) => {
+      if (data.section !== 'body') return
+      const alerta = alertas[data.row.index]
+
+      if (alerta === 'bajo') {
+        data.cell.styles.fillColor = C.redLight
+        if (data.column.index === 3 || data.column.index === 5)
+          data.cell.styles.textColor = C.redDark
+      } else if (alerta === 'vencer') {
+        data.cell.styles.fillColor = C.amberLight
+        if (data.column.index === 4 || data.column.index === 5)
+          data.cell.styles.textColor = C.amberDark
+      }
+
+      // Col 6: vaciar texto (la barra se dibuja en didDrawCell)
+      if (data.column.index === 6) {
+        data.cell.text = ['']
+      }
+    },
+
+    didDrawCell: (data: any) => {
+      if (data.section !== 'body' || data.column.index !== 6) return
+
+      const item    = items[data.row.index]
+      const stock   = item.stock_total ?? 0
+      const minimo  = item.stock_minimo
+
+      let ratio: number
+      if (minimo <= 0) {
+        ratio = 0.7  // sin mínimo configurado → neutro
+      } else {
+        ratio = Math.min(stock / (minimo * 3), 1)
+        ratio = Math.max(ratio, 0)
+      }
+
+      const BAR_W  = data.cell.width - 10
+      const BAR_H  = 3.5
+      const barX   = data.cell.x + 5
+      const barY   = data.cell.y + (data.cell.height - BAR_H) / 2
+
+      // Fondo de la barra
+      doc.setFillColor(...C.grayBorder)
+      doc.roundedRect(barX, barY, BAR_W, BAR_H, BAR_H / 2, BAR_H / 2, 'F')
+
+      // Relleno coloreado
+      const fillW = BAR_W * ratio
+      if (fillW > 0.5) {
+        if (ratio >= 0.6)       doc.setFillColor(...C.green)
+        else if (ratio >= 0.2)  doc.setFillColor(...C.amber)
+        else                    doc.setFillColor(...C.red)
+        const rFill = Math.min(BAR_H / 2, fillW / 2)
+        doc.roundedRect(barX, barY, fillW, BAR_H, rFill, rFill, 'F')
+      }
+    },
+
+    didDrawPage: (data: any) => {
+      // Header siempre
+      drawHeader(doc, W, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr)
+
+      // Sección del área
+      const secY = HEADER_H + 4
+
+      if (isFirstPage) {
+        isFirstPage = false
+
+        // Nombre del área
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(14)
+        doc.setTextColor(...C.black)
+        doc.text(area.nombre, MARGIN, secY + 10)
+
+        // Mini-stats (derecha)
+        const statsX = W - MARGIN
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(7)
+        doc.setTextColor(...C.gray)
+        const statsStr = `${items.length} ${items.length === 1 ? 'producto' : 'productos'}`
+        doc.text(statsStr, statsX, secY + 10, { align: 'right' })
+
+        // Pills de alerta
+        if (bajoCuenta > 0 || vencerCuenta > 0) {
+          let pillX = statsX - doc.getTextWidth(statsStr) - 4
+          doc.setFontSize(6.5)
+
+          if (vencerCuenta > 0) {
+            const pillTxt = `${vencerCuenta} por vencer`
+            const pW = doc.getTextWidth(pillTxt) + 8
+            pillX -= pW + 4
+            doc.setFillColor(...C.amberLight)
+            doc.roundedRect(pillX, secY + 5, pW, 6.5, 2, 2, 'F')
+            doc.setTextColor(...C.amberDark)
+            doc.text(pillTxt, pillX + 4, secY + 9.5)
+          }
+
+          if (bajoCuenta > 0) {
+            const pillTxt = `${bajoCuenta} bajo mínimo`
+            const pW = doc.getTextWidth(pillTxt) + 8
+            pillX -= pW + 4
+            doc.setFillColor(...C.redLight)
+            doc.roundedRect(pillX, secY + 5, pW, 6.5, 2, 2, 'F')
+            doc.setTextColor(...C.redDark)
+            doc.text(pillTxt, pillX + 4, secY + 9.5)
+          }
+        }
+      } else {
+        // Continuación
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8)
+        doc.setTextColor(...C.gray)
+        doc.text(`${area.nombre} — continuación`, MARGIN, secY + 10)
+      }
+
+      // Línea divisora degradada (simulada con dos segmentos)
+      doc.setDrawColor(...C.black)
+      doc.setLineWidth(1.5)
+      doc.line(MARGIN, secY + 14, MARGIN + 60, secY + 14)
+      doc.setDrawColor(...C.grayBorder)
+      doc.setLineWidth(0.4)
+      doc.line(MARGIN + 60, secY + 14, W - MARGIN, secY + 14)
+    },
+  })
+}
+
+// ─── exportarStockPDF ──────────────────────────────────────────────────────
 export async function exportarStockPDF(options: PdfOptions): Promise<void> {
   const { selectedAreas, incluirResumen, nombreLaboratorio, logoBase64, usuarioNombre, filters } = options
 
-  // Fetch data
+  // ── Fetch de datos ────────────────────────────────────────────────────────
   const stockPorArea: { area: Area; items: StockItem[] }[] = []
   for (const area of selectedAreas) {
     const items = await fetchStockForArea(area.id, filters)
     if (items.length > 0) stockPorArea.push({ area, items })
   }
 
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
-  const W = doc.internal.pageSize.getWidth()   // 279.4
-  const H = doc.internal.pageSize.getHeight()  // 215.9
-  const now = new Date()
+  if (stockPorArea.length === 0 && !incluirResumen) {
+    throw new Error('No hay datos de stock para las áreas seleccionadas')
+  }
+
+  // ── Setup del documento ───────────────────────────────────────────────────
+  const doc  = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
+  const W    = doc.internal.pageSize.getWidth()   // 279.4
+  const H    = doc.internal.pageSize.getHeight()  // 215.9
+  const now  = new Date()
   const fechaStr = now.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
   const horaStr  = now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
-  const logo = parseLogoBase64(logoBase64)
+  const logo     = parseLogoBase64(logoBase64)
+  const badgeTxt = badgeDate(now)
 
-  // ─── HEADER ────────────────────────────────────────────────────────────────
-  // Medidas
-  const HEADER_H = 26
-  const LOGO_BOX = 20   // cuadrado del logo
-  const LOGO_X   = 8
-  const LOGO_Y   = 3
-
-  function drawHeader() {
-    // Fondo blanco del header
-    doc.setFillColor(...C.white)
-    doc.rect(0, 0, W, HEADER_H, 'F')
-
-    // Barra de acento izquierda
-    doc.setFillColor(...C.blue)
-    doc.rect(0, 0, 3, HEADER_H, 'F')
-
-    // Caja del logo (siempre presente)
-    doc.setFillColor(...C.grayLight)
-    doc.setDrawColor(...C.border)
-    doc.setLineWidth(0.3)
-    doc.roundedRect(LOGO_X, LOGO_Y, LOGO_BOX, LOGO_BOX, 2, 2, 'FD')
-
-    if (logo) {
-      try {
-        doc.addImage(logo.data, logo.type, LOGO_X + 1, LOGO_Y + 1, LOGO_BOX - 2, LOGO_BOX - 2)
-      } catch {
-        // si falla, deja el cuadro vacío
-      }
-    } else {
-      // Icono placeholder: cruz de laboratorio
-      doc.setDrawColor(...C.gray)
-      doc.setLineWidth(0.5)
-      const cx = LOGO_X + LOGO_BOX / 2
-      const cy = LOGO_Y + LOGO_BOX / 2
-      doc.line(cx - 4, cy, cx + 4, cy)
-      doc.line(cx, cy - 4, cx, cy + 4)
-    }
-
-    // Nombre del laboratorio
-    const textX = LOGO_X + LOGO_BOX + 4
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(13)
-    doc.setTextColor(...C.navy)
-    doc.text(nombreLaboratorio, textX, 11)
-
-    // Subtitulo
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7.5)
-    doc.setTextColor(...C.gray)
-    doc.text('Reporte de Stock - Inventario', textX, 17)
-
-    // Fecha y usuario (derecha)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8)
-    doc.setTextColor(...C.grayDark)
-    doc.text(`${fechaStr}  ${horaStr}`, W - 8, 11, { align: 'right' })
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7)
-    doc.setTextColor(...C.gray)
-    doc.text(`Generado por: ${usuarioNombre}`, W - 8, 17, { align: 'right' })
-
-    // Linea separadora sutil
-    doc.setDrawColor(...C.border)
-    doc.setLineWidth(0.3)
-    doc.line(0, HEADER_H, W, HEADER_H)
-  }
-
-  // ─── FOOTER ────────────────────────────────────────────────────────────────
-  function drawFooter(pageNum: number) {
-    doc.setDrawColor(...C.border)
-    doc.setLineWidth(0.3)
-    doc.line(8, H - 8, W - 8, H - 8)
-
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(6.5)
-    doc.setTextColor(...C.gray)
-    doc.text(nombreLaboratorio, 8, H - 4)
-    doc.text(`Pagina ${pageNum}`, W - 8, H - 4, { align: 'right' })
-  }
-
-  // ─── RESUMEN EJECUTIVO ─────────────────────────────────────────────────────
+  // ── Página 1: Resumen Ejecutivo ───────────────────────────────────────────
   if (incluirResumen) {
-    drawHeader()
-
-    const allItems     = stockPorArea.flatMap((s) => s.items)
-    const itemsBajo    = allItems.filter((i) => (i.stock_total ?? 0) <= i.stock_minimo)
-    const itemsVencer  = allItems.filter((i) => {
-      if (!i.proximo_vencimiento) return false
-      const d = daysUntil(i.proximo_vencimiento)
-      return d !== null && d >= 0 && d <= 30
-    })
-
-    const MARGIN = 14
-    let y = HEADER_H + 12
-
-    // ── Encabezado del resumen ──────────────────────────────────────────────
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(15)
-    doc.setTextColor(...C.navy)
-    doc.text('Resumen Ejecutivo', MARGIN, y)
-
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7.5)
-    doc.setTextColor(...C.gray)
-    doc.text(`${fechaStr}  ·  ${horaStr}`, W - MARGIN, y, { align: 'right' })
-
-    y += 2
-    doc.setDrawColor(...C.blue)
-    doc.setLineWidth(0.6)
-    doc.line(MARGIN, y, MARGIN + 42, y)
-    doc.setDrawColor(...C.border)
-    doc.setLineWidth(0.3)
-    doc.line(MARGIN + 42, y, W - MARGIN, y)
-
-    y += 14
-
-    // ── Métricas en línea horizontal ────────────────────────────────────────
-    // 4 métricas separadas por líneas verticales, sin cajas
-    const metrics = [
-      { value: String(allItems.length),         label: 'Productos en stock',  color: C.navy  },
-      { value: String(itemsBajo.length),         label: 'Bajo minimo',         color: C.red   },
-      { value: String(itemsVencer.length),       label: 'Por vencer (30 d)',   color: C.amber },
-      { value: String(selectedAreas.length),     label: 'Secciones',           color: C.gray  },
-    ]
-
-    const colW = (W - MARGIN * 2) / metrics.length
-
-    metrics.forEach((m, i) => {
-      const cx = MARGIN + i * colW + colW / 2
-
-      // Línea divisora (no antes de la primera)
-      if (i > 0) {
-        doc.setDrawColor(...C.border)
-        doc.setLineWidth(0.4)
-        doc.line(MARGIN + i * colW, y - 10, MARGIN + i * colW, y + 8)
-      }
-
-      // Número
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(28)
-      doc.setTextColor(...m.color)
-      doc.text(m.value, cx, y, { align: 'center' })
-
-      // Label
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(7.5)
-      doc.setTextColor(...C.gray)
-      doc.text(m.label, cx, y + 7, { align: 'center' })
-    })
-
-    y += 20
-
-    // ── Separador de sección ────────────────────────────────────────────────
-    doc.setDrawColor(...C.border)
-    doc.setLineWidth(0.3)
-    doc.line(MARGIN, y, W - MARGIN, y)
-
-    y += 10
-
-    // ── Dos columnas de alertas ─────────────────────────────────────────────
-    const COL_LEFT  = MARGIN
-    const COL_RIGHT = W / 2 + 4
-    const COL_W     = W / 2 - MARGIN - 4
-
-    // Título col izquierda — Bajo mínimo
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8)
-    doc.setTextColor(...C.red)
-    doc.text('STOCK BAJO MINIMO', COL_LEFT, y)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7)
-    doc.setTextColor(...C.gray)
-    doc.text(
-      itemsBajo.length === 0 ? 'Sin alertas' : formatCantidad(itemsBajo.length, 'producto'),
-      COL_LEFT + doc.getTextWidth('STOCK BAJO MINIMO') + 3,
-      y
-    )
-
-    // Título col derecha — Por vencer
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8)
-    doc.setTextColor(...C.amber)
-    doc.text('POR VENCER EN 30 DIAS', COL_RIGHT, y)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7)
-    doc.setTextColor(...C.gray)
-    doc.text(
-      itemsVencer.length === 0 ? 'Sin alertas' : formatCantidad(itemsVencer.length, 'producto'),
-      COL_RIGHT + doc.getTextWidth('POR VENCER EN 30 DIAS') + 3,
-      y
-    )
-
-    y += 4
-    // Línea bajo títulos de columnas
-    doc.setDrawColor(...C.redLight)
-    doc.setLineWidth(0.4)
-    doc.line(COL_LEFT, y, COL_LEFT + COL_W, y)
-    doc.setDrawColor(...C.amberLight)
-    doc.line(COL_RIGHT, y, COL_RIGHT + COL_W, y)
-
-    y += 5
-
-    // Línea vertical divisora de columnas
-    doc.setDrawColor(...C.border)
-    doc.setLineWidth(0.3)
-    const listMaxY = H - 16
-    doc.line(W / 2, y - 4, W / 2, listMaxY)
-
-    // Filas de alertas — Bajo mínimo (izquierda)
-    const MAX_ROWS = Math.floor((listMaxY - y) / 6)
-
-    const drawAlertRow = (
-      label: string,
-      detail: string,
-      rx: number,
-      ry: number,
-      isAlt: boolean,
-      textColor: [number, number, number]
-    ) => {
-      const ROW_H = 6
-      if (isAlt) {
-        doc.setFillColor(...C.grayLight)
-        doc.rect(rx, ry - 4.5, COL_W, ROW_H, 'F')
-      }
-      // Medir detail en normal (el font con que se dibuja)
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(7)
-      const detailW = doc.getTextWidth(detail)
-      // Truncar label en bold
-      doc.setFont('helvetica', 'bold')
-      const maxLabelW = COL_W - detailW - 8
-      let displayLabel = label
-      while (doc.getTextWidth(displayLabel) > maxLabelW && displayLabel.length > 4) {
-        displayLabel = displayLabel.slice(0, -1)
-      }
-      if (displayLabel !== label) displayLabel += '...'
-      doc.setTextColor(...textColor)
-      doc.text(displayLabel, rx + 2, ry)
-      doc.setFont('helvetica', 'normal')
-      doc.setTextColor(...C.gray)
-      doc.text(detail, rx + COL_W - 2, ry, { align: 'right' })
-    }
-
-    if (itemsBajo.length === 0) {
-      doc.setFont('helvetica', 'italic')
-      doc.setFontSize(7.5)
-      doc.setTextColor(...C.gray)
-      doc.text('Sin productos bajo minimo', COL_LEFT + COL_W / 2, y + 4, { align: 'center' })
-    } else {
-      itemsBajo.slice(0, MAX_ROWS).forEach((item, idx) => {
-        const stock = Math.round(item.stock_total ?? 0)
-        const min   = Math.round(item.stock_minimo)
-        drawAlertRow(
-          item.producto_nombre,
-          `${formatCantidad(stock, item.unidad, item.unidad_plural)} / ${min}`,
-          COL_LEFT, y + idx * 6,
-          idx % 2 === 1,
-          C.redDark
-        )
-      })
-      if (itemsBajo.length > MAX_ROWS) {
-        doc.setFont('helvetica', 'italic')
-        doc.setFontSize(6.5)
-        doc.setTextColor(...C.gray)
-        doc.text(`... y ${itemsBajo.length - MAX_ROWS} mas`, COL_LEFT + 2, y + MAX_ROWS * 6)
-      }
-    }
-
-    if (itemsVencer.length === 0) {
-      doc.setFont('helvetica', 'italic')
-      doc.setFontSize(7.5)
-      doc.setTextColor(...C.gray)
-      doc.text('Sin productos por vencer', COL_RIGHT + COL_W / 2, y + 4, { align: 'center' })
-    } else {
-      itemsVencer.slice(0, MAX_ROWS).forEach((item, idx) => {
-        const d = daysUntil(item.proximo_vencimiento!)
-        const label = d === null ? '-' : d === 0 ? 'hoy' : formatCantidad(d, 'día')
-        drawAlertRow(
-          item.producto_nombre,
-          label,
-          COL_RIGHT, y + idx * 6,
-          idx % 2 === 1,
-          C.amberDark
-        )
-      })
-      if (itemsVencer.length > MAX_ROWS) {
-        doc.setFont('helvetica', 'italic')
-        doc.setFontSize(6.5)
-        doc.setTextColor(...C.gray)
-        doc.text(`... y ${itemsVencer.length - MAX_ROWS} mas`, COL_RIGHT + 2, y + MAX_ROWS * 6)
-      }
-    }
-
-    drawFooter(1)
-    doc.addPage()
+    drawResumen(doc, W, H, stockPorArea, selectedAreas, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr, fechaStr)
+    if (stockPorArea.length > 0) doc.addPage()
   }
 
-  // ─── TABLAS POR ÁREA ───────────────────────────────────────────────────────
-  // NOTA: didDrawPage dispara en TODAS las páginas incluida la primera,
-  // por eso header/footer/sección se manejan SOLO desde didDrawPage.
+  // Si no hay datos, guardar solo el resumen
+  if (stockPorArea.length === 0) {
+    const totalPages = doc.getNumberOfPages()
+    for (let p = 1; p <= totalPages; p++) {
+      doc.setPage(p)
+      drawFooterFinal(doc, W, H, p, totalPages, nombreLaboratorio)
+    }
+    const fecha = now.toISOString().split('T')[0]
+    doc.save(`stock-inventario-${fecha}.pdf`)
+    return
+  }
+
+  // ── Páginas 2..N: tablas por área ─────────────────────────────────────────
   for (let aIdx = 0; aIdx < stockPorArea.length; aIdx++) {
     if (aIdx > 0) doc.addPage()
     const { area, items } = stockPorArea[aIdx]
-
-    const tableBody = items.map((item) => {
-      const stock = Math.round(item.stock_total ?? 0)
-      const vencStr = item.proximo_vencimiento
-        ? (() => {
-            const d = daysUntil(item.proximo_vencimiento)
-            const label = d === null ? '-' : d <= 0 ? 'Vencido' : formatCantidad(d, 'día')
-            return `${formatDate(item.proximo_vencimiento)} (${label})`
-          })()
-        : '-'
-      return [
-        item.producto_nombre,
-        item.codigo_interno ?? '-',
-        item.categoria ?? '-',
-        formatCantidad(stock, item.unidad, item.unidad_plural),
-        vencStr,
-      ]
-    })
-
-    const alertas = items.map(getAlerta)
-    let isFirstPageOfArea = true
-
-    autoTable(doc, {
-      startY: HEADER_H + 18,  // espacio para header + etiqueta de sección
-      head: [['Producto', 'Codigo', 'Categoria', 'Stock', 'Prox. vencimiento']],
-      body: tableBody,
-      didParseCell: (data) => {
-        if (data.section !== 'body') return
-        const alerta = alertas[data.row.index]
-        if (alerta === 'bajo') {
-          data.cell.styles.fillColor = C.redLight
-          data.cell.styles.textColor = C.redDark
-          data.cell.styles.fontStyle = 'bold'
-        } else if (alerta === 'vencer') {
-          data.cell.styles.fillColor = C.amberLight
-          data.cell.styles.textColor = C.amberDark
-          data.cell.styles.fontStyle = 'bold'
-        }
-      },
-      headStyles: {
-        fillColor:   C.navy,
-        textColor:   C.white,
-        fontStyle:   'bold',
-        fontSize:    8,
-        cellPadding: { top: 3, bottom: 3, left: 3, right: 3 },
-      },
-      bodyStyles: {
-        fontSize:    7.5,
-        cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 },
-        textColor:   C.grayDark,
-      },
-      alternateRowStyles: { fillColor: C.grayLight },
-      columnStyles: {
-        0: { cellWidth: 'auto' },
-        1: { cellWidth: 30, font: 'courier' },
-        2: { cellWidth: 38 },
-        3: { cellWidth: 28, halign: 'right' },
-        4: { cellWidth: 48 },
-      },
-      tableLineColor: C.border,
-      tableLineWidth: 0.2,
-      // top deja espacio para el header en páginas de continuación
-      margin: { left: 8, right: 8, top: HEADER_H + 5, bottom: 12 },
-      didDrawPage: () => {
-        // Header siempre (única fuente de verdad)
-        drawHeader()
-
-        // Etiqueta de sección solo en la primera página de cada área
-        if (isFirstPageOfArea) {
-          isFirstPageOfArea = false
-          const secY = HEADER_H + 10
-
-          doc.setFont('helvetica', 'bold')
-          doc.setFontSize(9)
-          const pillW = Math.min(doc.getTextWidth(area.nombre) + 16, W - 50)
-          doc.setFillColor(...C.blueLight)
-          doc.setDrawColor(...C.blue)
-          doc.setLineWidth(0.3)
-          doc.roundedRect(8, secY - 5, pillW, 7, 2, 2, 'FD')
-          doc.setTextColor(...C.blue)
-          doc.text(area.nombre, 8 + pillW / 2, secY, { align: 'center' })
-
-          doc.setFont('helvetica', 'normal')
-          doc.setFontSize(7.5)
-          doc.setTextColor(...C.gray)
-          doc.text(
-            formatCantidad(items.length, 'producto'),
-            W - 8, secY, { align: 'right' }
-          )
-        }
-
-        // Footer con número de página real
-        const pageInfo = (doc.internal as unknown as { getCurrentPageInfo: () => { pageNumber: number } })
-          .getCurrentPageInfo()
-        drawFooter(pageInfo.pageNumber)
-      },
-    })
+    drawAreaPage(doc, W, H, area, items, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr)
   }
 
+  // ── Post-pass: footers con "Página N de T" ────────────────────────────────
+  const totalPages = doc.getNumberOfPages()
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p)
+    drawFooterFinal(doc, W, H, p, totalPages, nombreLaboratorio)
+  }
+
+  // ── Guardar ───────────────────────────────────────────────────────────────
   const fecha = now.toISOString().split('T')[0]
-  doc.save(`stock-${fecha}.pdf`)
+  doc.save(`stock-inventario-${fecha}.pdf`)
 }

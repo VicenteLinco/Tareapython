@@ -564,6 +564,7 @@ export default function NuevaRecepcionPage() {
               active={scannerOpen}
               onScan={async (code) => {
                 await handleSearch(code)
+                setScannerOpen(false)
               }}
             />
             <p className="text-xs opacity-40 text-center mt-2">Apunta al código QR o de barras del producto</p>

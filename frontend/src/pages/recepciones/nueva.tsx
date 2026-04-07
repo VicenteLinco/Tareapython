@@ -3,7 +3,7 @@ import { useState, useCallback } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
-import { ArrowLeft, Search, ShoppingCart, ScanLine } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, X } from 'lucide-react'
 import api from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -12,8 +12,9 @@ import { Dialog } from '@/components/ui/dialog'
 import { ProveedorSelect } from '@/components/ui/proveedor-select'
 import { toast } from 'sonner'
 import { ReceptionItemCard, type DetalleLineUI } from './components/item-card'
+import { ProductoAutocomplete } from './components/producto-autocomplete'
 import { LabelsSection } from './components/labels-section'
-import { QrScannerSession } from './qr-scanner-session'
+import { QrScanner } from '@/components/shared/qr-scanner'
 import { imprimirEtiquetas, type LoteParaEtiqueta } from '@/lib/label-print'
 import type { Proveedor, Producto, Area, SolicitudResumen } from '@/types'
 
@@ -55,7 +56,6 @@ export default function NuevaRecepcionPage() {
 
   // Estado ítems
   const [detalles, setDetalles] = useState<DetalleLineUI[]>([])
-  const [searchValue, setSearchValue] = useState('')
   const [scannerOpen, setScannerOpen] = useState(false)
 
   // Estado decisión
@@ -85,6 +85,12 @@ export default function NuevaRecepcionPage() {
     queryFn: () => api.get<{ data: Producto[] }>('/productos', { params: { per_page: 500 } }).then(r => r.data.data),
   })
 
+  const { data: configuracion } = useQuery({
+    queryKey: ['configuracion'],
+    queryFn: () => api.get<{ moneda_simbolo: string }>('/configuracion').then(r => r.data),
+  })
+  const monedaSimbolo = configuracion?.moneda_simbolo ?? '$'
+
   const { data: solicitudesPendientes } = useQuery({
     queryKey: ['solicitudes-activas'],
     queryFn: () => api.get<{ data: SolicitudResumen[] }>('/solicitudes-compra').then(r =>
@@ -94,7 +100,7 @@ export default function NuevaRecepcionPage() {
 
   // ─── Agregar ítem ──────────────────────────────────────────────────────────
 
-  const addProducto = useCallback(async (prod: Producto, overridePresentacionId?: number) => {
+  const addProducto = useCallback(async (prod: Producto, overridePresentacionId?: number, overrideQuantity?: number) => {
     try {
       const res = await api.get(`/productos/${prod.id}`)
       const full = res.data
@@ -104,7 +110,7 @@ export default function NuevaRecepcionPage() {
         : null) ?? presentaciones[0] ?? null
 
       const catalogoArea = full.areas?.[0]
-      const initialCantidadPresentacion = 1
+      const initialCantidadPresentacion = overrideQuantity ?? 1
       const line: DetalleLineUI = {
         id: uuidv4(),
         producto_id: String(prod.id),
@@ -114,6 +120,7 @@ export default function NuevaRecepcionPage() {
         presentacion_nombre: pres?.nombre || '',
         presentacion_nombre_plural: pres?.nombre_plural || '',
         cantidad_presentacion: initialCantidadPresentacion,
+        cantidad_solicitada: overrideQuantity ?? null,
         factor_conversion: Number(pres?.factor_conversion || 1),
         unidad_base_nombre: full.unidad_base?.nombre || '',
         unidad_base_nombre_plural: full.unidad_base?.nombre_plural || '',
@@ -122,7 +129,7 @@ export default function NuevaRecepcionPage() {
         area_destino_id: catalogoArea?.id ?? null,
         area_destino_nombre: catalogoArea?.nombre ?? '',
         presentaciones,
-        precio_unitario: full.precio_unidad ? String((full.precio_unidad * Number(pres?.factor_conversion || 1)).toFixed(2)) : '',
+        precio_unitario: full.precio_unidad ? String(Math.round(full.precio_unidad * Number(pres?.factor_conversion || 1))) : '',
         imagen_url: full.imagen_url,
         incluir_etiqueta: false,
         cantidad_etiquetas: initialCantidadPresentacion,
@@ -150,7 +157,7 @@ export default function NuevaRecepcionPage() {
           p.nombre.toLowerCase().includes(q.toLowerCase()) ||
           p.codigo_interno.toLowerCase() === q.toLowerCase()
         )
-        if (found) { await addProducto(found); setSearchValue(''); return }
+        if (found) { await addProducto(found); return }
         toast.error('Producto no encontrado')
         return
       }
@@ -195,7 +202,6 @@ export default function NuevaRecepcionPage() {
         const prod = productos?.find(p => p.id === data.producto_id || String(p.id) === String(data.producto_id))
         if (prod) await addProducto(prod)
       }
-      setSearchValue('')
     } catch {
       toast.error('Error en la búsqueda')
     }
@@ -245,7 +251,17 @@ export default function NuevaRecepcionPage() {
         navigate('/recepciones')
       }
     },
-    onError: () => toast.error('Error al confirmar recepción'),
+    onError: (err: unknown) => {
+      const data = (err as { response?: { data?: unknown } })?.response?.data
+      const msg = typeof data === 'string'
+        ? data
+        : typeof data === 'object' && data !== null
+          ? (data as Record<string, unknown>).error as string
+            || (data as Record<string, unknown>).message as string
+            || JSON.stringify(data)
+          : 'Error al confirmar recepción'
+      toast.error(String(msg))
+    },
   })
 
   const handleConfirmar = () => {
@@ -372,13 +388,28 @@ export default function NuevaRecepcionPage() {
               />
             </div>
 
-            <button
-              className="btn btn-sm btn-ghost btn-outline w-full border-dashed"
-              onClick={() => setSolicitudModalOpen(true)}
-            >
-              <ShoppingCart className="h-4 w-4 mr-1" />
-              {solicitudId ? 'Solicitud vinculada ✓' : 'Vincular solicitud'}
-            </button>
+            {solicitudId ? (
+              <div className="flex items-center gap-2">
+                <span className="flex-1 text-xs text-success font-medium flex items-center gap-1">
+                  <ShoppingCart className="h-3 w-3" /> Solicitud vinculada ✓
+                </span>
+                <button
+                  className="btn btn-xs btn-ghost btn-circle text-error"
+                  title="Desvincular solicitud"
+                  onClick={() => setSolicitudId(null)}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
+              <button
+                className="btn btn-sm btn-ghost btn-outline w-full border-dashed"
+                onClick={() => setSolicitudModalOpen(true)}
+              >
+                <ShoppingCart className="h-4 w-4 mr-1" />
+                Vincular solicitud (opcional)
+              </button>
+            )}
           </div>
 
           {/* Estado */}
@@ -390,13 +421,6 @@ export default function NuevaRecepcionPage() {
                 {itemsCompletos}/{detalles.length} ítems completos
               </p>
             )}
-            <button
-              className="btn btn-sm btn-outline w-full gap-2"
-              onClick={() => setScannerOpen(true)}
-            >
-              <ScanLine className="h-4 w-4" />
-              Escanear
-            </button>
           </div>
 
           {/* Decisión */}
@@ -486,20 +510,13 @@ export default function NuevaRecepcionPage() {
         <div className="flex-1 min-w-0 space-y-4">
 
           {/* Búsqueda / scan */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-40" />
-            <input
-              className="input input-bordered w-full pl-10 pr-10"
-              placeholder="Escanear QR · Código interno · Nombre del producto…"
-              value={searchValue}
-              onChange={e => setSearchValue(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { handleSearch(searchValue) } }}
-            />
-            <ScanLine
-              className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-40 cursor-pointer"
-              onClick={() => setScannerOpen(true)}
-            />
-          </div>
+          <ProductoAutocomplete
+            productos={productos ?? []}
+            excluidos={detalles.map(d => d.producto_id)}
+            onSelect={prod => { addProducto(prod) }}
+            onScan={handleSearch}
+            onScannerOpen={() => setScannerOpen(true)}
+          />
 
           {/* Lista de ítems */}
           {detalles.length === 0 ? (
@@ -516,6 +533,7 @@ export default function NuevaRecepcionPage() {
                   areas={areas ?? []}
                   onChange={handleChange}
                   onRemove={handleRemove}
+                  monedaSimbolo={monedaSimbolo}
                 />
               ))}
             </div>
@@ -532,16 +550,26 @@ export default function NuevaRecepcionPage() {
         </div>
       </div>
 
-      {/* QR Scanner session */}
+      {/* Cámara escáner */}
       {scannerOpen && (
-        <QrScannerSession
-          onItemsScanned={async (items) => {
-            for (const item of items) {
-              await handleSearch(item.codigo)
-            }
-          }}
-          onClose={() => setScannerOpen(false)}
-        />
+        <div className="modal modal-open">
+          <div className="modal-box max-w-sm p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold">Escanear producto</h3>
+              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setScannerOpen(false)}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <QrScanner
+              active={scannerOpen}
+              onScan={async (code) => {
+                await handleSearch(code)
+              }}
+            />
+            <p className="text-xs opacity-40 text-center mt-2">Apunta al código QR o de barras del producto</p>
+          </div>
+          <div className="modal-backdrop" onClick={() => setScannerOpen(false)} />
+        </div>
       )}
 
       {/* Modal vincular solicitud */}
@@ -559,8 +587,16 @@ export default function NuevaRecepcionPage() {
                   toast.success('Solicitud vinculada')
                   for (const item of res.data.items) {
                     try {
-                      const p = productos?.find(x => x.id === item.producto_id)
-                      if (p) await addProducto(p)
+                      const p = productos?.find(x => String(x.id) === String(item.producto_id))
+                      if (p) {
+                        // Preferir cantidad_presentaciones; si es null usar cantidad_sugerida (unidades base)
+                        const qty = item.cantidad_presentaciones
+                          ? Number(item.cantidad_presentaciones)
+                          : item.cantidad_sugerida
+                            ? Number(item.cantidad_sugerida)
+                            : undefined
+                        await addProducto(p, item.presentacion_id ?? undefined, qty)
+                      }
                     } catch (e) {
                       toast.error('Error cargando producto: ' + (e instanceof Error ? e.message : String(e)))
                     }

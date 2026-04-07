@@ -45,6 +45,7 @@ interface PdfOptions {
 
 interface StockResponse {
   data: StockItem[]
+  total: number
   total_pages: number
 }
 
@@ -56,7 +57,7 @@ interface GlobalStockResponse extends StockResponse {
 }
 
 interface GlobalAlertData {
-  totalEnStock: number
+  totalActivos: number   // todos los insumos activos (con o sin stock)
   itemsBajo: StockItem[]
   itemsPorVencer30: StockItem[]
   itemsVencidos: StockItem[]
@@ -91,24 +92,34 @@ function parseLogoBase64(raw: string): { data: string; type: 'PNG' | 'JPEG' } | 
 }
 
 // ─── fetchGlobalResumenData ───────────────────────────────────────────────
-// Obtiene alertas globales (sin filtro de área) para el Resumen Ejecutivo.
-// con_alertas=true devuelve: bajo mínimo (incl. stock=0) + por vencer 90d + vencidos.
-// El campo resumen.total_productos_con_stock es siempre global.
+// Obtiene datos globales para el Resumen Ejecutivo (sin filtro de área).
+// - totalActivos: todos los insumos activos (stock>0 OR stock_minimo>0), igual al dashboard
+// - alertas: bajo mínimo (incl. agotados), por vencer 30d, vencidos
 async function fetchGlobalResumenData(filters?: PdfOptions['filters']): Promise<GlobalAlertData> {
-  const params = { ...filters, con_alertas: true, per_page: 100, page: 1 }
-  const first = await api.get<GlobalStockResponse>('/stock', { params }).then(r => r.data)
-  const allAlerts = first.total_pages <= 1
-    ? first.data
+  // Dos llamadas en paralelo:
+  // 1. Sin filtro especial → total de insumos activos en el sistema
+  // 2. con_alertas=true → todos los ítems que necesitan atención
+  const [activosResp, alertsFirst] = await Promise.all([
+    api.get<StockResponse>('/stock', { params: { ...filters, per_page: 1, page: 1 } }).then(r => r.data),
+    api.get<GlobalStockResponse>('/stock', { params: { ...filters, con_alertas: true, per_page: 100, page: 1 } }).then(r => r.data),
+  ])
+
+  const allAlerts = alertsFirst.total_pages <= 1
+    ? alertsFirst.data
     : [
-        ...first.data,
+        ...alertsFirst.data,
         ...await Promise.all(
-          Array.from({ length: first.total_pages - 1 }, (_, i) =>
-            api.get<GlobalStockResponse>('/stock', { params: { ...params, page: i + 2 } }).then(r => r.data.data)
+          Array.from({ length: alertsFirst.total_pages - 1 }, (_, i) =>
+            api.get<GlobalStockResponse>('/stock', {
+              params: { ...filters, con_alertas: true, per_page: 100, page: i + 2 },
+            }).then(r => r.data.data)
           )
         ).then(pages => pages.flat()),
       ]
+
   return {
-    totalEnStock: first.resumen.total_productos_con_stock,
+    // total = todos los productos activos con stock>0 OR stock_minimo>0 (igual al dashboard)
+    totalActivos: activosResp.total,
     itemsBajo: allAlerts.filter(i => i.stock_minimo > 0 && (i.stock_total ?? 0) < i.stock_minimo),
     itemsPorVencer30: allAlerts.filter(i => {
       if (!i.proximo_vencimiento) return false
@@ -262,7 +273,7 @@ function drawResumen(
 ) {
   drawHeader(doc, W, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr)
 
-  const { totalEnStock, itemsBajo, itemsPorVencer30: itemsVencer, itemsVencidos } = globalData
+  const { totalActivos, itemsBajo, itemsPorVencer30: itemsVencer, itemsVencidos } = globalData
 
   const bodyTop = HEADER_H + 14
   let y = bodyTop
@@ -299,7 +310,7 @@ function drawResumen(
   const kpiGap = 1
   const kpiW   = (W - MARGIN * 2 - kpiGap * 3) / 4
   const kpis = [
-    { val: totalEnStock,         lbl: 'Productos\nen stock', color: C.black },
+    { val: totalActivos,         lbl: 'Insumos\nactivos',    color: C.black },
     { val: itemsBajo.length,     lbl: 'Bajo\nmínimo',        color: C.red   },
     { val: itemsVencer.length,   lbl: 'Por vencer\n30 días', color: C.amber },
     { val: itemsVencidos.length, lbl: 'Lotes\nvencidos',     color: C.gray  },

@@ -507,10 +507,10 @@ function drawAreaPage(
       }
     }
 
-    let estadoStr = '✓ OK'
+    let estadoStr = 'OK'
     const alerta = getAlerta(item)
-    if (alerta === 'bajo')   estadoStr = '⬇ Bajo'
-    if (alerta === 'vencer') estadoStr = '⚠ Vence'
+    if (alerta === 'bajo')   estadoStr = 'Bajo'
+    if (alerta === 'vencer') estadoStr = 'Vence'
 
     return [
       item.producto_nombre,
@@ -550,9 +550,9 @@ function drawAreaPage(
       0: { cellWidth: 'auto',  fontStyle: 'bold', textColor: C.black },
       1: { cellWidth: 26, font: 'courier', fontSize: 6.5, textColor: C.gray },
       2: { cellWidth: 30, fontSize: 6.5, textColor: C.gray },
-      3: { cellWidth: 24, halign: 'right' },
+      3: { cellWidth: 32, halign: 'right' },
       4: { cellWidth: 36, fontSize: 6.5 },
-      5: { cellWidth: 20, halign: 'center', fontSize: 6.5, fontStyle: 'bold' },
+      5: { cellWidth: 16, halign: 'center', fontSize: 6.5, fontStyle: 'bold' },
       6: { cellWidth: 22, halign: 'right' },
     },
 

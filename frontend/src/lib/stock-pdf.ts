@@ -535,11 +535,11 @@ function drawAreaPage(
       textColor:   C.white,
       fontStyle:   'bold',
       fontSize:    6.5,
-      cellPadding: { top: 4, bottom: 4, left: 6, right: 6 },
+      cellPadding: { top: 4, bottom: 4, left: 4, right: 4 },
     },
     bodyStyles: {
       fontSize:    7,
-      cellPadding: { top: 3.5, bottom: 3.5, left: 6, right: 6 },
+      cellPadding: { top: 3.5, bottom: 3.5, left: 4, right: 4 },
       textColor:   C.grayDark,
     },
     alternateRowStyles: { fillColor: C.grayLight },
@@ -548,12 +548,12 @@ function drawAreaPage(
 
     columnStyles: {
       0: { cellWidth: 'auto',  fontStyle: 'bold', textColor: C.black },
-      1: { cellWidth: 26, font: 'courier', fontSize: 6.5, textColor: C.gray },
-      2: { cellWidth: 30, fontSize: 6.5, textColor: C.gray },
+      1: { cellWidth: 24, font: 'courier', fontSize: 6.5, textColor: C.gray },
+      2: { cellWidth: 28, fontSize: 6.5, textColor: C.gray },
       3: { cellWidth: 32, halign: 'right' },
       4: { cellWidth: 36, fontSize: 6.5 },
-      5: { cellWidth: 16, halign: 'center', fontSize: 6.5, fontStyle: 'bold' },
-      6: { cellWidth: 22, halign: 'right' },
+      5: { cellWidth: 20, halign: 'center', fontSize: 6.5, fontStyle: 'bold' },
+      6: { cellWidth: 20, halign: 'right' },
     },
 
     margin: { left: MARGIN, right: MARGIN, top: HEADER_H + SECTION_H - 2, bottom: FOOTER_H + 2 },

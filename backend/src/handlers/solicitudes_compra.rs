@@ -69,7 +69,8 @@ async fn obtener_solicitud_por_id(
             pres.factor_conversion,
             d.precio_unitario,
             d.presentacion_id,
-            d.cantidad_presentaciones
+            d.cantidad_presentaciones,
+            p.imagen_url
            FROM solicitud_compra_detalle d
            JOIN productos p ON p.id = d.producto_id
            LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
@@ -354,7 +355,8 @@ pub async fn recomendaciones(
                 COALESCE(up.precio_unitario, p.precio_unidad)                      AS precio_ultima_recepcion,
                 ub.nombre                                                         AS unidad_base,
                 ub.nombre_plural                                                  AS unidad_base_plural,
-                COALESCE(pend.count, 0)                                           AS solicitudes_pendientes
+                COALESCE(pend.count, 0)                                           AS solicitudes_pendientes,
+                p.imagen_url                                                      AS imagen_url
             FROM productos p
             LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
             LEFT JOIN consumo c ON c.producto_id = p.id

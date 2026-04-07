@@ -28,6 +28,7 @@ pub struct ItemRecomendado {
     pub unidad_base: String,
     pub unidad_base_plural: Option<String>,
     pub solicitudes_pendientes: i32, // Cambiado de i64 a i32 para compatibilidad con Specta TS
+    pub imagen_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Type)]
@@ -86,4 +87,5 @@ pub struct SolicitudDetalleItem {
     pub precio_unitario: Option<Decimal>,
     pub presentacion_id: Option<i32>,
     pub cantidad_presentaciones: Option<Decimal>,
+    pub imagen_url: Option<String>,
 }

@@ -34,6 +34,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { exportarSolicitudPDF } from '@/lib/solicitud-pdf'
 import { Dialog } from '@/components/ui/dialog'
+import { ProductoImage } from '@/components/ui/producto-image'
 
 // ─── Helper functions ────────────────────────────────────────────────────────
 
@@ -145,7 +146,8 @@ export default function SolicitudesCompraPage() {
           unidad_base: item.unidad,
           unidad_base_plural: autoPlural(item.unidad),
           cantidad: parseFloat(item.cantidad_sugerida),
-          precio_unitario: item.precio_unitario ? parseFloat(item.precio_unitario) : 0
+          precio_unitario: item.precio_unitario ? parseFloat(item.precio_unitario) : 0,
+          imagen_url: item.imagen_url,
         })) : []
 
         if (b) setSolicitudId(b.id)
@@ -172,6 +174,7 @@ export default function SolicitudesCompraPage() {
                 unidad_base_plural: 'u',
                 cantidad: 1,
                 precio_unitario: p.precio_unidad ? parseFloat(String(p.precio_unidad)) : 0,
+                imagen_url: p.imagen_url,
               }
               setItems([...borradorItems, newItem])
               setView('crear')
@@ -225,6 +228,7 @@ export default function SolicitudesCompraPage() {
       unidad_base_plural: r.unidad_base_plural || autoPlural(r.unidad_base),
       cantidad: qty,
       precio_unitario: r.precio_ultima_recepcion ? parseFloat(r.precio_ultima_recepcion) : 0,
+      imagen_url: r.imagen_url,
     }
     setItems(prev => [...prev, newItem])
   }
@@ -519,13 +523,16 @@ export default function SolicitudesCompraPage() {
                 items.map(item => (
                   <div key={item.producto_id} className="card bg-base-200/40 border-transparent hover:border-primary/20 hover:bg-base-200/60 transition-all p-4 rounded-3xl group">
                     <div className="flex justify-between items-start gap-4 mb-3">
-                      <div className="min-w-0">
-                        <h4 className="font-bold text-sm leading-tight line-clamp-2 mb-1">{item.producto_nombre}</h4>
-                        <p className="text-[10px] font-bold opacity-40 uppercase tracking-tighter">
-                          {item.proveedor_nombre} • LT: {item.lead_time}d
-                        </p>
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <ProductoImage src={item.imagen_url} size="sm" className="shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <h4 className="font-bold text-sm leading-tight line-clamp-2 mb-1">{item.producto_nombre}</h4>
+                          <p className="text-[10px] font-bold opacity-40 uppercase tracking-tighter">
+                            {item.proveedor_nombre} • LT: {item.lead_time}d
+                          </p>
+                        </div>
                       </div>
-                      <button 
+                      <button
                         className="btn btn-ghost btn-xs btn-circle text-error opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={() => handleRemove(item.producto_id)}
                       >

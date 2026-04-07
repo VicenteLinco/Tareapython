@@ -8,7 +8,7 @@ use validator::Validate;
 
 pub async fn listar(pool: &PgPool) -> Result<Vec<Categoria>, AppError> {
     sqlx::query_as::<_, Categoria>(
-        "SELECT id, nombre, descripcion, activo, version FROM categorias WHERE activo = true ORDER BY nombre",
+        "SELECT id, nombre, descripcion, created_at, version FROM categorias WHERE activo = true ORDER BY nombre",
     )
     .fetch_all(pool)
     .await
@@ -51,7 +51,7 @@ pub async fn actualizar(
 ) -> Result<Categoria, AppError> {
     req.validate()?;
 
-    let anterior = sqlx::query_as::<_, Categoria>("SELECT id, nombre, descripcion, version FROM categorias WHERE id = $1")
+    let anterior = sqlx::query_as::<_, Categoria>("SELECT id, nombre, descripcion, created_at, version FROM categorias WHERE id = $1")
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -63,7 +63,7 @@ pub async fn actualizar(
     let categoria = sqlx::query_as::<_, Categoria>(
         "UPDATE categorias SET nombre = $1, descripcion = $2, version = version + 1 \
          WHERE id = $3 AND version = $4 \
-         RETURNING id, nombre, descripcion, activo, version",
+         RETURNING id, nombre, descripcion, created_at, version",
     )
     .bind(nombre)
     .bind(descripcion)

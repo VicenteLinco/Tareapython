@@ -166,6 +166,7 @@ export interface SolicitudItem {
   unidad_base_plural: string | null
   cantidad: number
   precio_unitario: number
+  imagen_url?: string | null
 }
 
 // --- Pagination ---

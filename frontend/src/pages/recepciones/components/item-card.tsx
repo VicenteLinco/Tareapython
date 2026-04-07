@@ -14,6 +14,7 @@ export interface DetalleLineUI {
   presentacion_nombre: string
   presentacion_nombre_plural: string
   cantidad_presentacion: number
+  cantidad_solicitada?: number | null   // hint desde solicitud vinculada
   factor_conversion: number
   unidad_base_nombre: string
   unidad_base_nombre_plural: string
@@ -33,13 +34,14 @@ interface Props {
   areas: Area[]
   onChange: (id: string, patch: Partial<DetalleLineUI>) => void
   onRemove: (id: string) => void
+  monedaSimbolo?: string
 }
 
 function isComplete(d: DetalleLineUI): boolean {
   return !!(d.codigo_lote && d.fecha_vencimiento && d.area_destino_id)
 }
 
-export function ReceptionItemCard({ detalle: d, areas, onChange, onRemove }: Props) {
+export function ReceptionItemCard({ detalle: d, areas, onChange, onRemove, monedaSimbolo = '$' }: Props) {
   const complete = isComplete(d)
 
   const unidadNombre = d.cantidad_presentacion === 1
@@ -148,6 +150,11 @@ export function ReceptionItemCard({ detalle: d, areas, onChange, onRemove }: Pro
               <span className="text-xs opacity-50 truncate">{unidadNombre}</span>
             )}
           </div>
+          {d.cantidad_solicitada != null && (
+            <p className="text-xs text-info mt-0.5">
+              Pedido: {formatCantidad(d.cantidad_solicitada, d.presentacion_nombre || d.unidad_base_nombre, d.presentacion_nombre_plural || d.unidad_base_nombre_plural)}
+            </p>
+          )}
           {baseEquiv && (
             <p className="text-xs opacity-40 mt-0.5">= {baseEquiv}</p>
           )}
@@ -157,7 +164,7 @@ export function ReceptionItemCard({ detalle: d, areas, onChange, onRemove }: Pro
           <input
             type="number"
             className="input input-sm input-bordered w-full"
-            placeholder="$0"
+            placeholder={`${monedaSimbolo}0`}
             value={d.precio_unitario}
             onChange={e => onChange(d.id, { precio_unitario: e.target.value })}
           />

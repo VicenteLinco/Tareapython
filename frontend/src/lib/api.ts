@@ -13,9 +13,10 @@ api.interceptors.request.use((config: any) => {
     config.headers.Authorization = `Bearer ${token}`
   }
 
-  // Idempotency centralizada para mutaciones (resiste reintentos de axios)
+  // Idempotency centralizada para mutaciones (excepto auth)
   const method = config.method?.toLowerCase() || ''
-  if (['post', 'put', 'patch'].includes(method)) {
+  const url = config.url || ''
+  if (['post', 'put', 'patch'].includes(method) && !url.includes('/auth/')) {
     if (!config._idempotencyKey && !config.headers['X-Idempotency-Key'] && !config.headers['x-idempotency-key']) {
       config._idempotencyKey = uuidv4()
     }

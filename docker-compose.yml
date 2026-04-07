@@ -25,9 +25,12 @@ services:
       RUST_LOG: ${RUST_LOG:-info}
     ports:
       - "8080:8080"
+    volumes:
+      - uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   pgdata:
+  uploads:

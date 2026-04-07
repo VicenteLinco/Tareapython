@@ -34,7 +34,7 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
             <X className="h-4 w-4" />
           </button>
         </div>
-        {children}
+        {open && children}
       </div>
     </dialog>
   )

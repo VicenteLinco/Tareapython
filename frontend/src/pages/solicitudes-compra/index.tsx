@@ -72,11 +72,12 @@ export default function SolicitudesCompraPage() {
   const [view, setView] = useState<'crear' | 'historial'>('crear')
   const [items, setItems] = useState<SolicitudItem[]>([])
   const [productSearch, setProductSearch] = useState('')
+  const [searchAreaId, setSearchAreaId] = useState<number | null>(null)
   const [showRecomendaciones, setShowRecomendaciones] = useState(true)
   const [solicitudId, setSolicitudId] = useState<string | null>(null) // ID del borrador actual
   const [isSaving, setIsSaving] = useState(false)
   const [historialSearch, setHistorialSearch] = useState('')
-  
+
   // Historial & Detail
   const [selectedSolicitudId, setSelectedSolicitudId] = useState<string | null>(null)
   
@@ -92,9 +93,17 @@ export default function SolicitudesCompraPage() {
     enabled: view === 'crear'
   })
 
+  const { data: areas } = useQuery({
+    queryKey: ['areas'],
+    queryFn: () => api.get<{ id: number; nombre: string; activa: boolean }[]>('/areas').then(r => r.data),
+    staleTime: 300_000,
+  })
+
   const { data: searchResults, isLoading: isSearching } = useQuery({
-    queryKey: ['productos-search', productSearch],
-    queryFn: () => api.get<PaginatedResponse<Producto>>('/productos', { params: { q: productSearch, per_page: 5 } }).then(r => r.data),
+    queryKey: ['productos-search', productSearch, searchAreaId],
+    queryFn: () => api.get<PaginatedResponse<Producto>>('/productos', {
+      params: { q: productSearch, per_page: 10, ...(searchAreaId && { area_id: searchAreaId }) }
+    }).then(r => r.data),
     enabled: productSearch.length >= 2
   })
 
@@ -301,66 +310,98 @@ export default function SolicitudesCompraPage() {
       </div>
 
       {view === 'crear' ? (
-        <div className="flex-1 flex flex-col lg:flex-row gap-6 overflow-hidden">
-          
+        <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0">
+
           {/* LADO IZQUIERDO: Recomendaciones y Búsqueda */}
-          <div className="flex-1 flex flex-col gap-6 min-w-0">
-            
+          <div className="flex-1 flex flex-col gap-6 min-w-0 min-h-0">
+
             {/* Buscador de productos */}
-            <div className="relative group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 opacity-30 group-focus-within:text-primary transition-all" />
-              <Input 
-                placeholder="Busca productos fuera de recomendaciones..."
-                className="pl-12 h-14 bg-base-100 border-base-300 rounded-2xl shadow-sm focus:ring-4 ring-primary/5 transition-all"
-                value={productSearch}
-                onChange={(e) => setProductSearch(e.target.value)}
-              />
-              {isSearching && <span className="loading loading-spinner loading-sm absolute right-4 top-1/2 -translate-y-1/2 opacity-30"></span>}
-              
+            <div className="relative">
+              <div className="flex gap-2 bg-base-100 border border-base-300 rounded-2xl shadow-sm p-2 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-30 pointer-events-none" />
+                  <Input
+                    placeholder="Buscar producto por nombre o código..."
+                    className="pl-9 h-10 bg-transparent border-none shadow-none focus-visible:ring-0 text-sm"
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                  />
+                  {isSearching && <span className="loading loading-spinner loading-xs absolute right-3 top-1/2 -translate-y-1/2 opacity-30"></span>}
+                </div>
+                <select
+                  className="select select-sm h-10 min-w-[160px] bg-base-200/60 border-none rounded-xl text-xs font-medium"
+                  value={searchAreaId ?? ''}
+                  onChange={(e) => setSearchAreaId(e.target.value ? Number(e.target.value) : null)}
+                >
+                  <option value="">Todas las áreas</option>
+                  {areas?.filter(a => a.activa).map(a => (
+                    <option key={a.id} value={a.id}>{a.nombre}</option>
+                  ))}
+                </select>
+              </div>
+
               {/* Resultados búsqueda */}
               {searchResults && productSearch.length >= 2 && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-base-100 border border-base-300 rounded-2xl shadow-xl z-50 p-2 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                  {searchResults.data.map(p => (
-                    <button 
-                      key={p.id}
-                      className="w-full flex items-center justify-between p-3 hover:bg-base-200 rounded-xl transition-colors text-left group"
-                      onClick={() => {
-                        const fakeRec: ItemRecomendado = {
-                          producto_id: p.id,
-                          producto_nombre: p.nombre,
-                          codigo_proveedor: p.codigo_proveedor,
-                          codigo_maestro: p.codigo_maestro,
-                          proveedor_id: p.proveedor_id,
-                          proveedor_nombre: 'Manual',
-                          lead_time: p.lead_time_propio || 0,
-                          autonomia_dias: 0,
-                          nivel_urgencia: 'normal',
-                          stock_actual: '0',
-                          stock_minimo: p.stock_minimo,
-                          consumo_diario_30d: '0',
-                          cantidad_sugerida_base: '1',
-                          presentacion_id: null,
-                          presentacion_nombre: null,
-                          presentacion_nombre_plural: null,
-                          factor_conversion: null,
-                          cantidad_sugerida_presentacion: null,
-                          precio_ultima_recepcion: p.precio_unidad,
-                          unidad_base: 'u', // TODO: Fetch full product for unit
-                          unidad_base_plural: 'u',
-                          solicitudes_pendientes: 0
-                        }
-                        handleAddFromRec(fakeRec)
-                        setProductSearch('')
-                      }}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm truncate">{p.nombre}</p>
-                        <p className="text-[10px] opacity-40 uppercase font-mono">#{p.codigo_interno}</p>
-                      </div>
-                      <Plus className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </button>
-                  ))}
-                  {searchResults.data.length === 0 && <p className="p-4 text-center text-sm opacity-40">No se encontraron productos</p>}
+                <div className="absolute top-full left-0 right-0 mt-1 bg-base-100 border border-base-300 rounded-2xl shadow-2xl z-[200] overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+                  <div className="max-h-72 overflow-y-auto p-1.5">
+                    {searchResults.data.map(p => (
+                      <button
+                        key={p.id}
+                        className="w-full flex items-center justify-between gap-3 p-3 hover:bg-base-200 rounded-xl transition-colors text-left group"
+                        onClick={() => {
+                          const fakeRec: ItemRecomendado = {
+                            producto_id: p.id,
+                            producto_nombre: p.nombre,
+                            codigo_proveedor: p.codigo_proveedor,
+                            codigo_maestro: p.codigo_maestro,
+                            proveedor_id: p.proveedor_id,
+                            proveedor_nombre: 'Manual',
+                            lead_time: p.lead_time_propio || 0,
+                            autonomia_dias: 0,
+                            nivel_urgencia: 'normal',
+                            stock_actual: '0',
+                            stock_minimo: p.stock_minimo,
+                            consumo_diario_30d: '0',
+                            cantidad_sugerida_base: '1',
+                            presentacion_id: null,
+                            presentacion_nombre: null,
+                            presentacion_nombre_plural: null,
+                            factor_conversion: null,
+                            cantidad_sugerida_presentacion: null,
+                            precio_ultima_recepcion: p.precio_unidad,
+                            unidad_base: 'u',
+                            unidad_base_plural: 'u',
+                            solicitudes_pendientes: 0
+                          }
+                          handleAddFromRec(fakeRec)
+                          setProductSearch('')
+                        }}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm truncate">{p.nombre}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] opacity-40 uppercase font-mono">#{p.codigo_interno}</span>
+                            {searchAreaId && (
+                              <span className="badge badge-xs bg-blue-100 text-blue-700 border-none">
+                                {areas?.find(a => a.id === searchAreaId)?.nombre}
+                              </span>
+                            )}
+                            {p.precio_unidad && (
+                              <span className="text-[10px] font-bold text-success opacity-70">
+                                {formatPesos(p.precio_unidad, monedaCodigo)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="h-7 w-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Plus className="h-3.5 w-3.5" />
+                        </div>
+                      </button>
+                    ))}
+                    {searchResults.data.length === 0 && (
+                      <p className="p-4 text-center text-sm opacity-40">No se encontraron productos</p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

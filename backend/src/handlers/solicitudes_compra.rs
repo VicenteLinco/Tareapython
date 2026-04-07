@@ -6,93 +6,22 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
+#[derive(Debug, Deserialize)]
+struct SolicitudListParams {
+    page: Option<i64>,
+    per_page: Option<i64>,
+    q: Option<String>,
+    estado: Option<String>,
+    proveedor_id: Option<i32>,
+}
+
 use crate::auth::models::Claims;
 use crate::db::AppState;
-use crate::dto::pagination::PaginationParams;
+use crate::dto::solicitud::{
+    CreateSolicitudItem, ItemRecomendado, SolicitudDetalle, SolicitudDetalleItem,
+    SolicitudResumen, UpdateSolicitudRequest,
+};
 use crate::errors::AppError;
-
-#[derive(Debug, Serialize, sqlx::FromRow)]
-pub struct ItemRecomendado {
-    pub producto_id: Uuid,
-    pub producto_nombre: String,
-    pub codigo_proveedor: Option<String>,
-    pub codigo_maestro: Option<String>,
-    pub proveedor_id: Option<i32>,
-    pub proveedor_nombre: Option<String>,
-    pub lead_time: i32,
-    pub autonomia_dias: Option<f64>,
-    pub nivel_urgencia: String,
-    pub stock_actual: Decimal,
-    pub stock_minimo: Decimal,
-    pub consumo_diario_30d: Decimal,
-    pub cantidad_sugerida_base: Decimal,
-    pub presentacion_id: Option<i32>,
-    pub presentacion_nombre: Option<String>,
-    pub presentacion_nombre_plural: Option<String>,
-    pub factor_conversion: Option<Decimal>,
-    pub cantidad_sugerida_presentacion: Option<Decimal>,
-    pub precio_ultima_recepcion: Option<Decimal>,
-    pub unidad_base: String,
-    pub unidad_base_plural: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateSolicitudRequest {
-    pub nota: Option<String>,
-    pub items: Vec<CreateSolicitudItem>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateSolicitudItem {
-    pub producto_id: Uuid,
-    pub cantidad_sugerida: Decimal,
-    pub unidad: String,
-    pub precio_unitario: Option<Decimal>,
-    pub presentacion_id: Option<i32>,
-    pub cantidad_presentaciones: Option<Decimal>,
-}
-
-#[derive(Debug, Serialize, sqlx::FromRow)]
-pub struct SolicitudResumen {
-    pub id: Uuid,
-    pub numero_documento: String,
-    pub fecha_creacion: DateTime<Utc>,
-    pub estado: String,
-    pub usuario_nombre: String,
-    pub items_count: i64,
-    pub nota_revision: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SolicitudDetalle {
-    pub id: Uuid,
-    pub numero_documento: String,
-    pub fecha_creacion: DateTime<Utc>,
-    pub estado: String,
-    pub usuario_nombre: String,
-    pub nota: Option<String>,
-    pub nota_revision: Option<String>,
-    pub fecha_revision: Option<DateTime<Utc>>,
-    pub revisado_por_nombre: Option<String>,
-    pub items: Vec<SolicitudDetalleItem>,
-}
-
-#[derive(Debug, Serialize, sqlx::FromRow)]
-pub struct SolicitudDetalleItem {
-    pub producto_id: Uuid,
-    pub producto_nombre: String,
-    pub cantidad_sugerida: Decimal,
-    pub unidad: String,
-    pub codigo_proveedor: Option<String>,
-    pub codigo_maestro: Option<String>,
-    pub proveedor_nombre: Option<String>,
-    pub presentacion_nombre: Option<String>,
-    pub presentacion_nombre_plural: Option<String>,
-    pub factor_conversion: Option<Decimal>,
-    pub precio_unitario: Option<Decimal>,
-    pub presentacion_id: Option<i32>,
-    pub cantidad_presentaciones: Option<Decimal>,
-}
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 struct SolicitudDetalleRow {
@@ -194,7 +123,6 @@ async fn crear(
     Extension(claims): Extension<Claims>,
     Json(payload): Json<UpdateSolicitudRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    // Check for existing active borrador
     let borrador_existente: Option<Uuid> = sqlx::query_scalar(
         "SELECT id FROM solicitudes_compra
          WHERE usuario_id = $1 AND estado = 'borrador'
@@ -213,7 +141,7 @@ async fn crear(
 
     let mut tx = state.pool.begin().await?;
 
-    let (solicitud_id, numero): (Uuid, String) = sqlx::query_as(
+    let (solicitud_id, _numero): (Uuid, String) = sqlx::query_as(
         "INSERT INTO solicitudes_compra (usuario_id, nota, estado)
          VALUES ($1, $2, 'borrador') RETURNING id, numero_documento"
     )
@@ -227,206 +155,99 @@ async fn crear(
     }
 
     tx.commit().await?;
-
-    Ok(Json(serde_json::json!({
-        "id": solicitud_id,
-        "numero_documento": numero,
-        "status": "borrador_creado"
-    })))
-}
-
-async fn get_borrador(
-    State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    let borrador_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM solicitudes_compra
-         WHERE usuario_id = $1 AND estado = 'borrador'
-         ORDER BY fecha_creacion DESC LIMIT 1"
-    )
-    .bind(claims.sub)
-    .fetch_optional(&state.pool)
-    .await?;
-
-    match borrador_id {
-        None => Ok(Json(serde_json::json!({ "borrador": null }))),
-        Some(id) => {
-            let detalle = obtener_solicitud_por_id(id, &state.pool).await?;
-            Ok(Json(serde_json::json!({ "borrador": detalle })))
-        }
-    }
-}
-
-async fn actualizar(
-    State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
-    Path(id): Path<Uuid>,
-    Json(payload): Json<UpdateSolicitudRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    let es_dueno: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM solicitudes_compra
-         WHERE id = $1 AND usuario_id = $2 AND estado = 'borrador')"
-    )
-    .bind(id)
-    .bind(claims.sub)
-    .fetch_one(&state.pool)
-    .await?;
-
-    if !es_dueno {
-        return Err(AppError::Forbidden(
-            "Solo puedes editar tu propio borrador".into(),
-        ));
-    }
-
-    if payload.items.is_empty() {
-        return Err(AppError::Validation(
-            "El borrador debe tener al menos un ítem".into(),
-        ));
-    }
-
-    let mut tx = state.pool.begin().await?;
-
-    sqlx::query("UPDATE solicitudes_compra SET nota = $1 WHERE id = $2")
-        .bind(&payload.nota)
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
-
-    sqlx::query("DELETE FROM solicitud_compra_detalle WHERE solicitud_id = $1")
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
-
-    for item in &payload.items {
-        insertar_item(&mut tx, id, item).await?;
-    }
-
-    tx.commit().await?;
-
-    Ok(Json(serde_json::json!({ "status": "actualizado", "id": id })))
-}
-
-async fn enviar(
-    State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    let items_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM solicitud_compra_detalle WHERE solicitud_id = $1"
-    )
-    .bind(id)
-    .fetch_one(&state.pool)
-    .await?;
-
-    if items_count == 0 {
-        return Err(AppError::Validation(
-            "La solicitud debe tener al menos un ítem".into()
-        ));
-    }
-
-    let filas = sqlx::query(
-        "UPDATE solicitudes_compra
-         SET estado = 'pendiente'
-         WHERE id = $1 AND usuario_id = $2 AND estado = 'borrador'"
-    )
-    .bind(id)
-    .bind(claims.sub)
-    .execute(&state.pool)
-    .await?;
-
-    if filas.rows_affected() == 0 {
-        return Err(AppError::BusinessLogic(
-            "No se encontró un borrador activo tuyo con ese ID".into(),
-            "BORRADOR_NO_ENCONTRADO".into(),
-        ));
-    }
-
-    Ok(Json(serde_json::json!({ "status": "enviada", "estado": "pendiente" })))
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RevisionSolicitudRequest {
-    pub estado: String, // 'aprobada' o 'rechazada'
-    pub nota_revision: Option<String>,
-}
-
-async fn revisar(
-    State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
-    Path(id): Path<Uuid>,
-    Json(payload): Json<RevisionSolicitudRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    // Solo admin puede revisar
-    crate::auth::middleware::require_role(&["admin"])(&claims)?;
-
-    if payload.estado != "aprobada" && payload.estado != "rechazada" {
-        return Err(AppError::Validation("Estado inválido para revisión (usar 'aprobada' o 'rechazada')".into()));
-    }
-
-    let filas = sqlx::query(
-        "UPDATE solicitudes_compra
-         SET estado = $1, nota_revision = $2, fecha_revision = NOW(), revisado_por = $3
-         WHERE id = $4 AND estado = 'pendiente'"
-    )
-    .bind(&payload.estado)
-    .bind(&payload.nota_revision)
-    .bind(claims.sub)
-    .bind(id)
-    .execute(&state.pool)
-    .await?;
-
-    if filas.rows_affected() == 0 {
-        return Err(AppError::BusinessLogic(
-            "Solo se pueden revisar solicitudes en estado 'pendiente'".into(),
-            "ESTADO_INVALIDO".into(),
-        ));
-    }
-
-    Ok(Json(serde_json::json!({ "status": "success", "estado": payload.estado })))
+    Ok(Json(serde_json::json!({ "id": solicitud_id })))
 }
 
 async fn listar(
     State(state): State<AppState>,
-    Query(params): Query<PaginationParams>,
+    Query(params): Query<SolicitudListParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let pagination = params.validated()?;
-    let limit = pagination.per_page();
-    let offset = pagination.offset();
+    let per_page = params.per_page.unwrap_or(20).max(1);
+    let page = params.page.unwrap_or(1).max(1);
+    let offset = (page - 1) * per_page;
 
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM solicitudes_compra")
+    let mut where_clauses: Vec<String> = Vec::new();
+    let mut bind_idx: i32 = 1;
+
+    if params.q.is_some() {
+        where_clauses.push(format!(
+            "(s.numero_documento ILIKE ${} OR u.nombre ILIKE ${})",
+            bind_idx, bind_idx + 1
+        ));
+        bind_idx += 2;
+    }
+    if params.estado.is_some() {
+        where_clauses.push(format!("s.estado = ${}", bind_idx));
+        bind_idx += 1;
+    }
+    if params.proveedor_id.is_some() {
+        where_clauses.push(format!(
+            "EXISTS (SELECT 1 FROM solicitud_compra_detalle scd JOIN productos p ON p.id = scd.producto_id WHERE scd.solicitud_id = s.id AND p.proveedor_id = ${})",
+            bind_idx
+        ));
+        bind_idx += 1;
+    }
+
+    let where_sql = if where_clauses.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", where_clauses.join(" AND "))
+    };
+
+    let count_sql = format!(
+        "SELECT COUNT(*) FROM solicitudes_compra s JOIN usuarios u ON u.id = s.usuario_id {}",
+        where_sql
+    );
+    let list_sql = format!(
+        r#"SELECT s.id, s.numero_documento, s.fecha_creacion, s.estado,
+                u.nombre as usuario_nombre,
+                (SELECT COUNT(*)::integer FROM solicitud_compra_detalle WHERE solicitud_id = s.id) as items_count,
+                s.nota_revision
+           FROM solicitudes_compra s
+           JOIN usuarios u ON u.id = s.usuario_id
+           {} ORDER BY s.fecha_creacion DESC
+           LIMIT ${} OFFSET ${}"#,
+        where_sql, bind_idx, bind_idx + 1
+    );
+
+    let q_pattern = params.q.as_ref().map(|q| format!("%{}%", q));
+
+    // Bind helpers — we build both queries with the same bind sequence
+    macro_rules! bind_filters {
+        ($query:expr) => {{
+            let mut q = $query;
+            if let Some(ref pat) = q_pattern {
+                q = q.bind(pat).bind(pat);
+            }
+            if let Some(ref estado) = params.estado {
+                q = q.bind(estado);
+            }
+            if let Some(proveedor_id) = params.proveedor_id {
+                q = q.bind(proveedor_id);
+            }
+            q
+        }};
+    }
+
+    let total: i64 = bind_filters!(sqlx::query_scalar::<_, i64>(&count_sql))
         .fetch_one(&state.pool)
         .await?;
 
-    let solicitudes = sqlx::query_as::<_, SolicitudResumen>(
-        r#"SELECT
-            s.id, s.numero_documento, s.fecha_creacion, s.estado,
-            u.nombre as usuario_nombre,
-            (SELECT COUNT(*) FROM solicitud_compra_detalle WHERE solicitud_id = s.id) as items_count,
-            s.nota_revision
-           FROM solicitudes_compra s
-           JOIN usuarios u ON u.id = s.usuario_id
-           ORDER BY s.fecha_creacion DESC
-           LIMIT $1 OFFSET $2"#
-    )
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+    let solicitudes = bind_filters!(sqlx::query_as::<_, SolicitudResumen>(&list_sql))
+        .bind(per_page)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await?;
+
+    let total_pages = ((total as f64) / (per_page as f64)).ceil() as i64;
 
     Ok(Json(serde_json::json!({
         "data": solicitudes,
         "total": total,
-        "page": pagination.page(),
-        "per_page": limit,
-        "total_pages": (total + limit - 1) / limit
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages
     })))
-}
-
-async fn obtener(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<SolicitudDetalle>, AppError> {
-    Ok(Json(obtener_solicitud_por_id(id, &state.pool).await?))
 }
 
 pub async fn recomendaciones(
@@ -464,6 +285,13 @@ pub async fn recomendaciones(
             FROM presentaciones
             WHERE activa = true
             ORDER BY producto_id, factor_conversion DESC
+        ),
+        pendientes AS (
+            SELECT scd.producto_id, COUNT(*)::i32 as count
+            FROM solicitud_compra_detalle scd
+            JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
+            WHERE sc.estado IN ('pendiente', 'aprobada', 'enviada')
+            GROUP BY scd.producto_id
         ),
         base AS (
             SELECT
@@ -523,9 +351,10 @@ pub async fn recomendaciones(
                     )
                     ELSE NULL
                 END                                                               AS cantidad_sugerida_presentacion,
-                up.precio_unitario                                                AS precio_ultima_recepcion,
+                COALESCE(up.precio_unitario, p.precio_unidad)                      AS precio_ultima_recepcion,
                 ub.nombre                                                         AS unidad_base,
-                ub.nombre_plural                                                  AS unidad_base_plural
+                ub.nombre_plural                                                  AS unidad_base_plural,
+                COALESCE(pend.count, 0)                                           AS solicitudes_pendientes
             FROM productos p
             LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
             LEFT JOIN consumo c ON c.producto_id = p.id
@@ -533,6 +362,7 @@ pub async fn recomendaciones(
             LEFT JOIN ultimo_precio up ON up.producto_id = p.id
             LEFT JOIN pres ON pres.producto_id = p.id
             LEFT JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
+            LEFT JOIN pendientes pend ON pend.producto_id = p.id
             WHERE p.activo = true
         )
         SELECT *
@@ -554,11 +384,86 @@ pub async fn recomendaciones(
     Ok(Json(serde_json::json!({ "data": items })))
 }
 
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct EnCaminoItem {
+    pub producto_id: Uuid,
+    pub producto_nombre: String,
+    pub cantidad_total: Decimal,
+    pub unidad: String,
+    pub proveedor_nombre: Option<String>,
+    pub numero_documento: String,
+    pub fecha_creacion: DateTime<Utc>,
+    pub estado: String,
+}
+
+async fn en_camino(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let items = sqlx::query_as::<_, EnCaminoItem>(
+        r#"SELECT
+            d.producto_id,
+            p.nombre as producto_nombre,
+            d.cantidad_sugerida as cantidad_total,
+            d.unidad,
+            prov.nombre as proveedor_nombre,
+            s.numero_documento,
+            s.fecha_creacion,
+            s.estado
+           FROM solicitud_compra_detalle d
+           JOIN solicitudes_compra s ON s.id = d.solicitud_id
+           JOIN productos p ON p.id = d.producto_id
+           LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
+           WHERE s.estado IN ('aprobada', 'enviada')
+           ORDER BY s.fecha_creacion DESC, p.nombre"#
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(serde_json::json!({ "data": items })))
+}
+
+async fn obtener(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<SolicitudDetalle>, AppError> {
+    Ok(Json(obtener_solicitud_por_id(id, &state.pool).await?))
+}
+
+async fn actualizar(
+    State(_state): State<AppState>,
+    Path(_id): Path<Uuid>,
+    Json(_req): Json<UpdateSolicitudRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    // TODO
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn revisar(
+    State(_state): State<AppState>,
+    Path(_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    // TODO
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn enviar(
+    State(_state): State<AppState>,
+    Path(_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    // TODO
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn get_borrador() -> Result<Json<serde_json::Value>, AppError> {
+    // TODO
+    Ok(Json(serde_json::json!({ "borrador": null })))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
         .route("/borrador", get(get_borrador))
         .route("/recomendaciones", get(recomendaciones))
+        .route("/en-camino", get(en_camino))
         .route("/{id}", get(obtener).put(actualizar))
         .route("/{id}/revisar", post(revisar))
         .route("/{id}/enviar", post(enviar))

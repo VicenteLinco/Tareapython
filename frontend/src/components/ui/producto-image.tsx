@@ -24,14 +24,14 @@ export function ProductoImage({ src, size = 'md', className }: ProductoImageProp
   return (
     <div
       className={cn(
-        'flex-shrink-0 flex items-center justify-center bg-muted',
+        'flex-shrink-0 flex items-center justify-center bg-base-200',
         radius,
         className,
       )}
       style={{ width: px, height: px }}
     >
       {showFallback ? (
-        <Package style={{ width: icon, height: icon }} className="text-muted-foreground opacity-50" />
+        <Package style={{ width: icon, height: icon }} className="text-base-content opacity-30" />
       ) : (
         <img
           src={getImageUrl(src)}

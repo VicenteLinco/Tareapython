@@ -1,0 +1,64 @@
+<h2>Enfoques para imágenes de productos</h2>
+<p class="subtitle">Tres formas de implementarlo — ¿cuál tiene más sentido?</p>
+
+<div class="options">
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>✅ Recomendado — Compresión en navegador + disco</h3>
+      <p>El navegador redimensiona y comprime la imagen a ~400×400px JPEG 80% antes de enviarla (~30–50 KB por imagen). El backend la guarda en disco usando el módulo <code>storage.rs</code> que ya existe. Se agrega un campo <code>imagen_url</code> a la tabla <code>productos</code>.</p>
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Upload liviano (no llegan imágenes de 5MB al backend)</li>
+          <li>Reutiliza storage.rs de recepciones</li>
+          <li>getImageUrl() ya funciona en el frontend</li>
+          <li>Imágenes persisten en disco separado de la DB</li>
+        </ul></div>
+        <div class="cons"><h4>Contras</h4><ul>
+          <li>1 migración SQL nueva</li>
+          <li>1 endpoint nuevo en Rust</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Upload completo + compresión en backend</h3>
+      <p>El usuario sube la imagen original (hasta 5MB). El backend la comprime con la crate <code>image</code> de Rust antes de guardar.</p>
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Resultado de compresión más consistente</li>
+          <li>El usuario no necesita preocuparse por el tamaño</li>
+        </ul></div>
+        <div class="cons"><h4>Contras</h4><ul>
+          <li>Agrega dependencia <code>image</code> al backend Rust</li>
+          <li>Uploads más pesados en la red local</li>
+          <li>Más código de procesamiento en el servidor</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Base64 directo en base de datos</h3>
+      <p>Compresión en navegador, imagen guardada como base64 en la columna <code>imagen_url</code> de PostgreSQL.</p>
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Sin gestión de archivos en disco</li>
+          <li>Backup incluido en pg_dump</li>
+        </ul></div>
+        <div class="cons"><h4>Contras</h4><ul>
+          <li>Infla la DB (base64 ~30% más grande que binario)</li>
+          <li>Ralentiza queries que no necesitan la imagen</li>
+          <li>No recomendado para producción</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>

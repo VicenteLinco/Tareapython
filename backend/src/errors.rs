@@ -114,9 +114,11 @@ pub fn validate_text_length(value: &str, field: &str, max: usize) -> Result<(), 
     Ok(())
 }
 
+#[allow(dead_code)]
 static EMAIL_RE: OnceLock<Regex> = OnceLock::new();
 
 /// Valida un campo de email con regex RFC-compatible y longitud.
+#[allow(dead_code)]
 pub fn validate_email(email: &str) -> Result<(), AppError> {
     if email.len() > 254 {
         return Err(AppError::Validation("Email demasiado largo".into()));

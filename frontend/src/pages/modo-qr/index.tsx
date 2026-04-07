@@ -66,10 +66,18 @@ export default function ModoQrPage() {
         producto_id: string
         producto_nombre: string
         unidad_base_nombre: string
+        stock_total: number | null
       }>(`/productos/scan?codigo=${encodeURIComponent(searchCode)}`)
 
       if (!res.data.encontrado) {
         toast.error(`Código no reconocido: ${code}`)
+        return
+      }
+
+      if (action === 'CONSUMO' && (res.data.stock_total || 0) <= 0) {
+        toast.error(`No hay stock disponible para ${res.data.producto_nombre}`, {
+            icon: <AlertCircle className="text-error" />
+        })
         return
       }
 

@@ -52,32 +52,46 @@ async fn login(
     // Rate limiting por IP
     let ip = extract_client_ip(&headers);
     if !state.login_limiter.check(&ip).await {
+        tracing::warn!("Login bloqueado por rate limit: {}", ip);
         return Err(AppError::TooManyRequests);
     }
+
+    let email_normalizado = req.email.trim().to_lowercase();
+    tracing::info!("Intento de login para: {}", email_normalizado);
 
     let user = sqlx::query(
         "SELECT id, password_hash, rol, activo FROM usuarios WHERE email = $1",
     )
-    .bind(&req.email)
+    .bind(&email_normalizado)
     .fetch_optional(&state.pool)
     .await?
-    .ok_or(AppError::Unauthorized)?;
+    .ok_or_else(|| {
+        tracing::warn!("Usuario no encontrado: {}", email_normalizado);
+        AppError::Unauthorized
+    })?;
 
     let activo: bool = user.get("activo");
     if !activo {
+        tracing::warn!("Usuario inactivo intentó loguear: {}", email_normalizado);
         return Err(AppError::Unauthorized);
     }
 
     let password_hash: String = user.get("password_hash");
     let parsed_hash = PasswordHash::new(&password_hash)
-        .map_err(|_| AppError::Internal("Hash inválido en DB".to_string()))?;
+        .map_err(|e| {
+            tracing::error!("Error al parsear hash de DB para {}: {}", email_normalizado, e);
+            AppError::Internal("Hash inválido en DB".to_string())
+        })?;
 
-    Argon2::default()
-        .verify_password(req.password.as_bytes(), &parsed_hash)
-        .map_err(|_| AppError::Unauthorized)?;
+    if let Err(e) = Argon2::default().verify_password(req.password.as_bytes(), &parsed_hash) {
+        tracing::warn!("Contraseña incorrecta para {}: {}", email_normalizado, e);
+        return Err(AppError::Unauthorized);
+    }
 
     let user_id: Uuid = user.get("id");
     let rol: String = user.get("rol");
+
+    tracing::info!("Login exitoso: {} (ID: {})", email_normalizado, user_id);
 
     let area_rows = sqlx::query("SELECT area_id FROM usuario_area WHERE usuario_id = $1")
         .bind(user_id)
@@ -146,7 +160,7 @@ async fn me(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<UserResponse>, AppError> {
-    let user = sqlx::query("SELECT nombre, email FROM usuarios WHERE id = $1")
+    let user = sqlx::query("SELECT nombre, email, version FROM usuarios WHERE id = $1")
         .bind(claims.sub)
         .fetch_one(&state.pool)
         .await?;
@@ -157,6 +171,7 @@ async fn me(
         email: user.get("email"),
         rol: claims.rol,
         area_ids: claims.area_ids,
+        version: user.get("version"),
     }))
 }
 

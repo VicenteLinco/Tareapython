@@ -11,7 +11,7 @@ import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import type { ConsumoBatchRequest, StockItem, PaginatedResponse } from '@/types'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
+import { cn, formatCantidad } from '@/lib/utils'
 import { QrScanner } from '@/components/shared/qr-scanner'
 
 interface LoteDisponible {
@@ -233,7 +233,7 @@ export default function ConsumosPage() {
                     <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                       {p.area_nombre && <span className="badge badge-xs bg-blue-100 text-blue-700 border-none">{p.area_nombre}</span>}
                       {p.categoria && <span className="badge badge-xs bg-green-100 text-green-700 border-none">{p.categoria}</span>}
-                      <span className="text-xs text-base-content/50">{p.stock_total || 0} {p.unidad}</span>
+                      <span className="text-xs text-base-content/50">{formatCantidad(p.stock_total || 0, p.unidad, p.unidad_plural || undefined)}</span>
                     </div>
                   </div>
                   <button
@@ -331,7 +331,9 @@ export default function ConsumosPage() {
                     }))}>
                     <Plus className="h-3 w-3" />
                   </button>
-                  <span className="text-xs opacity-50">{item.unidad}</span>
+                  <span className="text-xs opacity-50">
+                    {item.cantidad_descontar === 1 ? item.unidad : (item.unidad_plural || item.unidad)}
+                  </span>
                 </div>
               </div>
             ))

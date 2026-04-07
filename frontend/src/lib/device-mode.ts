@@ -16,11 +16,16 @@ export function getDeviceMode(): DeviceMode {
 }
 
 export function setDeviceMode(mode: DeviceMode, persistent: boolean): void {
-  clearDeviceMode()
-  if (mode === 'normal') return
+  if (mode === 'normal') {
+    clearDeviceMode()
+    return
+  }
+  
   if (persistent) {
+    sessionStorage.removeItem(SS_KEY)
     localStorage.setItem(LS_KEY, mode)
   } else {
+    localStorage.removeItem(LS_KEY)
     sessionStorage.setItem(SS_KEY, mode)
   }
 }

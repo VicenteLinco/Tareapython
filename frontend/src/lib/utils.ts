@@ -39,7 +39,11 @@ export function formatStockHumano(
   let result = ''
   if (cajas > 0) result += `${cajas} ${labelPres}`
   if (cajas > 0 && sueltas > 0) result += ' + '
-  if (sueltas > 0 || cajas === 0) result += `${sueltas % 1 === 0 ? Math.floor(sueltas) : sueltas.toFixed(1)} ${labelBase}`
+  if (sueltas > 0 || cajas === 0) {
+    const isInt = Math.abs(sueltas - Math.round(sueltas)) < 0.0001
+    const val = isInt ? Math.round(sueltas) : parseFloat(sueltas.toFixed(2))
+    result += `${val} ${labelBase}`
+  }
 
   return isNeg ? `-${result}` : result
 }
@@ -88,8 +92,9 @@ export function autoPlural(s: string): string {
  * - No-enteros con hasta 2 decimales significativos
  */
 export function formatCantidad(qty: number, singular: string, plural?: string | null): string {
-  const num = qty % 1 === 0 ? Math.floor(qty) : parseFloat(qty.toFixed(2))
-  const unit = qty === 1 ? singular : (plural ?? autoPlural(singular))
+  const isInt = Math.abs(qty - Math.round(qty)) < 0.0001
+  const num = isInt ? Math.round(qty) : parseFloat(qty.toFixed(2))
+  const unit = (isInt && Math.round(qty) === 1) ? singular : (plural ?? autoPlural(singular))
   return `${num} ${unit}`
 }
 

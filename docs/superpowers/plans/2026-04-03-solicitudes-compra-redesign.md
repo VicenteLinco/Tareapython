@@ -18,6 +18,7 @@
 | Crear  | `backend/migrations/029_solicitud_precio_presentacion.sql` |
 | Crear  | `backend/migrations/030_solicitud_estado_borrador.sql` |
 | Modificar | `backend/src/handlers/recepciones.rs` |
+| **Creado por Task 2** | `backend/src/services/recepcion_service.rs` (lógica transaccional extraída del handler) |
 | Modificar | `backend/src/handlers/solicitudes_compra.rs` |
 | Modificar | `frontend/src/pages/solicitudes-compra/index.tsx` |
 | Modificar | `frontend/src/lib/solicitud-pdf.ts` |

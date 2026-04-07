@@ -76,17 +76,18 @@ export default function CategoriasTab() {
     e.preventDefault()
     if (!nombre.trim()) return
     if (editing) {
-      updateMut.mutate({ 
-        id: editing.id, 
-        data: { 
-          nombre: nombre.trim(), 
-          descripcion: descripcion.trim() || undefined,
-          version: editing.version
-        } 
+      updateMut.mutate({
+        id: editing.id,
+        data: {
+          nombre: nombre.trim(),
+          descripcion: descripcion.trim() || null,
+          version: editing.version,
+        },
       })
-    } else {
-      createMut.mutate({ nombre: nombre.trim(), descripcion: descripcion.trim() || undefined })
-    }
+      } else {
+      createMut.mutate({ nombre: nombre.trim(), descripcion: descripcion.trim() || null })
+      }
+
   }
 
   const isSaving = createMut.isPending || updateMut.isPending

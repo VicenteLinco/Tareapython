@@ -149,7 +149,7 @@ export default function ProveedoresTab() {
       header: 'Proveedor',
       width: '280px',
       render: (item: Proveedor) => (
-        <div className={`flex items-center gap-3 w-full overflow-hidden ${!item.activo ? 'opacity-50' : ''}`} title={item.nombre}>
+        <div className={`flex items-center gap-3 w-full overflow-hidden ${!item.activa ? 'opacity-50' : ''}`} title={item.nombre}>
           <ProveedorIcon proveedor={item} className="h-8 w-8 shrink-0 bg-base-200 rounded p-0.5" />
           <div className="flex flex-col min-w-0 flex-1">
             <span className="font-semibold text-sm truncate">{item.nombre}</span>
@@ -166,7 +166,7 @@ export default function ProveedoresTab() {
       width: '180px',
       className: 'hidden md:table-cell',
       render: (item: Proveedor) => (
-        <div className={`flex flex-col min-w-0 w-full overflow-hidden ${!item.activo ? 'opacity-50' : ''}`}>
+        <div className={`flex flex-col min-w-0 w-full overflow-hidden ${!item.activa ? 'opacity-50' : ''}`}>
           <span className="text-xs truncate">{item.email || '--'}</span>
           <span className="text-[10px] opacity-50 truncate">{item.telefono || ''}</span>
         </div>
@@ -178,7 +178,7 @@ export default function ProveedoresTab() {
       className: 'hidden lg:table-cell',
       width: '120px',
       render: (item: Proveedor) => (
-        <div className={`flex gap-2 text-[10px] opacity-60 ${!item.activo ? 'opacity-30' : ''}`}>
+        <div className={`flex gap-2 text-[10px] opacity-60 ${!item.activa ? 'opacity-30' : ''}`}>
           <span className="flex items-center gap-1"><Plane className="h-3 w-3" /> {item.dias_despacho_aereo ?? '-'}d</span>
           <span className="flex items-center gap-1"><Truck className="h-3 w-3" /> {item.dias_despacho_tierra ?? '-'}d</span>
         </div>
@@ -190,7 +190,7 @@ export default function ProveedoresTab() {
       width: '80px',
       render: (item: Proveedor) => (
         <div className="flex gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
-          {item.activo ? (
+          {item.activa ? (
             <>
               <button className="btn btn-ghost btn-xs btn-square" onClick={() => openEdit(item)}>
                 <Pencil className="h-3.5 w-3.5 opacity-40" />

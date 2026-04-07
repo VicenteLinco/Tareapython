@@ -37,6 +37,7 @@ pub struct UserResponse {
     pub email: String,
     pub rol: String,
     pub area_ids: Vec<i32>,
+    pub version: i32,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

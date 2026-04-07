@@ -1,0 +1,97 @@
+<h2>3 enfoques para rediseñar Solicitudes de Compra</h2>
+<p class="subtitle">Cada enfoque implica un nivel distinto de complejidad y un flujo de uso diferente. Elige el que mejor se adapta a tu operación.</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8faff; padding:16px; font-size:11px; font-family:sans-serif">
+      <div style="display:flex; gap:8px; margin-bottom:8px">
+        <div style="flex:1; background:#e0e7ff; border-radius:6px; padding:8px; text-align:center; font-weight:bold; color:#4338ca">📋 Propuesta</div>
+        <div style="flex:1; background:#f3f4f6; border-radius:6px; padding:8px; text-align:center; color:#9ca3af">Historial</div>
+      </div>
+      <div style="display:flex; gap:8px">
+        <div style="flex:2; border:1px solid #e5e7eb; border-radius:6px; padding:8px">
+          <div style="font-weight:bold; margin-bottom:6px; font-size:10px; color:#6b7280">RECOMENDADOS</div>
+          <div style="background:#fee2e2; border-radius:4px; padding:5px; margin-bottom:4px; font-size:10px">🔴 Guante estéril 7½ · 3d · $12.500 · Pedir: [80]</div>
+          <div style="background:#fef9c3; border-radius:4px; padding:5px; margin-bottom:4px; font-size:10px">🟡 Tubo vacutainer · 6d · $850 · Pedir: [200]</div>
+          <div style="background:#dcfce7; border-radius:4px; padding:5px; font-size:10px">🟢 Alcohol 96° · 12d · $8.200 · Pedir: [5]</div>
+        </div>
+        <div style="flex:1; border:1px solid #e5e7eb; border-radius:6px; padding:8px">
+          <div style="font-weight:bold; font-size:10px; margin-bottom:6px; color:#6b7280">RESUMEN</div>
+          <div style="font-size:10px; margin-bottom:4px">Total: $3.240.000</div>
+          <div style="font-size:10px; margin-bottom:8px; color:#6b7280">3 proveedores</div>
+          <div style="background:#f3f4f6; border-radius:4px; padding:4px; font-size:9px; margin-bottom:6px">💾 Guardar borrador</div>
+          <div style="background:#4338ca; color:white; border-radius:4px; padding:4px; font-size:9px; text-align:center">✉️ Enviar</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Evolución del diseño actual</h3>
+      <p>Misma estructura de pestañas, pero con urgencia por colores, columna de precio y total estimado. Borrador explícito. Cambios mínimos al backend.</p>
+      <p style="font-size:11px; color:#6b7280; margin-top:6px">⏱ Complejidad: baja · Más rápido de construir</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8faff; padding:16px; font-size:11px; font-family:sans-serif">
+      <div style="display:flex; gap:6px; margin-bottom:8px; font-size:10px">
+        <div style="flex:1; background:#e0e7ff; border-radius:5px; padding:6px; text-align:center; font-weight:bold; color:#4338ca">💡 Sugeridas</div>
+        <div style="flex:1; background:#e0e7ff; border-radius:5px; padding:6px; text-align:center; font-weight:bold; color:#4338ca">🛒 Mi Pedido</div>
+        <div style="flex:1; background:#f3f4f6; border-radius:5px; padding:6px; text-align:center; color:#9ca3af">📜 Historial</div>
+      </div>
+      <div style="display:flex; gap:8px">
+        <div style="flex:1; border:1px solid #e5e7eb; border-radius:6px; padding:8px">
+          <div style="font-size:10px; font-weight:bold; color:#6b7280; margin-bottom:6px">SISTEMA RECOMIENDA</div>
+          <div style="background:#fee2e2; border-radius:4px; padding:5px; margin-bottom:3px; font-size:9px; display:flex; justify-content:space-between"><span>🔴 Guante 7½</span><span>+ Agregar</span></div>
+          <div style="background:#fef9c3; border-radius:4px; padding:5px; margin-bottom:3px; font-size:9px; display:flex; justify-content:space-between"><span>🟡 Tubo vacutainer</span><span>+ Agregar</span></div>
+          <div style="background:#dcfce7; border-radius:4px; padding:5px; font-size:9px; display:flex; justify-content:space-between"><span>🟢 Alcohol 96°</span><span>+ Agregar</span></div>
+        </div>
+        <div style="flex:1; border:2px solid #4338ca; border-radius:6px; padding:8px">
+          <div style="font-size:10px; font-weight:bold; color:#4338ca; margin-bottom:6px">MI BORRADOR</div>
+          <div style="border-bottom:1px solid #e5e7eb; padding-bottom:4px; margin-bottom:4px; font-size:9px">Guante 7½ · 80 · $12.500</div>
+          <div style="border-bottom:1px solid #e5e7eb; padding-bottom:4px; margin-bottom:4px; font-size:9px">Tubo vacutainer · 200 · $850</div>
+          <div style="margin-top:8px; font-size:10px; font-weight:bold">Total: $3.240.000</div>
+          <div style="display:flex; gap:4px; margin-top:6px">
+            <div style="flex:1; background:#f3f4f6; border-radius:4px; padding:4px; font-size:8px; text-align:center">💾 Borrador</div>
+            <div style="flex:1; background:#4338ca; color:white; border-radius:4px; padding:4px; font-size:8px; text-align:center">✉️ Enviar</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Panel dual: Sugerencias + Mi Pedido</h3>
+      <p>Separación clara entre lo que el sistema recomienda (izquierda) y lo que el usuario está construyendo (derecha). El usuario arrastra o hace clic para mover items al pedido.</p>
+      <p style="font-size:11px; color:#6b7280; margin-top:6px">⏱ Complejidad: media · Como herramientas tipo Fishbowl / Ordermentum</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8faff; padding:16px; font-size:11px; font-family:sans-serif">
+      <div style="display:flex; gap:4px; margin-bottom:8px; align-items:center; font-size:10px">
+        <div style="background:#4338ca; color:white; border-radius:50%; width:18px; height:18px; display:flex; align-items:center; justify-content:center; font-weight:bold">1</div>
+        <div style="flex:1; height:2px; background:#4338ca"></div>
+        <div style="background:#e0e7ff; color:#4338ca; border-radius:50%; width:18px; height:18px; display:flex; align-items:center; justify-content:center; font-weight:bold">2</div>
+        <div style="flex:1; height:2px; background:#e5e7eb"></div>
+        <div style="background:#f3f4f6; border-radius:50%; width:18px; height:18px; display:flex; align-items:center; justify-content:center; color:#9ca3af">3</div>
+      </div>
+      <div style="font-weight:bold; font-size:10px; color:#4338ca; margin-bottom:8px">Paso 1: Seleccionar productos</div>
+      <div style="border:1px solid #e5e7eb; border-radius:6px; padding:8px">
+        <div style="font-size:9px; color:#6b7280; margin-bottom:6px">🔴 CRÍTICOS (2)</div>
+        <div style="display:flex; justify-content:space-between; font-size:9px; padding:4px; background:#fee2e2; border-radius:4px; margin-bottom:3px"><span>☑ Guante 7½ · 3 días</span><span>agregar ▶</span></div>
+        <div style="font-size:9px; color:#6b7280; margin:6px 0">🟡 URGENTES (5)</div>
+        <div style="display:flex; justify-content:space-between; font-size:9px; padding:4px; background:#fef9c3; border-radius:4px"><span>☑ Tubo vacutainer · 6 días</span><span>agregar ▶</span></div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; margin-top:8px">
+        <div style="background:#4338ca; color:white; border-radius:4px; padding:4px 10px; font-size:9px">Siguiente →</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Asistente paso a paso (wizard)</h3>
+      <p>Paso 1: selecciona productos. Paso 2: ajusta cantidades y precios. Paso 3: revisa el resumen y envía. Excelente para usuarios que se confunden con la pantalla completa.</p>
+      <p style="font-size:11px; color:#6b7280; margin-top:6px">⏱ Complejidad: media · Como SAP / Alegra Compras</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:24px">💡 Mi recomendación: <strong>B</strong> — panel dual. Separa claramente "lo que el sistema ve" de "lo que yo estoy pidiendo". Más potente que A sin la rigidez del wizard de C.</p>

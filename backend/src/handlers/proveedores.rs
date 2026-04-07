@@ -1,47 +1,19 @@
 use axum::extract::{Path, Query, State};
 use axum::routing::{get, put};
 use axum::{Extension, Json, Router};
-use serde::Deserialize;
-use serde_json::json;
-
-use validator::Validate;
 
 use crate::auth::models::Claims;
 use crate::db::AppState;
-use crate::dto::proveedor::{CreateProveedor, UpdateProveedor};
-use crate::errors::{validate_text_length, AppError};
+use crate::dto::proveedor::{CreateProveedor, UpdateProveedor, ProveedorQuery};
+use crate::errors::AppError;
 use crate::models::proveedor::Proveedor;
-
-#[derive(Debug, Deserialize)]
-struct ProveedorQuery {
-    q: Option<String>,
-    activo: Option<bool>,
-}
+use crate::services::proveedor_service;
 
 async fn listar(
     State(state): State<AppState>,
     Query(params): Query<ProveedorQuery>,
 ) -> Result<Json<Vec<Proveedor>>, AppError> {
-    let activo = params.activo.unwrap_or(true);
-
-    let proveedores = if let Some(q) = &params.q {
-        let pattern = format!("%{}%", q);
-        sqlx::query_as::<_, Proveedor>(
-            "SELECT * FROM proveedores WHERE activo = $1 AND nombre ILIKE $2 ORDER BY nombre",
-        )
-        .bind(activo)
-        .bind(&pattern)
-        .fetch_all(&state.pool)
-        .await?
-    } else {
-        sqlx::query_as::<_, Proveedor>(
-            "SELECT * FROM proveedores WHERE activo = $1 ORDER BY nombre",
-        )
-        .bind(activo)
-        .fetch_all(&state.pool)
-        .await?
-    };
-
+    let proveedores = proveedor_service::listar(&state.pool, params).await?;
     Ok(Json(proveedores))
 }
 
@@ -51,37 +23,7 @@ async fn crear(
     Json(req): Json<CreateProveedor>,
 ) -> Result<(axum::http::StatusCode, Json<Proveedor>), AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
-    req.validate()?;
-
-    let nombre = req.nombre.trim().to_string();
-    if nombre.is_empty() {
-        return Err(AppError::Validation("El nombre es requerido".into()));
-    }
-    validate_text_length(&nombre, "nombre", 255)?;
-    if let Some(ref c) = req.contacto { validate_text_length(c, "contacto", 255)?; }
-    if let Some(ref t) = req.telefono { validate_text_length(t, "telefono", 50)?; }
-    if let Some(ref e) = req.email { validate_text_length(e, "email", 255)?; }
-
-    let proveedor = sqlx::query_as::<_, Proveedor>(
-        "INSERT INTO proveedores (nombre, contacto, telefono, email, icono, dias_despacho_aereo, dias_despacho_tierra) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
-    )
-    .bind(&nombre)
-    .bind(&req.contacto)
-    .bind(&req.telefono)
-    .bind(&req.email)
-    .bind(&req.icono)
-    .bind(req.dias_despacho_aereo)
-    .bind(req.dias_despacho_tierra)
-    .fetch_one(&state.pool)
-    .await?;
-
-    crate::services::audit::registrar(
-        &state.pool, "proveedores", &proveedor.id.to_string(), "CREATE",
-        None,
-        Some(json!({"nombre": &proveedor.nombre})),
-        claims.sub,
-    ).await?;
-
+    let proveedor = proveedor_service::crear(&state.pool, req, claims.sub).await?;
     Ok((axum::http::StatusCode::CREATED, Json(proveedor)))
 }
 
@@ -92,53 +34,7 @@ async fn actualizar(
     Json(req): Json<UpdateProveedor>,
 ) -> Result<Json<Proveedor>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
-    req.validate()?;
-
-    let anterior = sqlx::query_as::<_, Proveedor>("SELECT * FROM proveedores WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or(AppError::NotFound("Proveedor no encontrado".into()))?;
-
-    let nombre = req
-        .nombre
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or(&anterior.nombre);
-    if nombre.is_empty() {
-        return Err(AppError::Validation("El nombre no puede estar vacío".into()));
-    }
-
-    let proveedor = sqlx::query_as::<_, Proveedor>(
-        r#"UPDATE proveedores
-           SET nombre = $1, contacto = $2, telefono = $3, email = $4,
-               icono = $5, dias_despacho_aereo = $6, dias_despacho_tierra = $7,
-               version = version + 1
-           WHERE id = $8 AND version = $9
-           RETURNING *"#,
-    )
-    .bind(nombre)
-    .bind(req.contacto.as_deref().or(anterior.contacto.as_deref()))
-    .bind(req.telefono.as_deref().or(anterior.telefono.as_deref()))
-    .bind(req.email.as_deref().or(anterior.email.as_deref()))
-    .bind(req.icono.as_deref().or(anterior.icono.as_deref()))
-    .bind(req.dias_despacho_aereo.or(anterior.dias_despacho_aereo))
-    .bind(req.dias_despacho_tierra.or(anterior.dias_despacho_tierra))
-    .bind(id)
-    .bind(req.version)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(AppError::Conflict(
-        "El registro fue modificado por otro usuario. Recarga e intenta de nuevo.".into(),
-    ))?;
-
-    crate::services::audit::registrar(
-        &state.pool, "proveedores", &id.to_string(), "UPDATE",
-        Some(json!({"nombre": &anterior.nombre})),
-        Some(json!({"nombre": &proveedor.nombre})),
-        claims.sub,
-    ).await?;
-
+    let proveedor = proveedor_service::actualizar(&state.pool, id, req, claims.sub).await?;
     Ok(Json(proveedor))
 }
 
@@ -148,23 +44,7 @@ async fn eliminar(
     Path(id): Path<i32>,
 ) -> Result<axum::http::StatusCode, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
-
-    let result = sqlx::query(
-        "UPDATE proveedores SET activo = false WHERE id = $1 AND activo = true",
-    )
-    .bind(id)
-    .execute(&state.pool)
-    .await?;
-
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Proveedor no encontrado".into()));
-    }
-
-    crate::services::audit::registrar(
-        &state.pool, "proveedores", &id.to_string(), "DELETE",
-        None, None, claims.sub,
-    ).await?;
-
+    proveedor_service::eliminar(&state.pool, id, claims.sub).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
@@ -174,22 +54,7 @@ async fn reactivar(
     Path(id): Path<i32>,
 ) -> Result<Json<Proveedor>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
-
-    let proveedor = sqlx::query_as::<_, Proveedor>(
-        "UPDATE proveedores SET activo = true WHERE id = $1 RETURNING *",
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(AppError::NotFound("Proveedor no encontrado".into()))?;
-
-    crate::services::audit::registrar(
-        &state.pool, "proveedores", &id.to_string(), "UPDATE",
-        None,
-        Some(json!({"activo": true})),
-        claims.sub,
-    ).await?;
-
+    let proveedor = proveedor_service::reactivar(&state.pool, id, claims.sub).await?;
     Ok(Json(proveedor))
 }
 

@@ -1,0 +1,86 @@
+<h2>¿Dónde deberían aparecer las imágenes?</h2>
+<p class="subtitle">Selecciona todos los lugares donde quieres que se muestre la foto del producto</p>
+
+<div class="options" data-multiselect>
+
+  <div class="option" data-choice="consumos" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Consumos</h3>
+      <p>Reemplazar el ícono de caja genérico por la foto real del producto. Útil para identificar rápido al consumir.</p>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px;background:#f8f8f8;border-radius:8px;padding:8px">
+        <div style="width:36px;height:36px;border-radius:6px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:18px">🧪</div>
+        <div>
+          <div style="font-size:12px;font-weight:700">Reactivo HbA1c</div>
+          <div style="font-size:10px;opacity:0.5">128 unidades disponibles</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="stock" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Lista de Stock</h3>
+      <p>Miniatura en la tabla/grilla de inventario para reconocimiento visual rápido del insumo.</p>
+      <div style="margin-top:8px;background:#f8f8f8;border-radius:8px;padding:8px">
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #eee">
+          <div style="width:28px;height:28px;border-radius:4px;background:linear-gradient(135deg,#10b981,#059669);"></div>
+          <div style="font-size:11px;font-weight:600">Tubos EDTA 3mL</div>
+          <div style="margin-left:auto;font-size:10px;color:#666">450 u</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+          <div style="width:28px;height:28px;border-radius:4px;background:linear-gradient(135deg,#f59e0b,#d97706);"></div>
+          <div style="font-size:11px;font-weight:600">Control Glucosa</div>
+          <div style="margin-left:auto;font-size:10px;color:#666">12 u</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="recepciones" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Recepción de Insumos</h3>
+      <p>Mostrar foto al buscar/escanear un producto para confirmar visualmente que es el correcto antes de registrar.</p>
+      <div style="margin-top:8px;background:#f8f8f8;border-radius:8px;padding:8px;display:flex;align-items:center;gap:10px">
+        <div style="width:48px;height:48px;border-radius:8px;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:22px">💉</div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#6366f1">✓ Producto encontrado</div>
+          <div style="font-size:12px;font-weight:600">Agujas 21G x 1.5"</div>
+          <div style="font-size:10px;opacity:0.5">COD-0042 · Proveedor: MedStar</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="kiosk" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>Modo Kiosko</h3>
+      <p>Display grande al escanear código de barras. Muy útil para personal de laboratorio que confirma el reactivo en pantalla grande.</p>
+      <div style="margin-top:8px;background:#111;border-radius:8px;padding:12px;display:flex;align-items:center;gap:12px">
+        <div style="width:64px;height:64px;border-radius:10px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);display:flex;align-items:center;justify-content:center;font-size:28px">🩺</div>
+        <div>
+          <div style="font-size:14px;font-weight:700;color:white">Tiras reactivas glucosa</div>
+          <div style="font-size:11px;color:#60a5fa">Stock disponible: 3 cajas</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="creador" onclick="toggleSelect(this)">
+    <div class="letter">E</div>
+    <div class="content">
+      <h3>Creador de Productos</h3>
+      <p>Panel para subir / cambiar la imagen al crear o editar un producto en el catálogo.</p>
+      <div style="margin-top:8px;background:#f8f8f8;border-radius:8px;padding:10px;display:flex;gap:10px;align-items:center">
+        <div style="width:56px;height:56px;border-radius:8px;border:2px dashed #aaa;display:flex;align-items:center;justify-content:center;font-size:20px;color:#aaa">+</div>
+        <div style="font-size:11px;color:#666">Subir imagen del producto<br><span style="font-size:10px">JPG, PNG · max 2MB · se comprimirá automáticamente</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:16px">Puedes seleccionar varios. Haz clic en los que quieras y dime también en el terminal.</p>

@@ -1,11 +1,12 @@
 import { useParams } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import api from '@/lib/api'
 import { toast } from 'sonner'
 
 export default function ScanPage() {
   const { token } = useParams<{ token: string }>()
   const [scanned, setScanned] = useState<string[]>([])
+  const scannedRef = useRef<string[]>([])
 
   useEffect(() => {
     if (!token) return
@@ -14,12 +15,14 @@ export default function ScanPage() {
       scanner = new Html5QrcodeScanner('reader', { fps: 10, qrbox: 250 }, false)
       scanner.render(
         async (code: string) => {
-          if (scanned.includes(code)) return
+          if (scannedRef.current.includes(code)) return
+          scannedRef.current = [...scannedRef.current, code]
           try {
             await api.post(`/recepciones/scanner-session/${token}/scan`, { codigo: code })
-            setScanned(prev => [...prev, code])
+            setScanned([...scannedRef.current])
             toast.success(`Escaneado: ${code}`)
           } catch {
+            scannedRef.current = scannedRef.current.filter(c => c !== code)
             toast.error('Error al enviar escaneo')
           }
         },

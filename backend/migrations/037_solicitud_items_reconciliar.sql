@@ -8,7 +8,7 @@ ALTER TABLE solicitudes_compra
 
 ALTER TABLE solicitudes_compra
     ADD CONSTRAINT solicitudes_compra_estado_check
-    CHECK (estado IN ('borrador', 'pendiente', 'enviada', 'en_camino', 'completada', 'cancelada', 'recibido'));
+    CHECK (estado IN ('borrador', 'pendiente', 'aprobada', 'rechazada', 'enviada', 'en_camino', 'completada', 'cancelada', 'recibido'));
 
 -- Add recepcion_id tracking to solicitudes_compra
 ALTER TABLE solicitudes_compra

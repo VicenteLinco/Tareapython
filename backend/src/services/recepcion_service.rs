@@ -257,6 +257,7 @@ pub async fn crear_recepcion(
     Ok((recepcion_id, lotes_creados))
 }
 
+#[allow(dead_code)]
 pub async fn confirmar_borrador(
     pool: &PgPool,
     id: Uuid,

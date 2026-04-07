@@ -1,0 +1,102 @@
+<h2>¿Cómo organizar el flujo de recepción?</h2>
+<p class="subtitle">3 enfoques — elige el que mejor refleje cómo trabaja el equipo en la práctica</p>
+
+<div class="cards">
+
+  <!-- Opción A -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8fafc;padding:16px;font-family:monospace">
+      <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:10px 14px;font-size:11px;margin-bottom:8px">
+        <span style="opacity:.5">PASO 1 de 4</span> &nbsp; <strong>Cabecera</strong> &nbsp;›&nbsp; Ítems &nbsp;›&nbsp; Inspección &nbsp;›&nbsp; Confirmar
+      </div>
+      <div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;background:#fff;font-size:11px">
+        <div style="font-weight:700;margin-bottom:6px">Proveedor & Guía</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <div style="background:#f1f5f9;border-radius:4px;padding:6px">Proveedor ▾</div>
+          <div style="background:#f1f5f9;border-radius:4px;padding:6px">GD-00123</div>
+        </div>
+        <div style="margin-top:8px;background:#3b82f6;color:#fff;border-radius:6px;padding:6px;text-align:center;font-size:11px">
+          Continuar →
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · Wizard lineal mejorado</h3>
+      <p>Pasos secuenciales: Cabecera → Ítems (scan) → Inspección/Decisión → Etiquetas → Confirmar. Patrón de SAP MM, Oracle Receiving. Simple de enseñar.</p>
+      <div style="font-size:11px;margin-top:8px;color:#64748b">
+        ✓ Flujo sin ambigüedad &nbsp;·&nbsp; ✓ Fácil de aprender<br>
+        ✗ Más clics para corregir &nbsp;·&nbsp; ✗ No se ve el todo
+      </div>
+    </div>
+  </div>
+
+  <!-- Opción B -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8fafc;padding:16px">
+      <div style="display:grid;grid-template-columns:200px 1fr;gap:8px;height:110px">
+        <div style="background:#1e293b;border-radius:8px;padding:10px;color:#f8fafc;font-size:10px">
+          <div style="font-weight:700;margin-bottom:4px">Recepción activa</div>
+          <div style="opacity:.6;margin-bottom:6px">Proveedor: BioMed SA</div>
+          <div style="opacity:.6;margin-bottom:6px">Guía: GD-00123</div>
+          <div style="background:#3b82f6;border-radius:4px;padding:3px 6px;text-align:center;font-size:10px">📷 Escanear</div>
+          <div style="margin-top:4px;background:#ef4444;border-radius:4px;padding:3px 6px;text-align:center;font-size:10px;opacity:.8">✗ Rechazar</div>
+        </div>
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px;font-size:10px;overflow:hidden">
+          <div style="font-weight:700;margin-bottom:6px">3 ítems · 1 pendiente</div>
+          <div style="background:#f0fdf4;border-radius:4px;padding:4px;margin-bottom:3px;display:flex;justify-content:space-between">
+            <span>Guantes latex L</span><span style="color:#16a34a">✓</span>
+          </div>
+          <div style="background:#fefce8;border-radius:4px;padding:4px;margin-bottom:3px;display:flex;justify-content:space-between">
+            <span>Tubos EDTA</span><span style="color:#ca8a04">⚠ lote</span>
+          </div>
+          <div style="background:#f1f5f9;border-radius:4px;padding:4px;display:flex;justify-content:space-between">
+            <span>Alcohol 70%</span><span style="opacity:.5">pendiente</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · Panel lateral + lista en vivo</h3>
+      <p>Panel izquierdo fijo con datos de la guía y acciones. Lista derecha que crece mientras se escanea. Patrón de WMS modernos (Fishbowl, Odoo). Todo visible, una sola pantalla.</p>
+      <div style="font-size:11px;margin-top:8px;color:#64748b">
+        ✓ Vista completa siempre &nbsp;·&nbsp; ✓ Más rápido para expertos<br>
+        ✗ Denso en pantallas pequeñas &nbsp;·&nbsp; ✗ Curva de aprendizaje
+      </div>
+    </div>
+  </div>
+
+  <!-- Opción C -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8fafc;padding:16px">
+      <div style="max-width:200px;margin:0 auto">
+        <div style="background:#1e293b;border-radius:12px;padding:12px;color:#f8fafc;font-size:10px;text-align:center">
+          <div style="font-size:13px;margin-bottom:4px">📷</div>
+          <div style="font-weight:700;margin-bottom:2px">Escanear producto</div>
+          <div style="opacity:.5;margin-bottom:8px">BioMed SA · GD-00123</div>
+          <div style="background:#ffffff20;border-radius:8px;padding:12px;margin-bottom:8px;border:1px dashed #ffffff40">
+            <div style="font-size:18px">▣</div>
+            <div style="font-size:9px;opacity:.6;margin-top:2px">Apunta al código QR</div>
+          </div>
+          <div style="text-align:left;font-size:9px">
+            <div style="background:#22c55e30;border-radius:4px;padding:3px 5px;margin-bottom:2px">✓ Guantes latex L — lote OK</div>
+            <div style="background:#22c55e30;border-radius:4px;padding:3px 5px">✓ Tubos EDTA — lote OK</div>
+          </div>
+          <div style="margin-top:8px;background:#3b82f6;border-radius:6px;padding:5px;font-size:10px">Finalizar recepción</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · Scanner-first móvil</h3>
+      <p>Flujo centrado en la cámara/pistola. Cada escaneo abre un panel para confirmar datos del ítem. Lista crece abajo. Al final, decisión y firma. Patrón de apps de almacén (Zebra, Honeywell).</p>
+      <div style="font-size:11px;margin-top:8px;color:#64748b">
+        ✓ Ideal con pistola/móvil &nbsp;·&nbsp; ✓ Proceso físico ↔ digital<br>
+        ✗ Sin cámara es más lento &nbsp;·&nbsp; ✗ Menos info simultánea
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px;margin-top:16px;font-size:12px">
+  <strong>Mi recomendación:</strong> <strong>B + C combinados</strong> — panel lateral en escritorio, modo scanner activable. Los sistemas farmacéuticos de referencia (McKesson, Intelipharma, Mediware) usan exactamente este patrón: datos de guía fijos en header, lista de items con scan inline, y decisión final separada (conforme / parcial / rechazo con motivo).
+</div>

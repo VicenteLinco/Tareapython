@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estilos de Reporte PDF</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f1729; font-family: 'Segoe UI', system-ui, sans-serif; color: #e2e8f0; padding: 24px; }
+  h1 { text-align: center; font-size: 20px; font-weight: 700; margin-bottom: 6px; color: #f1f5f9; }
+  .subtitle { text-align: center; color: #94a3b8; font-size: 13px; margin-bottom: 28px; }
+
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 1200px; margin: 0 auto; }
+
+  .card {
+    background: #1e293b;
+    border-radius: 16px;
+    border: 2px solid #334155;
+    cursor: pointer;
+    transition: all 0.2s;
+    overflow: hidden;
+    position: relative;
+  }
+  .card:hover { border-color: #6366f1; transform: translateY(-2px); box-shadow: 0 8px 32px rgba(99,102,241,0.2); }
+  .card.selected { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.3); }
+  .card.selected::after {
+    content: '✓ Seleccionado';
+    position: absolute;
+    top: 10px; right: 10px;
+    background: #6366f1;
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 20px;
+  }
+
+  .card-label {
+    padding: 14px 16px 10px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-bottom: 1px solid #334155;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-label span { font-size: 18px; }
+
+  /* ── PDF MOCKUP CONTAINER ── */
+  .pdf-mock {
+    aspect-ratio: 11/8.5;
+    position: relative;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    overflow: hidden;
+  }
+
+  /* ════════════════════════════════
+     ESTILO A — Clinical Blue
+  ════════════════════════════════ */
+  .pdf-a {
+    background: #ffffff;
+    color: #0f172a;
+  }
+  .pdf-a .header {
+    height: 52px;
+    background: #fff;
+    border-bottom: 3px solid #2563eb;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 10px;
+    position: relative;
+  }
+  .pdf-a .header-accent {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 5px;
+    background: linear-gradient(180deg, #2563eb, #1d4ed8);
+  }
+  .pdf-a .logo-box {
+    width: 36px; height: 36px;
+    background: #eff6ff;
+    border: 1.5px solid #bfdbfe;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    margin-left: 8px;
+  }
+  .pdf-a .header-text { flex: 1; margin-left: 8px; }
+  .pdf-a .lab-name { font-size: 13px; font-weight: 700; color: #0f172a; }
+  .pdf-a .doc-title { font-size: 8px; color: #64748b; margin-top: 1px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .pdf-a .header-right { text-align: right; font-size: 8px; color: #64748b; line-height: 1.6; }
+
+  .pdf-a .section-title { font-size: 13px; font-weight: 700; color: #0f172a; padding: 12px 16px 4px; }
+  .pdf-a .section-subtitle { font-size: 8px; color: #94a3b8; padding: 0 16px 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+  .pdf-a .kpi-row { display: flex; gap: 10px; padding: 0 16px 14px; }
+  .pdf-a .kpi {
+    flex: 1;
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 10px 12px;
+    border-left: 3px solid;
+  }
+  .pdf-a .kpi-val { font-size: 22px; font-weight: 800; line-height: 1; }
+  .pdf-a .kpi-lbl { font-size: 7px; color: #94a3b8; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .pdf-a .kpi.blue  { border-color: #2563eb; } .pdf-a .kpi.blue .kpi-val  { color: #1d4ed8; }
+  .pdf-a .kpi.red   { border-color: #dc2626; } .pdf-a .kpi.red .kpi-val   { color: #dc2626; }
+  .pdf-a .kpi.amber { border-color: #d97706; } .pdf-a .kpi.amber .kpi-val { color: #d97706; }
+  .pdf-a .kpi.green { border-color: #16a34a; } .pdf-a .kpi.green .kpi-val { color: #16a34a; }
+
+  .pdf-a .divider { height: 1px; background: #e2e8f0; margin: 0 16px 10px; }
+
+  .pdf-a .alerts-row { display: flex; gap: 12px; padding: 0 16px; flex: 1; }
+  .pdf-a .alert-col { flex: 1; }
+  .pdf-a .alert-col-title {
+    font-size: 7.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
+    padding: 4px 8px; border-radius: 4px; margin-bottom: 6px; display: inline-block;
+  }
+  .pdf-a .alert-col.danger .alert-col-title { background: #fee2e2; color: #991b1b; }
+  .pdf-a .alert-col.warn .alert-col-title   { background: #fef3c7; color: #92400e; }
+  .pdf-a .alert-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 3px 0; border-bottom: 0.5px solid #f1f5f9; font-size: 7px;
+  }
+  .pdf-a .alert-item:nth-child(odd) { background: transparent; }
+  .pdf-a .alert-name { color: #334155; flex: 1; }
+  .pdf-a .alert-val { font-weight: 700; font-size: 7px; margin-left: 8px; }
+  .pdf-a .alert-col.danger .alert-val { color: #dc2626; }
+  .pdf-a .alert-col.warn .alert-val   { color: #d97706; }
+
+  .pdf-a .footer {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 16px; border-top: 0.5px solid #e2e8f0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px; font-size: 7px; color: #94a3b8;
+  }
+
+  /* ════════════════════════════════
+     ESTILO B — Executive Dark
+  ════════════════════════════════ */
+  .pdf-b {
+    background: #ffffff;
+    color: #111827;
+  }
+  .pdf-b .header {
+    height: 64px;
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+    display: flex;
+    align-items: center;
+    padding: 0 18px;
+    gap: 12px;
+  }
+  .pdf-b .logo-box {
+    width: 40px; height: 40px;
+    background: rgba(255,255,255,0.12);
+    border: 1.5px solid rgba(255,255,255,0.25);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .pdf-b .header-text { flex: 1; }
+  .pdf-b .lab-name { font-size: 14px; font-weight: 800; color: #ffffff; letter-spacing: -0.02em; }
+  .pdf-b .doc-title { font-size: 8px; color: rgba(255,255,255,0.5); margin-top: 2px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .pdf-b .header-right { text-align: right; font-size: 8px; color: rgba(255,255,255,0.6); line-height: 1.8; }
+  .pdf-b .header-date { color: #93c5fd; font-weight: 600; }
+
+  .pdf-b .section-title { font-size: 14px; font-weight: 800; color: #111827; padding: 12px 18px 2px; letter-spacing: -0.03em; }
+  .pdf-b .section-bar { height: 3px; background: linear-gradient(90deg, #2563eb, #7c3aed, transparent); margin: 4px 18px 10px; border-radius: 2px; }
+
+  .pdf-b .kpi-row { display: flex; gap: 8px; padding: 0 18px 12px; }
+  .pdf-b .kpi {
+    flex: 1;
+    border-radius: 10px;
+    padding: 10px 12px 8px;
+  }
+  .pdf-b .kpi-val { font-size: 26px; font-weight: 900; line-height: 1; letter-spacing: -0.03em; }
+  .pdf-b .kpi-lbl { font-size: 7px; margin-top: 3px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.06em; }
+  .pdf-b .kpi.blue  { background: #eff6ff; } .pdf-b .kpi.blue .kpi-val  { color: #1d4ed8; } .pdf-b .kpi.blue .kpi-lbl { color: #3b82f6; }
+  .pdf-b .kpi.red   { background: #fef2f2; } .pdf-b .kpi.red .kpi-val   { color: #dc2626; } .pdf-b .kpi.red .kpi-lbl { color: #ef4444; }
+  .pdf-b .kpi.amber { background: #fffbeb; } .pdf-b .kpi.amber .kpi-val { color: #d97706; } .pdf-b .kpi.amber .kpi-lbl { color: #f59e0b; }
+  .pdf-b .kpi.slate { background: #f8fafc; } .pdf-b .kpi.slate .kpi-val { color: #475569; } .pdf-b .kpi.slate .kpi-lbl { color: #94a3b8; }
+
+  .pdf-b .divider { height: 1px; background: #f1f5f9; margin: 0 18px 10px; }
+
+  .pdf-b .alerts-row { display: flex; gap: 12px; padding: 0 18px; }
+  .pdf-b .alert-col { flex: 1; }
+  .pdf-b .alert-col-title {
+    font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em;
+    margin-bottom: 6px; padding-bottom: 4px; border-bottom: 2px solid;
+  }
+  .pdf-b .alert-col.danger .alert-col-title { color: #dc2626; border-color: #fca5a5; }
+  .pdf-b .alert-col.warn .alert-col-title   { color: #d97706; border-color: #fcd34d; }
+  .pdf-b .alert-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 3.5px 6px; margin-bottom: 1px; border-radius: 4px; font-size: 7px;
+  }
+  .pdf-b .alert-item:nth-child(even) { background: #f8fafc; }
+  .pdf-b .alert-name { color: #374151; flex: 1; }
+  .pdf-b .alert-val { font-weight: 800; font-size: 7px; }
+  .pdf-b .alert-col.danger .alert-val { color: #b91c1c; }
+  .pdf-b .alert-col.warn .alert-val   { color: #b45309; }
+
+  .pdf-b .footer {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 16px; background: #f8fafc; border-top: 0.5px solid #e2e8f0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 18px; font-size: 7px; color: #94a3b8;
+  }
+
+  /* ════════════════════════════════
+     ESTILO C — Minimal Pro
+  ════════════════════════════════ */
+  .pdf-c {
+    background: #fafafa;
+    color: #1a1a2e;
+  }
+  .pdf-c .header {
+    height: 56px;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 14px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .pdf-c .logo-box {
+    width: 38px; height: 38px;
+    background: #f3f4f6;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .pdf-c .header-text { flex: 1; }
+  .pdf-c .lab-name { font-size: 13px; font-weight: 700; color: #111827; }
+  .pdf-c .doc-title { font-size: 8px; color: #9ca3af; margin-top: 2px; }
+  .pdf-c .header-right { font-size: 8px; color: #9ca3af; text-align: right; line-height: 1.7; }
+  .pdf-c .header-badge {
+    background: #111827; color: #fff;
+    font-size: 7.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 3px 9px; border-radius: 20px;
+  }
+
+  .pdf-c .body { padding: 14px 20px 0; }
+  .pdf-c .title-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+  .pdf-c .section-title { font-size: 18px; font-weight: 800; color: #111827; letter-spacing: -0.04em; }
+  .pdf-c .date-text { font-size: 8px; color: #9ca3af; }
+
+  .pdf-c .kpi-row { display: flex; gap: 1px; margin-bottom: 14px; background: #e5e7eb; border-radius: 10px; overflow: hidden; }
+  .pdf-c .kpi {
+    flex: 1;
+    background: #fff;
+    padding: 10px 14px 8px;
+    text-align: center;
+  }
+  .pdf-c .kpi-val { font-size: 24px; font-weight: 900; line-height: 1; letter-spacing: -0.04em; }
+  .pdf-c .kpi-lbl { font-size: 7px; color: #9ca3af; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .pdf-c .kpi.blue  .kpi-val { color: #111827; }
+  .pdf-c .kpi.red   .kpi-val { color: #dc2626; }
+  .pdf-c .kpi.amber .kpi-val { color: #d97706; }
+  .pdf-c .kpi.gray  .kpi-val { color: #6b7280; }
+
+  .pdf-c .alerts-row { display: flex; gap: 16px; }
+  .pdf-c .alert-col { flex: 1; }
+  .pdf-c .alert-col-title {
+    font-size: 7.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+    margin-bottom: 5px; color: #374151;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .pdf-c .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+  .pdf-c .dot.red   { background: #dc2626; }
+  .pdf-c .dot.amber { background: #d97706; }
+  .pdf-c .alert-item {
+    display: flex; justify-content: space-between;
+    padding: 3px 0; border-bottom: 0.5px dashed #e5e7eb; font-size: 7px;
+  }
+  .pdf-c .alert-name { color: #374151; }
+  .pdf-c .alert-val { font-weight: 700; }
+  .pdf-c .alert-col.danger .alert-val { color: #dc2626; }
+  .pdf-c .alert-col.warn .alert-val   { color: #d97706; }
+
+  .pdf-c .footer {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 15px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; font-size: 6.5px; color: #9ca3af;
+  }
+
+  .card-desc { padding: 12px 16px 16px; font-size: 12px; color: #94a3b8; line-height: 1.5; }
+  .card-desc strong { color: #e2e8f0; }
+  .tag { display: inline-block; background: #1e3a5f; color: #93c5fd; font-size: 10px; padding: 2px 7px; border-radius: 20px; margin-right: 4px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<h1>Elige el estilo del Reporte de Inventario PDF</h1>
+<p class="subtitle">Cada opción muestra cómo se vería la página de Resumen Ejecutivo — la primera del reporte</p>
+
+<div class="cards">
+
+  <!-- ══ OPCIÓN A ══ -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-label"><span>🏥</span> A — Clinical Blue</div>
+    <div class="pdf-mock pdf-a">
+      <div class="header">
+        <div class="header-accent"></div>
+        <div class="logo-box">🔬</div>
+        <div class="header-text">
+          <div class="lab-name">Laboratorio Clínico Central</div>
+          <div class="doc-title">Reporte de Stock · Inventario</div>
+        </div>
+        <div class="header-right">
+          06/04/2026 · 14:32<br>
+          <span style="color:#475569">Generado por: Admin</span>
+        </div>
+      </div>
+
+      <div style="display:flex; flex-direction:column; padding-bottom: 16px;">
+        <div class="section-title">Resumen Ejecutivo</div>
+        <div class="section-subtitle">Inventario global · Todas las secciones</div>
+
+        <div class="kpi-row">
+          <div class="kpi blue">
+            <div class="kpi-val">347</div>
+            <div class="kpi-lbl">Productos en stock</div>
+          </div>
+          <div class="kpi red">
+            <div class="kpi-val">12</div>
+            <div class="kpi-lbl">Bajo mínimo</div>
+          </div>
+          <div class="kpi amber">
+            <div class="kpi-val">8</div>
+            <div class="kpi-lbl">Por vencer (30d)</div>
+          </div>
+          <div class="kpi green">
+            <div class="kpi-val">5</div>
+            <div class="kpi-lbl">Áreas</div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="alerts-row">
+          <div class="alert-col danger">
+            <div class="alert-col-title">⚠ Stock Bajo Mínimo</div>
+            <div class="alert-item"><span class="alert-name">Glucosa STAT 5mL</span><span class="alert-val">3 / 20</span></div>
+            <div class="alert-item"><span class="alert-name">Hemocultivo Aerobio</span><span class="alert-val">1 / 10</span></div>
+            <div class="alert-item"><span class="alert-name">Reactivo HbA1c</span><span class="alert-val">0 / 5</span></div>
+            <div class="alert-item"><span class="alert-name">Tubos Citrato 3.2%</span><span class="alert-val">8 / 30</span></div>
+            <div class="alert-item"><span class="alert-name">Alcohol 70° 500mL</span><span class="alert-val">2 / 12</span></div>
+            <div class="alert-item" style="color:#94a3b8;font-style:italic;font-size:6.5px;justify-content:center">... y 7 más</div>
+          </div>
+          <div class="alert-col warn">
+            <div class="alert-col-title">⏰ Por Vencer en 30 días</div>
+            <div class="alert-item"><span class="alert-name">Reactivo TSH Elisa</span><span class="alert-val">12 días</span></div>
+            <div class="alert-item"><span class="alert-name">Control Nivel 2</span><span class="alert-val">18 días</span></div>
+            <div class="alert-item"><span class="alert-name">Calibrador PCR</span><span class="alert-val">24 días</span></div>
+            <div class="alert-item"><span class="alert-name">Suero Fisiológico</span><span class="alert-val">29 días</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <span>Laboratorio Clínico Central</span>
+        <span>Página 1</span>
+      </div>
+    </div>
+    <div class="card-desc">
+      <strong>Clínico y limpio.</strong> Líneas delgadas, blanco dominante, acento azul médico. Tarjetas KPI con borde de color. Fácil de leer, profesional.
+      <br><span class="tag">Tradicional</span><span class="tag">Legible</span><span class="tag">Médico</span>
+    </div>
+  </div>
+
+  <!-- ══ OPCIÓN B ══ -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-label"><span>🏢</span> B — Executive Dark</div>
+    <div class="pdf-mock pdf-b">
+      <div class="header">
+        <div class="logo-box">🔬</div>
+        <div class="header-text">
+          <div class="lab-name">Laboratorio Clínico Central</div>
+          <div class="doc-title">Reporte de Inventario · Stock</div>
+        </div>
+        <div class="header-right">
+          <span class="header-date">06/04/2026  14:32</span><br>
+          Admin · Confidencial
+        </div>
+      </div>
+
+      <div class="section-title">Resumen Ejecutivo</div>
+      <div class="section-bar" style="width:180px"></div>
+
+      <div class="kpi-row">
+        <div class="kpi blue">
+          <div class="kpi-val">347</div>
+          <div class="kpi-lbl">Productos en stock</div>
+        </div>
+        <div class="kpi red">
+          <div class="kpi-val">12</div>
+          <div class="kpi-lbl">Bajo mínimo</div>
+        </div>
+        <div class="kpi amber">
+          <div class="kpi-val">8</div>
+          <div class="kpi-lbl">Por vencer 30d</div>
+        </div>
+        <div class="kpi slate">
+          <div class="kpi-val">5</div>
+          <div class="kpi-lbl">Secciones</div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="alerts-row">
+        <div class="alert-col danger">
+          <div class="alert-col-title">🔴  Stock Bajo Mínimo</div>
+          <div class="alert-item"><span class="alert-name">Glucosa STAT 5mL</span><span class="alert-val">3/20</span></div>
+          <div class="alert-item"><span class="alert-name">Hemocultivo Aerobio</span><span class="alert-val">1/10</span></div>
+          <div class="alert-item"><span class="alert-name">Reactivo HbA1c</span><span class="alert-val">0/5</span></div>
+          <div class="alert-item"><span class="alert-name">Tubos Citrato 3.2%</span><span class="alert-val">8/30</span></div>
+          <div class="alert-item"><span class="alert-name">Alcohol 70° 500mL</span><span class="alert-val">2/12</span></div>
+          <div class="alert-item" style="color:#9ca3af;font-style:italic;font-size:6.5px;text-align:center;padding:2px">... y 7 más</div>
+        </div>
+        <div class="alert-col warn">
+          <div class="alert-col-title">🟡  Por Vencer en 30 días</div>
+          <div class="alert-item"><span class="alert-name">Reactivo TSH Elisa</span><span class="alert-val">12d</span></div>
+          <div class="alert-item"><span class="alert-name">Control Nivel 2</span><span class="alert-val">18d</span></div>
+          <div class="alert-item"><span class="alert-name">Calibrador PCR</span><span class="alert-val">24d</span></div>
+          <div class="alert-item"><span class="alert-name">Suero Fisiológico</span><span class="alert-val">29d</span></div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <span>Laboratorio Clínico Central — Confidencial</span>
+        <span>Pág. 1</span>
+      </div>
+    </div>
+    <div class="card-desc">
+      <strong>Ejecutivo e impactante.</strong> Encabezado oscuro degradado, tipografía grande y bold, tarjetas KPI con fondos de color suave. Aspecto de reporte corporativo premium.
+      <br><span class="tag">Moderno</span><span class="tag">Impacto visual</span><span class="tag">Corporativo</span>
+    </div>
+  </div>
+
+  <!-- ══ OPCIÓN C ══ -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-label"><span>✨</span> C — Minimal Pro</div>
+    <div class="pdf-mock pdf-c">
+      <div class="header">
+        <div class="logo-box">🔬</div>
+        <div class="header-text">
+          <div class="lab-name">Laboratorio Clínico Central</div>
+          <div class="doc-title">Reporte de Inventario</div>
+        </div>
+        <div class="header-right">
+          <div class="header-badge">Stock · 06 ABR 2026</div>
+          <div style="margin-top:3px;font-size:7px;color:#9ca3af">Admin · 14:32 hrs</div>
+        </div>
+      </div>
+
+      <div class="body">
+        <div class="title-row">
+          <div class="section-title">Resumen<br>Ejecutivo</div>
+          <div class="date-text" style="text-align:right;line-height:1.6">Inventario global<br>5 secciones incluidas</div>
+        </div>
+
+        <div class="kpi-row">
+          <div class="kpi blue">
+            <div class="kpi-val">347</div>
+            <div class="kpi-lbl">Productos</div>
+          </div>
+          <div class="kpi red">
+            <div class="kpi-val">12</div>
+            <div class="kpi-lbl">Bajo mínimo</div>
+          </div>
+          <div class="kpi amber">
+            <div class="kpi-val">8</div>
+            <div class="kpi-lbl">Por vencer</div>
+          </div>
+          <div class="kpi gray">
+            <div class="kpi-val">0</div>
+            <div class="kpi-lbl">Vencidos</div>
+          </div>
+        </div>
+
+        <div class="alerts-row">
+          <div class="alert-col danger">
+            <div class="alert-col-title"><span class="dot red"></span> Stock Bajo Mínimo</div>
+            <div class="alert-item"><span class="alert-name">Glucosa STAT 5mL</span><span class="alert-val">3 / 20</span></div>
+            <div class="alert-item"><span class="alert-name">Hemocultivo Aerobio</span><span class="alert-val">1 / 10</span></div>
+            <div class="alert-item"><span class="alert-name">Reactivo HbA1c</span><span class="alert-val">0 / 5</span></div>
+            <div class="alert-item"><span class="alert-name">Tubos Citrato 3.2%</span><span class="alert-val">8 / 30</span></div>
+            <div class="alert-item"><span class="alert-name">Alcohol 70° 500mL</span><span class="alert-val">2 / 12</span></div>
+            <div class="alert-item" style="color:#9ca3af;font-style:italic;font-size:6.5px;text-align:center">... y 7 más</div>
+          </div>
+          <div class="alert-col warn">
+            <div class="alert-col-title"><span class="dot amber"></span> Por Vencer en 30 días</div>
+            <div class="alert-item"><span class="alert-name">Reactivo TSH Elisa</span><span class="alert-val">12 días</span></div>
+            <div class="alert-item"><span class="alert-name">Control Nivel 2</span><span class="alert-val">18 días</span></div>
+            <div class="alert-item"><span class="alert-name">Calibrador PCR</span><span class="alert-val">24 días</span></div>
+            <div class="alert-item"><span class="alert-name">Suero Fisiológico</span><span class="alert-val">29 días</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <span>Laboratorio Clínico Central</span>
+        <span>1 / 6</span>
+      </div>
+    </div>
+    <div class="card-desc">
+      <strong>Minimalista y elegante.</strong> Sin colores de fondo, tipografía oversized, tablero de KPIs unificado. Estilo de consultora o reporte financiero de alto nivel.
+      <br><span class="tag">Elegante</span><span class="tag">Minimalista</span><span class="tag">Premium</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function toggleSelect(el) {
+  document.querySelectorAll('.card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  if (window.recordChoice) recordChoice(el.dataset.choice, el.querySelector('.card-label').textContent.trim());
+}
+</script>
+</body>
+</html>

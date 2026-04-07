@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FlaskConical, ArrowRight, Monitor, ScanLine, LayoutDashboard } from 'lucide-react'
 import fondoLogin from '@/assets/fondo-login.gif'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import api from '@/lib/api'
 import type { LoginResponse, MeResponse } from '@/types'
-import { setDeviceMode, type DeviceMode } from '@/lib/device-mode'
+import { setDeviceMode, clearDeviceMode, type DeviceMode } from '@/lib/device-mode'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -14,8 +14,17 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [selectedMode, setSelectedMode] = useState<DeviceMode>('normal')
   const [persistent, setPersistent] = useState(false)
-  const { setTokens, setUsuario } = useAuthStore()
+  const { login, logout, accessToken } = useAuthStore()
   const navigate = useNavigate()
+
+  // Si llegamos aquí y hay token, limpiamos para evitar inconsistencias
+  useEffect(() => {
+    if (accessToken) {
+      logout()
+      clearDeviceMode()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Solo al montar
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -25,12 +34,19 @@ export default function LoginPage() {
     try {
       const res = await api.post<LoginResponse>('/auth/login', { email, password })
       const { access_token, refresh_token } = res.data
-      setTokens(access_token, refresh_token)
 
       const meRes = await api.get<MeResponse>('/auth/me', {
         headers: { Authorization: `Bearer ${access_token}` },
       })
-      setUsuario(meRes.data)
+      
+      const usuarioFull = {
+        ...meRes.data,
+        activo: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      
+      login(access_token, refresh_token, usuarioFull as any)
       setDeviceMode(selectedMode, persistent)
       const target =
         selectedMode === 'kiosk' ? '/kiosk' :

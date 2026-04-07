@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import type { Usuario } from '@/types'
+import { clearDeviceMode } from '@/lib/device-mode'
 
 interface AuthState {
   accessToken: string | null
@@ -17,35 +18,35 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      accessToken: sessionStorage.getItem('lab-access-token'),
+      accessToken: null,
       refreshToken: null,
       usuario: null,
       setTokens: (access, refresh) => {
-        sessionStorage.setItem('lab-access-token', access)
         set({ accessToken: access, refreshToken: refresh })
       },
       setUsuario: (usuario) => set({ usuario }),
       login: (access, refresh, usuario) => {
-        sessionStorage.setItem('lab-access-token', access)
         set({ accessToken: access, refreshToken: refresh, usuario })
       },
       logout: () => {
-        sessionStorage.removeItem('lab-access-token')
         set({ accessToken: null, refreshToken: null, usuario: null })
+        clearDeviceMode()
+        localStorage.removeItem('lab-auth-v3') // Limpieza extra por seguridad
       },
     }),
     {
-      name: 'lab-auth-v2',
+      name: 'lab-auth-v3',
       storage: createJSONStorage(() => localStorage),
-      // Solo persistir refreshToken y usuario, NO accessToken
+      version: 3,
+      // accessToken NO se persiste — se pierde al cerrar el browser/tab
+      // refreshToken + usuario sí persisten para re-login silencioso vía interceptor
       partialize: (state) => ({
         refreshToken: state.refreshToken,
         usuario: state.usuario,
       }),
-      version: 2,
       migrate: (_persistedState: unknown, version: number) => {
-        if (version < 2) {
-          return { refreshToken: null, usuario: null }
+        if (version < 3) {
+          return { accessToken: null, refreshToken: null, usuario: null }
         }
         return _persistedState as Partial<AuthState>
       },

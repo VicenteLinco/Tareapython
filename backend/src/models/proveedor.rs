@@ -11,7 +11,7 @@ pub struct Proveedor {
     pub icono: Option<String>,
     pub dias_despacho_aereo: Option<i32>,
     pub dias_despacho_tierra: Option<i32>,
-    pub activo: bool,
+    pub activa: bool,
     pub version: i32,
     pub created_at: DateTime<Utc>,
 }

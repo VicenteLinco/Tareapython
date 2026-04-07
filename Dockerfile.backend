@@ -21,7 +21,7 @@ RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuse
 WORKDIR /app
 COPY --from=builder /app/target/release/inventario-lab-backend .
 COPY --from=builder /app/migrations ./migrations
-RUN chown -R appuser:appuser /app
+RUN mkdir -p /app/uploads && chown -R appuser:appuser /app
 
 USER appuser
 

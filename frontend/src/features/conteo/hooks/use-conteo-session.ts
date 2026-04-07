@@ -81,6 +81,7 @@ export function useConteoSession(id: string | undefined) {
       }).then((r) => r.data),
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ['conteo'] })
+      queryClient.invalidateQueries({ queryKey: ['conteo-pendientes'] })
       toast.success(`Conteo confirmado: ${res.ajustes_generados} ajustes generados`)
       navigate('/conteo')
     },

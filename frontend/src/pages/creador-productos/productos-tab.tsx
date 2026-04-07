@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Trash2, Search, Eye, Package, Tag, FileText, Camera, RotateCcw, ImagePlus, X } from 'lucide-react'
@@ -23,7 +24,6 @@ import type {
   Area,
   Proveedor,
   Presentacion,
-  CreateProducto,
   UpdateProducto,
 } from '@/types'
 
@@ -44,6 +44,7 @@ interface ProductoListItem {
 
 export default function ProductosTab() {
   const queryClient = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [categoriaId, setCategoriaId] = useState('')
   const [areaId, setAreaId] = useState('')
@@ -51,7 +52,7 @@ export default function ProductosTab() {
   const [verInactivos, setVerInactivos] = useState(false)
   const [page, setPage] = useState(1)
 
-  const [createOpen, setCreateOpen] = useState(false)
+  const [createOpen, setCreateOpen] = useState(() => searchParams.get('nuevo') === 'true')
   const [editId, setEditId] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ProductoListItem | null>(null)
@@ -286,7 +287,14 @@ export default function ProductosTab() {
 
       <CreateProductoDialog
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={() => {
+          setCreateOpen(false)
+          if (searchParams.get('nuevo')) {
+            const next = new URLSearchParams(searchParams)
+            next.delete('nuevo')
+            setSearchParams(next, { replace: true })
+          }
+        }}
         categorias={categorias ?? []}
         unidades={unidades ?? []}
         areas={areas ?? []}
@@ -621,7 +629,7 @@ function CreateProductoDialog({
 
   function handlePresChange(nombre: string) {
     const found = presFormatos.find(p => p.nombre === nombre)
-    const factorValue = found ? String(found.factor_conversion) : form.pres_factor
+    const factorValue = form.pres_factor
     setForm(f => {
       const pu = parseFloat(f.precio_unidad) || 0
       const factor = parseFloat(factorValue) || 1
@@ -1167,7 +1175,7 @@ function EditProductoDialog({
 
   function handlePresChange(nombre: string) {
     const found = presFormatos.find(p => p.nombre === nombre)
-    const factorValue = found ? String(found.factor_conversion) : form.pres_factor
+    const factorValue = form.pres_factor
     setForm(f => {
       const pu = parseFloat(f.precio_unidad) || 0
       const factor = parseFloat(factorValue) || 1
@@ -1456,7 +1464,7 @@ function EditProductoDialog({
                   {producto.presentaciones.map((p: Presentacion) => (
                     <div key={p.id} className="flex items-center justify-between bg-base-200/50 rounded-lg px-3 py-2">
                       <span className="text-sm font-medium">{p.nombre}</span>
-                      <span className="text-xs font-mono opacity-50">x{Math.round(p.factor_conversion)}</span>
+                      <span className="text-xs font-mono opacity-50">x{Math.round(parseFloat(p.factor_conversion))}</span>
                     </div>
                   ))}
                 </div>
@@ -1717,7 +1725,7 @@ function ProductoDetail({ id }: { id: string }) {
             {producto.presentaciones.map((p: Presentacion) => (
               <div key={p.id} className="flex items-center justify-between bg-base-200/50 rounded-lg px-3 py-2">
                 <span className="text-sm font-medium">{p.nombre}</span>
-                <span className="text-xs font-mono opacity-50">x{Math.round(p.factor_conversion)}</span>
+                <span className="text-xs font-mono opacity-50">x{Math.round(parseFloat(p.factor_conversion))}</span>
               </div>
             ))}
           </div>

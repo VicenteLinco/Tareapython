@@ -4,7 +4,6 @@ import { Printer, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatCantidad } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { imprimirEtiquetas, type LoteParaEtiqueta } from '@/lib/label-print'
-import { formatCantidad } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { DetalleLineUI } from './item-card'
 

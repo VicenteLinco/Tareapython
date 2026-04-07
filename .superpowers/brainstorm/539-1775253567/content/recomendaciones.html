@@ -1,0 +1,40 @@
+<h2>¿Qué tan inteligentes son las recomendaciones?</h2>
+<p class="subtitle">El sistema ya calcula: consumo diario (30d) × lead time del proveedor. ¿Hasta dónde quieres llegar?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Como ahora, pero más visible</h3>
+      <p>Misma lógica actual: muestra productos bajo mínimo o por agotarse. Mejora el <strong>cómo se presenta</strong> la información — por qué se recomienda cada producto, cuántos días de autonomía quedan, cuánto se consume por día.</p>
+      <div style="margin-top:10px; padding:10px; background:#f0f4ff; border-radius:8px; font-size:11px; font-family:monospace">
+        ⚠️ Guante estéril 7½ · Stock: 12 · Consume ~4/día · 3 días de autonomía<br>
+        → Sugerencia: pedir 80 unidades
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Recomendación por nivel de urgencia</h3>
+      <p>Clasifica los productos en 3 niveles: <strong>🔴 Crítico</strong> (ya agotado o menos de 3 días), <strong>🟡 Urgente</strong> (menos de 7 días), <strong>🟢 Planificación</strong> (menos de 14 días). Cada nivel tiene prioridad visual distinta.</p>
+      <div style="margin-top:10px; padding:10px; background:#f0fff4; border-radius:8px; font-size:11px;">
+        El admin ve de inmediato qué necesita hoy vs. qué puede esperar a la próxima orden.
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Planificador de compra mensual</h3>
+      <p>Proyecta el consumo para los próximos 30 días y sugiere <strong>todo lo que necesitarás comprar este mes</strong>, incluso productos que aún están sobre el mínimo. Optimiza para hacer menos órdenes de compra más grandes.</p>
+      <div style="margin-top:10px; padding:10px; background:#fff8f0; border-radius:8px; font-size:11px;">
+        "Si compras hoy, esto te cubre 30 días" — útil para presupuesto mensual.
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:20px">💡 Mi recomendación: <strong>B</strong> — el nivel de urgencia es lo más accionable. A es el mínimo necesario, C es valioso pero requiere que el consumo histórico sea confiable (meses de datos).</p>

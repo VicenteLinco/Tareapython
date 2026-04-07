@@ -1,12 +1,14 @@
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use uuid::Uuid;
+use specta::Type;
 
 use crate::errors::AppError;
 
 /// Lote disponible para FEFO
 #[derive(Debug, sqlx::FromRow)]
 pub struct LoteFefo {
+    #[allow(dead_code)]
     pub stock_id: i32,
     pub lote_id: Uuid,
     pub cantidad: Decimal,
@@ -37,7 +39,7 @@ pub async fn lotes_fefo(
     Ok(lotes)
 }
 
-/// Busca lotes con FEFO para un producto en TODAS las áreas (sin filtro de área).
+/// Busca lotes con FEFO para un producto en TODAS las áreas.
 pub async fn lotes_fefo_global(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     producto_id: Uuid,
@@ -63,8 +65,8 @@ pub fn stock_total(lotes: &[LoteFefo]) -> Decimal {
     lotes.iter().map(|l| l.cantidad).sum()
 }
 
-/// Aplica un consumo/salida FEFO: resta stock, inserta movimientos.
-/// Retorna los movimientos generados (lote_id, cantidad consumida).
+/// Aplica un consumo/salida FEFO: inserta movimientos.
+/// La tabla 'stock' y 'cantidad_resultante' se actualizan vía Trigger.
 #[allow(clippy::too_many_arguments)]
 pub async fn aplicar_salida_fefo(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -87,20 +89,9 @@ pub async fn aplicar_salida_fefo(
         let consumir = restante.min(lote.cantidad);
         restante -= consumir;
 
-        // UPDATE stock
-        sqlx::query(
-            "UPDATE stock SET cantidad = cantidad - $1, updated_at = NOW() WHERE id = $2",
-        )
-        .bind(consumir)
-        .bind(lote.stock_id)
-        .execute(&mut **tx)
-        .await?;
-
-        // INSERT movimiento con cantidad_resultante calculada en SQL
         let mov = sqlx::query_as::<_, MovimientoGenerado>(
-            r#"INSERT INTO movimientos (grupo_movimiento, lote_id, area_id, tipo, cantidad, cantidad_resultante, usuario_id, origen, nota)
-               SELECT $1, $2, $3, $4, $5, s.cantidad, $6, $7, $8
-               FROM stock s WHERE s.id = $9
+            r#"INSERT INTO movimientos (grupo_movimiento, lote_id, area_id, tipo, cantidad, usuario_id, origen, nota)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                RETURNING id, numero_documento, cantidad, cantidad_resultante"#,
         )
         .bind(grupo_movimiento)
@@ -111,7 +102,6 @@ pub async fn aplicar_salida_fefo(
         .bind(usuario_id)
         .bind(origen)
         .bind(nota)
-        .bind(lote.stock_id)
         .fetch_one(&mut **tx)
         .await?;
 
@@ -121,7 +111,7 @@ pub async fn aplicar_salida_fefo(
     Ok(movimientos)
 }
 
-/// Aplica un ingreso: upsert stock, inserta movimiento.
+/// Aplica un ingreso: inserta movimiento.
 #[allow(clippy::too_many_arguments)]
 pub async fn aplicar_ingreso(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -134,24 +124,9 @@ pub async fn aplicar_ingreso(
     nota: Option<&str>,
     origen: Option<&str>,
 ) -> Result<MovimientoGenerado, AppError> {
-    // UPSERT stock
-    sqlx::query(
-        r#"INSERT INTO stock (lote_id, area_id, cantidad)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (lote_id, area_id)
-           DO UPDATE SET cantidad = stock.cantidad + $3, updated_at = NOW()"#,
-    )
-    .bind(lote_id)
-    .bind(area_id)
-    .bind(cantidad)
-    .execute(&mut **tx)
-    .await?;
-
-    // INSERT movimiento
     let mov = sqlx::query_as::<_, MovimientoGenerado>(
-        r#"INSERT INTO movimientos (grupo_movimiento, lote_id, area_id, tipo, cantidad, cantidad_resultante, usuario_id, origen, nota)
-           SELECT $1, $2, $3, $4, $5, s.cantidad, $6, $7, $8
-           FROM stock s WHERE s.lote_id = $2 AND s.area_id = $3
+        r#"INSERT INTO movimientos (grupo_movimiento, lote_id, area_id, tipo, cantidad, usuario_id, origen, nota)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING id, numero_documento, cantidad, cantidad_resultante"#,
     )
     .bind(grupo_movimiento)
@@ -168,13 +143,14 @@ pub async fn aplicar_ingreso(
     Ok(mov)
 }
 
-#[derive(Debug, serde::Serialize, sqlx::FromRow)]
+#[derive(Debug, serde::Serialize, sqlx::FromRow, Type)]
 pub struct MovimientoGenerado {
-    pub id: Uuid,
+    pub id: i32,
     pub numero_documento: String,
     pub cantidad: Decimal,
     pub cantidad_resultante: Decimal,
 }
+
 
 /// Valida que el usuario tiene acceso al área
 pub async fn validar_acceso_area(
@@ -183,7 +159,6 @@ pub async fn validar_acceso_area(
     area_id: i32,
     rol: &str,
 ) -> Result<(), AppError> {
-    // Admin tiene acceso a todas las áreas
     if rol == "admin" {
         return Ok(());
     }

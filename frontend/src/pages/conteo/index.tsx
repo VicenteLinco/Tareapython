@@ -19,8 +19,10 @@ interface AreaUrgencia {
 }
 
 function getAreaUrgencia(area: { conteo_frecuencia_dias: number }, pendiente: { dias_desde_ultimo: number | null } | undefined, periodoMax: number): AreaUrgencia {
+  // Si el área no aparece en la lista de pendientes, fue contada recientemente y está al día
+  if (pendiente === undefined) return { pct: 0, color: 'success', label: 'Al día' }
   const periodo = area.conteo_frecuencia_dias > 0 ? area.conteo_frecuencia_dias : periodoMax
-  const dias = pendiente?.dias_desde_ultimo ?? null
+  const dias = pendiente.dias_desde_ultimo
   if (dias === null) return { pct: 100, color: 'error', label: 'Nunca contada' }
   const pct = Math.min((dias / periodo) * 100, 120)
   if (pct >= 100) return { pct, color: 'error', label: `${Math.round(dias)}d · límite ${periodo}d` }

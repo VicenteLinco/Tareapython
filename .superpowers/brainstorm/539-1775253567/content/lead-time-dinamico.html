@@ -1,0 +1,64 @@
+<h2>Urgencia dinámica según tiempo de entrega</h2>
+<p class="subtitle">En lugar de umbrales fijos (7 días = crítico), los niveles se calculan relativos al lead time de cada proveedor.</p>
+
+<div class="section">
+  <h3>❌ El problema actual: umbrales fijos</h3>
+  <div class="split" style="gap:16px; margin-top:8px">
+    <div style="padding:14px; border:2px solid #fca5a5; border-radius:12px; background:#fff5f5">
+      <div class="label" style="color:#dc2626">Proveedor rápido (5 días)</div>
+      <p style="font-size:12px; margin:8px 0">Stock: 8 días de autonomía<br>→ Sistema dice: <strong style="color:#d97706">🟡 Urgente</strong><br>→ Realidad: tienes 3 días de margen, <strong>estás bien</strong></p>
+    </div>
+    <div style="padding:14px; border:2px solid #fca5a5; border-radius:12px; background:#fff5f5">
+      <div class="label" style="color:#dc2626">Proveedor lento (20 días)</div>
+      <p style="font-size:12px; margin:8px 0">Stock: 8 días de autonomía<br>→ Sistema dice: <strong style="color:#d97706">🟡 Urgente</strong><br>→ Realidad: llegas a cero antes de que llegue el pedido, <strong>es crítico</strong></p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>✅ La solución: umbrales relativos al lead time</h3>
+  <div style="padding:16px; background:#f0fdf4; border:1px solid #86efac; border-radius:12px; font-size:12px; margin-top:8px">
+    <p style="margin:0 0 10px"><strong>Fórmula:</strong></p>
+    <div style="font-family:monospace; background:#fff; padding:10px; border-radius:8px; line-height:2">
+      🔴 Crítico &nbsp;&nbsp;= autonomía &lt; <strong>lead_time × 1.0</strong> &nbsp; (llegás a cero antes del pedido)<br>
+      🟡 Urgente &nbsp;&nbsp;= autonomía &lt; <strong>lead_time × 1.5</strong> &nbsp; (margen menor a medio ciclo)<br>
+      🟢 Planificar = autonomía &lt; <strong>lead_time × 2.5</strong> &nbsp; (necesitás pedir en este ciclo)
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Resultado con la nueva fórmula</h3>
+  <div class="split" style="gap:16px; margin-top:8px">
+    <div style="padding:14px; border:2px solid #86efac; border-radius:12px; background:#f0fdf4">
+      <div class="label" style="color:#16a34a">Proveedor rápido (5 días)</div>
+      <p style="font-size:12px; margin:8px 0">Stock: 8 días<br>Lead: 5d → Umbral urgente: 7.5d<br>→ Sistema dice: <strong style="color:#16a34a">🟢 Planificar</strong> ✓</p>
+    </div>
+    <div style="padding:14px; border:2px solid #86efac; border-radius:12px; background:#f0fdf4">
+      <div class="label" style="color:#16a34a">Proveedor lento (20 días)</div>
+      <p style="font-size:12px; margin:8px 0">Stock: 8 días<br>Lead: 20d → Umbral crítico: 20d<br>→ Sistema dice: <strong style="color:#dc2626">🔴 Crítico</strong> ✓</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3 style="margin-bottom:8px">¿Dónde se configura el lead time?</h3>
+  <div class="options" style="margin-top:0">
+    <div class="option" data-choice="prov" onclick="toggleSelect(this)">
+      <div class="letter">1</div>
+      <div class="content">
+        <h3>En el proveedor (ya existe <code>dias_despacho</code>)</h3>
+        <p>Un solo valor por proveedor. Simple. Si el proveedor es siempre igual de rápido, es suficiente.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="prod-prov" onclick="toggleSelect(this)">
+      <div class="letter">2</div>
+      <div class="content">
+        <h3>Por producto × proveedor</h3>
+        <p>Algunos insumos llegan en 5 días, otros (importados) del mismo proveedor tardan 30. Más preciso, más complejo de mantener.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle">💡 Recomendación: usar <strong>opción 1</strong> (lead time por proveedor, ya existe en tu BD) con los multiplicadores dinámicos. Puedes subir a opción 2 después si lo necesitas.</p>

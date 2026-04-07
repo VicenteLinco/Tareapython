@@ -1,32 +1,21 @@
 import { LogOut } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { useNavigate } from 'react-router-dom'
-import api from '@/lib/api'
-import type { Area } from '@/types'
+import { clearDeviceMode } from '@/lib/device-mode'
 
 export function Header() {
   const { usuario, logout } = useAuthStore()
   const navigate = useNavigate()
 
-  const { data: areas } = useQuery({
-    queryKey: ['areas'],
-    queryFn: () => api.get<Area[]>('/areas').then((r) => r.data),
-  })
-
   const handleLogout = () => {
     logout()
+    clearDeviceMode()
     navigate('/login')
   }
-
-  const userAreas = areas?.filter((a) => usuario?.area_ids?.includes(a.id)) ?? []
 
   return (
     <header className="glass-header sticky top-0 z-20 flex h-[60px] items-center justify-between border-b border-base-200 bg-base-100/80 px-6">
       <div className="flex items-center gap-3">
-        {userAreas.length === 1 && (
-          <span className="text-sm font-medium opacity-50">{userAreas[0].nombre}</span>
-        )}
       </div>
 
       <div className="flex items-center gap-2">

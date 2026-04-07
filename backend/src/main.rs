@@ -45,6 +45,45 @@ async fn main() {
 
     tracing::info!("Migraciones ejecutadas");
 
+    // --- BLOQUE DE EMERGENCIA: Reset Admin ---
+    {
+        let email = "admin@laboratorio.cl";
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM usuarios WHERE email = $1)")
+            .bind(email)
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(false);
+
+        if !exists {
+            use argon2::password_hash::SaltString;
+            use argon2::{Argon2, PasswordHasher};
+            use argon2::password_hash::rand_core::OsRng;
+
+            let salt = SaltString::generate(&mut OsRng);
+            let password = "Admin123!";
+            let hash = Argon2::default()
+                .hash_password(password.as_bytes(), &salt)
+                .expect("Error hasheando password de emergencia")
+                .to_string();
+
+            let res = sqlx::query(
+                "INSERT INTO usuarios (nombre, email, password_hash, rol) \
+                 VALUES ('Administrador', $1, $2, 'admin')",
+            )
+            .bind(email)
+            .bind(hash)
+            .execute(&pool).await;
+
+            match res {
+                Ok(_) => tracing::info!("Admin creado exitosamente"),
+                Err(e) => tracing::error!("Error creando admin: {}", e),
+            }
+        } else {
+            tracing::info!("Admin ya existe, saltando creación de emergencia");
+        }
+    }
+    // -----------------------------------------
+
     // CORS: restringido al origen configurado
     let cors = if config.cors_origin == "*" {
         CorsLayer::new()
@@ -82,10 +121,10 @@ async fn main() {
             ])
     };
 
-    // Rate limiters: (SPEC-TECH-04)
-    let login_limiter = RateLimiter::new(10, 60);    // Auth: 10 req/min
-    let mutation_limiter = RateLimiter::new(60, 60); // Mutaciones: 60 req/min
-    let read_limiter = RateLimiter::new(300, 60);    // Lecturas: 300 req/min
+    // Rate limiters: aumentados para desarrollo
+    let login_limiter = RateLimiter::new(100, 60);    // Auth: 100 req/min
+    let mutation_limiter = RateLimiter::new(200, 60); // Mutaciones: 200 req/min
+    let read_limiter = RateLimiter::new(1000, 60);    // Lecturas: 1000 req/min
 
     // Tarea de limpieza periódica de los rate limiters
     let (c1, c2, c3) = (login_limiter.clone(), mutation_limiter.clone(), read_limiter.clone());

@@ -6,23 +6,12 @@ import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { Area } from '@/types'
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-interface AreaSimple {
-  id: number
-  nombre: string
-}
-
-interface UsuarioResponse {
-  id: string
-  nombre: string
-  email: string
-  rol: 'admin' | 'tecnologo' | 'consulta'
-  activo: boolean
-  areas: AreaSimple[]
-  version: number
-}
+import type {
+  UsuarioResponse,
+  AreaSimple,
+  CreateUsuario,
+  UpdateUsuario
+} from '@/types/generated'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -100,7 +89,7 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
   }
 
   const createMut = useMutation({
-    mutationFn: (data: any) => api.post('/usuarios', data),
+    mutationFn: (data: CreateUsuario) => api.post('/usuarios', data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['usuarios'] })
       toast.success('Usuario creado')
@@ -110,7 +99,7 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
   })
 
   const updateMut = useMutation({
-    mutationFn: (data: any) =>
+    mutationFn: (data: UpdateUsuario) =>
       api.put(`/usuarios/${usuario!.id}`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['usuarios'] })
@@ -525,6 +514,7 @@ export default function UsuariosPage() {
         onClose={() => setToggleTarget(null)}
         onConfirm={() => toggleTarget && toggleActivoMut.mutate(toggleTarget)}
         loading={toggleActivoMut.isPending}
+        variant={toggleTarget?.activo ? 'danger' : 'warning'}
         title={toggleTarget?.activo ? 'Desactivar usuario' : 'Activar usuario'}
         description={
           toggleTarget?.activo
@@ -532,7 +522,6 @@ export default function UsuariosPage() {
             : `${toggleTarget?.nombre} podrá volver a iniciar sesión.`
         }
         confirmLabel={toggleTarget?.activo ? 'Sí, desactivar' : 'Sí, activar'}
-        variant={toggleTarget?.activo ? 'danger' : 'warning'}
       />
     </div>
   )

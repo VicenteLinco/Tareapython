@@ -1,7 +1,8 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use validator::Validate;
+use specta::Type;
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Serialize, Validate, Type)]
 pub struct CreateProveedor {
     #[validate(length(min = 1, max = 200, message = "El nombre debe tener entre 1 y 200 caracteres"))]
     pub nombre: String,
@@ -18,7 +19,7 @@ pub struct CreateProveedor {
     pub dias_despacho_tierra: Option<i32>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Serialize, Validate, Type)]
 pub struct UpdateProveedor {
     #[validate(length(min = 1, max = 200, message = "El nombre debe tener entre 1 y 200 caracteres"))]
     pub nombre: Option<String>,
@@ -34,4 +35,10 @@ pub struct UpdateProveedor {
     #[validate(range(min = 0, message = "Los días de despacho no pueden ser negativos"))]
     pub dias_despacho_tierra: Option<i32>,
     pub version: i32,
+}
+
+#[derive(Debug, Deserialize, Type)]
+pub struct ProveedorQuery {
+    pub q: Option<String>,
+    pub activo: Option<bool>,
 }

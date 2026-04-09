@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Plus, Check } from 'lucide-react'
 import { cn, formatCantidad } from '@/lib/utils'
 import { ProductoImage } from '@/components/ui/producto-image'
@@ -25,16 +25,17 @@ export interface CartItem {
 interface ProductoCardProps {
   producto: StockItem
   isEnCarrito: boolean
-  areaFiltro: number | null
   onAdd: () => void
 }
 
-export function ProductoCard({ producto, isEnCarrito, areaFiltro: _areaFiltro, onAdd }: ProductoCardProps) {
+export function ProductoCard({ producto, isEnCarrito, onAdd }: ProductoCardProps) {
   const [flash, setFlash] = useState(false)
+  const didMountRef = useRef(false)
   const sinStock = (producto.stock_total ?? 0) <= 0
 
-  // Flash verde breve al agregar
+  // Flash verde breve al agregar (skip en initial mount)
   useEffect(() => {
+    if (!didMountRef.current) { didMountRef.current = true; return }
     if (isEnCarrito) {
       setFlash(true)
       const t = setTimeout(() => setFlash(false), 600)

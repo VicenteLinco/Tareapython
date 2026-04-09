@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ChevronDown, Sparkles } from 'lucide-react'
-import { cn, formatCantidad } from '@/lib/utils'
+import { cn, formatCantidad, formatDate } from '@/lib/utils'
 
 export interface LoteDisponible {
   lote_id: string
@@ -34,6 +34,8 @@ export function LoteSelector({ lotes, loteElegidoId, unidad, unidad_plural, onCh
         type="button"
         className="flex items-center gap-1 text-[11px] text-base-content/50 hover:text-base-content/80 transition-colors"
         onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false) }}
       >
         {!loteActual && <Sparkles className="h-3 w-3 text-success" />}
         <span className="font-medium">{label}</span>
@@ -72,7 +74,7 @@ export function LoteSelector({ lotes, loteElegidoId, unidad, unidad_plural, onCh
               >
                 <div className="flex-1">
                   <div className="font-mono">{l.numero_lote}</div>
-                  <div className="text-base-content/40 font-normal">{stockLabel} · vence {l.fecha_vencimiento.slice(0, 10)}</div>
+                  <div className="text-base-content/40 font-normal">{stockLabel} · vence {formatDate(l.fecha_vencimiento)}</div>
                 </div>
               </button>
             )

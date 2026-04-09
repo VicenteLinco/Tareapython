@@ -29,7 +29,7 @@ interface ProductoCardProps {
   onAdd: () => void
 }
 
-export function ProductoCard({ producto, isEnCarrito, onAdd }: ProductoCardProps) {
+export function ProductoCard({ producto, isEnCarrito, areaFiltro: _areaFiltro, onAdd }: ProductoCardProps) {
   const [flash, setFlash] = useState(false)
   const sinStock = (producto.stock_total ?? 0) <= 0
 

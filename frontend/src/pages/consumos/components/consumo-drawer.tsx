@@ -52,21 +52,21 @@ export function ConsumoDrawer({
         )}
       >
         {/* Handle / barra colapsada */}
-        <button
-          className="w-full flex items-center justify-between px-4 py-3 gap-3"
-          onClick={onToggle}
-          aria-label={isExpanded ? 'Colapsar' : 'Ver consumo a registrar'}
-        >
-          <div className="flex items-center gap-2">
+        <div className="w-full flex items-center justify-between px-4 py-3 gap-3">
+          <button
+            className="flex items-center gap-2 flex-1 text-left min-w-0"
+            onClick={onToggle}
+            aria-label={isExpanded ? 'Colapsar' : 'Ver consumo a registrar'}
+          >
             <ChevronDown className={cn('h-4 w-4 text-base-content/40 transition-transform duration-300', !isExpanded && 'rotate-180')} />
             <span className="font-bold text-sm">
               {isExpanded ? 'Consumo a registrar' : `${count} ${count === 1 ? 'item' : 'items'} agregado${count === 1 ? '' : 's'}`}
             </span>
-          </div>
+          </button>
           {!isExpanded && (
             <button
               type="button"
-              className="btn btn-primary btn-sm rounded-xl gap-1"
+              className="btn btn-primary btn-sm rounded-xl gap-1 flex-shrink-0"
               onClick={e => { e.stopPropagation(); onConfirm() }}
               disabled={isPending}
             >
@@ -76,7 +76,7 @@ export function ConsumoDrawer({
               }
             </button>
           )}
-        </button>
+        </div>
 
         {/* Contenido expandido */}
         {isExpanded && (
@@ -108,6 +108,7 @@ export function ConsumoDrawer({
                     <button
                       className="btn btn-ghost btn-xs btn-circle text-error flex-shrink-0"
                       onClick={() => onRemove(item.producto_id)}
+                      aria-label={`Quitar ${item.nombre}`}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -127,6 +128,7 @@ export function ConsumoDrawer({
                     <button
                       className="btn btn-ghost btn-xs btn-circle"
                       onClick={() => onUpdateCantidad(item.producto_id, Math.max(1, item.cantidad_descontar - 1))}
+                      aria-label={`Disminuir cantidad de ${item.nombre}`}
                     >
                       <Minus className="h-3 w-3" />
                     </button>
@@ -140,6 +142,7 @@ export function ConsumoDrawer({
                     <button
                       className="btn btn-ghost btn-xs btn-circle"
                       onClick={() => onUpdateCantidad(item.producto_id, item.cantidad_descontar + 1)}
+                      aria-label={`Aumentar cantidad de ${item.nombre}`}
                     >
                       <Plus className="h-3 w-3" />
                     </button>
@@ -158,6 +161,7 @@ export function ConsumoDrawer({
                 placeholder="Nota (opcional)..."
                 value={notas}
                 onChange={e => onNotasChange(e.target.value)}
+                aria-label="Nota del consumo"
               />
               <button
                 className="btn btn-primary w-full rounded-xl gap-2"

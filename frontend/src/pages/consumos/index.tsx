@@ -69,7 +69,7 @@ export default function ConsumosPage() {
   })
 
   // Productos a mostrar: si hay búsqueda → resultados; si no → recientes (si hay) o vacío
-  const recentIds = getRecentIds(userId)
+  const [recentIds, setRecentIds] = useState(() => getRecentIds(userId))
   const allProducts = stockResponse?.data ?? []
   const productsToShow: StockItem[] = (() => {
     if (searchQuery.length >= 2) return allProducts
@@ -146,7 +146,7 @@ export default function ConsumosPage() {
 
   // ── Escaneo (QR + HID comparten esta función) ──────────────────────────────
 
-  const handleScanCode = async (code: string) => {
+  const handleScanCode = useCallback(async (code: string) => {
     try {
       const res = await api.get<PaginatedResponse<StockItem>>('/stock', {
         params: { q: code, ...(areaFiltro && { area_id: areaFiltro }) }
@@ -156,7 +156,7 @@ export default function ConsumosPage() {
       addToCart(items[0])
       setIsScannerOpen(false)
     } catch { toast.error('Error al escanear') }
-  }
+  }, [areaFiltro, addToCart])
 
   // ── Mutation batch ─────────────────────────────────────────────────────────
 
@@ -165,6 +165,7 @@ export default function ConsumosPage() {
       api.post('/consumos/batch', data, { headers: { 'X-Idempotency-Key': uuidv4() } }),
     onSuccess: () => {
       pushRecentIds(userId, Object.keys(cart))
+      setRecentIds(getRecentIds(userId))
       queryClient.invalidateQueries({ queryKey: ['stock'] })
       queryClient.invalidateQueries({ queryKey: ['stock-list'] })
       setCart({})
@@ -193,10 +194,10 @@ export default function ConsumosPage() {
   // ── Helpers carrito ────────────────────────────────────────────────────────
 
   const updateCantidad = (id: string, cantidad: number) =>
-    setCart(prev => ({ ...prev, [id]: { ...prev[id], cantidad_descontar: cantidad } }))
+    setCart(prev => prev[id] ? { ...prev, [id]: { ...prev[id], cantidad_descontar: cantidad } } : prev)
 
   const updateLote = (id: string, loteId: string | null) =>
-    setCart(prev => ({ ...prev, [id]: { ...prev[id], lote_elegido_id: loteId } }))
+    setCart(prev => prev[id] ? { ...prev, [id]: { ...prev[id], lote_elegido_id: loteId } } : prev)
 
   const removeItem = (id: string) =>
     setCart(prev => { const n = { ...prev }; delete n[id]; return n })

@@ -1,7 +1,6 @@
 use axum::extract::{Path, State, Query};
 use axum::{Json, Router, Extension};
 use axum::routing::{get, post};
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
@@ -124,6 +123,7 @@ async fn crear(
     Extension(claims): Extension<Claims>,
     Json(payload): Json<UpdateSolicitudRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    // Si ya existe un borrador para este usuario, actualizarlo en lugar de crear uno nuevo
     let borrador_existente: Option<Uuid> = sqlx::query_scalar(
         "SELECT id FROM solicitudes_compra
          WHERE usuario_id = $1 AND estado = 'borrador'
@@ -134,10 +134,21 @@ async fn crear(
     .await?;
 
     if let Some(id) = borrador_existente {
-        return Err(AppError::BusinessLogic(
-            format!("Ya existe un borrador activo: {}", id),
-            "BORRADOR_EXISTENTE".into(),
-        ));
+        let mut tx = state.pool.begin().await?;
+        sqlx::query("DELETE FROM solicitud_compra_detalle WHERE solicitud_id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("UPDATE solicitudes_compra SET nota = $1 WHERE id = $2")
+            .bind(&payload.nota)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        for item in &payload.items {
+            insertar_item(&mut tx, id, item).await?;
+        }
+        tx.commit().await?;
+        return Ok(Json(serde_json::json!({ "id": id })));
     }
 
     let mut tx = state.pool.begin().await?;
@@ -386,43 +397,6 @@ pub async fn recomendaciones(
     Ok(Json(serde_json::json!({ "data": items })))
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
-pub struct EnCaminoItem {
-    pub producto_id: Uuid,
-    pub producto_nombre: String,
-    pub cantidad_total: Decimal,
-    pub unidad: String,
-    pub proveedor_nombre: Option<String>,
-    pub numero_documento: String,
-    pub fecha_creacion: DateTime<Utc>,
-    pub estado: String,
-}
-
-async fn en_camino(
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    let items = sqlx::query_as::<_, EnCaminoItem>(
-        r#"SELECT
-            d.producto_id,
-            p.nombre as producto_nombre,
-            d.cantidad_sugerida as cantidad_total,
-            d.unidad,
-            prov.nombre as proveedor_nombre,
-            s.numero_documento,
-            s.fecha_creacion,
-            s.estado
-           FROM solicitud_compra_detalle d
-           JOIN solicitudes_compra s ON s.id = d.solicitud_id
-           JOIN productos p ON p.id = d.producto_id
-           LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
-           WHERE s.estado IN ('aprobada', 'enviada')
-           ORDER BY s.fecha_creacion DESC, p.nombre"#
-    )
-    .fetch_all(&state.pool)
-    .await?;
-    Ok(Json(serde_json::json!({ "data": items })))
-}
-
 async fn obtener(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -431,33 +405,86 @@ async fn obtener(
 }
 
 async fn actualizar(
-    State(_state): State<AppState>,
-    Path(_id): Path<Uuid>,
-    Json(_req): Json<UpdateSolicitudRequest>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateSolicitudRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    // TODO
-    Ok(Json(serde_json::json!({ "ok": true })))
-}
+    let exists: Option<String> = sqlx::query_scalar(
+        "SELECT estado FROM solicitudes_compra WHERE id = $1"
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
 
-async fn revisar(
-    State(_state): State<AppState>,
-    Path(_id): Path<Uuid>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    // TODO
-    Ok(Json(serde_json::json!({ "ok": true })))
+    match exists.as_deref() {
+        None => return Err(AppError::NotFound("Solicitud no encontrada".into())),
+        Some("borrador") => {}
+        Some(_) => return Err(AppError::BusinessLogic(
+            "Solo se puede editar una solicitud en borrador".into(),
+            "ESTADO_INVALIDO".into(),
+        )),
+    }
+
+    let mut tx = state.pool.begin().await?;
+
+    sqlx::query("DELETE FROM solicitud_compra_detalle WHERE solicitud_id = $1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("UPDATE solicitudes_compra SET nota = $1 WHERE id = $2")
+        .bind(&req.nota)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+    for item in &req.items {
+        insertar_item(&mut tx, id, item).await?;
+    }
+
+    tx.commit().await?;
+    Ok(Json(serde_json::json!({ "id": id })))
 }
 
 async fn enviar(
-    State(_state): State<AppState>,
-    Path(_id): Path<Uuid>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    // TODO
+    let rows = sqlx::query(
+        "UPDATE solicitudes_compra SET estado = 'aprobada' WHERE id = $1 AND estado = 'borrador'"
+    )
+    .bind(id)
+    .execute(&state.pool)
+    .await?;
+
+    if rows.rows_affected() == 0 {
+        return Err(AppError::BusinessLogic(
+            "Solo se puede generar una solicitud en borrador".into(),
+            "ESTADO_INVALIDO".into(),
+        ));
+    }
+
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-async fn get_borrador() -> Result<Json<serde_json::Value>, AppError> {
-    // TODO
-    Ok(Json(serde_json::json!({ "borrador": null })))
+async fn get_borrador(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let borrador_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM solicitudes_compra WHERE usuario_id = $1 AND estado = 'borrador' LIMIT 1"
+    )
+    .bind(claims.sub)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    match borrador_id {
+        None => Ok(Json(serde_json::json!({ "borrador": null }))),
+        Some(id) => {
+            let detalle = obtener_solicitud_por_id(id, &state.pool).await?;
+            Ok(Json(serde_json::json!({ "borrador": detalle })))
+        }
+    }
 }
 
 pub fn routes() -> Router<AppState> {
@@ -465,8 +492,6 @@ pub fn routes() -> Router<AppState> {
         .route("/", get(listar).post(crear))
         .route("/borrador", get(get_borrador))
         .route("/recomendaciones", get(recomendaciones))
-        .route("/en-camino", get(en_camino))
         .route("/{id}", get(obtener).put(actualizar))
-        .route("/{id}/revisar", post(revisar))
         .route("/{id}/enviar", post(enviar))
 }

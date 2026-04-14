@@ -110,40 +110,6 @@ async fn subir_foto(
     Ok(Json(serde_json::json!({ "path": path })))
 }
 
-#[derive(Debug, Deserialize)]
-struct ReconciliarInput {
-    item_ids: Vec<Uuid>,
-}
-
-async fn reconciliar_en_camino(
-    State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
-    Path(recepcion_id): Path<Uuid>,
-    Json(body): Json<ReconciliarInput>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
-
-    let exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM recepciones WHERE id = $1)"
-    )
-    .bind(recepcion_id)
-    .fetch_one(&state.pool)
-    .await?;
-    if !exists { return Err(AppError::NotFound("Recepción no encontrada".into())); }
-
-    for item_id in &body.item_ids {
-        sqlx::query(
-            "UPDATE solicitud_items SET estado = 'recibido', recepcion_id = $1 WHERE id = $2"
-        )
-        .bind(recepcion_id)
-        .bind(item_id)
-        .execute(&state.pool)
-        .await?;
-    }
-
-    Ok(Json(serde_json::json!({ "reconciliados": body.item_ids.len() })))
-}
-
 async fn crear_scanner_session(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -241,5 +207,4 @@ pub fn routes() -> Router<AppState> {
         .route("/scanner-session", post(crear_scanner_session))
         .route("/scanner-session/{token}/scan", post(scan_codigo))
         .route("/scanner-session/{token}/items", get(get_scanner_items))
-        .route("/{id}/reconciliar", post(reconciliar_en_camino))
 }

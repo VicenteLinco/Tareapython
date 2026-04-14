@@ -19,6 +19,8 @@ struct ConfiguracionResponse {
     moneda_codigo: String,
     moneda_simbolo: String,
     conteo_periodo_dias: i32,
+    ventana_consumo_dias: i32,
+    periodo_revision_dias: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,7 +49,8 @@ async fn obtener(
         "SELECT clave, valor_texto FROM configuracion WHERE clave IN (
             'nombre_laboratorio','logo_base64','pin_kiosko','conteo_ciego',
             'dias_autonomia_objetivo','lead_time_default',
-            'moneda_codigo','moneda_simbolo','conteo_periodo_dias'
+            'moneda_codigo','moneda_simbolo','conteo_periodo_dias',
+            'ventana_consumo_dias','periodo_revision_dias'
         )",
     )
     .fetch_all(&state.pool)
@@ -62,6 +65,8 @@ async fn obtener(
     let mut moneda_codigo = "CLP".to_string();
     let mut moneda_simbolo = "$".to_string();
     let mut conteo_periodo_dias = 30;
+    let mut ventana_consumo_dias = 30;
+    let mut periodo_revision_dias = 30;
 
     for (clave, valor) in rows {
         match clave.as_str() {
@@ -74,6 +79,8 @@ async fn obtener(
             "moneda_codigo" => moneda_codigo = valor,
             "moneda_simbolo" => moneda_simbolo = valor,
             "conteo_periodo_dias" => conteo_periodo_dias = valor.parse().unwrap_or(30),
+            "ventana_consumo_dias" => ventana_consumo_dias = valor.parse().unwrap_or(30),
+            "periodo_revision_dias" => periodo_revision_dias = valor.parse().unwrap_or(30),
             _ => {}
         }
     }
@@ -88,6 +95,8 @@ async fn obtener(
         moneda_codigo,
         moneda_simbolo,
         conteo_periodo_dias,
+        ventana_consumo_dias,
+        periodo_revision_dias,
     }))
 }
 

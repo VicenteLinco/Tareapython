@@ -78,10 +78,40 @@ export function daysUntil(date: string | Date | null | undefined): number | null
   return Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
 }
 
-/** Plural automático para español: vocal final → +s, consonante → +es. */
+const PLURAL_EXCEPTIONS: Record<string, string> = {
+  kit: 'kits',
+  test: 'tests',
+  set: 'sets',
+  film: 'films',
+  strip: 'strips',
+  scan: 'scans',
+  gel: 'geles',
+  vial: 'viales',
+  panel: 'paneles',
+}
+
+/**
+ * Plural automático para español.
+ * Reglas (en orden de prioridad):
+ * 1. Lista explícita de excepciones para préstamos del inglés comunes en labs
+ * 2. Vocal final → +s (tira → tiras)
+ * 3. Terminada en 'z' → quitar z, +ces (lápiz → lápices)
+ * 4. Terminada en 's' o 'x' → invariable (tórax → tórax)
+ * 5. Vocal + consonante final → +s (kit→kits, gel no cabe aquí pero es excepción)
+ * 6. Default → +es
+ */
 export function autoPlural(s: string): string {
-  const last = s.slice(-1).toLowerCase()
-  return 'aeiouáéíóú'.includes(last) ? s + 's' : s + 'es'
+  if (!s) return s
+  const lower = s.toLowerCase()
+  if (PLURAL_EXCEPTIONS[lower]) return PLURAL_EXCEPTIONS[lower]
+  const last = lower.slice(-1)
+  if ('aeiouáéíóú'.includes(last)) return s + 's'
+  if (last === 'z') return s.slice(0, -1) + 'ces'
+  if (last === 's' || last === 'x') return s
+  // Vocal + consonante final (loanwords tipo kit, test) → +s
+  const secondLast = lower.slice(-2, -1)
+  if ('aeiouáéíóú'.includes(secondLast)) return s + 's'
+  return s + 'es'
 }
 
 /**

@@ -55,7 +55,6 @@ pub struct SolicitudResumen {
     pub estado: String,
     pub usuario_nombre: String,
     pub items_count: i32, // Cambiado de i64 a i32
-    pub nota_revision: Option<String>,
 }
 
 #[derive(Debug, Serialize, Type)]
@@ -66,9 +65,6 @@ pub struct SolicitudDetalle {
     pub estado: String,
     pub usuario_nombre: String,
     pub nota: Option<String>,
-    pub nota_revision: Option<String>,
-    pub fecha_revision: Option<DateTime<Utc>>,
-    pub revisado_por_nombre: Option<String>,
     pub items: Vec<SolicitudDetalleItem>,
 }
 

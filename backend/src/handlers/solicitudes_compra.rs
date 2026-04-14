@@ -29,10 +29,7 @@ struct SolicitudDetalleRow {
     pub fecha_creacion: DateTime<Utc>,
     pub estado: String,
     pub nota: Option<String>,
-    pub nota_revision: Option<String>,
-    pub fecha_revision: Option<DateTime<Utc>>,
     pub usuario_nombre: String,
-    pub revisado_por_nombre: Option<String>,
 }
 
 async fn obtener_solicitud_por_id(
@@ -41,12 +38,9 @@ async fn obtener_solicitud_por_id(
 ) -> Result<SolicitudDetalle, AppError> {
     let solicitud = sqlx::query_as::<_, SolicitudDetalleRow>(
         r#"SELECT s.id, s.numero_documento, s.fecha_creacion, s.estado, s.nota,
-                  s.nota_revision, s.fecha_revision,
-                  u.nombre as usuario_nombre,
-                  ur.nombre as revisado_por_nombre
+                  u.nombre as usuario_nombre
            FROM solicitudes_compra s
            JOIN usuarios u ON u.id = s.usuario_id
-           LEFT JOIN usuarios ur ON ur.id = s.revisado_por
            WHERE s.id = $1"#
     )
     .bind(id)
@@ -88,9 +82,6 @@ async fn obtener_solicitud_por_id(
         estado: solicitud.estado,
         usuario_nombre: solicitud.usuario_nombre,
         nota: solicitud.nota,
-        nota_revision: solicitud.nota_revision,
-        fecha_revision: solicitud.fecha_revision,
-        revisado_por_nombre: solicitud.revisado_por_nombre,
         items,
     })
 }
@@ -213,8 +204,7 @@ async fn listar(
     let list_sql = format!(
         r#"SELECT s.id, s.numero_documento, s.fecha_creacion, s.estado,
                 u.nombre as usuario_nombre,
-                (SELECT COUNT(*)::integer FROM solicitud_compra_detalle WHERE solicitud_id = s.id) as items_count,
-                s.nota_revision
+                (SELECT COUNT(*)::integer FROM solicitud_compra_detalle WHERE solicitud_id = s.id) as items_count
            FROM solicitudes_compra s
            JOIN usuarios u ON u.id = s.usuario_id
            {} ORDER BY s.fecha_creacion DESC
@@ -446,12 +436,12 @@ async fn actualizar(
     Ok(Json(serde_json::json!({ "id": id })))
 }
 
-async fn enviar(
+async fn guardar(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let rows = sqlx::query(
-        "UPDATE solicitudes_compra SET estado = 'aprobada' WHERE id = $1 AND estado = 'borrador'"
+        "UPDATE solicitudes_compra SET estado = 'guardada' WHERE id = $1 AND estado = 'borrador'"
     )
     .bind(id)
     .execute(&state.pool)
@@ -459,7 +449,7 @@ async fn enviar(
 
     if rows.rows_affected() == 0 {
         return Err(AppError::BusinessLogic(
-            "Solo se puede generar una solicitud en borrador".into(),
+            "Solo se puede guardar una solicitud en borrador".into(),
             "ESTADO_INVALIDO".into(),
         ));
     }
@@ -493,5 +483,5 @@ pub fn routes() -> Router<AppState> {
         .route("/borrador", get(get_borrador))
         .route("/recomendaciones", get(recomendaciones))
         .route("/{id}", get(obtener).put(actualizar))
-        .route("/{id}/enviar", post(enviar))
+        .route("/{id}/guardar", post(guardar))
 }

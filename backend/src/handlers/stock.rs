@@ -431,7 +431,7 @@ async fn alertas(
                    SUM(cantidad_sugerida) as total_en_camino
                FROM solicitud_compra_detalle scd
                JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
-               WHERE sc.estado IN ('aprobada', 'enviada')
+               WHERE sc.estado = 'guardada'
                GROUP BY producto_id
            ),"#
     } else {

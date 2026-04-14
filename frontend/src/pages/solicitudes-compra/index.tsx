@@ -66,6 +66,13 @@ function formatPesos(val: number | string | null, monedaCodigo = 'CLP'): string 
   return new Intl.NumberFormat('es-CL', { style: 'currency', currency: monedaCodigo }).format(n)
 }
 
+function confianzaLabel(diasHistoria: number): { label: string; color: string } {
+  if (diasHistoria === 0)  return { label: 'Sin historial — revisa la cantidad', color: 'text-error' }
+  if (diasHistoria <= 30)  return { label: 'Estimación preliminar', color: 'text-warning' }
+  if (diasHistoria <= 90)  return { label: 'Estimación moderada', color: 'text-info' }
+  return { label: 'Estimación confiable', color: 'text-success' }
+}
+
 // ─── Proveedor Gallery ───────────────────────────────────────────────────────
 
 interface ProveedorCardProps {
@@ -346,9 +353,12 @@ export default function SolicitudesCompraPage() {
       toast.error('Producto ya está en la lista')
       return
     }
-    const qty = r.cantidad_sugerida_presentacion
+    const cantidadInicial = r.dias_historia === 0
+      ? parseFloat(r.stock_seguridad.toString()) * 2
+      : parseFloat(r.cantidad_sugerida_base.toString())
+    const qty = r.cantidad_sugerida_presentacion && r.dias_historia !== 0
       ? Math.ceil(parseFloat(r.cantidad_sugerida_presentacion))
-      : Math.ceil(parseFloat(r.cantidad_sugerida_base))
+      : Math.ceil(cantidadInicial)
 
     const newItem: SolicitudItem = {
       producto_id: r.producto_id,
@@ -660,6 +670,14 @@ export default function SolicitudesCompraPage() {
                               <span className="text-[10px] opacity-40 font-bold uppercase tracking-wider">
                                 Stock: {parseFloat(r.stock_actual)} / {parseFloat(r.stock_seguridad)}
                               </span>
+                              {(() => {
+                                const conf = confianzaLabel(r.dias_historia)
+                                return (
+                                  <span className={`block text-[10px] font-medium ${conf.color}`}>
+                                    {conf.label}
+                                  </span>
+                                )
+                              })()}
                             </div>
 
                             <div className="text-right flex-shrink-0">

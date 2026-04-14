@@ -16,8 +16,9 @@ pub struct ItemRecomendado {
     pub autonomia_dias: Option<f64>,
     pub nivel_urgencia: String,
     pub stock_actual: Decimal,
-    pub stock_minimo: Decimal,
-    pub consumo_diario_30d: Decimal,
+    pub stock_seguridad: Decimal,
+    pub consumo_diario: Decimal,
+    pub dias_historia: i32,
     pub cantidad_sugerida_base: Decimal,
     pub presentacion_id: Option<i32>,
     pub presentacion_nombre: Option<String>,
@@ -27,7 +28,6 @@ pub struct ItemRecomendado {
     pub precio_ultima_recepcion: Option<Decimal>,
     pub unidad_base: String,
     pub unidad_base_plural: Option<String>,
-    pub solicitudes_pendientes: i32, // Cambiado de i64 a i32 para compatibilidad con Specta TS
     pub imagen_url: Option<String>,
 }
 

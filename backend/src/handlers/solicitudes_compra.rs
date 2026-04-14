@@ -256,130 +256,146 @@ pub async fn recomendaciones(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let items = sqlx::query_as::<_, ItemRecomendado>(
-        r#"WITH consumo AS (
-            SELECT
-                l.producto_id,
-                (SUM(m.cantidad) / 30.0)::DECIMAL(15,4) AS consumo_diario_30d
-            FROM movimientos m
-            JOIN lotes l ON l.id = m.lote_id
-            WHERE m.tipo = 'CONSUMO'
-              AND m.created_at >= NOW() - INTERVAL '30 days'
-            GROUP BY l.producto_id
-        ),
-        stock_total AS (
-            SELECT producto_id, SUM(cantidad) AS stock_actual
-            FROM stock
-            GROUP BY producto_id
-        ),
-        ultimo_precio AS (
-            SELECT DISTINCT ON (rd.producto_id)
-                rd.producto_id,
-                rd.precio_unitario
-            FROM recepcion_detalle rd
-            JOIN recepciones r ON r.id = rd.recepcion_id
-            WHERE rd.precio_unitario IS NOT NULL
-              AND r.estado IN ('completa', 'parcial')
-            ORDER BY rd.producto_id, r.fecha_recepcion DESC
-        ),
-        pres AS (
-            SELECT DISTINCT ON (producto_id)
-                producto_id, id, nombre, nombre_plural, factor_conversion
-            FROM presentaciones
-            WHERE activa = true
-            ORDER BY producto_id, factor_conversion DESC
-        ),
-        pendientes AS (
-            SELECT scd.producto_id, COUNT(*)::i32 as count
-            FROM solicitud_compra_detalle scd
-            JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
-            WHERE sc.estado IN ('pendiente', 'aprobada', 'enviada')
-            GROUP BY scd.producto_id
-        ),
-        base AS (
-            SELECT
-                p.id                                                              AS producto_id,
-                p.nombre                                                          AS producto_nombre,
-                p.codigo_proveedor,
-                p.codigo_maestro,
-                prov.id                                                           AS proveedor_id,
-                prov.nombre                                                       AS proveedor_nombre,
-                COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)::INT
-                                                                                  AS lead_time,
-                CASE
-                    WHEN COALESCE(c.consumo_diario_30d, 0) > 0
-                    THEN (COALESCE(st.stock_actual, 0) / c.consumo_diario_30d)::FLOAT
-                    ELSE NULL
-                END                                                               AS autonomia_dias,
-                CASE
-                    WHEN COALESCE(c.consumo_diario_30d, 0) <= 0
-                         AND COALESCE(st.stock_actual, 0) < COALESCE(p.stock_minimo, 0)
-                        THEN 'critico'
-                    WHEN COALESCE(c.consumo_diario_30d, 0) > 0
-                         AND (COALESCE(st.stock_actual, 0) / c.consumo_diario_30d)
-                             < COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)
-                        THEN 'critico'
-                    WHEN COALESCE(c.consumo_diario_30d, 0) > 0
-                         AND (COALESCE(st.stock_actual, 0) / c.consumo_diario_30d)
-                             < COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7) * 1.5
-                        THEN 'urgente'
-                    WHEN COALESCE(c.consumo_diario_30d, 0) > 0
-                         AND (COALESCE(st.stock_actual, 0) / c.consumo_diario_30d)
-                             < COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7) * 2.5
-                        THEN 'planificar'
-                    ELSE NULL
-                END                                                               AS nivel_urgencia,
-                COALESCE(st.stock_actual, 0)                                      AS stock_actual,
-                COALESCE(p.stock_minimo, 0)                                       AS stock_minimo,
-                COALESCE(c.consumo_diario_30d, 0)                                 AS consumo_diario_30d,
-                GREATEST(0, CEIL(
-                    COALESCE(p.stock_minimo, 0) * 2
-                    + COALESCE(c.consumo_diario_30d, 0)
-                      * COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)
-                    - COALESCE(st.stock_actual, 0)
-                ))                                                                AS cantidad_sugerida_base,
-                pres.id                                                           AS presentacion_id,
-                pres.nombre                                                       AS presentacion_nombre,
-                pres.nombre_plural                                                AS presentacion_nombre_plural,
-                pres.factor_conversion,
-                CASE
-                    WHEN pres.factor_conversion IS NOT NULL AND pres.factor_conversion > 0
-                    THEN CEIL(
-                        GREATEST(0,
-                            COALESCE(p.stock_minimo, 0) * 2
-                            + COALESCE(c.consumo_diario_30d, 0)
-                              * COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)
-                            - COALESCE(st.stock_actual, 0)
-                        ) / pres.factor_conversion
+        r#"WITH
+cfg AS (
+    SELECT
+        COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'ventana_consumo_dias'), 30)  AS ventana_dias,
+        COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'periodo_revision_dias'), 30) AS revision_dias
+),
+consumo AS (
+    SELECT
+        l.producto_id,
+        (SUM(m.cantidad)::float
+            / GREATEST(DATE_PART('day', NOW() - MIN(m.created_at)), 1)
+        )::DECIMAL(15,6)                                              AS consumo_diario,
+        DATE_PART('day', NOW() - MIN(m.created_at))::INT              AS dias_historia
+    FROM movimientos m
+    JOIN lotes l ON l.id = m.lote_id
+    WHERE m.tipo = 'CONSUMO'
+      AND m.created_at >= NOW() - ((SELECT ventana_dias FROM cfg) * INTERVAL '1 day')
+    GROUP BY l.producto_id
+),
+stock_total AS (
+    SELECT producto_id, SUM(cantidad) AS stock_actual
+    FROM stock
+    GROUP BY producto_id
+),
+pedidos_en_vuelo AS (
+    SELECT
+        scd.producto_id,
+        SUM(scd.cantidad_sugerida) AS cantidad_pedida
+    FROM solicitud_compra_detalle scd
+    JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
+    JOIN productos p2 ON p2.id = scd.producto_id
+    LEFT JOIN proveedores prov2 ON prov2.id = p2.proveedor_id
+    WHERE sc.estado = 'guardada'
+      AND sc.fecha_creacion >= NOW() - (
+          COALESCE(prov2.dias_despacho_tierra, prov2.dias_despacho_aereo, 7)::int
+          * 2 * INTERVAL '1 day'
+      )
+    GROUP BY scd.producto_id
+),
+ultimo_precio AS (
+    SELECT DISTINCT ON (rd.producto_id)
+        rd.producto_id,
+        rd.precio_unitario
+    FROM recepcion_detalle rd
+    JOIN recepciones r ON r.id = rd.recepcion_id
+    WHERE rd.precio_unitario IS NOT NULL
+      AND r.estado IN ('completa', 'parcial')
+    ORDER BY rd.producto_id, r.fecha_recepcion DESC
+),
+pres AS (
+    SELECT DISTINCT ON (producto_id)
+        producto_id, id, nombre, nombre_plural, factor_conversion
+    FROM presentaciones
+    WHERE activa = true
+    ORDER BY producto_id, factor_conversion DESC
+),
+base AS (
+    SELECT
+        p.id                                                                    AS producto_id,
+        p.nombre                                                                AS producto_nombre,
+        p.codigo_proveedor,
+        p.codigo_maestro,
+        prov.id                                                                 AS proveedor_id,
+        prov.nombre                                                             AS proveedor_nombre,
+        COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)::INT  AS lead_time,
+        COALESCE(st.stock_actual, 0)                                            AS stock_actual,
+        COALESCE(p.stock_minimo, 0)                                             AS stock_seguridad,
+        COALESCE(c.consumo_diario, 0)                                           AS consumo_diario,
+        COALESCE(c.dias_historia, 0)::INT                                       AS dias_historia,
+        CASE
+            WHEN COALESCE(c.consumo_diario, 0) > 0
+            THEN (COALESCE(st.stock_actual, 0)::float / c.consumo_diario::float)
+            ELSE NULL
+        END                                                                     AS autonomia_dias,
+        CASE
+            WHEN COALESCE(st.stock_actual, 0) < COALESCE(p.stock_minimo, 0)
+                THEN 'critico'
+            WHEN COALESCE(c.consumo_diario, 0) > 0
+              AND COALESCE(st.stock_actual, 0) < (
+                  COALESCE(p.stock_minimo, 0)
+                  + COALESCE(c.consumo_diario, 0)
+                  * COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)
+              )
+                THEN 'planificar'
+            ELSE NULL
+        END                                                                     AS nivel_urgencia,
+        GREATEST(0, CEIL(
+            COALESCE(p.stock_minimo, 0)
+            + COALESCE(c.consumo_diario, 0) * (
+                COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)
+                + cfg.revision_dias
+            )
+            - COALESCE(st.stock_actual, 0)
+            - COALESCE(pev.cantidad_pedida, 0)
+        ))                                                                      AS cantidad_sugerida_base,
+        pres.id                                                                 AS presentacion_id,
+        pres.nombre                                                             AS presentacion_nombre,
+        pres.nombre_plural                                                      AS presentacion_nombre_plural,
+        pres.factor_conversion,
+        CASE
+            WHEN pres.factor_conversion IS NOT NULL AND pres.factor_conversion > 0
+            THEN CEIL(
+                GREATEST(0,
+                    COALESCE(p.stock_minimo, 0)
+                    + COALESCE(c.consumo_diario, 0) * (
+                        COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)
+                        + cfg.revision_dias
                     )
-                    ELSE NULL
-                END                                                               AS cantidad_sugerida_presentacion,
-                COALESCE(up.precio_unitario, p.precio_unidad)                      AS precio_ultima_recepcion,
-                ub.nombre                                                         AS unidad_base,
-                ub.nombre_plural                                                  AS unidad_base_plural,
-                COALESCE(pend.count, 0)                                           AS solicitudes_pendientes,
-                p.imagen_url                                                      AS imagen_url
-            FROM productos p
-            LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
-            LEFT JOIN consumo c ON c.producto_id = p.id
-            LEFT JOIN stock_total st ON st.producto_id = p.id
-            LEFT JOIN ultimo_precio up ON up.producto_id = p.id
-            LEFT JOIN pres ON pres.producto_id = p.id
-            LEFT JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-            LEFT JOIN pendientes pend ON pend.producto_id = p.id
-            WHERE p.activo = true
-        )
-        SELECT *
-        FROM base
-        WHERE nivel_urgencia IS NOT NULL
-        ORDER BY
-            CASE nivel_urgencia
-                WHEN 'critico'    THEN 1
-                WHEN 'urgente'    THEN 2
-                WHEN 'planificar' THEN 3
-                ELSE 4
-            END,
-            COALESCE(autonomia_dias, 0)
-        "#
+                    - COALESCE(st.stock_actual, 0)
+                    - COALESCE(pev.cantidad_pedida, 0)
+                ) / pres.factor_conversion
+            )
+            ELSE NULL
+        END                                                                     AS cantidad_sugerida_presentacion,
+        COALESCE(up.precio_unitario, p.precio_unidad)                           AS precio_ultima_recepcion,
+        ub.nombre                                                               AS unidad_base,
+        ub.nombre_plural                                                        AS unidad_base_plural,
+        p.imagen_url
+    FROM productos p
+    CROSS JOIN cfg
+    LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
+    LEFT JOIN consumo c ON c.producto_id = p.id
+    LEFT JOIN stock_total st ON st.producto_id = p.id
+    LEFT JOIN ultimo_precio up ON up.producto_id = p.id
+    LEFT JOIN pres ON pres.producto_id = p.id
+    LEFT JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
+    LEFT JOIN pedidos_en_vuelo pev ON pev.producto_id = p.id
+    WHERE p.activo = true
+      AND p.deleted_at IS NULL
+)
+SELECT *
+FROM base
+WHERE nivel_urgencia IS NOT NULL
+ORDER BY
+    CASE nivel_urgencia
+        WHEN 'critico'    THEN 1
+        WHEN 'planificar' THEN 2
+        ELSE 3
+    END,
+    COALESCE(autonomia_dias, 0)"#
     )
     .fetch_all(&state.pool)
     .await?;

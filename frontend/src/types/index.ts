@@ -138,17 +138,6 @@ export interface RecepcionDetalle {
 
 // --- Solicitudes de Compra (Local/Extended) ---
 
-export interface EnCaminoItem {
-  producto_id: string
-  producto_nombre: string
-  cantidad_total: number
-  unidad: string
-  proveedor_nombre?: string | null
-  numero_documento: string
-  fecha_creacion: string
-  estado: string
-}
-
 // Ítem en el borrador (estado local del componente)
 export interface SolicitudItem {
   producto_id: string

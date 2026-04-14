@@ -22,6 +22,7 @@ pub struct ImportConfig {
 pub struct ImportResult {
     pub total_filas: usize,
     pub importados: usize,
+    pub omitidos: usize,   // filas que ya existían (codigo_interno duplicado)
     pub errores: Vec<ImportError>,
     pub preview: Vec<serde_json::Value>,
     pub valido: bool,
@@ -107,85 +108,166 @@ async fn importar_productos(
         }
     }
 
-    let mut importados = 0;
+    let mut importados = 0usize;
+    let mut omitidos = 0usize;
     let mut errores = Vec::new();
     let mut preview = Vec::new();
-    let mut total_filas = 0;
+    let mut total_filas = 0usize;
 
-    // Transacción para Atomic Validation
-    let mut tx = state.pool.begin().await?;
-
+    // Usar una conexión directa para no perder toda la importación si hay errores parciales
     for (idx, result) in reader.records().enumerate() {
         total_filas += 1;
-        let fila_num = idx + 2; // +1 header, +1 0-based
+        let fila_num = idx + 2;
         let record = match result {
             Ok(r) => r,
-            Err(e) => { 
+            Err(e) => {
                 errores.push(ImportError { fila: fila_num, mensaje: format!("Error de formato: {}", e) });
                 continue;
             }
         };
 
-        let get_val = |key: &str| col_map.get(key).and_then(|&i| record.get(i)).unwrap_or("");
+        let get_val = |key: &str| col_map.get(key).and_then(|&i| record.get(i)).unwrap_or("").trim();
 
         let nombre = get_val("nombre");
-        let descripcion = get_val("descripcion");
-        let unidad_nombre = get_val("unidad");
-        let stock_minimo_str = get_val("stock_minimo");
+        let codigo_interno = get_val("codigo_interno");
+        let unidad_nombre = get_val("unidad_base");
+        let unidad_plural = get_val("unidad_base_plural");
+        let stock_minimo_str = get_val("stock_seguridad");
+        let precio_str = get_val("precio_unitario");
+        let cod_proveedor = get_val("codigo_proveedor");
+        let proveedor_nombre = get_val("proveedor");
+        let categoria_nombre = get_val("categoria");
 
+        // Validaciones
         if nombre.is_empty() {
-            errores.push(ImportError { fila: fila_num, mensaje: "El nombre es obligatorio".into() });
+            errores.push(ImportError { fila: fila_num, mensaje: "nombre es obligatorio".into() });
+            continue;
+        }
+        if codigo_interno.is_empty() {
+            errores.push(ImportError { fila: fila_num, mensaje: "codigo_interno es obligatorio".into() });
             continue;
         }
 
-        // Validación de Unidad
-        let unidad_id: Option<i32> = sqlx::query_scalar("SELECT id FROM unidades_basicas WHERE nombre = $1 OR nombre_plural = $1")
-            .bind(unidad_nombre).fetch_optional(&mut *tx).await?;
+        // Preview (primeras 5 filas)
+        if preview.len() < 5 {
+            preview.push(serde_json::json!({
+                "fila": fila_num,
+                "nombre": nombre,
+                "codigo_interno": codigo_interno,
+                "unidad_base": unidad_nombre,
+                "stock_seguridad": stock_minimo_str,
+                "proveedor": proveedor_nombre
+            }));
+        }
+
+        if config.dry_run { continue; }
+
+        // Verificar duplicado por codigo_interno
+        let existe: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM productos WHERE codigo_interno = $1)"
+        )
+        .bind(codigo_interno)
+        .fetch_one(&state.pool)
+        .await?;
+
+        if existe {
+            omitidos += 1;
+            continue;
+        }
+
+        // Buscar/crear unidad
+        let unidad_id: Option<i32> = sqlx::query_scalar(
+            "SELECT id FROM unidades_basicas WHERE nombre = $1 OR nombre_plural = $1"
+        )
+        .bind(unidad_nombre)
+        .fetch_optional(&state.pool)
+        .await?;
 
         let u_id = match unidad_id {
             Some(id) => id,
-            None => { 
-                errores.push(ImportError { fila: fila_num, mensaje: format!("Unidad '{}' no existe", unidad_nombre) });
+            None if !unidad_nombre.is_empty() => {
+                sqlx::query_scalar(
+                    "INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ($1, $2) RETURNING id"
+                )
+                .bind(unidad_nombre)
+                .bind(if unidad_plural.is_empty() { None } else { Some(unidad_plural) })
+                .fetch_one(&state.pool)
+                .await?
+            }
+            None => {
+                errores.push(ImportError { fila: fila_num, mensaje: "unidad_base es obligatoria".into() });
                 continue;
             }
         };
 
-        let stock_min = Decimal::from_str(stock_minimo_str).unwrap_or(Decimal::ZERO);
-
-        if preview.len() < 50 {
-            preview.push(serde_json::json!({
-                "fila": fila_num,
-                "nombre": nombre,
-                "unidad": unidad_nombre,
-                "stock_minimo": stock_min
-            }));
-        }
-
-        if !config.dry_run && errores.is_empty() {
-            let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE nombre = $1)")
-                .bind(nombre).fetch_one(&mut *tx).await?;
-            
-            if !exists {
-                let codigo: String = sqlx::query_scalar("SELECT generar_codigo_producto()").fetch_one(&mut *tx).await?;
-                sqlx::query("INSERT INTO productos (codigo_interno, nombre, descripcion, unidad_base_id, stock_minimo) VALUES ($1, $2, NULLIF($3, ''), $4, $5)")
-                    .bind(&codigo).bind(nombre).bind(descripcion).bind(u_id).bind(stock_min).execute(&mut *tx).await?;
-                importados += 1;
+        // Buscar/crear categoría
+        let cat_id: Option<i32> = if !categoria_nombre.is_empty() {
+            let id: Option<i32> = sqlx::query_scalar(
+                "SELECT id FROM categorias WHERE nombre = $1"
+            )
+            .bind(categoria_nombre)
+            .fetch_optional(&state.pool)
+            .await?;
+            match id {
+                Some(id) => Some(id),
+                None => Some(sqlx::query_scalar(
+                    "INSERT INTO categorias (nombre) VALUES ($1) RETURNING id"
+                )
+                .bind(categoria_nombre)
+                .fetch_one(&state.pool)
+                .await?),
             }
-        }
-    }
+        } else { None };
 
-    if config.dry_run || !errores.is_empty() {
-        tx.rollback().await?;
-    } else {
-        tx.commit().await?;
+        // Buscar/crear proveedor
+        let prov_id: Option<i32> = if !proveedor_nombre.is_empty() {
+            let id: Option<i32> = sqlx::query_scalar(
+                "SELECT id FROM proveedores WHERE nombre = $1"
+            )
+            .bind(proveedor_nombre)
+            .fetch_optional(&state.pool)
+            .await?;
+            match id {
+                Some(id) => Some(id),
+                None => Some(sqlx::query_scalar(
+                    "INSERT INTO proveedores (nombre) VALUES ($1) RETURNING id"
+                )
+                .bind(proveedor_nombre)
+                .fetch_one(&state.pool)
+                .await?),
+            }
+        } else { None };
+
+        let stock_min = Decimal::from_str(stock_minimo_str).unwrap_or(Decimal::ZERO);
+        let precio = Decimal::from_str(precio_str).ok();
+
+        sqlx::query(
+            "INSERT INTO productos
+             (codigo_interno, nombre, unidad_base_id, categoria_id, proveedor_id,
+              stock_minimo, precio_unidad, codigo_proveedor)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
+        )
+        .bind(codigo_interno)
+        .bind(nombre)
+        .bind(u_id)
+        .bind(cat_id)
+        .bind(prov_id)
+        .bind(stock_min)
+        .bind(precio)
+        .bind(if cod_proveedor.is_empty() { None } else { Some(cod_proveedor) })
+        .execute(&state.pool)
+        .await?;
+
+        importados += 1;
     }
 
     Ok(Json(ImportResult {
         total_filas,
         importados,
+        omitidos,
         errores: errores.clone(),
         preview,
-        valido: total_filas > 0 && importados + errores.len() == total_filas && errores.is_empty(),
+        valido: total_filas > 0 && errores.is_empty(),
     }))
 }
 

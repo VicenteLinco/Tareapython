@@ -21,8 +21,6 @@ import SetupPage from '@/pages/setup'
 import UsuariosPage from '@/pages/usuarios'
 import ConteoPage from '@/pages/conteo/index'
 import ConteoDetallePage from '@/pages/conteo/detalle'
-import KioskPage from '@/pages/kiosk'
-import ModoQrPage from '@/pages/modo-qr'
 import AuditLogPage from '@/pages/audit-log'
 import ScanPage from './pages/scan/index'
 
@@ -71,8 +69,6 @@ export default function App() {
                 <Route path="/audit-log" element={<AuditLogPage />} />
                 <Route path="/setup" element={<SetupPage />} />
               </Route>
-              <Route path="/kiosk" element={<KioskPage />} />
-              <Route path="/qr" element={<ModoQrPage />} />
               <Route path="/scan/:token" element={<ScanPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

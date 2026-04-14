@@ -5,7 +5,6 @@ import {
   ArrowLeft, Package, FileDown, FileText, X, Upload, Info,
   AlertTriangle, CheckCircle2, Clock, Smartphone,
 } from 'lucide-react'
-import { EnCaminoModal } from './en-camino-modal'
 import { QrScannerSession } from './qr-scanner-session'
 import { Badge } from '@/components/ui/badge'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
@@ -55,7 +54,6 @@ export default function RecepcionDetallePage() {
   const queryClient = useQueryClient()
   const [fotoOpen, setFotoOpen] = useState(false)
   const [confirmReplace, setConfirmReplace] = useState(false)
-  const [showEnCaminoModal, setShowEnCaminoModal] = useState(false)
   const [showQrScanner, setShowQrScanner] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const fileInputFirstRef = useRef<HTMLInputElement>(null)
@@ -78,7 +76,6 @@ export default function RecepcionDetallePage() {
       queryClient.invalidateQueries({ queryKey: ['recepcion', id] })
       queryClient.invalidateQueries({ queryKey: ['recepciones'] })
       toast.success('Recepción confirmada')
-      setShowEnCaminoModal(true)
     },
     onError: () => toast.error('Error al confirmar recepción'),
   })
@@ -486,14 +483,6 @@ export default function RecepcionDetallePage() {
         )}
       </div>
 
-      {showEnCaminoModal && data && (
-        <EnCaminoModal
-          recepcionId={data.recepcion?.id || id || ''}
-          proveedorId={data.recepcion?.proveedor_id || null}
-          onClose={() => setShowEnCaminoModal(false)}
-          onDone={() => setShowEnCaminoModal(false)}
-        />
-      )}
       {showQrScanner && (
         <QrScannerSession
           onItemsScanned={(items) => {

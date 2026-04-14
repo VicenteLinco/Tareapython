@@ -12,8 +12,13 @@ pub async fn listar(pool: &PgPool, params: ProveedorQuery) -> Result<Vec<Proveed
     if let Some(q) = params.q {
         let pattern = format!("%{}%", q);
         sqlx::query_as::<_, Proveedor>(
-            "SELECT id, nombre, contacto, telefono, email, icono, activa, dias_despacho_aereo, dias_despacho_tierra, version, created_at \
-             FROM proveedores WHERE activa = $1 AND nombre ILIKE $2 ORDER BY nombre",
+            "SELECT p.id, p.nombre, p.contacto, p.telefono, p.email, p.icono, p.activa, \
+             p.dias_despacho_aereo, p.dias_despacho_tierra, p.version, p.created_at, \
+             COUNT(pr.id)::int AS total_productos \
+             FROM proveedores p \
+             LEFT JOIN productos pr ON pr.proveedor_id = p.id AND pr.activo = true \
+             WHERE p.activa = $1 AND p.nombre ILIKE $2 \
+             GROUP BY p.id ORDER BY p.nombre",
         )
         .bind(activo)
         .bind(pattern)
@@ -22,8 +27,13 @@ pub async fn listar(pool: &PgPool, params: ProveedorQuery) -> Result<Vec<Proveed
         .map_err(Into::into)
     } else {
         sqlx::query_as::<_, Proveedor>(
-            "SELECT id, nombre, contacto, telefono, email, icono, activa, dias_despacho_aereo, dias_despacho_tierra, version, created_at \
-             FROM proveedores WHERE activa = $1 ORDER BY nombre",
+            "SELECT p.id, p.nombre, p.contacto, p.telefono, p.email, p.icono, p.activa, \
+             p.dias_despacho_aereo, p.dias_despacho_tierra, p.version, p.created_at, \
+             COUNT(pr.id)::int AS total_productos \
+             FROM proveedores p \
+             LEFT JOIN productos pr ON pr.proveedor_id = p.id AND pr.activo = true \
+             WHERE p.activa = $1 \
+             GROUP BY p.id ORDER BY p.nombre",
         )
         .bind(activo)
         .fetch_all(pool)
@@ -43,7 +53,7 @@ pub async fn crear(
     let proveedor = sqlx::query_as::<_, Proveedor>(
         "INSERT INTO proveedores (nombre, contacto, telefono, email, icono, dias_despacho_aereo, dias_despacho_tierra) \
          VALUES ($1, $2, $3, $4, $5, $6, $7) \
-         RETURNING id, nombre, contacto, telefono, email, icono, activa, dias_despacho_aereo, dias_despacho_tierra, version, created_at",
+         RETURNING id, nombre, contacto, telefono, email, icono, activa, dias_despacho_aereo, dias_despacho_tierra, version, created_at, 0::int AS total_productos",
     )
     .bind(&nombre)
     .bind(&req.contacto)
@@ -73,7 +83,7 @@ pub async fn actualizar(
 ) -> Result<Proveedor, AppError> {
     req.validate()?;
 
-    let anterior = sqlx::query_as::<_, Proveedor>("SELECT id, nombre, contacto, telefono, email, icono, activa, dias_despacho_aereo, dias_despacho_tierra, version, created_at FROM proveedores WHERE id = $1")
+    let anterior = sqlx::query_as::<_, Proveedor>("SELECT id, nombre, contacto, telefono, email, icono, activa, dias_despacho_aereo, dias_despacho_tierra, version, created_at, 0::int AS total_productos FROM proveedores WHERE id = $1")
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -87,7 +97,7 @@ pub async fn actualizar(
                icono = $5, dias_despacho_aereo = $6, dias_despacho_tierra = $7,
                version = version + 1
            WHERE id = $8 AND version = $9
-           RETURNING id, nombre, contacto, telefono, email, icono, activa, dias_despacho_aereo, dias_despacho_tierra, version, created_at"#,
+           RETURNING id, nombre, contacto, telefono, email, icono, activa, dias_despacho_aereo, dias_despacho_tierra, version, created_at, 0::int AS total_productos"#,
     )
     .bind(nombre)
     .bind(req.contacto.as_deref().or(anterior.contacto.as_deref()))
@@ -141,7 +151,7 @@ pub async fn reactivar(
 ) -> Result<Proveedor, AppError> {
     let proveedor = sqlx::query_as::<_, Proveedor>(
         "UPDATE proveedores SET activa = true WHERE id = $1 \
-         RETURNING id, nombre, contacto, telefono, email, icono, activa, dias_despacho_aereo, dias_despacho_tierra, version, created_at",
+         RETURNING id, nombre, contacto, telefono, email, icono, activa, dias_despacho_aereo, dias_despacho_tierra, version, created_at, 0::int AS total_productos",
     )
     .bind(id)
     .fetch_optional(pool)

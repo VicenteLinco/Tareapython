@@ -14,4 +14,5 @@ pub struct Proveedor {
     pub activa: bool,
     pub version: i32,
     pub created_at: DateTime<Utc>,
+    pub total_productos: i32,
 }

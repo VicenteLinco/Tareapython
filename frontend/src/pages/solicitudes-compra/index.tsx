@@ -405,8 +405,9 @@ export default function SolicitudesCompraPage() {
       autonomia_dias: 0,
       nivel_urgencia: 'normal',
       stock_actual: '0',
-      stock_minimo: p.stock_minimo,
-      consumo_diario_30d: '0',
+      stock_seguridad: p.stock_minimo,
+      consumo_diario: '0',
+      dias_historia: 0,
       cantidad_sugerida_base: presFactor ?? '1',
       presentacion_id: presId,
       presentacion_nombre: presNombre,
@@ -416,7 +417,6 @@ export default function SolicitudesCompraPage() {
       precio_ultima_recepcion: p.precio_unidad,
       unidad_base: unidadNombre,
       unidad_base_plural: unidadPlural,
-      solicitudes_pendientes: 0,
       imagen_url: px.imagen_url ?? null,
     }
     handleAddFromRec(fakeRec)
@@ -658,7 +658,7 @@ export default function SolicitudesCompraPage() {
                             <div className="flex-1 min-w-0">
                               <h3 className="font-bold text-sm truncate">{r.producto_nombre}</h3>
                               <span className="text-[10px] opacity-40 font-bold uppercase tracking-wider">
-                                Stock: {parseFloat(r.stock_actual)} / {parseFloat(r.stock_minimo)}
+                                Stock: {parseFloat(r.stock_actual)} / {parseFloat(r.stock_seguridad)}
                               </span>
                             </div>
 

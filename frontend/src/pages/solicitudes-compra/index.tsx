@@ -1032,7 +1032,6 @@ export default function SolicitudesCompraPage() {
                         unidad: i.unidad,
                         codigo_maestro: i.codigo_maestro,
                         codigo_proveedor: i.codigo_proveedor,
-                        proveedor_nombre: i.proveedor_nombre,
                         presentacion_nombre: i.presentacion_nombre,
                         presentacion_nombre_plural: i.presentacion_nombre_plural,
                         factor_conversion: i.factor_conversion ? parseFloat(i.factor_conversion) : null,

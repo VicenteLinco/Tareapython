@@ -237,6 +237,11 @@ export default function SolicitudesCompraPage() {
   // PDF firma customization
   const [pdfFirmaLabel, setPdfFirmaLabel] = useState('')
 
+  // Horizonte global + UI izquierda
+  const [horizonteGlobal, setHorizonteGlobal] = useState<number>(30)
+  const [tabIzquierdo, setTabIzquierdo] = useState<'quiebres' | 'buscar'>('quiebres')
+  const [popoverOpenId, setPopoverOpenId] = useState<string | null>(null)
+
   // Prevent borrador from reloading after it's been intentionally cleared
   const borradorCargado = useRef(false)
 
@@ -244,6 +249,17 @@ export default function SolicitudesCompraPage() {
   useEffect(() => {
     if (location.state?.view) setView(location.state.view)
   }, [location.state])
+
+  // Cerrar popover al hacer click fuera
+  useEffect(() => {
+    if (!popoverOpenId) return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('[data-popover-item]')) setPopoverOpenId(null)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [popoverOpenId])
 
   // ── Queries ─────────────────────────────────────────────────────────────────
 
@@ -431,7 +447,7 @@ export default function SolicitudesCompraPage() {
     const stockMinimo = parseFloat(r.stock_seguridad.toString())
     const leadTime = r.lead_time
 
-    const cantidad = calcularCantidad(horizonte, consumoDiario, leadTime, stockMinimo, stockActual)
+    const cantidad = calcularCantidad(horizonteGlobal, consumoDiario, leadTime, stockMinimo, stockActual)
 
     const newItem: SolicitudItem = {
       producto_id: r.producto_id,
@@ -453,9 +469,10 @@ export default function SolicitudesCompraPage() {
       consumo_diario: consumoDiario,
       stock_actual: stockActual,
       stock_minimo: stockMinimo,
-      horizonte_dias: chipMasCercano(horizonte),
+      horizonte_dias: horizonteGlobal,
       horizonte_sugerido: horizonte,
       horizonte_razon: horizData.razon,
+      horizonte_personalizado: false,
     }
     setItems(prev => [...prev, newItem])
   }
@@ -490,7 +507,7 @@ export default function SolicitudesCompraPage() {
     const stockMinimo = horizData.stock_minimo
     const leadTime = p.lead_time_propio || 0
 
-    const cantidad = calcularCantidad(horizonte, consumoDiario, leadTime, stockMinimo, stockActual)
+    const cantidad = calcularCantidad(horizonteGlobal, consumoDiario, leadTime, stockMinimo, stockActual)
 
     const newItem: SolicitudItem = {
       producto_id: p.id,
@@ -512,9 +529,10 @@ export default function SolicitudesCompraPage() {
       consumo_diario: consumoDiario,
       stock_actual: stockActual,
       stock_minimo: stockMinimo,
-      horizonte_dias: chipMasCercano(horizonte),
+      horizonte_dias: horizonteGlobal,
       horizonte_sugerido: horizonte,
       horizonte_razon: horizData.razon,
+      horizonte_personalizado: false,
     }
     setItems(prev => [...prev, newItem])
   }
@@ -522,17 +540,36 @@ export default function SolicitudesCompraPage() {
   const handleUpdateQty = (pid: string, val: number) => {
     setItems(prev => prev.map(i =>
       i.producto_id === pid
-        ? { ...i, cantidad: Math.max(1, val), horizonte_dias: null }
+        ? { ...i, cantidad: Math.max(1, val) }
         : i
     ))
+  }
+
+  const handleGlobalHorizonteChange = (dias: number) => {
+    setHorizonteGlobal(dias)
+    setItems(prev => prev.map(i => {
+      if (i.horizonte_personalizado) return i
+      const nueva = calcularCantidad(dias, i.consumo_diario, i.lead_time, i.stock_minimo, i.stock_actual)
+      return { ...i, horizonte_dias: dias, cantidad: nueva }
+    }))
   }
 
   const handleHorizonteChip = (pid: string, dias: number) => {
     setItems(prev => prev.map(i => {
       if (i.producto_id !== pid) return i
       const nueva = calcularCantidad(dias, i.consumo_diario, i.lead_time, i.stock_minimo, i.stock_actual)
-      return { ...i, horizonte_dias: dias, cantidad: nueva }
+      return { ...i, horizonte_dias: dias, cantidad: nueva, horizonte_personalizado: dias !== horizonteGlobal }
     }))
+    setPopoverOpenId(null)
+  }
+
+  const handleResetHorizonteToGlobal = (pid: string) => {
+    setItems(prev => prev.map(i => {
+      if (i.producto_id !== pid) return i
+      const nueva = calcularCantidad(horizonteGlobal, i.consumo_diario, i.lead_time, i.stock_minimo, i.stock_actual)
+      return { ...i, horizonte_dias: horizonteGlobal, cantidad: nueva, horizonte_personalizado: false }
+    }))
+    setPopoverOpenId(null)
   }
 
   const handleRemove = (pid: string) => {

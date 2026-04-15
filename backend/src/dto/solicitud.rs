@@ -45,6 +45,9 @@ pub struct CreateSolicitudItem {
     pub precio_unitario: Option<Decimal>,
     pub presentacion_id: Option<i32>,
     pub cantidad_presentaciones: Option<Decimal>,
+    pub horizonte_dias: Option<i32>,
+    pub horizonte_sugerido: Option<i32>,
+    pub horizonte_razon: Option<String>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow, Type)]
@@ -84,4 +87,7 @@ pub struct SolicitudDetalleItem {
     pub presentacion_id: Option<i32>,
     pub cantidad_presentaciones: Option<Decimal>,
     pub imagen_url: Option<String>,
+    pub horizonte_dias: Option<i32>,
+    pub horizonte_sugerido: Option<i32>,
+    pub horizonte_razon: Option<String>,
 }

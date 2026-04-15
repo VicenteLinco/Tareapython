@@ -156,6 +156,14 @@ export interface SolicitudItem {
   cantidad: number
   precio_unitario: number
   imagen_url?: string | null
+  // Datos necesarios para recalcular cantidad al cambiar horizonte
+  consumo_diario: number
+  stock_actual: number
+  stock_minimo: number
+  // Horizonte de cobertura
+  horizonte_dias: number | null      // null = chip desactivado (cantidad manual)
+  horizonte_sugerido: number | null  // calculado al agregar, no cambia
+  horizonte_razon: string | null     // texto del badge, no cambia
 }
 
 // --- Pagination ---

@@ -1,5 +1,5 @@
 // frontend/src/pages/recepciones/nueva.tsx
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
@@ -11,16 +11,26 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog } from '@/components/ui/dialog'
 import { ProveedorSelect } from '@/components/ui/proveedor-select'
 import { toast } from 'sonner'
-import { ReceptionItemCard, type DetalleLineUI } from './components/item-card'
+import { ReceptionItemCard, isCardComplete, isLoteComplete, type DetalleLineUI, type LoteLineUI } from './components/item-card'
 import { ProductoAutocomplete } from './components/producto-autocomplete'
 import { LabelsSection } from './components/labels-section'
-import { QrScanner } from '@/components/shared/qr-scanner'
+import { ScannerPanel } from './components/scanner-panel'
+import { LoteBottomSheet } from './components/lote-bottom-sheet'
 import { imprimirEtiquetas, type LoteParaEtiqueta } from '@/lib/label-print'
 import type { Proveedor, Producto, Area, SolicitudResumen } from '@/types'
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
 type Decision = 'completa' | 'parcial' | 'rechazada'
+
+interface PendingScan {
+  productoId: string
+  productoNombre: string
+  codigoInterno: string
+  presentacionId: number | null
+  areaId: number | null
+  areaNombre: string
+}
 
 interface LoteConfirmadoApi {
   lote_id: string
@@ -49,6 +59,8 @@ export default function NuevaRecepcionPage() {
 
   // Estado cabecera
   const [proveedorId, setProveedorId] = useState<number | null>(null)
+  const [proveedorError, setProveedorError] = useState(false)
+  const proveedorRef = useRef<HTMLDivElement>(null)
   const [guiaDespacho, setGuiaDespacho] = useState('')
   const [fechaRecepcion, setFechaRecepcion] = useState(() => new Date().toISOString().slice(0, 16))
   const [solicitudId, setSolicitudId] = useState<string | null>(null)
@@ -56,7 +68,19 @@ export default function NuevaRecepcionPage() {
 
   // Estado ítems
   const [detalles, setDetalles] = useState<DetalleLineUI[]>([])
-  const [scannerOpen, setScannerOpen] = useState(false)
+
+  const handleSetProveedor = useCallback((id: number | null) => {
+    if (id === proveedorId) return
+    if (detalles.length > 0 || solicitudId) {
+      if (!confirm('Cambiar el proveedor limpiará los ítems y la solicitud vinculada. ¿Continuar?')) return
+      setDetalles([])
+      setSolicitudId(null)
+    }
+    setProveedorId(id)
+  }, [proveedorId, detalles.length, solicitudId])
+  const [scannerPaused, setScannerPaused] = useState(false)
+  const [scanCount, setScanCount] = useState(0)
+  const [pendingScan, setPendingScan] = useState<PendingScan | null>(null)
 
   // Estado decisión
   const [decision, setDecision] = useState<Decision>('completa')
@@ -92,8 +116,13 @@ export default function NuevaRecepcionPage() {
   const monedaSimbolo = configuracion?.moneda_simbolo ?? '$'
 
   const { data: solicitudesPendientes } = useQuery({
-    queryKey: ['solicitudes-activas'],
-    queryFn: () => api.get<{ data: SolicitudResumen[] }>('/solicitudes-compra').then(r =>
+    queryKey: ['solicitudes-activas', proveedorId],
+    queryFn: () => api.get<{ data: SolicitudResumen[] }>('/solicitudes-compra', {
+      params: {
+        per_page: 100,
+        ...(proveedorId ? { proveedor_id: proveedorId } : {}),
+      }
+    }).then(r =>
       (r.data.data ?? []).filter(s => ['aprobada', 'enviada'].includes(s.estado))
     ),
   })
@@ -101,6 +130,11 @@ export default function NuevaRecepcionPage() {
   // ─── Agregar ítem ──────────────────────────────────────────────────────────
 
   const addProducto = useCallback(async (prod: Producto, overridePresentacionId?: number, overrideQuantity?: number) => {
+    if (proveedorId && prod.proveedor_id && prod.proveedor_id !== proveedorId) {
+      const nombreProv = proveedores?.find(p => p.id === prod.proveedor_id)?.nombre ?? 'otro proveedor'
+      toast.error(`"${prod.nombre}" pertenece a ${nombreProv}`)
+      return
+    }
     try {
       const res = await api.get(`/productos/${prod.id}`)
       const full = res.data
@@ -110,7 +144,7 @@ export default function NuevaRecepcionPage() {
         : null) ?? presentaciones[0] ?? null
 
       const catalogoArea = full.areas?.[0]
-      const initialCantidadPresentacion = overrideQuantity ?? 1
+      const initialCantidad = overrideQuantity ?? 1
       const line: DetalleLineUI = {
         id: uuidv4(),
         producto_id: String(prod.id),
@@ -119,27 +153,31 @@ export default function NuevaRecepcionPage() {
         presentacion_id: pres?.id || null,
         presentacion_nombre: pres?.nombre || '',
         presentacion_nombre_plural: pres?.nombre_plural || '',
-        cantidad_presentacion: initialCantidadPresentacion,
         cantidad_solicitada: overrideQuantity ?? null,
         factor_conversion: Number(pres?.factor_conversion || 1),
         unidad_base_nombre: full.unidad_base?.nombre || '',
         unidad_base_nombre_plural: full.unidad_base?.nombre_plural || '',
-        codigo_lote: '',
-        fecha_vencimiento: '',
         area_destino_id: catalogoArea?.id ?? null,
         area_destino_nombre: catalogoArea?.nombre ?? '',
         presentaciones,
         precio_unitario: full.precio_unidad ? String(Math.round(full.precio_unidad * Number(pres?.factor_conversion || 1))) : '',
         imagen_url: full.imagen_url,
-        incluir_etiqueta: false,
-        cantidad_etiquetas: initialCantidadPresentacion,
+        lotes: [{
+          id: uuidv4(),
+          codigo_lote: '',
+          fecha_vencimiento: '',
+          cantidad_presentacion: initialCantidad,
+          incluir_etiqueta: false,
+          cantidad_etiquetas: initialCantidad,
+        }],
+        collapsed: false,
       }
       setDetalles(prev => [line, ...prev])
       toast.success(`${prod.nombre} añadido`)
     } catch {
       toast.error('Error al cargar producto')
     }
-  }, [])
+  }, [proveedorId, proveedores])
 
   // ─── Búsqueda / Scan ───────────────────────────────────────────────────────
 
@@ -163,12 +201,42 @@ export default function NuevaRecepcionPage() {
       }
 
       if (data.tipo === 'lote') {
-        // Escaneo de etiqueta existente: pre-rellenar lote y vencimiento
+        // Validar proveedor
+        if (proveedorId) {
+          const prodLote = productos?.find(p => String(p.id) === String(data.producto_id))
+          if (prodLote?.proveedor_id && prodLote.proveedor_id !== proveedorId) {
+            const nombreProv = proveedores?.find(p => p.id === prodLote.proveedor_id)?.nombre ?? 'otro proveedor'
+            toast.error(`"${data.producto_nombre}" pertenece a ${nombreProv}`)
+            return
+          }
+        }
+
+        const nuevoLote: LoteLineUI = {
+          id: uuidv4(),
+          codigo_lote: data.numero_lote,
+          fecha_vencimiento: data.fecha_vencimiento || '',
+          cantidad_presentacion: 1,
+          incluir_etiqueta: false,
+          cantidad_etiquetas: 1,
+        }
+
+        // Si el producto ya tiene card, agregar lote ahí en vez de crear una nueva
+        const existingDetalle = detalles.find(d => String(d.producto_id) === String(data.producto_id))
+        if (existingDetalle) {
+          setDetalles(prev => prev.map(d =>
+            d.id === existingDetalle.id
+              ? { ...d, collapsed: false, lotes: [...d.lotes, nuevoLote] }
+              : d
+          ))
+          toast.success(`Lote ${data.numero_lote} añadido a ${data.producto_nombre}`)
+          return
+        }
+
+        // Producto nuevo — crear card
         const pres = data.presentacion_id
           ? [{ id: data.presentacion_id, nombre: data.presentacion_nombre, nombre_plural: data.presentacion_nombre + 's', factor_conversion: 1, activa: true, version: 1 }]
           : []
 
-        const initialCantidadPresentacion = 1
         const line: DetalleLineUI = {
           id: uuidv4(),
           producto_id: String(data.producto_id),
@@ -177,19 +245,16 @@ export default function NuevaRecepcionPage() {
           presentacion_id: data.presentacion_id || null,
           presentacion_nombre: data.presentacion_nombre || '',
           presentacion_nombre_plural: data.presentacion_nombre ? data.presentacion_nombre + 's' : '',
-          cantidad_presentacion: initialCantidadPresentacion,
           factor_conversion: 1,
           unidad_base_nombre: data.unidad_base_nombre || '',
           unidad_base_nombre_plural: data.unidad_base_nombre_plural || '',
-          codigo_lote: data.numero_lote,
-          fecha_vencimiento: data.fecha_vencimiento || '',
           area_destino_id: data.area_id || null,
           area_destino_nombre: data.area_nombre || '',
           presentaciones: pres,
           precio_unitario: '',
           imagen_url: data.imagen_url || null,
-          incluir_etiqueta: false,
-          cantidad_etiquetas: initialCantidadPresentacion,
+          lotes: [nuevoLote],
+          collapsed: false,
         }
         setDetalles(prev => [line, ...prev])
         toast.success(`Lote ${data.numero_lote} añadido`)
@@ -205,12 +270,213 @@ export default function NuevaRecepcionPage() {
     } catch {
       toast.error('Error en la búsqueda')
     }
-  }, [productos, addProducto])
+  }, [detalles, productos, proveedores, proveedorId, addProducto])
+
+  // ─── Scanner inline ───────────────────────────────────────────────────────
+
+  const handleScanDetected = useCallback(async (code: string) => {
+    const q = code.trim()
+    if (!q) return
+
+    try {
+      const res = await api.get('/productos/scan', { params: { codigo: q } })
+      const data = res.data
+
+      if (!data.encontrado) {
+        navigator.vibrate?.([80, 40, 80])
+        toast.error('Producto no encontrado')
+        return
+      }
+
+      const productoId = String(data.producto_id)
+
+      // Producto ya en la lista → +1 en el lote más reciente
+      const existingDetalle = detalles.find(d => d.producto_id === productoId)
+      if (existingDetalle) {
+        setDetalles(prev => prev.map(d => {
+          if (d.producto_id !== productoId) return d
+          const lotes = d.lotes.map((l, i) =>
+            i === d.lotes.length - 1
+              ? { ...l, cantidad_presentacion: l.cantidad_presentacion + 1, cantidad_etiquetas: l.cantidad_presentacion + 1 }
+              : l
+          )
+          return { ...d, lotes }
+        }))
+        setScanCount(prev => prev + 1)
+        navigator.vibrate?.(50)
+        toast.success(`+1 ${existingDetalle.producto_nombre}`, { duration: 1500 })
+        return
+      }
+
+      // Tipo lote: el código ya contiene información del lote, agregar directo
+      if (data.tipo === 'lote' && data.numero_lote && data.fecha_vencimiento) {
+        const nuevoLote: LoteLineUI = {
+          id: uuidv4(),
+          codigo_lote: data.numero_lote,
+          fecha_vencimiento: data.fecha_vencimiento,
+          cantidad_presentacion: 1,
+          incluir_etiqueta: false,
+          cantidad_etiquetas: 1,
+        }
+        const pres = data.presentacion_id
+          ? [{ id: data.presentacion_id, nombre: data.presentacion_nombre ?? '', nombre_plural: (data.presentacion_nombre ?? '') + 's', factor_conversion: 1, activa: true, version: 1 }]
+          : []
+        const line: DetalleLineUI = {
+          id: uuidv4(),
+          producto_id: productoId,
+          producto_nombre: data.producto_nombre,
+          codigo_interno: data.codigo_interno_lote || '',
+          presentacion_id: data.presentacion_id || null,
+          presentacion_nombre: data.presentacion_nombre || '',
+          presentacion_nombre_plural: data.presentacion_nombre ? data.presentacion_nombre + 's' : '',
+          cantidad_solicitada: null,
+          factor_conversion: 1,
+          unidad_base_nombre: data.unidad_base_nombre || '',
+          unidad_base_nombre_plural: data.unidad_base_nombre_plural || '',
+          area_destino_id: data.area_id || null,
+          area_destino_nombre: data.area_nombre || '',
+          presentaciones: pres,
+          precio_unitario: '',
+          imagen_url: data.imagen_url || null,
+          lotes: [nuevoLote],
+          collapsed: false,
+        }
+        setDetalles(prev => [line, ...prev])
+        setScanCount(prev => prev + 1)
+        navigator.vibrate?.(50)
+        toast.success(`${data.producto_nombre} agregado`)
+        return
+      }
+
+      // Producto nuevo sin datos de lote → mostrar bottom sheet
+      setScannerPaused(true)
+      setPendingScan({
+        productoId,
+        productoNombre: data.producto_nombre,
+        codigoInterno: data.codigo_interno_lote || '',
+        presentacionId: data.presentacion_id || null,
+        areaId: data.area_id || null,
+        areaNombre: data.area_nombre || '',
+      })
+    } catch {
+      toast.error('Error al buscar producto')
+    }
+  }, [detalles])
+
+  const handleConfirmLote = useCallback(async (loteData: { numero_lote: string; fecha_vencimiento: string; cantidad: number }) => {
+    if (!pendingScan) return
+    try {
+      const res = await api.get(`/productos/${pendingScan.productoId}`)
+      const full = res.data
+      const presentaciones = full.presentaciones || []
+      const pres = (pendingScan.presentacionId
+        ? presentaciones.find((p: { id: number }) => p.id === pendingScan.presentacionId)
+        : null) ?? presentaciones[0] ?? null
+
+      const catalogoArea = full.areas?.[0]
+
+      const line: DetalleLineUI = {
+        id: uuidv4(),
+        producto_id: pendingScan.productoId,
+        producto_nombre: pendingScan.productoNombre,
+        codigo_interno: pendingScan.codigoInterno,
+        presentacion_id: pres?.id || null,
+        presentacion_nombre: pres?.nombre || '',
+        presentacion_nombre_plural: pres?.nombre_plural || '',
+        cantidad_solicitada: null,
+        factor_conversion: Number(pres?.factor_conversion || 1),
+        unidad_base_nombre: full.unidad_base?.nombre || '',
+        unidad_base_nombre_plural: full.unidad_base?.nombre_plural || '',
+        area_destino_id: catalogoArea?.id ?? pendingScan.areaId ?? null,
+        area_destino_nombre: catalogoArea?.nombre ?? pendingScan.areaNombre ?? '',
+        presentaciones,
+        precio_unitario: full.precio_unidad
+          ? String(Math.round(full.precio_unidad * Number(pres?.factor_conversion || 1)))
+          : '',
+        imagen_url: full.imagen_url,
+        lotes: [{
+          id: uuidv4(),
+          codigo_lote: loteData.numero_lote,
+          fecha_vencimiento: loteData.fecha_vencimiento,
+          cantidad_presentacion: loteData.cantidad,
+          incluir_etiqueta: false,
+          cantidad_etiquetas: loteData.cantidad,
+        }],
+        collapsed: false,
+      }
+      setDetalles(prev => [line, ...prev])
+      setScanCount(prev => prev + 1)
+      navigator.vibrate?.(50)
+    } catch {
+      toast.error('Error al cargar producto')
+    } finally {
+      setPendingScan(null)
+      setScannerPaused(false)
+    }
+  }, [pendingScan])
+
+  const handleCancelLote = useCallback(() => {
+    setPendingScan(null)
+    setScannerPaused(false)
+  }, [])
 
   // ─── Cambiar ítem ──────────────────────────────────────────────────────────
 
-  const handleChange = useCallback((id: string, patch: Partial<DetalleLineUI>) => {
-    setDetalles(prev => prev.map(d => d.id === id ? { ...d, ...patch } : d))
+  const handleChange = useCallback((id: string, patch: Partial<Omit<DetalleLineUI, 'lotes'>>) => {
+    setDetalles(prev => prev.map(d => {
+      if (d.id !== id) return d
+      const updated = { ...d, ...patch }
+      const wasComplete = isCardComplete(d)
+      const nowComplete = isCardComplete(updated)
+      const collapsed =
+        !wasComplete && nowComplete ? true :
+        wasComplete && !nowComplete ? false :
+        updated.collapsed
+      return { ...updated, collapsed }
+    }))
+  }, [])
+
+  const handleChangeLote = useCallback((detalleId: string, loteId: string, patch: Partial<LoteLineUI>) => {
+    setDetalles(prev => prev.map(d => {
+      if (d.id !== detalleId) return d
+      const lotes = d.lotes.map(l => l.id === loteId ? { ...l, ...patch } : l)
+      const wasComplete = isCardComplete(d)
+      const nowComplete = !!d.area_destino_id && lotes.length > 0 && lotes.every(isLoteComplete)
+      const collapsed =
+        !wasComplete && nowComplete ? true :
+        wasComplete && !nowComplete ? false :
+        d.collapsed
+      return { ...d, lotes, collapsed }
+    }))
+  }, [])
+
+  const handleAddLote = useCallback((detalleId: string) => {
+    setDetalles(prev => prev.map(d =>
+      d.id !== detalleId ? d : {
+        ...d,
+        collapsed: false,
+        lotes: [...d.lotes, {
+          id: uuidv4(),
+          codigo_lote: '',
+          fecha_vencimiento: '',
+          cantidad_presentacion: 1,
+          incluir_etiqueta: false,
+          cantidad_etiquetas: 1,
+        }],
+      }
+    ))
+  }, [])
+
+  const handleRemoveLote = useCallback((detalleId: string, loteId: string) => {
+    setDetalles(prev => prev.map(d => {
+      if (d.id !== detalleId) return d
+      if (d.lotes.length <= 1) return d  // nunca eliminar el último lote
+      const lotes = d.lotes.filter(l => l.id !== loteId)
+      const wasComplete = isCardComplete(d)
+      const nowComplete = !!d.area_destino_id && lotes.every(isLoteComplete)
+      const collapsed = !wasComplete && nowComplete ? true : d.collapsed
+      return { ...d, lotes, collapsed }
+    }))
   }, [])
 
   const handleRemove = useCallback((id: string) => {
@@ -225,21 +491,27 @@ export default function NuevaRecepcionPage() {
     }),
     onSuccess: (res) => {
       const lotes: LoteConfirmadoApi[] = res.data.lotes ?? []
-      // Filtrar solo los que el usuario marcó para imprimir
+      // Filtrar solo los lotes que el usuario marcó para imprimir
       const paraImprimir: LoteParaEtiqueta[] = lotes
         .map(l => {
-          const detalle = detalles.find(d => d.codigo_lote === l.numero_lote && d.producto_nombre === l.producto_nombre)
-          if (!detalle?.incluir_etiqueta) return null
-          return {
-            lote_id: l.lote_id,
-            codigo_interno: l.codigo_interno,
-            numero_lote: l.numero_lote,
-            fecha_vencimiento: l.fecha_vencimiento,
-            producto_nombre: l.producto_nombre,
-            presentacion_nombre: l.presentacion_nombre,
-            area_nombre: l.area_nombre,
-            cantidad_etiquetas: detalle.cantidad_etiquetas,
-          } satisfies LoteParaEtiqueta
+          for (const d of detalles) {
+            const lote = d.lotes.find(lo =>
+              lo.codigo_lote === l.numero_lote && d.producto_nombre === l.producto_nombre
+            )
+            if (lote?.incluir_etiqueta) {
+              return {
+                lote_id: l.lote_id,
+                codigo_interno: l.codigo_interno,
+                numero_lote: l.numero_lote,
+                fecha_vencimiento: l.fecha_vencimiento,
+                producto_nombre: l.producto_nombre,
+                presentacion_nombre: l.presentacion_nombre,
+                area_nombre: l.area_nombre,
+                cantidad_etiquetas: lote.cantidad_etiquetas,
+              } satisfies LoteParaEtiqueta
+            }
+          }
+          return null
         })
         .filter((x): x is LoteParaEtiqueta => x !== null)
 
@@ -289,7 +561,9 @@ export default function NuevaRecepcionPage() {
       return
     }
 
-    const validos = detalles.filter(d => d.codigo_lote && d.fecha_vencimiento && d.area_destino_id)
+    const validos = detalles.filter(d =>
+      d.area_destino_id && d.lotes.some(l => l.codigo_lote && l.fecha_vencimiento)
+    )
     if (validos.length === 0) { toast.error('Completa al menos un ítem con lote, vencimiento y área'); return }
 
     if (decision === 'parcial' && !nota.trim()) {
@@ -304,15 +578,19 @@ export default function NuevaRecepcionPage() {
       estado: decision,
       nota: nota || undefined,
       solicitud_id: solicitudId || undefined,
-      detalle: validos.map(d => ({
-        producto_id: d.producto_id,
-        numero_lote: d.codigo_lote,
-        fecha_vencimiento: d.fecha_vencimiento,
-        presentacion_id: d.presentacion_id,
-        cantidad_presentaciones: d.cantidad_presentacion,
-        area_destino_id: d.area_destino_id!,
-        precio_unitario: d.precio_unitario ? parseFloat(d.precio_unitario) : undefined,
-      })),
+      detalle: validos.flatMap(d =>
+        d.lotes
+          .filter(l => l.codigo_lote && l.fecha_vencimiento)
+          .map(l => ({
+            producto_id: d.producto_id,
+            numero_lote: l.codigo_lote,
+            fecha_vencimiento: l.fecha_vencimiento,
+            presentacion_id: d.presentacion_id,
+            cantidad_presentaciones: l.cantidad_presentacion,
+            area_destino_id: d.area_destino_id!,
+            precio_unitario: d.precio_unitario ? parseFloat(d.precio_unitario) : undefined,
+          }))
+      ),
     })
   }
 
@@ -335,7 +613,7 @@ export default function NuevaRecepcionPage() {
     rechazada: 'Registrar rechazo',
   }[decision]
 
-  const itemsCompletos = detalles.filter(d => d.codigo_lote && d.fecha_vencimiento && d.area_destino_id).length
+  const itemsCompletos = detalles.filter(isCardComplete).length
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
@@ -359,13 +637,19 @@ export default function NuevaRecepcionPage() {
           <div className="card bg-base-100 border p-4 space-y-3">
             <h2 className="text-xs font-bold uppercase opacity-50 tracking-wide">Guía de Despacho</h2>
 
-            <div>
-              <label className="label py-0.5"><span className="label-text text-xs">Proveedor *</span></label>
-              <ProveedorSelect
-                value={proveedorId || ''}
-                onChange={v => setProveedorId(Number(v))}
-                proveedores={proveedores || []}
-              />
+            <div ref={proveedorRef}>
+              <label className="label py-0.5">
+                <span className={cn('label-text text-xs transition-colors', proveedorError && 'text-error font-semibold')}>
+                  {proveedorError ? '⚠ Selecciona un proveedor primero' : 'Proveedor *'}
+                </span>
+              </label>
+              <div className={proveedorError ? 'animate-shake ring-2 ring-error rounded-lg' : ''}>
+                <ProveedorSelect
+                  value={proveedorId || ''}
+                  onChange={v => { handleSetProveedor(v ? Number(v) : null); setProveedorError(false) }}
+                  proveedores={proveedores || []}
+                />
+              </div>
             </div>
 
             <div>
@@ -404,7 +688,15 @@ export default function NuevaRecepcionPage() {
             ) : (
               <button
                 className="btn btn-sm btn-ghost btn-outline w-full border-dashed"
-                onClick={() => setSolicitudModalOpen(true)}
+                onClick={() => {
+                  if (!proveedorId) {
+                    setProveedorError(true)
+                    setTimeout(() => setProveedorError(false), 1500)
+                    proveedorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                    return
+                  }
+                  setSolicitudModalOpen(true)
+                }}
               >
                 <ShoppingCart className="h-4 w-4 mr-1" />
                 Vincular solicitud (opcional)
@@ -513,9 +805,15 @@ export default function NuevaRecepcionPage() {
           <ProductoAutocomplete
             productos={productos ?? []}
             excluidos={detalles.map(d => d.producto_id)}
+            proveedorId={proveedorId}
             onSelect={prod => { addProducto(prod) }}
             onScan={handleSearch}
-            onScannerOpen={() => setScannerOpen(true)}
+          />
+
+          <ScannerPanel
+            onScan={handleScanDetected}
+            scanCount={scanCount}
+            paused={scannerPaused}
           />
 
           {/* Lista de ítems */}
@@ -532,6 +830,9 @@ export default function NuevaRecepcionPage() {
                   detalle={d}
                   areas={areas ?? []}
                   onChange={handleChange}
+                  onChangeLote={handleChangeLote}
+                  onAddLote={handleAddLote}
+                  onRemoveLote={handleRemoveLote}
                   onRemove={handleRemove}
                   monedaSimbolo={monedaSimbolo}
                 />
@@ -543,35 +844,20 @@ export default function NuevaRecepcionPage() {
           {decision !== 'rechazada' && (
             <LabelsSection
               detalles={detalles}
-              onToggleEtiqueta={(id, val) => handleChange(id, { incluir_etiqueta: val })}
-              onCantidadEtiqueta={(id, val) => handleChange(id, { cantidad_etiquetas: val })}
+              onToggleEtiqueta={(detalleId, loteId, val) => handleChangeLote(detalleId, loteId, { incluir_etiqueta: val })}
+              onCantidadEtiqueta={(detalleId, loteId, val) => handleChangeLote(detalleId, loteId, { cantidad_etiquetas: val })}
             />
           )}
         </div>
       </div>
 
-      {/* Cámara escáner */}
-      {scannerOpen && (
-        <div className="modal modal-open">
-          <div className="modal-box max-w-sm p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-bold">Escanear producto</h3>
-              <button className="btn btn-ghost btn-sm btn-circle" onClick={() => setScannerOpen(false)}>
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <QrScanner
-              active={scannerOpen}
-              onScan={async (code) => {
-                await handleSearch(code)
-                setScannerOpen(false)
-              }}
-            />
-            <p className="text-xs opacity-40 text-center mt-2">Apunta al código QR o de barras del producto</p>
-          </div>
-          <div className="modal-backdrop" onClick={() => setScannerOpen(false)} />
-        </div>
-      )}
+      {/* Bottom sheet datos de lote */}
+      <LoteBottomSheet
+        open={pendingScan !== null}
+        productoNombre={pendingScan?.productoNombre ?? ''}
+        onConfirm={handleConfirmLote}
+        onCancel={handleCancelLote}
+      />
 
       {/* Modal vincular solicitud */}
       <Dialog open={solicitudModalOpen} onClose={() => setSolicitudModalOpen(false)} title="Vincular Solicitud">
@@ -617,7 +903,7 @@ export default function NuevaRecepcionPage() {
             </button>
           ))}
           {solicitudesPendientes?.length === 0 && (
-            <p className="text-center py-8 opacity-40 text-sm">No hay solicitudes aprobadas.</p>
+            <p className="text-center py-8 opacity-40 text-sm">No hay solicitudes aprobadas para este proveedor.</p>
           )}
         </div>
       </Dialog>

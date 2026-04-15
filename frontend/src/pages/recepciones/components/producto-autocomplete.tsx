@@ -7,21 +7,26 @@ import type { Producto } from '@/types'
 interface Props {
   productos: Producto[]
   excluidos: string[]              // producto_id ya presentes en detalles
+  proveedorId?: number | null      // si se indica, solo muestra productos de ese proveedor
   onSelect: (p: Producto) => void
   onScan: (valor: string) => void  // Enter sin sugerencia activa → flujo QR/código
-  onScannerOpen: () => void        // click en ícono ScanLine → abre modal QrScanner en padre
+  onScannerOpen?: () => void       // click en ícono ScanLine → abre modal QrScanner en padre (opcional)
 }
 
-export function ProductoAutocomplete({ productos, excluidos, onSelect, onScan, onScannerOpen }: Props) {
+export function ProductoAutocomplete({ productos, excluidos, proveedorId, onSelect, onScan, onScannerOpen }: Props) {
   const [value, setValue] = useState('')
   const [activeIndex, setActiveIndex] = useState(-1)
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([])
 
   const q = value.trim().toLowerCase()
   const suggestions: Producto[] = q.length >= 2
     ? productos
         .filter(p => !excluidos.includes(String(p.id)))
+        // incluir productos sin proveedor asignado + los del proveedor seleccionado
+        .filter(p => proveedorId == null || p.proveedor_id == null || p.proveedor_id === proveedorId)
         .filter(p =>
           p.nombre.toLowerCase().includes(q) ||
           p.codigo_interno.toLowerCase().includes(q)
@@ -31,6 +36,13 @@ export function ProductoAutocomplete({ productos, excluidos, onSelect, onScan, o
 
   // Resetear índice activo cada vez que cambia el texto
   useEffect(() => { setActiveIndex(-1) }, [value])
+
+  // Scroll automático al ítem activo
+  useEffect(() => {
+    if (activeIndex >= 0) {
+      itemRefs.current[activeIndex]?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [activeIndex])
 
   // Cerrar al hacer click fuera
   useEffect(() => {
@@ -53,14 +65,15 @@ export function ProductoAutocomplete({ productos, excluidos, onSelect, onScan, o
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      if (!open) { setOpen(true); return }
+      if (!open) { setOpen(true) }
       if (suggestions.length === 0) return
-      setActiveIndex(i => (i + 1) % suggestions.length)
+      setActiveIndex(i => i < suggestions.length - 1 ? i + 1 : 0)
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       if (suggestions.length === 0) return
-      setActiveIndex(i => (i - 1 + suggestions.length) % suggestions.length)
+      setActiveIndex(i => i > 0 ? i - 1 : suggestions.length - 1)
     } else if (e.key === 'Enter') {
+      e.preventDefault()
       if (activeIndex >= 0 && suggestions[activeIndex]) {
         select(suggestions[activeIndex])
       } else {
@@ -85,20 +98,33 @@ export function ProductoAutocomplete({ productos, excluidos, onSelect, onScan, o
         value={value}
         onChange={e => { setValue(e.target.value); setOpen(true) }}
         onKeyDown={handleKeyDown}
+        aria-autocomplete="list"
+        aria-expanded={showDropdown}
+        aria-activedescendant={activeIndex >= 0 ? `suggestion-${activeIndex}` : undefined}
       />
-      <ScanLine
-        className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-40 cursor-pointer"
-        onClick={onScannerOpen}
-      />
+      {onScannerOpen && (
+        <ScanLine
+          className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-40 cursor-pointer"
+          onClick={onScannerOpen}
+        />
+      )}
 
       {showDropdown && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-base-100 border border-base-300 rounded-box shadow-lg z-50 overflow-hidden">
+        <div
+          ref={listRef}
+          role="listbox"
+          className="absolute top-full left-0 right-0 mt-1 bg-base-100 border border-base-300 rounded-box shadow-lg z-50 overflow-y-auto max-h-72"
+        >
           {suggestions.length === 0 ? (
             <div className="px-3 py-2 text-sm opacity-50">Sin resultados</div>
           ) : (
             suggestions.map((p, i) => (
               <div
                 key={p.id}
+                id={`suggestion-${i}`}
+                role="option"
+                aria-selected={i === activeIndex}
+                ref={el => { itemRefs.current[i] = el }}
                 className={`flex items-center gap-3 px-3 py-2 cursor-pointer ${
                   i === activeIndex ? 'bg-base-200' : 'hover:bg-base-200'
                 }`}

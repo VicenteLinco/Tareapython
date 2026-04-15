@@ -1,9 +1,21 @@
 // frontend/src/pages/recepciones/components/item-card.tsx
-import { Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { Trash2, ChevronDown, ChevronUp, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ProductoImage } from '@/components/ui/producto-image'
 import { formatCantidad } from '@/lib/utils'
 import type { Area, Presentacion } from '@/types'
+
+// ─── Interfaces públicas ──────────────────────────────────────────────────────
+
+export interface LoteLineUI {
+  id: string
+  codigo_lote: string
+  fecha_vencimiento: string
+  cantidad_presentacion: number
+  incluir_etiqueta: boolean
+  cantidad_etiquetas: number
+}
 
 export interface DetalleLineUI {
   id: string
@@ -13,62 +25,150 @@ export interface DetalleLineUI {
   presentacion_id: number | null
   presentacion_nombre: string
   presentacion_nombre_plural: string
-  cantidad_presentacion: number
-  cantidad_solicitada?: number | null   // hint desde solicitud vinculada
   factor_conversion: number
   unidad_base_nombre: string
   unidad_base_nombre_plural: string
-  codigo_lote: string
-  fecha_vencimiento: string
   area_destino_id: number | null
   area_destino_nombre: string
   presentaciones: Presentacion[]
   precio_unitario: string
   imagen_url?: string | null
-  incluir_etiqueta: boolean
-  cantidad_etiquetas: number
+  cantidad_solicitada?: number | null
+  lotes: LoteLineUI[]
+  collapsed: boolean
 }
 
 interface Props {
   detalle: DetalleLineUI
   areas: Area[]
-  onChange: (id: string, patch: Partial<DetalleLineUI>) => void
+  onChange: (id: string, patch: Partial<Omit<DetalleLineUI, 'lotes'>>) => void
+  onChangeLote: (detalleId: string, loteId: string, patch: Partial<LoteLineUI>) => void
+  onAddLote: (detalleId: string) => void
+  onRemoveLote: (detalleId: string, loteId: string) => void
   onRemove: (id: string) => void
   monedaSimbolo?: string
 }
 
-function isComplete(d: DetalleLineUI): boolean {
-  return !!(d.codigo_lote && d.fecha_vencimiento && d.area_destino_id)
+// ─── Helpers exportados ───────────────────────────────────────────────────────
+
+export function isLoteComplete(l: LoteLineUI): boolean {
+  return !!(l.codigo_lote && l.fecha_vencimiento)
 }
 
-export function ReceptionItemCard({ detalle: d, areas, onChange, onRemove, monedaSimbolo = '$' }: Props) {
-  const complete = isComplete(d)
+export function isCardComplete(d: DetalleLineUI): boolean {
+  return !!(d.area_destino_id && d.lotes.length > 0 && d.lotes.every(isLoteComplete))
+}
 
-  const unidadNombre = d.cantidad_presentacion === 1
-    ? (d.presentacion_nombre || d.unidad_base_nombre)
-    : (d.presentacion_nombre_plural || d.unidad_base_nombre_plural || d.presentacion_nombre || d.unidad_base_nombre)
+function formatPrecioDisplay(raw: string, simbolo: string): string {
+  const digits = raw.replace(/\D/g, '')
+  if (!digits) return ''
+  return `${simbolo}${Number(digits).toLocaleString('es-CL')}`
+}
 
-  const baseEquiv = d.presentacion_id && d.factor_conversion > 1
-    ? formatCantidad(
-        d.cantidad_presentacion * d.factor_conversion,
-        d.unidad_base_nombre,
-        d.unidad_base_nombre_plural
-      )
-    : null
+// ─── Sub-componente: fila de lote ─────────────────────────────────────────────
+
+interface LoteRowProps {
+  lote: LoteLineUI
+  index: number
+  presentacion_nombre: string
+  presentacion_nombre_plural: string
+  unidad_base_nombre: string
+  unidad_base_nombre_plural: string
+  canDelete: boolean
+  onChange: (patch: Partial<LoteLineUI>) => void
+  onDelete: () => void
+}
+
+function LoteRow({
+  lote,
+  index,
+  presentacion_nombre,
+  presentacion_nombre_plural,
+  unidad_base_nombre,
+  unidad_base_nombre_plural,
+  canDelete,
+  onChange,
+  onDelete,
+}: LoteRowProps) {
+  const unitLabel = lote.cantidad_presentacion === 1
+    ? (presentacion_nombre || unidad_base_nombre)
+    : (presentacion_nombre_plural || unidad_base_nombre_plural || presentacion_nombre || unidad_base_nombre)
 
   return (
-    <div className={`card bg-base-100 border p-4 transition-colors ${
+    <div className="flex items-center gap-2">
+      <span className="text-xs opacity-30 w-4 text-right shrink-0">{index + 1}</span>
+      <input
+        className={`input input-sm input-bordered w-28 font-mono ${!lote.codigo_lote ? 'input-warning' : ''}`}
+        placeholder="Nº lote"
+        value={lote.codigo_lote}
+        onChange={e => onChange({ codigo_lote: e.target.value })}
+      />
+      <input
+        type="date"
+        className={`input input-sm input-bordered flex-1 ${!lote.fecha_vencimiento ? 'input-warning' : ''}`}
+        value={lote.fecha_vencimiento}
+        onChange={e => onChange({ fecha_vencimiento: e.target.value })}
+      />
+      <div className="flex items-center gap-1 shrink-0">
+        <input
+          type="number"
+          min={1}
+          className="input input-sm input-bordered w-16"
+          value={lote.cantidad_presentacion}
+          onChange={e => onChange({ cantidad_presentacion: Number(e.target.value) || 1 })}
+        />
+        <span className="text-xs opacity-50 w-14 truncate">{unitLabel}</span>
+      </div>
+      {canDelete ? (
+        <button className="btn btn-ghost btn-xs btn-circle shrink-0" onClick={onDelete}>
+          <Trash2 className="h-3 w-3 text-error" />
+        </button>
+      ) : (
+        <div className="w-6 shrink-0" />
+      )}
+    </div>
+  )
+}
+
+// ─── Componente principal ─────────────────────────────────────────────────────
+
+export function ReceptionItemCard({
+  detalle: d,
+  areas,
+  onChange,
+  onChangeLote,
+  onAddLote,
+  onRemoveLote,
+  onRemove,
+  monedaSimbolo = '$',
+}: Props) {
+  const [precioFocus, setPrecioFocus] = useState(false)
+
+  const complete = isCardComplete(d)
+  const totalCantidad = d.lotes.reduce((s, l) => s + l.cantidad_presentacion, 0)
+  const rawPrecio = d.precio_unitario.replace(/\D/g, '')
+
+  const unidadResumen = formatCantidad(
+    totalCantidad,
+    d.presentacion_nombre || d.unidad_base_nombre,
+    d.presentacion_nombre_plural || d.unidad_base_nombre_plural
+  )
+
+  return (
+    <div className={`card bg-base-100 border transition-colors ${
       complete ? 'border-success/40' : 'border-warning/40'
     }`}>
-      {/* Header */}
-      <div className="flex items-start gap-3 mb-3">
-        <ProductoImage src={d.imagen_url} size="md" className="shrink-0 mt-0.5" />
+
+      {/* ── Header (siempre visible) ── */}
+      <div className="flex items-center gap-3 p-4">
+        <ProductoImage src={d.imagen_url} size="md" className="shrink-0" />
+
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-sm truncate">{d.producto_nombre}</p>
-          {d.codigo_interno && (
-            <p className="text-xs opacity-50 font-mono truncate">{d.codigo_interno}</p>
-          )}
-          <div className="flex items-center gap-2 mt-1 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap mt-0.5">
+            {d.codigo_interno && (
+              <span className="text-xs opacity-50 font-mono">{d.codigo_interno}</span>
+            )}
             {d.area_destino_id ? (
               <span className="badge badge-sm badge-ghost">{d.area_destino_nombre}</span>
             ) : (
@@ -86,49 +186,47 @@ export function ReceptionItemCard({ detalle: d, areas, onChange, onRemove, moned
                 {areas.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
               </select>
             )}
-            <span className={`badge badge-xs ${complete ? 'badge-success' : 'badge-warning'}`}>
-              {complete ? '✓ Completo' : '⚠ Incompleto'}
-            </span>
           </div>
+          {/* Resumen colapsado */}
+          {d.collapsed && (
+            <p className="text-xs opacity-50 mt-0.5">
+              {d.lotes.length === 1 ? '1 lote' : `${d.lotes.length} lotes`}
+              {' · '}{unidadResumen}
+              {rawPrecio ? ` · ${formatPrecioDisplay(rawPrecio, monedaSimbolo)}` : ''}
+            </p>
+          )}
         </div>
-        <Button variant="ghost" size="sm" className="shrink-0" onClick={() => onRemove(d.id)}>
-          <Trash2 className="h-4 w-4 text-error" />
-        </Button>
+
+        <div className="flex items-center gap-1 shrink-0">
+          <span className={`badge badge-xs ${complete ? 'badge-success' : 'badge-warning'}`}>
+            {complete ? '✓ Listo' : '⚠'}
+          </span>
+          <button
+            className="btn btn-ghost btn-sm btn-circle"
+            onClick={() => onChange(d.id, { collapsed: !d.collapsed })}
+            aria-label={d.collapsed ? 'Expandir' : 'Colapsar'}
+          >
+            {d.collapsed
+              ? <ChevronDown className="h-4 w-4" />
+              : <ChevronUp className="h-4 w-4" />
+            }
+          </button>
+          <Button variant="ghost" size="sm" onClick={() => onRemove(d.id)}>
+            <Trash2 className="h-4 w-4 text-error" />
+          </Button>
+        </div>
       </div>
 
-      {/* Fields */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <div>
-          <label className="label py-0"><span className="label-text text-xs opacity-60">Lote</span></label>
-          <input
-            className={`input input-sm input-bordered w-full font-mono ${!d.codigo_lote ? 'input-warning' : ''}`}
-            placeholder="Nº lote"
-            value={d.codigo_lote}
-            onChange={e => onChange(d.id, { codigo_lote: e.target.value })}
-          />
-        </div>
-        <div>
-          <label className="label py-0"><span className="label-text text-xs opacity-60">Vencimiento</span></label>
-          <input
-            type="date"
-            className={`input input-sm input-bordered w-full ${!d.fecha_vencimiento ? 'input-warning' : ''}`}
-            value={d.fecha_vencimiento}
-            onChange={e => onChange(d.id, { fecha_vencimiento: e.target.value })}
-          />
-        </div>
-        <div>
-          <label className="label py-0"><span className="label-text text-xs opacity-60">Cantidad</span></label>
-          <div className="flex items-center gap-1">
-            <input
-              type="number"
-              min={1}
-              className="input input-sm input-bordered w-16"
-              value={d.cantidad_presentacion}
-              onChange={e => onChange(d.id, { cantidad_presentacion: Number(e.target.value) || 1 })}
-            />
-            {d.presentaciones.length > 1 ? (
+      {/* ── Contenido expandido ── */}
+      {!d.collapsed && (
+        <div className="border-t border-base-200 px-4 py-3 space-y-3">
+
+          {/* Selector de presentación compartido (solo si hay más de una) */}
+          {d.presentaciones.length > 1 && (
+            <div className="flex items-center gap-2">
+              <label className="text-xs opacity-60 shrink-0">Presentación:</label>
               <select
-                className="select select-bordered select-xs flex-1"
+                className="select select-bordered select-xs"
                 value={d.presentacion_id ?? ''}
                 onChange={e => {
                   const pid = Number(e.target.value)
@@ -146,56 +244,73 @@ export function ReceptionItemCard({ detalle: d, areas, onChange, onRemove, moned
                   <option key={p.id} value={p.id}>{p.nombre}</option>
                 ))}
               </select>
-            ) : (
-              <span className="text-xs opacity-50 truncate">{unidadNombre}</span>
-            )}
-          </div>
-          {d.cantidad_solicitada != null && (
-            <p className="text-xs text-info mt-0.5">
-              Pedido: {formatCantidad(d.cantidad_solicitada, d.presentacion_nombre || d.unidad_base_nombre, d.presentacion_nombre_plural || d.unidad_base_nombre_plural)}
-            </p>
-          )}
-          {baseEquiv && (
-            <p className="text-xs opacity-40 mt-0.5">= {baseEquiv}</p>
-          )}
-        </div>
-        <div>
-          <label className="label py-0"><span className="label-text text-xs opacity-60">Precio unit.</span></label>
-          <input
-            type="number"
-            className="input input-sm input-bordered w-full"
-            placeholder={`${monedaSimbolo}0`}
-            value={d.precio_unitario}
-            onChange={e => onChange(d.id, { precio_unitario: e.target.value })}
-          />
-        </div>
-      </div>
-
-      {/* Etiqueta toggle */}
-      {complete && (
-        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-base-200">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="checkbox checkbox-sm checkbox-primary"
-              checked={d.incluir_etiqueta}
-              onChange={e => onChange(d.id, { incluir_etiqueta: e.target.checked })}
-            />
-            <span className="text-xs">🏷️ Imprimir etiqueta</span>
-          </label>
-          {d.incluir_etiqueta && (
-            <div className="flex items-center gap-1 ml-auto">
-              <span className="text-xs opacity-50">Cant.:</span>
-              <input
-                type="number"
-                min={1}
-                max={99}
-                className="input input-xs input-bordered w-14 text-center"
-                value={d.cantidad_etiquetas}
-                onChange={e => onChange(d.id, { cantidad_etiquetas: Math.max(1, Number(e.target.value)) })}
-              />
             </div>
           )}
+
+          {/* Hint de cantidad solicitada */}
+          {d.cantidad_solicitada != null && (
+            <p className="text-xs text-info">
+              Pedido: {formatCantidad(
+                d.cantidad_solicitada,
+                d.presentacion_nombre || d.unidad_base_nombre,
+                d.presentacion_nombre_plural || d.unidad_base_nombre_plural
+              )}
+            </p>
+          )}
+
+          {/* Cabecera de columnas */}
+          <div className="flex items-center gap-2 text-xs opacity-40 pb-0.5">
+            <span className="w-4" />
+            <span className="w-28">Lote</span>
+            <span className="flex-1">Vencimiento</span>
+            <span className="w-[88px]">Cantidad</span>
+            <span className="w-6" />
+          </div>
+
+          {/* Filas de lotes */}
+          <div className="space-y-2">
+            {d.lotes.map((l, i) => (
+              <LoteRow
+                key={l.id}
+                lote={l}
+                index={i}
+                presentacion_nombre={d.presentacion_nombre}
+                presentacion_nombre_plural={d.presentacion_nombre_plural}
+                unidad_base_nombre={d.unidad_base_nombre}
+                unidad_base_nombre_plural={d.unidad_base_nombre_plural}
+                canDelete={d.lotes.length > 1}
+                onChange={patch => onChangeLote(d.id, l.id, patch)}
+                onDelete={() => onRemoveLote(d.id, l.id)}
+              />
+            ))}
+          </div>
+
+          {/* Agregar lote */}
+          <button
+            className="btn btn-sm btn-ghost btn-outline w-full border-dashed text-xs gap-1"
+            onClick={() => onAddLote(d.id)}
+          >
+            <Plus className="h-3 w-3" />
+            Agregar lote distinto
+          </button>
+
+          {/* Precio unitario */}
+          <div className="flex items-center gap-2 pt-2 border-t border-base-200">
+            <label className="text-xs opacity-60 shrink-0">Precio unit.:</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              className="input input-sm input-bordered w-36"
+              placeholder={`${monedaSimbolo}0`}
+              value={precioFocus
+                ? rawPrecio
+                : rawPrecio ? formatPrecioDisplay(rawPrecio, monedaSimbolo) : ''
+              }
+              onFocus={() => setPrecioFocus(true)}
+              onBlur={() => setPrecioFocus(false)}
+              onChange={e => onChange(d.id, { precio_unitario: e.target.value.replace(/\D/g, '') })}
+            />
+          </div>
         </div>
       )}
     </div>

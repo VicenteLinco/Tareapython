@@ -859,25 +859,46 @@ export default function SolicitudesCompraPage() {
 
               {/* DERECHO 80%: Pedido */}
               <div className="flex flex-col bg-base-100 rounded-[2.5rem] border border-base-300 shadow-2xl overflow-hidden relative min-w-0">
-                <div className="px-7 py-6 border-b border-base-200 flex items-center justify-between bg-primary/5">
-                  <div className="flex items-center gap-4">
-                    <div className="p-2.5 bg-primary text-primary-content rounded-2xl shadow-lg">
-                      <ShoppingCart className="h-5 w-5" />
+                <div className="px-6 py-4 border-b border-base-200 bg-primary/5 space-y-3 shrink-0">
+                  {/* Título + estado */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-primary text-primary-content rounded-2xl shadow-lg">
+                        <ShoppingCart className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <h2 className="text-sm font-bold leading-tight">
+                          Pedido a {selectedProveedor.nombre}
+                        </h2>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">
+                          {items.length} {items.length === 1 ? 'producto' : 'productos'}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h2 className="text-base font-bold leading-tight">
-                        Pedido a {selectedProveedor.nombre}
-                      </h2>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">
-                        {items.length} {items.length === 1 ? 'producto' : 'productos'}
-                      </p>
-                    </div>
+                    {solicitudId && (
+                      <Badge className="bg-success/10 text-success border-success/20 px-2.5 py-1 text-[10px]">
+                        Guardado
+                      </Badge>
+                    )}
                   </div>
-                  {solicitudId && (
-                    <Badge className="bg-success/10 text-success border-success/20 px-2.5 py-1 text-[10px]">
-                      Guardado
-                    </Badge>
-                  )}
+                  {/* Selector de horizonte global */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] font-bold opacity-40 uppercase tracking-wider shrink-0">Cubrir por:</span>
+                    {HORIZONTE_CHIPS.map(d => (
+                      <button
+                        key={d}
+                        onClick={() => handleGlobalHorizonteChange(d)}
+                        className={cn(
+                          "px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all",
+                          horizonteGlobal === d
+                            ? "bg-primary text-primary-content border-primary shadow-sm"
+                            : "bg-base-100 text-base-content/50 border-base-300 hover:border-primary/40 hover:text-primary"
+                        )}
+                      >
+                        {d >= 365 ? '1 año' : d >= 180 ? '6m' : d >= 90 ? '3m' : `${d}d`}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-5 space-y-3 custom-scrollbar">
@@ -890,78 +911,121 @@ export default function SolicitudesCompraPage() {
                       <p className="text-xs mt-1">Agrega desde las sugerencias o el buscador.</p>
                     </div>
                   ) : (
-                    items.map(item => (
-                      <div key={item.producto_id} className="flex items-center gap-3 px-3 py-2.5 bg-base-200/40 hover:bg-base-200/60 border border-transparent hover:border-primary/15 transition-all rounded-2xl group">
-                        {item.imagen_url && (
-                          <ProductoImage src={item.imagen_url} size="sm" className="shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-semibold text-xs leading-tight truncate">{item.producto_nombre}</h4>
-                          <div className="flex items-center gap-1.5 mt-1">
-                            <div className="flex items-center bg-base-100 rounded-lg border border-base-300 p-0.5 shadow-inner">
-                              <button
-                                className="btn btn-ghost btn-xs btn-circle h-5 w-5 min-h-0"
-                                onClick={() => handleUpdateQty(item.producto_id, item.cantidad - 1)}
-                              >
-                                <Minus className="h-2.5 w-2.5" />
-                              </button>
-                              <input
-                                type="number"
-                                className="w-10 text-center text-xs font-black bg-transparent focus:outline-none no-spinners"
-                                value={item.cantidad}
-                                onChange={e => handleUpdateQty(item.producto_id, parseInt(e.target.value) || 1)}
-                              />
-                              <button
-                                className="btn btn-ghost btn-xs btn-circle h-5 w-5 min-h-0"
-                                onClick={() => handleUpdateQty(item.producto_id, item.cantidad + 1)}
-                              >
-                                <Plus className="h-2.5 w-2.5" />
-                              </button>
+                    items.map(item => {
+                      const diasCubiertos = calcularDiasCubiertos(item)
+                      const esPersonalizado = item.horizonte_personalizado === true
+                      const popoverAbierto = popoverOpenId === item.producto_id
+                      return (
+                        <div key={item.producto_id} className="flex items-center gap-3 px-3 py-2.5 bg-base-200/40 hover:bg-base-200/60 border border-transparent hover:border-primary/15 transition-all rounded-2xl group">
+                          {item.imagen_url && (
+                            <ProductoImage src={item.imagen_url} size="sm" className="shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-semibold text-xs leading-tight truncate">{item.producto_nombre}</h4>
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                              <div className="flex items-center bg-base-100 rounded-lg border border-base-300 p-0.5 shadow-inner">
+                                <button
+                                  className="btn btn-ghost btn-xs btn-circle h-5 w-5 min-h-0"
+                                  onClick={() => handleUpdateQty(item.producto_id, item.cantidad - 1)}
+                                >
+                                  <Minus className="h-2.5 w-2.5" />
+                                </button>
+                                <input
+                                  type="number"
+                                  className="w-10 text-center text-xs font-black bg-transparent focus:outline-none no-spinners"
+                                  value={item.cantidad}
+                                  onChange={e => handleUpdateQty(item.producto_id, parseInt(e.target.value) || 1)}
+                                />
+                                <button
+                                  className="btn btn-ghost btn-xs btn-circle h-5 w-5 min-h-0"
+                                  onClick={() => handleUpdateQty(item.producto_id, item.cantidad + 1)}
+                                >
+                                  <Plus className="h-2.5 w-2.5" />
+                                </button>
+                              </div>
+                              <span className="text-[10px] font-bold text-primary">{unidadLabel(item, item.cantidad)}</span>
+                              {equivalenciaBase(item) && (
+                                <span className="text-[9px] opacity-40">{equivalenciaBase(item)}</span>
+                              )}
+                              {/* Pill de cobertura con popover */}
+                              <div className="relative" data-popover-item>
+                                <button
+                                  onClick={() => setPopoverOpenId(popoverAbierto ? null : item.producto_id)}
+                                  className={cn(
+                                    "text-[9px] font-bold border rounded-full px-2 py-0.5 transition-all hover:opacity-80",
+                                    pillClasses(diasCubiertos, esPersonalizado)
+                                  )}
+                                >
+                                  {pillText(diasCubiertos, esPersonalizado)}
+                                </button>
+                                {popoverAbierto && (
+                                  <div className="absolute bottom-full left-0 mb-1.5 z-50 bg-base-100 border border-base-300 rounded-2xl shadow-2xl p-3 min-w-[220px]">
+                                    <p className="text-[10px] font-bold opacity-60 uppercase tracking-wider mb-2">
+                                      Ajustar horizonte
+                                    </p>
+                                    <div className="flex flex-wrap gap-1.5 mb-2">
+                                      {HORIZONTE_CHIPS.map(d => (
+                                        <button
+                                          key={d}
+                                          onClick={() => handleHorizonteChip(item.producto_id, d)}
+                                          className={cn(
+                                            "px-2 py-1 rounded-full text-[10px] font-bold border transition-all",
+                                            item.horizonte_dias === d
+                                              ? "bg-primary text-primary-content border-primary"
+                                              : "bg-base-100 text-base-content/50 border-base-300 hover:border-primary/40"
+                                          )}
+                                        >
+                                          {d >= 365 ? '1 año' : d >= 180 ? '6m' : d >= 90 ? '3m' : `${d}d`}
+                                          {d === horizonteGlobal && item.horizonte_dias !== d && (
+                                            <span className="ml-1 opacity-50 text-[8px]">global</span>
+                                          )}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    {esPersonalizado && (
+                                      <button
+                                        onClick={() => handleResetHorizonteToGlobal(item.producto_id)}
+                                        className="text-[10px] text-primary hover:underline w-full text-left opacity-70"
+                                      >
+                                        ↩ Usar global ({horizonteGlobal}d)
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                            <span className="text-[10px] font-bold text-primary">{unidadLabel(item, item.cantidad)}</span>
-                            {equivalenciaBase(item) && (
-                              <span className="text-[9px] opacity-40">{equivalenciaBase(item)}</span>
-                            )}
                           </div>
-                          <HorizonteChips
-                            horizonteDias={item.horizonte_dias}
-                            horizonteSugerido={item.horizonte_sugerido}
-                            horizonteRazon={item.horizonte_razon}
-                            consumoDiario={item.consumo_diario}
-                            cantidad={item.cantidad}
-                            onChipSelect={(dias) => handleHorizonteChip(item.producto_id, dias)}
-                          />
-                        </div>
-                        <div className="text-right shrink-0">
-                          {item.presentacion_id && item.factor_conversion ? (
-                            <>
+                          <div className="text-right shrink-0">
+                            {item.presentacion_id && item.factor_conversion ? (
+                              <>
+                                <p className="text-xs font-bold font-mono">
+                                  {item.precio_unitario > 0
+                                    ? `${fmt(item.precio_unitario * item.factor_conversion)} / ${item.presentacion_nombre ?? 'pres.'}`
+                                    : <span className="opacity-30">—</span>
+                                  }
+                                </p>
+                                <p className="text-[9px] opacity-35">
+                                  ({formatCantidad(item.factor_conversion, item.unidad_base, item.unidad_base_plural ?? undefined)})
+                                </p>
+                              </>
+                            ) : (
                               <p className="text-xs font-bold font-mono">
                                 {item.precio_unitario > 0
-                                  ? `${fmt(item.precio_unitario * item.factor_conversion)} / ${item.presentacion_nombre ?? 'pres.'}`
+                                  ? `${fmt(item.precio_unitario)} / ${item.unidad_base}`
                                   : <span className="opacity-30">—</span>
                                 }
                               </p>
-                              <p className="text-[9px] opacity-35">
-                                ({formatCantidad(item.factor_conversion, item.unidad_base, item.unidad_base_plural ?? undefined)})
-                              </p>
-                            </>
-                          ) : (
-                            <p className="text-xs font-bold font-mono">
-                              {item.precio_unitario > 0
-                                ? `${fmt(item.precio_unitario)} / ${item.unidad_base}`
-                                : <span className="opacity-30">—</span>
-                              }
-                            </p>
-                          )}
+                            )}
+                          </div>
+                          <button
+                            className="btn btn-ghost btn-xs btn-circle text-error opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                            onClick={() => handleRemove(item.producto_id)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
                         </div>
-                        <button
-                          className="btn btn-ghost btn-xs btn-circle text-error opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                          onClick={() => handleRemove(item.producto_id)}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ))
+                      )
+                    })
                   )}
                 </div>
 

@@ -164,6 +164,7 @@ export interface SolicitudItem {
   horizonte_dias: number | null      // null = chip desactivado (cantidad manual)
   horizonte_sugerido: number | null  // calculado al agregar, no cambia
   horizonte_razon: string | null     // texto del badge, no cambia
+  horizonte_personalizado?: boolean  // true = override del global; undefined/false = sigue el global
 }
 
 // --- Pagination ---

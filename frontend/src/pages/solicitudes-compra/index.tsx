@@ -102,6 +102,32 @@ function confianzaLabel(diasHistoria: number): { label: string; color: string } 
   return { label: 'Estimación confiable', color: 'text-success' }
 }
 
+// ─── Pill de cobertura ───────────────────────────────────────────────────────
+
+const HORIZONTE_CHIPS = [7, 15, 30, 90, 180, 365] as const
+
+function calcularDiasCubiertos(item: SolicitudItem): number | null {
+  if (item.consumo_diario <= 0) return null
+  const unidadesBase = item.factor_conversion
+    ? item.cantidad * item.factor_conversion
+    : item.cantidad
+  return Math.round(unidadesBase / item.consumo_diario)
+}
+
+function pillClasses(dias: number | null, personalizado: boolean): string {
+  if (personalizado) return 'bg-purple-500/10 text-purple-300 border-purple-500/30'
+  if (dias === null) return 'bg-base-200 text-base-content/40 border-base-300'
+  if (dias < 15)  return 'bg-error/10 text-error border-error/30'
+  if (dias < 30)  return 'bg-warning/10 text-warning border-warning/30'
+  if (dias < 90)  return 'bg-success/10 text-success border-success/30'
+  return 'bg-info/10 text-info border-info/30'
+}
+
+function pillText(dias: number | null, personalizado: boolean): string {
+  if (dias === null) return '📅 Sin historial'
+  return personalizado ? `📅 ~${dias} días ✏` : `📅 ~${dias} días`
+}
+
 // ─── Proveedor Gallery ───────────────────────────────────────────────────────
 
 interface ProveedorCardProps {

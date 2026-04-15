@@ -63,7 +63,10 @@ async fn obtener_solicitud_por_id(
             d.precio_unitario,
             d.presentacion_id,
             d.cantidad_presentaciones,
-            p.imagen_url
+            p.imagen_url,
+            d.horizonte_dias,
+            d.horizonte_sugerido,
+            d.horizonte_razon
            FROM solicitud_compra_detalle d
            JOIN productos p ON p.id = d.producto_id
            LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
@@ -94,8 +97,9 @@ async fn insertar_item(
     sqlx::query(
         "INSERT INTO solicitud_compra_detalle
          (solicitud_id, producto_id, cantidad_sugerida, unidad,
-          precio_unitario, presentacion_id, cantidad_presentaciones)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)"
+          precio_unitario, presentacion_id, cantidad_presentaciones,
+          horizonte_dias, horizonte_sugerido, horizonte_razon)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
     )
     .bind(solicitud_id)
     .bind(item.producto_id)
@@ -104,6 +108,9 @@ async fn insertar_item(
     .bind(item.precio_unitario)
     .bind(item.presentacion_id)
     .bind(item.cantidad_presentaciones)
+    .bind(item.horizonte_dias)
+    .bind(item.horizonte_sugerido)
+    .bind(&item.horizonte_razon)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -276,9 +283,10 @@ consumo AS (
     GROUP BY l.producto_id
 ),
 stock_total AS (
-    SELECT producto_id, SUM(cantidad) AS stock_actual
-    FROM stock
-    GROUP BY producto_id
+    SELECT l.producto_id, SUM(s.cantidad) AS stock_actual
+    FROM stock s
+    JOIN lotes l ON l.id = s.lote_id
+    GROUP BY l.producto_id
 ),
 pedidos_en_vuelo AS (
     SELECT
@@ -298,7 +306,11 @@ pedidos_en_vuelo AS (
 ultimo_precio AS (
     SELECT DISTINCT ON (rd.producto_id)
         rd.producto_id,
-        rd.precio_unitario
+        CASE
+            WHEN rd.factor_conversion_usado IS NOT NULL AND rd.factor_conversion_usado > 0
+            THEN rd.precio_unitario / rd.factor_conversion_usado
+            ELSE rd.precio_unitario
+        END AS precio_unitario
     FROM recepcion_detalle rd
     JOIN recepciones r ON r.id = rd.recepcion_id
     WHERE rd.precio_unitario IS NOT NULL

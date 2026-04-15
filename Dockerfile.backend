@@ -10,6 +10,8 @@ RUN cargo build --release 2>/dev/null || true
 # Build actual app
 COPY backend/src ./src
 COPY backend/migrations ./migrations
+COPY backend/.sqlx ./.sqlx
+ENV SQLX_OFFLINE=true
 RUN touch src/main.rs && cargo build --release
 
 # Runtime stage

@@ -22,6 +22,31 @@ use crate::dto::solicitud::{
 };
 use crate::errors::AppError;
 
+#[derive(Debug, Deserialize)]
+struct HorizonteParams {
+    producto_id: Uuid,
+    proveedor_id: i32,
+}
+
+#[derive(Debug, Serialize)]
+struct HorizonteFactores {
+    ciclo_historico_dias: Option<i32>,
+    n_pedidos_historico: i32,
+    coeficiente_variacion: f64,
+    multiplicador_variabilidad: f64,
+    lead_time: i32,
+}
+
+#[derive(Debug, Serialize)]
+struct HorizonteResponse {
+    horizonte_sugerido: i32,
+    razon: String,
+    consumo_diario: f64,
+    stock_actual: f64,
+    stock_minimo: f64,
+    factores: HorizonteFactores,
+}
+
 #[derive(Debug, Serialize, sqlx::FromRow)]
 struct SolicitudDetalleRow {
     pub id: Uuid,
@@ -505,11 +530,152 @@ async fn get_borrador(
     }
 }
 
+async fn horizonte_sugerido(
+    State(state): State<AppState>,
+    Query(params): Query<HorizonteParams>,
+) -> Result<Json<HorizonteResponse>, AppError> {
+    // ── 1. Ciclo histórico ──────────────────────────────────────────────────
+    let ciclo_row = sqlx::query!(
+        r#"
+        SELECT
+            COUNT(gap_dias)::INT                         AS "n_pedidos!: i32",
+            AVG(gap_dias)::INT                           AS "ciclo_dias?: i32"
+        FROM (
+            SELECT DATE_PART('day',
+                LAG(fecha_creacion) OVER (ORDER BY fecha_creacion DESC)
+                - fecha_creacion
+            )::INT AS gap_dias
+            FROM (
+                SELECT DISTINCT sc.fecha_creacion
+                FROM solicitudes_compra sc
+                JOIN solicitud_compra_detalle scd ON scd.solicitud_id = sc.id
+                WHERE scd.producto_id = $1
+                  AND sc.estado IN ('guardada', 'aprobada')
+                ORDER BY sc.fecha_creacion DESC
+                LIMIT 5
+            ) pedidos
+        ) gaps
+        WHERE gap_dias IS NOT NULL
+        "#,
+        params.producto_id
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    let n_pedidos = ciclo_row.n_pedidos;
+    let ciclo_dias = ciclo_row.ciclo_dias;
+
+    // ── 2. Variabilidad de consumo semanal (últimos 90 días) ───────────────
+    let var_row = sqlx::query!(
+        r#"
+        SELECT
+            COALESCE(AVG(consumo_semana), 0)::FLOAT8    AS "media!: f64",
+            COALESCE(STDDEV(consumo_semana), 0)::FLOAT8 AS "stddev!: f64"
+        FROM (
+            SELECT DATE_TRUNC('week', m.created_at),
+                   SUM(m.cantidad)::FLOAT8 AS consumo_semana
+            FROM movimientos m
+            JOIN lotes l ON l.id = m.lote_id
+            WHERE l.producto_id = $1
+              AND m.tipo = 'CONSUMO'
+              AND m.created_at >= NOW() - INTERVAL '90 days'
+            GROUP BY DATE_TRUNC('week', m.created_at)
+        ) semanas
+        "#,
+        params.producto_id
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    let media = var_row.media;
+    let stddev = var_row.stddev;
+    let cv = if media > 0.0 { stddev / media } else { 0.0 };
+
+    // ── 3. Lead time, stock actual, stock mínimo, consumo diario ──────────
+    let info_row = sqlx::query!(
+        r#"
+        SELECT
+            COALESCE(p.stock_minimo, 0)::FLOAT8                        AS "stock_minimo!: f64",
+            COALESCE(
+                (SELECT SUM(s.cantidad)::FLOAT8
+                 FROM stock s JOIN lotes l2 ON l2.id = s.lote_id
+                 WHERE l2.producto_id = p.id), 0
+            )                                                           AS "stock_actual!: f64",
+            COALESCE(prov.dias_despacho_tierra,
+                     prov.dias_despacho_aereo, 7)::INT                 AS "lead_time!: i32",
+            COALESCE(
+                (SELECT (SUM(m.cantidad)::FLOAT8 /
+                    GREATEST(DATE_PART('day', NOW() - MIN(m.created_at)), 1))
+                 FROM movimientos m JOIN lotes l3 ON l3.id = m.lote_id
+                 WHERE l3.producto_id = p.id AND m.tipo = 'CONSUMO'
+                   AND m.created_at >= NOW() - INTERVAL '30 days'
+                ), 0
+            )                                                           AS "consumo_diario!: f64"
+        FROM productos p
+        LEFT JOIN proveedores prov ON prov.id = $2
+        WHERE p.id = $1
+        "#,
+        params.producto_id,
+        params.proveedor_id
+    )
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::NotFound("Producto no encontrado".into()))?;
+
+    let lead_time = info_row.lead_time;
+    let stock_minimo = info_row.stock_minimo;
+    let stock_actual = info_row.stock_actual;
+    let consumo_diario = info_row.consumo_diario;
+
+    // ── 4. Algoritmo de horizonte ──────────────────────────────────────────
+    let (horizonte_base, razon_base) = if n_pedidos >= 2 {
+        let dias = ciclo_dias.unwrap_or(30);
+        (dias, format!("ciclo histórico ~{}d con este proveedor", dias))
+    } else {
+        let fallback = ((lead_time as f64 * 3.0) as i32).max(30);
+        (fallback, "sin historial — estimación conservadora".to_string())
+    };
+
+    let (multiplicador, razon) = if n_pedidos >= 2 {
+        if cv < 0.3 {
+            (1.0f64, razon_base)
+        } else if cv < 0.7 {
+            (1.3f64, format!("ciclo histórico ~{}d + buffer por consumo variable",
+                ciclo_dias.unwrap_or(30)))
+        } else {
+            (1.5f64, format!("ciclo histórico ~{}d + buffer por consumo irregular",
+                ciclo_dias.unwrap_or(30)))
+        }
+    } else {
+        (1.0f64, razon_base)
+    };
+
+    let horizonte_ajustado = (horizonte_base as f64 * multiplicador) as i32;
+    let piso = ((lead_time as f64 * 1.5) as i32).max(7);
+    let horizonte_sugerido = horizonte_ajustado.max(piso);
+
+    Ok(Json(HorizonteResponse {
+        horizonte_sugerido,
+        razon,
+        consumo_diario,
+        stock_actual,
+        stock_minimo,
+        factores: HorizonteFactores {
+            ciclo_historico_dias: ciclo_dias,
+            n_pedidos_historico: n_pedidos,
+            coeficiente_variacion: (cv * 100.0).round() / 100.0,
+            multiplicador_variabilidad: multiplicador,
+            lead_time,
+        },
+    }))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
         .route("/borrador", get(get_borrador))
         .route("/recomendaciones", get(recomendaciones))
+        .route("/horizonte", get(horizonte_sugerido))
         .route("/{id}", get(obtener).put(actualizar))
         .route("/{id}/guardar", post(guardar))
 }

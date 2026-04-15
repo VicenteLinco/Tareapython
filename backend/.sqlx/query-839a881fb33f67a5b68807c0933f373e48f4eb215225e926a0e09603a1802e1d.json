@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            COALESCE(p.stock_minimo, 0)::FLOAT8                        AS \"stock_minimo!: f64\",\n            COALESCE(\n                (SELECT SUM(s.cantidad)::FLOAT8\n                 FROM stock s JOIN lotes l2 ON l2.id = s.lote_id\n                 WHERE l2.producto_id = p.id), 0\n            )                                                           AS \"stock_actual!: f64\",\n            COALESCE(prov.dias_despacho_tierra,\n                     prov.dias_despacho_aereo, 7)::INT                 AS \"lead_time!: i32\",\n            COALESCE(\n                (SELECT (SUM(m.cantidad)::FLOAT8 /\n                    GREATEST(DATE_PART('day', NOW() - MIN(m.created_at)), 1))\n                 FROM movimientos m JOIN lotes l3 ON l3.id = m.lote_id\n                 WHERE l3.producto_id = p.id AND m.tipo = 'CONSUMO'\n                   AND m.created_at >= NOW() - INTERVAL '30 days'\n                ), 0\n            )                                                           AS \"consumo_diario!: f64\"\n        FROM productos p\n        LEFT JOIN proveedores prov ON prov.id = $2\n        WHERE p.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "stock_minimo!: f64",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 1,
+        "name": "stock_actual!: f64",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 2,
+        "name": "lead_time!: i32",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "consumo_diario!: f64",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "839a881fb33f67a5b68807c0933f373e48f4eb215225e926a0e09603a1802e1d"
+}

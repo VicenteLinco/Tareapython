@@ -754,37 +754,59 @@ export default function SolicitudesCompraPage() {
               </Button>
             </div>
 
-            {/* Panel dual */}
-            <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0">
+            {/* Panel dual 20/80 */}
+            <div className="flex-1 grid grid-cols-[20%_1fr] gap-4 min-h-0">
 
-              {/* IZQUIERDO: Buscador + Recomendaciones */}
-              <div className="w-full lg:w-[320px] flex flex-col gap-4 min-w-0 min-h-0 shrink-0">
-
-                <SolicitudBuscador
-                  proveedorId={selectedProveedor.id}
-                  monedaCodigo={monedaCodigo}
-                  excluidos={items.map(i => i.producto_id)}
-                  onAdd={handleAddFromSearch}
-                />
-
-                {/* Recomendaciones — siempre visibles */}
-                <div className="flex-1 flex flex-col bg-base-100 rounded-[2rem] border border-base-300 shadow-sm overflow-hidden min-h-[200px]">
-                  <div className="px-5 py-4 border-b border-base-200 flex items-center gap-3 bg-base-200/20">
-                    <ClipboardCheck className="h-4 w-4 text-primary" />
-                    <h2 className="font-bold text-sm">Quiebres de Stock</h2>
-                    {recsFiltered.length > 0 && (
-                      <span className="badge badge-primary badge-sm font-bold">{recsFiltered.length}</span>
+              {/* IZQUIERDO 20%: Tabs Quiebres / Buscar */}
+              <div className="flex flex-col bg-base-100 rounded-[2rem] border border-base-300 shadow-sm overflow-hidden min-h-0">
+                {/* Tabs */}
+                <div className="flex border-b border-base-300 shrink-0">
+                  <button
+                    onClick={() => setTabIzquierdo('quiebres')}
+                    className={cn(
+                      "flex-1 py-3 text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5",
+                      tabIzquierdo === 'quiebres'
+                        ? "bg-error/5 text-error border-b-2 border-error"
+                        : "text-base-content/40 hover:text-base-content/60 border-b-2 border-transparent"
                     )}
-                  </div>
+                  >
+                    ⚠ Quiebres
+                    {recsFiltered.length > 0 && (
+                      <span className="badge badge-error badge-xs font-bold">{recsFiltered.length}</span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setTabIzquierdo('buscar')}
+                    className={cn(
+                      "flex-1 py-3 text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5",
+                      tabIzquierdo === 'buscar'
+                        ? "bg-primary/5 text-primary border-b-2 border-primary"
+                        : "text-base-content/40 hover:text-base-content/60 border-b-2 border-transparent"
+                    )}
+                  >
+                    🔍 Buscar
+                  </button>
+                </div>
 
-                  <div className="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
+                {/* Contenido según tab */}
+                {tabIzquierdo === 'buscar' ? (
+                  <div className="p-3">
+                    <SolicitudBuscador
+                      proveedorId={selectedProveedor.id}
+                      monedaCodigo={monedaCodigo}
+                      excluidos={items.map(i => i.producto_id)}
+                      onAdd={handleAddFromSearch}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar min-h-0">
                     {isLoadingRecs ? (
-                      Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)
+                      Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-20 rounded-2xl" />)
                     ) : recsFiltered.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center opacity-30 text-center p-8">
-                        <CheckCircle2 className="h-10 w-10 mb-3 stroke-[1.5px]" />
-                        <p className="font-bold text-sm">¡Todo al día!</p>
-                        <p className="text-xs">No hay quiebres de stock para {selectedProveedor.nombre}.</p>
+                      <div className="h-full flex flex-col items-center justify-center opacity-30 text-center p-6">
+                        <CheckCircle2 className="h-8 w-8 mb-2 stroke-[1.5px]" />
+                        <p className="font-bold text-xs">¡Todo al día!</p>
+                        <p className="text-[10px]">Sin quiebres para {selectedProveedor.nombre}.</p>
                       </div>
                     ) : (
                       recsFiltered.map(r => {
@@ -793,64 +815,50 @@ export default function SolicitudesCompraPage() {
                           <div
                             key={r.producto_id}
                             className={cn(
-                              "group flex items-center gap-3 p-3.5 rounded-2xl border transition-all duration-200",
+                              "flex flex-col gap-2 p-3 rounded-2xl border transition-all",
                               alreadyAdded
-                                ? "bg-base-200/40 opacity-50 border-transparent"
+                                ? "opacity-40 bg-base-200/40 border-transparent"
                                 : "bg-base-100 border-base-200 hover:border-primary/40 hover:shadow-sm"
                             )}
                           >
-                            <div className={cn(
-                              "w-1 h-10 rounded-full flex-shrink-0",
-                              r.nivel_urgencia === 'critica' ? 'bg-error' : r.nivel_urgencia === 'alta' ? 'bg-warning' : 'bg-primary'
-                            )} />
-
-                            <div className="flex-1 min-w-0">
-                              <h3 className="font-bold text-sm truncate">{r.producto_nombre}</h3>
-                              <span className="text-[10px] opacity-40 font-bold uppercase tracking-wider">
-                                Stock: {parseFloat(r.stock_actual)} / {parseFloat(r.stock_seguridad)}
-                              </span>
-                              {(() => {
-                                const conf = confianzaLabel(r.dias_historia)
-                                return (
-                                  <span className={`block text-[10px] font-medium ${conf.color}`}>
-                                    {conf.label}
-                                  </span>
-                                )
-                              })()}
-                            </div>
-
-                            <div className="text-right flex-shrink-0">
-                              <p className="text-[9px] font-bold opacity-40 uppercase leading-none mb-0.5">Sugerido</p>
-                              <p className="font-black text-primary text-xs">
-                                {(() => {
-                                  if (r.dias_historia === 0) {
-                                    const qty = Math.ceil(parseFloat(r.stock_seguridad.toString()) * 2)
-                                    return `${qty} ${qty === 1 ? r.unidad_base : (r.unidad_base_plural || autoPlural(r.unidad_base))}`
-                                  }
-                                  return r.cantidad_sugerida_presentacion
+                            <div className="flex items-start gap-2">
+                              <div className={cn(
+                                "w-1 min-h-[32px] self-stretch rounded-full flex-shrink-0",
+                                r.nivel_urgencia === 'critica' ? 'bg-error' : r.nivel_urgencia === 'alta' ? 'bg-warning' : 'bg-primary'
+                              )} />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-bold text-xs truncate">{r.producto_nombre}</p>
+                                <p className="text-[9px] opacity-50 mt-0.5">
+                                  Stock: {parseFloat(r.stock_actual)} / {parseFloat(r.stock_seguridad)}
+                                </p>
+                                <p className="text-[9px] opacity-40 mt-0.5">
+                                  Sug: {r.cantidad_sugerida_presentacion
                                     ? `${Math.ceil(parseFloat(r.cantidad_sugerida_presentacion))} ${r.presentacion_nombre_plural || r.presentacion_nombre}`
                                     : `${Math.ceil(parseFloat(r.cantidad_sugerida_base))} ${r.unidad_base_plural || r.unidad_base}`
-                                })()}
-                              </p>
+                                  } · ~{horizonteGlobal}d
+                                </p>
+                              </div>
                             </div>
-
                             <button
-                              className="btn btn-primary btn-sm btn-circle rounded-xl shadow-sm shadow-primary/20 scale-90 active:scale-75 transition-all flex-shrink-0"
-                              onClick={() => handleAddFromRec(r)}
+                              className={cn(
+                                "btn btn-xs w-full rounded-xl gap-1 transition-all",
+                                alreadyAdded ? "btn-ghost cursor-default" : "btn-primary shadow-sm shadow-primary/20"
+                              )}
+                              onClick={() => !alreadyAdded && handleAddFromRec(r)}
                               disabled={alreadyAdded}
                             >
-                              <Plus className="h-3.5 w-3.5" />
+                              {alreadyAdded ? '✓ Agregado' : <><Plus className="h-3 w-3" /> Agregar</>}
                             </button>
                           </div>
                         )
                       })
                     )}
                   </div>
-                </div>
+                )}
               </div>
 
-              {/* DERECHO: Pedido */}
-              <div className="flex-1 flex flex-col bg-base-100 rounded-[2.5rem] border border-base-300 shadow-2xl overflow-hidden relative min-w-0">
+              {/* DERECHO 80%: Pedido */}
+              <div className="flex flex-col bg-base-100 rounded-[2.5rem] border border-base-300 shadow-2xl overflow-hidden relative min-w-0">
                 <div className="px-7 py-6 border-b border-base-200 flex items-center justify-between bg-primary/5">
                   <div className="flex items-center gap-4">
                     <div className="p-2.5 bg-primary text-primary-content rounded-2xl shadow-lg">

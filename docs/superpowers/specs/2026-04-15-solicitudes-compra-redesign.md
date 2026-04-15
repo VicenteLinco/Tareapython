@@ -157,6 +157,40 @@ Cuando se agrega un item nuevo (desde quiebres o buscador), su cantidad inicial 
 
 ---
 
+## Reglas de interacción — tabla de decisión
+
+| Acción del usuario | Efecto en `cantidad` | Efecto en `horizonte_dias` | Pill resultante |
+|--------------------|----------------------|----------------------------|-----------------|
+| Selecciona chip global (ej: 30d) | Recalcula todos los items sin `horizonte_personalizado` | Se actualiza en todos sin personalizar | Verde/amarillo/rojo/azul según días |
+| Cambia qty con −/+ en un item | No cambia | No cambia | Recalcula días desde qty actual; color según resultado; **sin ✏** |
+| Selecciona chip en popover de item (distinto al global) | Recalcula qty para cubrir esos días | Se actualiza solo ese item | Lila ✏ |
+| Elige "↩ Usar global" en popover de item | Recalcula qty para cubrir el global | Vuelve al valor global | Verde/amarillo/rojo/azul |
+| Agrega item desde quiebres | Cantidad calculada con horizonte global | Igual al global | Verde/amarillo/rojo/azul |
+| Agrega item desde buscador | Cantidad calculada con horizonte global | Igual al global | Verde/amarillo/rojo/azul |
+
+La pill siempre muestra los días reales calculados desde `cantidad` actual, no el valor fijo de `horizonte_dias`. Así, si el usuario sube manualmente la qty de 10 a 25 cajas, la pill refleja la cobertura real aunque `horizonte_dias` siga en 30.
+
+---
+
+## Panel izquierdo — tab Quiebres
+
+Cada quiebre en la lista muestra:
+
+1. Barra de color izquierda según urgencia: rojo (crítica), amarillo (alta), azul (media)
+2. Nombre del producto
+3. Nivel de urgencia + stock actual / stock de seguridad
+4. Cantidad sugerida calculada con el horizonte global activo
+5. Botón **"+ Agregar"**
+
+Al hacer click en "Agregar":
+- El item se añade al pedido con cantidad calculada para el horizonte global
+- El quiebre queda **opaco con ✓** en la lista para indicar que ya está en el pedido
+- El botón se deshabilita (no permite doble agregado)
+
+Si el horizonte global cambia después de haber agregado el item, el item en el pedido se recalcula igual que cualquier otro item sin `horizonte_personalizado`.
+
+---
+
 ## Lo que NO cambia
 
 - El paso 1 (selección de proveedor) no se modifica.

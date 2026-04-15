@@ -1133,6 +1133,7 @@ export default function SolicitudesCompraPage() {
                         factor_conversion: i.factor_conversion ? parseFloat(i.factor_conversion) : null,
                         cantidad_presentaciones: i.cantidad_presentaciones ? parseFloat(i.cantidad_presentaciones) : null,
                         precio_unitario: i.precio_unitario ? parseFloat(i.precio_unitario) : null,
+                        horizonte_dias: i.horizonte_dias ?? null,
                       })),
                     })
                   }}

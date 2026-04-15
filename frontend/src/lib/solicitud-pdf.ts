@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { formatDate } from '@/lib/utils'
+import { formatDate, autoPlural } from '@/lib/utils'
 
 interface SolicitudPdfOptions {
   numero_documento: string
@@ -14,6 +14,7 @@ interface SolicitudPdfOptions {
     producto_nombre: string
     cantidad_sugerida: number
     unidad: string
+    unidad_plural?: string | null
     codigo_maestro?: string | null
     codigo_proveedor?: string | null
     proveedor_nombre?: string | null
@@ -22,6 +23,7 @@ interface SolicitudPdfOptions {
     factor_conversion?: number | null
     precio_unitario?: number | null
     cantidad_presentaciones?: number | null
+    horizonte_dias?: number | null
   }[]
   nombreLaboratorio: string
   logoBase64?: string | null
@@ -96,20 +98,22 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
   doc.line(15, y, W - 15, y)
 
   y += 6
-  doc.setFontSize(8)
+  doc.setFontSize(7.5)
   doc.setTextColor(...C.textLight)
   doc.setFont('helvetica', 'bold')
   doc.text('FECHA DE EMISIÓN', 15, y)
-  doc.text('SOLICITANTE RESPONSABLE', 70, y)
-  doc.text('DEPARTAMENTO / ORIGEN', 140, y)
+  doc.text('SOLICITANTE', 70, y)
+  doc.text('DEPARTAMENTO', 150, y)
 
   y += 5
   doc.setTextColor(...C.textMain)
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
+  doc.setFontSize(8.5)
   doc.text(formatDate(fecha_creacion), 15, y)
-  doc.text(usuario_nombre.toUpperCase(), 70, y)
-  doc.text('LABORATORIO CLÍNICO', 140, y)
+  // Truncar nombre largo para evitar desborde
+  const nombreTrunc = doc.splitTextToSize(usuario_nombre.toUpperCase(), 72)[0] as string
+  doc.text(nombreTrunc, 70, y)
+  doc.text('LAB. CLÍNICO', 150, y)
 
   y += 10
 
@@ -154,8 +158,8 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
       '#',
       'Producto',
       'Cantidad',
-      'Precio unitario',
-      'Total neto',
+      'P. Unitario',
+      'Total Neto',
     ]],
     body: items.map((item, index) => {
       const usaPresentacion = !!(item.presentacion_nombre && item.factor_conversion && item.cantidad_presentaciones)
@@ -168,9 +172,16 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
           ? item.presentacion_nombre!
           : (item.presentacion_nombre_plural ?? item.presentacion_nombre + 's'))
         : ''
+      const baseQty = Math.round(item.cantidad_sugerida)
+      const baseUnitLabel = baseQty === 1
+        ? item.unidad
+        : (item.unidad_plural ?? autoPlural(item.unidad))
+      const horizonteLinea = item.horizonte_dias
+        ? `\ncubre ${item.horizonte_dias >= 365 ? '1 año' : item.horizonte_dias >= 180 ? '6 meses' : item.horizonte_dias >= 90 ? '3 meses' : `${item.horizonte_dias} días`}`
+        : ''
       const cantDisplay = usaPresentacion
-        ? `${item.cantidad_presentaciones} ${presLabel}\n= ${baseEquiv} ${item.unidad}`
-        : `${Math.round(item.cantidad_sugerida)} ${item.unidad}`
+        ? `${item.cantidad_presentaciones} ${presLabel}\n= ${baseEquiv} ${baseEquiv === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}${horizonteLinea}`
+        : `${baseQty} ${baseUnitLabel}${horizonteLinea}`
 
       const precioBase = item.precio_unitario ?? 0
       const precioPres = (usaPresentacion && item.factor_conversion)
@@ -178,7 +189,7 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
         : null
       const qty = usaPresentacion ? item.cantidad_presentaciones! : item.cantidad_sugerida
       const precioEfectivo = precioPres ?? precioBase
-      const hasPrice = item.precio_unitario != null
+      const hasPrice = item.precio_unitario != null && item.precio_unitario > 0
       const neto = hasPrice ? qty * precioEfectivo : 0
 
       // Una sola columna de precio: mostrar precio de presentación si aplica, si no precio base
@@ -205,10 +216,10 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
     },
     styles: { fontSize: 7.5, cellPadding: { top: 3, right: 2, bottom: 3, left: 2 }, valign: 'middle' },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 6 },
-      1: { cellWidth: 80, cellPadding: { top: 3, right: 2, bottom: 3, left: 3 } },
+      0: { halign: 'center', cellWidth: 8 },
+      1: { cellWidth: 82, cellPadding: { top: 3, right: 2, bottom: 3, left: 3 } },
       2: { halign: 'center', cellWidth: 30 },
-      3: { halign: 'right', cellWidth: 32 },
+      3: { halign: 'right', cellWidth: 34 },
       4: { halign: 'right', cellWidth: 38 },
     },
     alternateRowStyles: { fillColor: C.bgLight },

@@ -40,8 +40,37 @@ import { exportarSolicitudPDF } from '@/lib/solicitud-pdf'
 import { Dialog } from '@/components/ui/dialog'
 import { ProductoImage } from '@/components/ui/producto-image'
 import { SolicitudBuscador } from './components/solicitud-buscador'
+import { HorizonteChips, chipMasCercano } from './components/horizonte-chips'
 
 // ─── Helper functions ────────────────────────────────────────────────────────
+
+function calcularCantidad(
+  horizonte: number,
+  consumoDiario: number,
+  leadTime: number,
+  stockMinimo: number,
+  stockActual: number,
+): number {
+  return Math.max(1, Math.ceil(
+    stockMinimo + consumoDiario * (leadTime + horizonte) - stockActual
+  ))
+}
+
+async function fetchHorizonte(productoId: string, proveedorId: number | null) {
+  if (!proveedorId) {
+    return { horizonte_sugerido: 30, razon: 'sin proveedor — estimación por defecto', consumo_diario: 0, stock_actual: 0, stock_minimo: 0 }
+  }
+  const res = await api.get<{
+    horizonte_sugerido: number
+    razon: string
+    consumo_diario: number
+    stock_actual: number
+    stock_minimo: number
+  }>('/solicitudes-compra/horizonte', {
+    params: { producto_id: productoId, proveedor_id: proveedorId }
+  })
+  return res.data
+}
 
 function unidadLabel(item: SolicitudItem, qty: number): string {
   if (item.presentacion_nombre) {
@@ -250,6 +279,12 @@ export default function SolicitudesCompraPage() {
           cantidad: parseFloat(item.cantidad_sugerida),
           precio_unitario: item.precio_unitario ? parseFloat(item.precio_unitario) : 0,
           imagen_url: item.imagen_url,
+          consumo_diario: 0,
+          stock_actual: 0,
+          stock_minimo: 0,
+          horizonte_dias: item.horizonte_dias ?? null,
+          horizonte_sugerido: item.horizonte_sugerido ?? null,
+          horizonte_razon: item.horizonte_razon ?? null,
         })) : []
 
         if (b) setSolicitudId(b.id)
@@ -276,6 +311,12 @@ export default function SolicitudesCompraPage() {
                 cantidad: 1,
                 precio_unitario: p.precio_unidad ? parseFloat(String(p.precio_unidad)) : 0,
                 imagen_url: (p as Producto & { imagen_url?: string | null }).imagen_url,
+                consumo_diario: 0,
+                stock_actual: 0,
+                stock_minimo: 0,
+                horizonte_dias: null,
+                horizonte_sugerido: null,
+                horizonte_razon: null,
               }
               setItems([...borradorItems, newItem])
               setView('crear')
@@ -319,6 +360,9 @@ export default function SolicitudesCompraPage() {
           precio_unitario: i.precio_unitario.toString(),
           presentacion_id: i.presentacion_id,
           cantidad_presentaciones: i.cantidad.toString(),
+          horizonte_dias: i.horizonte_dias ?? undefined,
+          horizonte_sugerido: i.horizonte_sugerido ?? undefined,
+          horizonte_razon: i.horizonte_razon ?? undefined,
         })),
       }
       let id = solicitudId
@@ -348,45 +392,53 @@ export default function SolicitudesCompraPage() {
 
   // ── Actions ──────────────────────────────────────────────────────────────────
 
-  const handleAddFromRec = (r: ItemRecomendado) => {
+  const handleAddFromRec = async (r: ItemRecomendado) => {
     if (items.find(i => i.producto_id === r.producto_id)) {
       toast.error('Producto ya está en la lista')
       return
     }
-    const cantidadInicial = r.dias_historia === 0
-      ? parseFloat(r.stock_seguridad.toString()) * 2
-      : parseFloat(r.cantidad_sugerida_base.toString())
-    const qty = r.cantidad_sugerida_presentacion && r.dias_historia !== 0
-      ? Math.ceil(parseFloat(r.cantidad_sugerida_presentacion))
-      : Math.ceil(cantidadInicial)
+    const proveedorId = r.proveedor_id ?? selectedProveedor?.id ?? null
+    const horizData = await fetchHorizonte(r.producto_id, proveedorId)
+    const horizonte = horizData.horizonte_sugerido
+    const consumoDiario = parseFloat(r.consumo_diario.toString())
+    const stockActual = parseFloat(r.stock_actual.toString())
+    const stockMinimo = parseFloat(r.stock_seguridad.toString())
+    const leadTime = r.lead_time
+
+    const cantidad = calcularCantidad(horizonte, consumoDiario, leadTime, stockMinimo, stockActual)
 
     const newItem: SolicitudItem = {
       producto_id: r.producto_id,
       producto_nombre: r.producto_nombre,
       codigo_proveedor: r.codigo_proveedor,
       codigo_maestro: r.codigo_maestro,
-      proveedor_id: r.proveedor_id,
+      proveedor_id: proveedorId,
       proveedor_nombre: r.proveedor_nombre || 'S/P',
-      lead_time: r.lead_time,
+      lead_time: leadTime,
       presentacion_id: r.presentacion_id,
       presentacion_nombre: r.presentacion_nombre,
       presentacion_nombre_plural: r.presentacion_nombre_plural,
-      factor_conversion: r.factor_conversion ? parseFloat(r.factor_conversion) : null,
+      factor_conversion: r.factor_conversion ? parseFloat(r.factor_conversion.toString()) : null,
       unidad_base: r.unidad_base,
       unidad_base_plural: r.unidad_base_plural || autoPlural(r.unidad_base),
-      cantidad: qty,
-      precio_unitario: r.precio_ultima_recepcion ? parseFloat(r.precio_ultima_recepcion) : 0,
+      cantidad,
+      precio_unitario: r.precio_ultima_recepcion ? parseFloat(r.precio_ultima_recepcion.toString()) : 0,
       imagen_url: r.imagen_url,
+      consumo_diario: consumoDiario,
+      stock_actual: stockActual,
+      stock_minimo: stockMinimo,
+      horizonte_dias: chipMasCercano(horizonte),
+      horizonte_sugerido: horizonte,
+      horizonte_razon: horizData.razon,
     }
     setItems(prev => [...prev, newItem])
   }
 
-  const handleAddFromSearch = (p: Producto) => {
+  const handleAddFromSearch = async (p: Producto) => {
     if (items.find(i => i.producto_id === p.id)) {
       toast.error('Producto ya está en la lista')
       return
     }
-    // El endpoint /productos devuelve ProductoListItem con campos extra
     type ProductoExt = Producto & {
       imagen_url?: string | null
       unidad_base?: { id: number; nombre: string; nombre_plural: string }
@@ -403,37 +455,58 @@ export default function SolicitudesCompraPage() {
     const presNombre = px.pres_nombre ?? null
     const presNombrePlural = px.pres_nombre_plural ?? null
     const presFactor = px.pres_factor ? px.pres_factor : null
+    const proveedorId = px.proveedor?.id ?? selectedProveedor?.id ?? null
 
-    const fakeRec: ItemRecomendado = {
+    const horizData = await fetchHorizonte(p.id, proveedorId)
+    const horizonte = horizData.horizonte_sugerido
+    const consumoDiario = horizData.consumo_diario
+    const stockActual = horizData.stock_actual
+    const stockMinimo = horizData.stock_minimo
+    const leadTime = p.lead_time_propio || 0
+
+    const cantidad = calcularCantidad(horizonte, consumoDiario, leadTime, stockMinimo, stockActual)
+
+    const newItem: SolicitudItem = {
       producto_id: p.id,
       producto_nombre: p.nombre,
       codigo_proveedor: p.codigo_proveedor,
       codigo_maestro: p.codigo_maestro,
-      proveedor_id: px.proveedor?.id ?? null,
+      proveedor_id: proveedorId,
       proveedor_nombre: selectedProveedor?.nombre ?? 'Manual',
-      lead_time: p.lead_time_propio || 0,
-      autonomia_dias: 0,
-      nivel_urgencia: 'normal',
-      stock_actual: '0',
-      stock_seguridad: p.stock_minimo,
-      consumo_diario: '0',
-      dias_historia: 0,
-      cantidad_sugerida_base: presFactor ?? '1',
+      lead_time: leadTime,
       presentacion_id: presId,
       presentacion_nombre: presNombre,
       presentacion_nombre_plural: presNombrePlural,
-      factor_conversion: presFactor,
-      cantidad_sugerida_presentacion: presId ? '1' : null,
-      precio_ultima_recepcion: p.precio_unidad,
+      factor_conversion: presFactor ? parseFloat(presFactor) : null,
       unidad_base: unidadNombre,
       unidad_base_plural: unidadPlural,
+      cantidad,
+      precio_unitario: p.precio_unidad ? parseFloat(String(p.precio_unidad)) : 0,
       imagen_url: px.imagen_url ?? null,
+      consumo_diario: consumoDiario,
+      stock_actual: stockActual,
+      stock_minimo: stockMinimo,
+      horizonte_dias: chipMasCercano(horizonte),
+      horizonte_sugerido: horizonte,
+      horizonte_razon: horizData.razon,
     }
-    handleAddFromRec(fakeRec)
+    setItems(prev => [...prev, newItem])
   }
 
   const handleUpdateQty = (pid: string, val: number) => {
-    setItems(prev => prev.map(i => i.producto_id === pid ? { ...i, cantidad: Math.max(1, val) } : i))
+    setItems(prev => prev.map(i =>
+      i.producto_id === pid
+        ? { ...i, cantidad: Math.max(1, val), horizonte_dias: null }
+        : i
+    ))
+  }
+
+  const handleHorizonteChip = (pid: string, dias: number) => {
+    setItems(prev => prev.map(i => {
+      if (i.producto_id !== pid) return i
+      const nueva = calcularCantidad(dias, i.consumo_diario, i.lead_time, i.stock_minimo, i.stock_actual)
+      return { ...i, horizonte_dias: dias, cantidad: nueva }
+    }))
   }
 
   const handleRemove = (pid: string) => {
@@ -452,6 +525,9 @@ export default function SolicitudesCompraPage() {
         precio_unitario: i.precio_unitario.toString(),
         presentacion_id: i.presentacion_id,
         cantidad_presentaciones: i.cantidad.toString(),
+        horizonte_dias: i.horizonte_dias ?? undefined,
+        horizonte_sugerido: i.horizonte_sugerido ?? undefined,
+        horizonte_razon: i.horizonte_razon ?? undefined,
       })),
     }, { onSettled: () => setIsSaving(false) })
   }
@@ -683,9 +759,15 @@ export default function SolicitudesCompraPage() {
                             <div className="text-right flex-shrink-0">
                               <p className="text-[9px] font-bold opacity-40 uppercase leading-none mb-0.5">Sugerido</p>
                               <p className="font-black text-primary text-xs">
-                                {r.cantidad_sugerida_presentacion
-                                  ? `${Math.ceil(parseFloat(r.cantidad_sugerida_presentacion))} ${r.presentacion_nombre_plural || r.presentacion_nombre}`
-                                  : `${Math.ceil(parseFloat(r.cantidad_sugerida_base))} ${r.unidad_base_plural || r.unidad_base}`}
+                                {(() => {
+                                  if (r.dias_historia === 0) {
+                                    const qty = Math.ceil(parseFloat(r.stock_seguridad.toString()) * 2)
+                                    return `${qty} ${qty === 1 ? r.unidad_base : (r.unidad_base_plural || autoPlural(r.unidad_base))}`
+                                  }
+                                  return r.cantidad_sugerida_presentacion
+                                    ? `${Math.ceil(parseFloat(r.cantidad_sugerida_presentacion))} ${r.presentacion_nombre_plural || r.presentacion_nombre}`
+                                    : `${Math.ceil(parseFloat(r.cantidad_sugerida_base))} ${r.unidad_base_plural || r.unidad_base}`
+                                })()}
                               </p>
                             </div>
 
@@ -754,7 +836,7 @@ export default function SolicitudesCompraPage() {
                               </button>
                               <input
                                 type="number"
-                                className="w-8 text-center text-xs font-black bg-transparent focus:outline-none"
+                                className="w-10 text-center text-xs font-black bg-transparent focus:outline-none no-spinners"
                                 value={item.cantidad}
                                 onChange={e => handleUpdateQty(item.producto_id, parseInt(e.target.value) || 1)}
                               />
@@ -770,12 +852,23 @@ export default function SolicitudesCompraPage() {
                               <span className="text-[9px] opacity-40">{equivalenciaBase(item)}</span>
                             )}
                           </div>
+                          <HorizonteChips
+                            horizonteDias={item.horizonte_dias}
+                            horizonteSugerido={item.horizonte_sugerido}
+                            horizonteRazon={item.horizonte_razon}
+                            consumoDiario={item.consumo_diario}
+                            cantidad={item.cantidad}
+                            onChipSelect={(dias) => handleHorizonteChip(item.producto_id, dias)}
+                          />
                         </div>
                         <div className="text-right shrink-0">
                           {item.presentacion_id && item.factor_conversion ? (
                             <>
                               <p className="text-xs font-bold font-mono">
-                                {fmt(item.precio_unitario * item.factor_conversion)} / {item.presentacion_nombre ?? 'pres.'}
+                                {item.precio_unitario > 0
+                                  ? `${fmt(item.precio_unitario * item.factor_conversion)} / ${item.presentacion_nombre ?? 'pres.'}`
+                                  : <span className="opacity-30">—</span>
+                                }
                               </p>
                               <p className="text-[9px] opacity-35">
                                 ({formatCantidad(item.factor_conversion, item.unidad_base, item.unidad_base_plural ?? undefined)})
@@ -783,7 +876,10 @@ export default function SolicitudesCompraPage() {
                             </>
                           ) : (
                             <p className="text-xs font-bold font-mono">
-                              {fmt(item.precio_unitario)} / {item.unidad_base}
+                              {item.precio_unitario > 0
+                                ? `${fmt(item.precio_unitario)} / ${item.unidad_base}`
+                                : <span className="opacity-30">—</span>
+                              }
                             </p>
                           )}
                         </div>

@@ -8,7 +8,9 @@ import {
   PackageX,
   MapPin,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  ChevronRight,
+  ShieldCheck,
 } from 'lucide-react'
 import { useAreaStore } from '@/hooks/use-area-store'
 import api from '@/lib/api'
@@ -35,6 +37,7 @@ export default function DescartesPage() {
   const [items, setItems] = useState<Record<string, DescarteItemLocal>>({})
   const [showHealthyWarning, setShowHealthyWarning] = useState(false)
   const [healthyJustification, setHealthyJustification] = useState('')
+  const [showSanosPopover, setShowSanosPopover] = useState(false)
 
   const queryClient = useQueryClient()
 
@@ -155,27 +158,49 @@ export default function DescartesPage() {
       
       {/* List side */}
       <div className="flex-1 flex flex-col min-w-0 gap-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-base-100 p-4 rounded-2xl border border-base-200">
-          <div>
-            <h1 className="text-xl font-bold flex items-center gap-2">
-              <PackageX className="w-5 h-5 text-error" />
-              Gestión de Descartes
-            </h1>
-            <p className="text-xs opacity-50">Retiro de insumos dañados o vencidos</p>
+        <div className="flex flex-col gap-3 bg-base-100 p-4 rounded-2xl border border-base-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h1 className="text-xl font-bold flex items-center gap-2">
+                <PackageX className="w-5 h-5 text-error" />
+                Gestión de Descartes
+              </h1>
+              <p className="text-xs opacity-50">Retiro de insumos dañados o vencidos</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4 opacity-30" />
+              <Select
+                value={areaId || ""}
+                onChange={(e) => {
+                  setAreaId(Number(e.target.value))
+                  setItems({})
+                }}
+                options={areaOptions}
+                placeholder="Seleccionar área"
+                className="w-[200px] select-sm"
+              />
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 opacity-30" />
-            <Select 
-              value={areaId || ""} 
-              onChange={(e) => {
-                setAreaId(Number(e.target.value))
-                setItems({})
-              }}
-              options={areaOptions}
-              placeholder="Seleccionar área"
-              className="w-[200px] select-sm"
-            />
+          {/* Stepper de pasos */}
+          <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider flex-wrap">
+            {[
+              { n: 1, label: 'Área', done: !!areaId },
+              { n: 2, label: 'Filtros', done: !!areaId },
+              { n: 3, label: 'Selección', done: totalSelected > 0 },
+              { n: 4, label: 'Motivo y confirmación', done: false },
+            ].map((step, idx, arr) => (
+              <div key={step.n} className="flex items-center gap-1">
+                <span className={cn(
+                  "w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0",
+                  step.done ? "bg-success text-success-content" : "bg-base-200 text-base-content/40"
+                )}>
+                  {step.done ? '✓' : step.n}
+                </span>
+                <span className={cn(step.done ? "text-success" : "text-base-content/40")}>{step.label}</span>
+                {idx < arr.length - 1 && <ChevronRight className="w-3 h-3 text-base-content/20 shrink-0" />}
+              </div>
+            ))}
           </div>
         </div>
 
@@ -200,6 +225,53 @@ export default function DescartesPage() {
           </Button>
         </div>
 
+        {/* Footer sticky: selección y sanos */}
+        {totalSelected > 0 && (
+          <div className="sticky bottom-0 bg-base-100 border border-base-200 rounded-2xl shadow-lg px-4 py-3 flex items-center justify-between gap-3 z-10">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="text-sm font-bold shrink-0">
+                {totalSelected} {totalSelected === 1 ? 'ítem seleccionado' : 'ítems seleccionados'}
+              </span>
+              {hasHealthyItems && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-warning flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5" /> {healthyItems.length} sanos
+                  </span>
+                  <div className="relative">
+                    <button
+                      className="text-[10px] text-warning underline underline-offset-2 hover:opacity-80"
+                      onClick={e => { e.stopPropagation(); setShowSanosPopover(v => !v) }}
+                    >
+                      Ver detalle
+                    </button>
+                    {showSanosPopover && (
+                      <div className="absolute bottom-full left-0 mb-2 z-50 bg-base-100 border border-base-200 rounded-2xl shadow-2xl p-3 min-w-[240px] max-h-48 overflow-y-auto">
+                        <p className="text-[10px] font-bold opacity-50 uppercase tracking-wider mb-2">Items sanos seleccionados</p>
+                        <ul className="space-y-1">
+                          {healthyItems.map(i => (
+                            <li key={i.lote_id} className="text-xs flex items-center justify-between gap-2">
+                              <span className="truncate font-medium">{i.producto_nombre}</span>
+                              <span className="text-[9px] font-mono opacity-50 shrink-0">{i.codigo_lote}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <button
+              className="btn btn-error btn-sm rounded-xl gap-1.5 shrink-0"
+              onClick={handleConfirm}
+              disabled={descarteMutation.isPending}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Continuar
+            </button>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto rounded-xl border border-base-200 bg-base-100">
           <table className="table w-full">
             <thead className="sticky top-0 bg-base-100 z-10">
@@ -223,10 +295,11 @@ export default function DescartesPage() {
                   const isExpired = days !== null && days < 0
                   const isExpiring = days !== null && days <= 30
                   const isSelected = !!items[s.lote_id]
+                  const isSano = !isExpired && (days === null || days > 30)
 
                   return (
-                    <tr 
-                      key={s.lote_id} 
+                    <tr
+                      key={s.lote_id}
                       className={cn(
                         "hover:bg-base-200/30 cursor-pointer transition-colors",
                         isSelected && "bg-primary/5 hover:bg-primary/10"
@@ -234,16 +307,26 @@ export default function DescartesPage() {
                       onClick={() => toggleItem(s.lote_id)}
                     >
                       <td>
-                        <input 
-                          type="checkbox" 
+                        <input
+                          type="checkbox"
                           className="checkbox checkbox-sm checkbox-error"
                           checked={isSelected}
                           readOnly
                         />
                       </td>
                       <td>
-                        <div className="flex flex-col">
-                          <span className="font-bold text-sm">{s.producto_nombre}</span>
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-sm">{s.producto_nombre}</span>
+                            {isSano && (
+                              <span
+                                className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-success/10 text-success border border-success/20"
+                                title="Vencimiento > 30 días. Requerirá justificación para descartar."
+                              >
+                                <ShieldCheck className="w-2.5 h-2.5" /> sano
+                              </span>
+                            )}
+                          </div>
                           <span className="text-[10px] font-mono opacity-50">LOTE: {s.codigo_lote}</span>
                         </div>
                       </td>
@@ -356,7 +439,9 @@ export default function DescartesPage() {
               <AlertTriangle className="w-6 h-6 text-error shrink-0" />
               <div>
                 <h3 className="font-bold text-base">¿Descartar insumos en buen estado?</h3>
-                <p className="text-xs opacity-60 mt-0.5">Esta acción es irreversible</p>
+                <p className="text-xs opacity-60 mt-0.5">
+                  Descartando {totalSelected} {totalSelected === 1 ? 'ítem' : 'ítems'} · {healthyItems.length} {healthyItems.length === 1 ? 'sano requiere' : 'sanos requieren'} justificación
+                </p>
               </div>
             </div>
 

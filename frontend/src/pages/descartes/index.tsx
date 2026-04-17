@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { v4 as uuidv4 } from 'uuid'
 import {
@@ -32,6 +32,14 @@ interface DescarteItemLocal extends StockPorArea {
 export default function DescartesPage() {
   const globalAreaId = useAreaStore((s) => s.selectedAreaId)
   const [areaId, setAreaId] = useState<number | null>(globalAreaId)
+
+  // Sincronizar con el filtro global cuando cambia
+  useEffect(() => {
+    if (globalAreaId !== null) {
+      setAreaId(globalAreaId)
+      setItems({})
+    }
+  }, [globalAreaId])
   const [search, setSearch] = useState('')
   const [filterExpiring, setFilterExpiring] = useState(false)
   const [items, setItems] = useState<Record<string, DescarteItemLocal>>({})

@@ -1,6 +1,7 @@
 import { Outlet, Navigate } from 'react-router-dom'
 import { Sidebar } from './sidebar'
 import { Header } from './header'
+import { Breadcrumb } from './breadcrumb'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout'
 import { InactivityWarningDialog } from '@/components/auth/InactivityWarningDialog'
@@ -18,6 +19,7 @@ export function AppLayout() {
       <Sidebar />
       <div className="pl-[60px] transition-all duration-300">
         <Header />
+        <Breadcrumb />
         <main className="mx-auto max-w-6xl px-6 py-6">
           <Outlet />
         </main>

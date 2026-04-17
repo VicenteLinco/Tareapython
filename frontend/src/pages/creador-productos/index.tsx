@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { Tag, Layers, MapPin, Truck, LayoutList } from 'lucide-react'
-import { Dialog } from '@/components/ui/dialog'
+import { useSearchParams } from 'react-router-dom'
+import { Tag, Layers, MapPin, Truck, LayoutList, Package } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import CategoriasTab from './categorias-tab'
 import UnidadesTab from './unidades-tab'
 import AreasTab from './areas-tab'
@@ -8,63 +8,64 @@ import ProveedoresTab from './proveedores-tab'
 import ProductosTab from './productos-tab'
 import PresentacionesFormatosTab from './presentaciones-formatos-tab'
 
-type ModalId = 'categorias' | 'unidades' | 'areas' | 'proveedores' | 'presentaciones' | null
+type TabId = 'productos' | 'categorias' | 'unidades' | 'areas' | 'proveedores' | 'presentaciones'
+
+const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
+  { id: 'productos',      label: 'Productos',      icon: Package   },
+  { id: 'categorias',     label: 'Categorías',     icon: Tag       },
+  { id: 'unidades',       label: 'Unidades',       icon: Layers    },
+  { id: 'proveedores',    label: 'Proveedores',    icon: Truck     },
+  { id: 'areas',          label: 'Áreas',          icon: MapPin    },
+  { id: 'presentaciones', label: 'Presentaciones', icon: LayoutList },
+]
 
 export default function CreadorProductosPage() {
-  const [modal, setModal] = useState<ModalId>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab') as TabId | null
+  const tabActivo: TabId = TABS.some(t => t.id === tabParam) ? tabParam! : 'productos'
 
-  const cards = [
-    { id: 'categorias'     as ModalId, label: 'Categorías',      icon: Tag,        desc: 'Grupos de productos'              },
-    { id: 'unidades'       as ModalId, label: 'Unidades básicas', icon: Layers,     desc: 'Unidad básica de consumo'         },
-    { id: 'areas'          as ModalId, label: 'Áreas',            icon: MapPin,     desc: 'Zonas del laboratorio'            },
-    { id: 'proveedores'    as ModalId, label: 'Proveedores',      icon: Truck,      desc: 'Empresas suministradoras'         },
-    { id: 'presentaciones' as ModalId, label: 'Presentaciones',   icon: LayoutList, desc: 'Formatos de ingreso de productos' },
-  ]
+  const setTab = (id: TabId) => {
+    const p = new URLSearchParams(searchParams)
+    if (id === 'productos') p.delete('tab')
+    else p.set('tab', id)
+    setSearchParams(p, { replace: true })
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="space-y-0">
+      <div className="mb-4">
         <h1 className="text-2xl font-bold tracking-tight">Creador de Productos</h1>
         <p className="text-sm opacity-50 mt-0.5">Administra los datos maestros del sistema</p>
       </div>
 
-      {/* Support catalogs — compact accessory row */}
-      <div className="flex flex-wrap items-center gap-3 pb-4">
-        <span className="text-xs text-base-content/40 shrink-0">Gestión de listas desplegables</span>
-        <div className="join flex-wrap">
-          {cards.map(({ id, label, icon: Icon, desc }) => (
-            <div key={id} className="tooltip tooltip-bottom" data-tip={desc}>
-              <button
-                onClick={() => setModal(id)}
-                className="join-item btn btn-ghost btn-sm gap-1.5 font-normal"
-              >
-                <Icon className="h-3.5 w-3.5 opacity-60" />
-                <span className="text-xs">{label}</span>
-              </button>
-            </div>
-          ))}
-        </div>
+      {/* Tabs */}
+      <div className="flex items-center gap-1 border-b border-base-200 overflow-x-auto pb-0">
+        {TABS.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={cn(
+              "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-all whitespace-nowrap -mb-px",
+              tabActivo === id
+                ? "border-primary text-primary"
+                : "border-transparent text-base-content/50 hover:text-base-content/80 hover:border-base-300"
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* Products — main content */}
-      <ProductosTab />
-
-      {/* Modals */}
-      <Dialog open={modal === 'categorias'}     onClose={() => setModal(null)} title="Categorías"       className="max-w-2xl">
-        <CategoriasTab />
-      </Dialog>
-      <Dialog open={modal === 'unidades'}       onClose={() => setModal(null)} title="Unidades básicas" className="max-w-2xl">
-        <UnidadesTab />
-      </Dialog>
-      <Dialog open={modal === 'areas'}          onClose={() => setModal(null)} title="Áreas"            className="max-w-2xl">
-        <AreasTab />
-      </Dialog>
-      <Dialog open={modal === 'proveedores'}    onClose={() => setModal(null)} title="Proveedores"      className="max-w-3xl">
-        <ProveedoresTab />
-      </Dialog>
-      <Dialog open={modal === 'presentaciones'} onClose={() => setModal(null)} title="Formatos de presentación" className="max-w-md">
-        <PresentacionesFormatosTab />
-      </Dialog>
+      {/* Contenido del tab activo */}
+      <div className="pt-5">
+        {tabActivo === 'productos'      && <ProductosTab />}
+        {tabActivo === 'categorias'     && <CategoriasTab />}
+        {tabActivo === 'unidades'       && <UnidadesTab />}
+        {tabActivo === 'proveedores'    && <ProveedoresTab />}
+        {tabActivo === 'areas'          && <AreasTab />}
+        {tabActivo === 'presentaciones' && <PresentacionesFormatosTab />}
+      </div>
     </div>
   )
 }

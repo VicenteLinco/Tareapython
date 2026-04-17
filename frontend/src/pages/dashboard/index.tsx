@@ -306,7 +306,7 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
 
         return (
           <div
-            key={`${alerta.producto_id}-${i}`}
+            key={alerta.producto_id}
             onClick={() => navigate(config.path(alerta))}
             className="cursor-pointer flex items-center gap-3 rounded-xl border border-base-200/50 bg-base-100/50 px-4 py-3 hover:bg-base-200 transition-colors group relative overflow-hidden"
           >

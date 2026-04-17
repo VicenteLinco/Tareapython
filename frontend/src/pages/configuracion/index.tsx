@@ -36,6 +36,7 @@ export default function ConfiguracionPage() {
   const [monedaSimbolo, setMonedaSimbolo] = useState('$')
   const [conteoPeriodoDias, setConteoPeriodoDias] = useState(30)
   const [showPin, setShowPin] = useState(false)
+  const [pinOrigenConfigurado, setPinOrigenConfigurado] = useState(false)
 
   // Sync con datos cargados
   const initialized = useRef(false)
@@ -44,6 +45,7 @@ export default function ConfiguracionPage() {
     setLogo(data.logo_base64)
     setPreview(data.logo_base64)
     setPinKiosko(data.pin_kiosko || '')
+    setPinOrigenConfigurado(!!(data.pin_kiosko))
     setConteoCiego(!!data.conteo_ciego)
     setDiasAutonomia(data.dias_autonomia_objetivo || 15)
     setLeadTime(data.lead_time_default || 3)
@@ -192,11 +194,25 @@ export default function ConfiguracionPage() {
           )}
         </div>
 
-        {/* PIN de salida de modo kiosko */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium">PIN de salida (Modo Kiosko/QR)</label>
+        {/* Seguridad Kiosko */}
+        <div className="card bg-base-100 shadow-sm border border-base-200 p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-sm flex items-center gap-2">
+              <Lock className="h-4 w-4 opacity-60" /> Seguridad Kiosko
+            </h3>
+            {pinOrigenConfigurado || pinKiosko.trim() ? (
+              <span className="text-[11px] font-bold text-success flex items-center gap-1">
+                ✓ PIN configurado
+              </span>
+            ) : (
+              <span className="text-[11px] font-bold text-warning flex items-center gap-1">
+                ⚠ PIN no configurado
+              </span>
+            )}
+          </div>
           <p className="text-xs opacity-50">
-            Se pide para salir del modo kiosko o QR. Deje vacío para salir sin PIN.
+            Este PIN se pide al salir del modo kiosko o QR. Si lo olvidas, un admin puede resetearlo desde aquí.
+            Deja vacío para salir sin PIN.
           </p>
           <label className="input input-bordered flex items-center gap-2 w-full max-w-xs">
             <Lock className="h-4 w-4 opacity-40 shrink-0" />

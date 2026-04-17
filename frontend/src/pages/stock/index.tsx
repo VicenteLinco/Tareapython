@@ -378,7 +378,7 @@ export default function StockPage() {
                   q: search || undefined,
                   categoria_id: categoriaId?.toString() || undefined,
                   proveedor_id: proveedorId?.toString() || undefined,
-                  stock_bajo: stockBajo,
+                  stock_bajo: estado === 'bajo' || estado === 'critico',
                 }
               })
               setShowPdfModal(false)

@@ -66,7 +66,10 @@ export default function MovimientosPage() {
     {
       key: 'cantidad', header: 'Cantidad',
       render: (item: Movimiento) => {
-        const neg = ['salida', 'descarte', 'ajuste_neg'].includes(item.tipo)
+        // cantidad en movimientos siempre es positiva (el trigger aplica el signo).
+        // Tipos que restan: salida (CONSUMO), descarte (DESCARTE_VENCIDO/DAÑADO),
+        // ajuste_neg (AJUSTE_NEGATIVO), transferencia_salida (TRANSFERENCIA_SALIDA).
+        const neg = ['salida', 'descarte', 'ajuste_neg', 'transferencia_salida'].includes(item.tipo)
         const cantidadEntera = Math.round(item.cantidad)
         return (
           <span className={`font-mono font-semibold text-sm ${neg ? 'text-error' : 'text-success'}`}>

@@ -117,6 +117,11 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
 
   const isPending = createMut.isPending || updateMut.isPending
 
+  const [busquedaArea, setBusquedaArea] = useState('')
+  const areasFiltered = areas.filter(a =>
+    a.nombre.toLowerCase().includes(busquedaArea.toLowerCase())
+  )
+
   function toggleArea(id: number) {
     setForm((f) => ({
       ...f,
@@ -210,8 +215,15 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
               <span className="label-text">Áreas asignadas</span>
               <span className="label-text-alt text-base-content/40">{form.area_ids.length} seleccionadas</span>
             </label>
+            <input
+              type="text"
+              className="input input-xs input-bordered w-full rounded-lg mb-1"
+              placeholder="Buscar área…"
+              value={busquedaArea}
+              onChange={e => setBusquedaArea(e.target.value)}
+            />
             <div className="flex flex-wrap gap-2 p-3 border border-base-300 rounded-lg max-h-40 overflow-y-auto">
-              {areas.map((a) => (
+              {areasFiltered.map((a) => (
                 <label key={a.id} className="flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="checkbox"
@@ -222,8 +234,10 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
                   <span className="text-sm">{a.nombre}</span>
                 </label>
               ))}
-              {areas.length === 0 && (
-                <span className="text-sm text-base-content/40">No hay áreas disponibles</span>
+              {areasFiltered.length === 0 && (
+                <span className="text-sm text-base-content/40">
+                  {busquedaArea ? 'Sin áreas que coincidan' : 'No hay áreas disponibles'}
+                </span>
               )}
             </div>
           </div>

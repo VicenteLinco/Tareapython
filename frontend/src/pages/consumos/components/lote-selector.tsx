@@ -13,17 +13,33 @@ export interface LoteDisponible {
 
 interface LoteSelectorProps {
   lotes: LoteDisponible[]
+  cargandoLotes: boolean
   loteElegidoId: string | null  // null = FEFO automático
   unidad: string
   unidad_plural: string
   onChange: (loteId: string | null) => void
 }
 
-export function LoteSelector({ lotes, loteElegidoId, unidad, unidad_plural, onChange }: LoteSelectorProps) {
+export function LoteSelector({ lotes, cargandoLotes, loteElegidoId, unidad, unidad_plural, onChange }: LoteSelectorProps) {
   const [open, setOpen] = useState(false)
 
-  // No mostrar selector si hay 0 o 1 lote (sin elección real)
-  if (lotes.length <= 1) return null
+  if (cargandoLotes) {
+    return (
+      <div className="flex items-center gap-1.5 text-[11px] text-base-content/40">
+        <span className="loading loading-spinner loading-xs" />
+        <span>Cargando lotes…</span>
+      </div>
+    )
+  }
+
+  if (lotes.length === 0) {
+    return (
+      <p className="text-[11px] text-warning/80 font-medium">Sin lotes disponibles para esta área</p>
+    )
+  }
+
+  // No mostrar selector si hay exactamente 1 lote (sin elección real)
+  if (lotes.length === 1) return null
 
   const loteActual = lotes.find(l => l.lote_id === loteElegidoId)
   const label = loteActual ? loteActual.numero_lote : 'FEFO automático'

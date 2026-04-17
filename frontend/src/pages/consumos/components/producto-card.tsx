@@ -18,6 +18,7 @@ export interface CartItem {
   codigo_interno: string
   categoria: string | null
   lotes: LoteDisponible[]
+  cargando_lotes: boolean
   lote_elegido_id: string | null
   cantidad_descontar: number
 }

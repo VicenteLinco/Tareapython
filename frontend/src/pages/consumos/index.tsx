@@ -104,12 +104,13 @@ export default function ConsumosPage() {
           imagen_url: p.imagen_url,
           categoria: (p as any).categoria ?? null,
           lotes: [],
+          cargando_lotes: true,
           lote_elegido_id: null,
           cantidad_descontar: 1,
         }
       }
     })
-    // Fetch lotes en background
+    // Fetch lotes con indicador de carga
     api.get<{ id: string; numero_lote: string; stock_total: string | null; fecha_vencimiento: string }[]>('/lotes', {
       params: { producto_id: p.producto_id, con_stock: true, vencido: false, ...(areaFiltro && { area_id: areaFiltro }) }
     }).then(res => {
@@ -121,8 +122,10 @@ export default function ConsumosPage() {
         area_id: areaFiltro ?? p.area_id ?? 0,
         area_nombre: p.area_nombre ?? '',
       }))
-      setCart(prev => prev[key] ? { ...prev, [key]: { ...prev[key], lotes } } : prev)
-    }).catch(() => {})
+      setCart(prev => prev[key] ? { ...prev, [key]: { ...prev[key], lotes, cargando_lotes: false } } : prev)
+    }).catch(() => {
+      setCart(prev => prev[key] ? { ...prev, [key]: { ...prev[key], cargando_lotes: false } } : prev)
+    })
   }, [areaFiltro])
 
   // ── Detección HID ──────────────────────────────────────────────────────────
@@ -298,6 +301,7 @@ export default function ConsumosPage() {
       {/* ── Bottom Drawer ── */}
       <ConsumoDrawer
         cart={cart}
+        areaFiltro={areaFiltro}
         isExpanded={isDrawerExpanded}
         onToggle={() => setIsDrawerExpanded(e => !e)}
         onUpdateCantidad={updateCantidad}
@@ -316,7 +320,7 @@ export default function ConsumosPage() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
           onClick={() => setIsScannerOpen(false)}
         >
-          <div className="relative" onClick={e => e.stopPropagation()}>
+          <div className="relative w-[min(90vw,384px)]" onClick={e => e.stopPropagation()}>
             <button
               className="absolute -top-3 -right-3 z-10 btn btn-circle btn-sm btn-error"
               onClick={() => setIsScannerOpen(false)}

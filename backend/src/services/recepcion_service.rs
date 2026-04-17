@@ -75,15 +75,17 @@ pub async fn listar(
     };
 
     let sql = format!(
-        r#"SELECT 
+        r#"SELECT
             r.id, r.numero_documento, p.nombre as proveedor_nombre, p.icono as proveedor_icono,
             r.guia_despacho, r.estado, r.fecha_recepcion, u.nombre as usuario_nombre,
             r.created_at, r.guia_despacho_archivo IS NOT NULL as tiene_foto,
             r.solicitud_id,
-            (SELECT STRING_AGG(DISTINCT a.nombre, ', ') 
-             FROM recepcion_detalle rd 
-             JOIN areas a ON a.id = rd.area_destino_id 
-             WHERE rd.recepcion_id = r.id) as areas_destino
+            (SELECT STRING_AGG(DISTINCT a.nombre, ', ')
+             FROM recepcion_detalle rd
+             JOIN areas a ON a.id = rd.area_destino_id
+             WHERE rd.recepcion_id = r.id) as areas_destino,
+            COALESCE((SELECT COUNT(DISTINCT rd.producto_id)::INT4 FROM recepcion_detalle rd WHERE rd.recepcion_id = r.id), 0) as items_count,
+            COALESCE((SELECT COUNT(*)::INT4 FROM recepcion_detalle rd WHERE rd.recepcion_id = r.id), 0) as lotes_count
            FROM recepciones r
            JOIN proveedores p ON p.id = r.proveedor_id
            JOIN usuarios u ON u.id = r.usuario_id

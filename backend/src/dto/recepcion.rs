@@ -40,6 +40,8 @@ pub struct RecepcionListItem {
     pub areas_destino: Option<String>,
     pub tiene_foto: bool,
     pub solicitud_id: Option<Uuid>,
+    pub items_count: i32,
+    pub lotes_count: i32,
 }
 
 #[derive(Debug, Deserialize, Type)]

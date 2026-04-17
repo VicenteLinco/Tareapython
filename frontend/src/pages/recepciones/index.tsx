@@ -31,6 +31,8 @@ interface RecepcionRow {
   created_at: string
   areas_destino: string | null
   tiene_foto: boolean
+  items_count: number
+  lotes_count: number
 }
 
 type TabActivo = 'borradores' | 'confirmadas' | 'todas'
@@ -210,24 +212,39 @@ export default function RecepcionesPage() {
                         </div>
                       </td>
                       <td className="text-sm">{formatDate(item.fecha_recepcion)}</td>
-                      <td className="text-sm hidden md:table-cell">{item.usuario_nombre}</td>
+                      <td className="text-sm">{item.usuario_nombre}</td>
                       <td>
-                        <Badge variant={item.estado === 'completa' || item.estado === 'confirmada' ? 'success' : 'secondary'}>
-                          {item.estado === 'completa' || item.estado === 'confirmada' ? 'Confirmada' : 'Borrador'}
-                        </Badge>
+                        <div className="flex flex-col gap-0.5">
+                          <Badge variant={item.estado === 'completa' || item.estado === 'confirmada' ? 'success' : 'secondary'}>
+                            {item.estado === 'completa' || item.estado === 'confirmada' ? 'Confirmada' : 'Borrador'}
+                          </Badge>
+                          {/* Badge items/lotes */}
+                          {item.items_count > 0 && (
+                            <span className="text-[9px] text-base-content/40 font-medium">
+                              {item.items_count} {item.items_count === 1 ? 'item' : 'items'} · {item.lotes_count} {item.lotes_count === 1 ? 'lote' : 'lotes'}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td>
-                        {item.tiene_foto
-                          ? <FileText className="h-4 w-4 text-primary/60" />
-                          : <FileX className="h-4 w-4 text-base-content/20" />
-                        }
+                        {/* Completitud para borradores */}
+                        {(item.estado === 'borrador') ? (
+                          item.items_count > 0 && item.lotes_count >= item.items_count
+                            ? <span className="text-[9px] font-bold text-success flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Listo</span>
+                            : <span className="text-[9px] font-bold text-warning flex items-center gap-1" title="Faltan lotes en algunos items">⚠ Incompleto</span>
+                        ) : (
+                          item.tiene_foto
+                            ? <FileText className="h-4 w-4 text-primary/60" />
+                            : <FileX className="h-4 w-4 text-base-content/20" />
+                        )}
                       </td>
                       {tabActivo === 'borradores' && (
                         <td className="text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
                             <button
                               className="btn btn-xs btn-success gap-1"
-                              disabled={confirmarMutation.isPending}
+                              disabled={confirmarMutation.isPending || (item.items_count > 0 && item.lotes_count < item.items_count)}
+                              title={item.items_count > 0 && item.lotes_count < item.items_count ? 'Faltan lotes en algunos items' : undefined}
                               onClick={() => confirmarMutation.mutate(item.id)}
                             >
                               <CheckCircle2 className="h-3 w-3" />

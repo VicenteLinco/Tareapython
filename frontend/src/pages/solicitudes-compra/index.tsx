@@ -9,7 +9,6 @@ import {
   CheckCircle2,
   History,
   User,
-  ClipboardCheck,
   ShoppingCart,
   ArrowRight,
   Minus,
@@ -40,7 +39,6 @@ import { exportarSolicitudPDF } from '@/lib/solicitud-pdf'
 import { Dialog } from '@/components/ui/dialog'
 import { ProductoImage } from '@/components/ui/producto-image'
 import { SolicitudBuscador } from './components/solicitud-buscador'
-import { HorizonteChips, chipMasCercano } from './components/horizonte-chips'
 
 // ─── Helper functions ────────────────────────────────────────────────────────
 
@@ -74,32 +72,15 @@ async function fetchHorizonte(productoId: string, proveedorId: number | null) {
 
 function unidadLabel(item: SolicitudItem, qty: number): string {
   if (item.presentacion_nombre) {
-    return qty === 1
-      ? item.presentacion_nombre
-      : (item.presentacion_nombre_plural ?? item.presentacion_nombre + 's')
+    return formatCantidad(qty, item.presentacion_nombre, item.presentacion_nombre_plural ?? undefined).replace(/^[\d.,\s]+/, '').trim()
   }
-  return qty === 1
-    ? item.unidad_base
-    : (item.unidad_base_plural ?? autoPlural(item.unidad_base))
-}
-
-function equivalenciaBase(item: SolicitudItem): string | null {
-  if (!item.presentacion_id || !item.factor_conversion) return null
-  const total = item.cantidad * item.factor_conversion
-  return `(${total} ${item.unidad_base_plural || autoPlural(item.unidad_base)})`
+  return formatCantidad(qty, item.unidad_base, item.unidad_base_plural ?? undefined).replace(/^[\d.,\s]+/, '').trim()
 }
 
 function formatPesos(val: number | string | null, monedaCodigo = 'CLP'): string {
   if (val === null) return '$0'
   const n = typeof val === 'string' ? parseFloat(val) : val
   return new Intl.NumberFormat('es-CL', { style: 'currency', currency: monedaCodigo }).format(n)
-}
-
-function confianzaLabel(diasHistoria: number): { label: string; color: string } {
-  if (diasHistoria === 0)  return { label: 'Sin historial — revisa la cantidad', color: 'text-error' }
-  if (diasHistoria <= 30)  return { label: 'Estimación preliminar', color: 'text-warning' }
-  if (diasHistoria <= 90)  return { label: 'Estimación moderada', color: 'text-info' }
-  return { label: 'Estimación confiable', color: 'text-success' }
 }
 
 // ─── Pill de cobertura ───────────────────────────────────────────────────────
@@ -125,7 +106,7 @@ function pillClasses(dias: number | null, personalizado: boolean): string {
 
 function pillText(dias: number | null, personalizado: boolean): string {
   if (dias === null) return '📅 Sin historial'
-  return personalizado ? `📅 ~${dias} días ✏` : `📅 ~${dias} días`
+  return personalizado ? `📌 ~${dias} días` : `📅 ~${dias} días`
 }
 
 // ─── Proveedor Gallery ───────────────────────────────────────────────────────
@@ -239,11 +220,15 @@ export default function SolicitudesCompraPage() {
 
   // Horizonte global + UI izquierda
   const [horizonteGlobal, setHorizonteGlobal] = useState<number>(30)
-  const [tabIzquierdo, setTabIzquierdo] = useState<'quiebres' | 'buscar'>('quiebres')
+  const [tabIzquierdo, setTabIzquierdo] = useState<'quiebres' | 'buscar'>('buscar')
   const [popoverOpenId, setPopoverOpenId] = useState<string | null>(null)
+  const [restaurando, setRestaurando] = useState(true)
 
   // Prevent borrador from reloading after it's been intentionally cleared
   const borradorCargado = useRef(false)
+
+  // Restauración diferida del proveedor cuando borrador carga antes que la lista de proveedores
+  const [pendingProveedorId, setPendingProveedorId] = useState<number | null>(null)
 
   // Sync view from navigation state
   useEffect(() => {
@@ -295,6 +280,17 @@ export default function SolicitudesCompraPage() {
   const monedaCodigo = configuracion?.moneda_codigo ?? 'CLP'
   const fmt = (v: number | string | null) => formatPesos(v, monedaCodigo)
 
+  // Restaurar proveedor guardado cuando la lista de proveedores cargue
+  // (debe ir después de la query de proveedores para evitar temporal dead zone)
+  useEffect(() => {
+    if (!pendingProveedorId || !proveedores || selectedProveedor) return
+    const prov = proveedores.find(p => p.id === pendingProveedorId)
+    if (prov) {
+      setSelectedProveedor(prov)
+      setPendingProveedorId(null)
+    }
+  }, [pendingProveedorId, proveedores, selectedProveedor])
+
   // Load borrador once on mount (guarded to prevent reload after intentional clear)
   useEffect(() => {
     if (view !== 'crear' || borradorCargado.current) return
@@ -317,7 +313,7 @@ export default function SolicitudesCompraPage() {
           presentacion_nombre_plural: item.presentacion_nombre_plural,
           factor_conversion: item.factor_conversion ? parseFloat(item.factor_conversion) : null,
           unidad_base: item.unidad,
-          unidad_base_plural: autoPlural(item.unidad),
+          unidad_base_plural: item.unidad_plural ?? autoPlural(item.unidad),
           cantidad: parseFloat(item.cantidad_sugerida),
           precio_unitario: item.precio_unitario ? parseFloat(item.precio_unitario) : 0,
           imagen_url: item.imagen_url,
@@ -331,11 +327,17 @@ export default function SolicitudesCompraPage() {
 
         if (b) setSolicitudId(b.id)
 
+        // Restaurar proveedor guardado para continuar editando el borrador
+        if (borradorItems.length > 0) {
+          const savedId = localStorage.getItem('solicitud_proveedor_id')
+          if (savedId) setPendingProveedorId(parseInt(savedId))
+        }
+
         if (productoId && !borradorItems.some(i => i.producto_id === productoId)) {
           api.get<Producto>(`/productos/${productoId}`)
             .then(res2 => {
               const p = res2.data
-              if (!p) { setItems(borradorItems); return }
+              if (!p) { setItems(borradorItems); setRestaurando(false); return }
               const newItem: SolicitudItem = {
                 producto_id: p.id,
                 producto_nombre: p.nombre,
@@ -362,12 +364,15 @@ export default function SolicitudesCompraPage() {
               }
               setItems([...borradorItems, newItem])
               setView('crear')
+              setRestaurando(false)
             })
-            .catch(() => { setItems(borradorItems) })
+            .catch(() => { setItems(borradorItems); setRestaurando(false) })
         } else {
           setItems(borradorItems)
+          setRestaurando(false)
         }
       })
+      .catch(() => setRestaurando(false))
   }, [view, searchParams])
 
   // ── Mutations ────────────────────────────────────────────────────────────────
@@ -423,6 +428,7 @@ export default function SolicitudesCompraPage() {
       setSolicitudId(null)
       setSelectedProveedor(null)
       borradorCargado.current = false
+      localStorage.removeItem('solicitud_proveedor_id')
       setView('historial')
       queryClient.invalidateQueries({ queryKey: ['solicitudes-historial'] })
     },
@@ -546,12 +552,25 @@ export default function SolicitudesCompraPage() {
   }
 
   const handleGlobalHorizonteChange = (dias: number) => {
+    const conservados = items.filter(i => i.horizonte_personalizado).length
+    const recalculados = items.length - conservados
+
     setHorizonteGlobal(dias)
     setItems(prev => prev.map(i => {
       if (i.horizonte_personalizado) return i
       const nueva = calcularCantidad(dias, i.consumo_diario, i.lead_time, i.stock_minimo, i.stock_actual)
       return { ...i, horizonte_dias: dias, cantidad: nueva }
     }))
+
+    if (items.length === 0) return
+    const label = dias >= 365 ? '1 año' : dias >= 180 ? '6 meses' : dias >= 90 ? '3 meses' : `${dias} días`
+    if (conservados === items.length) {
+      toast.info('Todos los items tienen horizonte personalizado 📌. Ajusta por item para cambiarlos.')
+    } else if (conservados > 0) {
+      toast.success(`Horizonte actualizado a ${label}. ${recalculados} recalculados, ${conservados} con horizonte personalizado 📌.`)
+    } else {
+      toast.success(`Horizonte actualizado a ${label}. ${recalculados} ${recalculados === 1 ? 'item recalculado' : 'items recalculados'}.`)
+    }
   }
 
   const handleHorizonteChip = (pid: string, dias: number) => {
@@ -601,6 +620,7 @@ export default function SolicitudesCompraPage() {
       setSolicitudId(null)
       toast('Lista anterior limpiada', { icon: '↩' })
     }
+    localStorage.setItem('solicitud_proveedor_id', String(p.id))
     setSelectedProveedor(p)
   }
 
@@ -610,6 +630,7 @@ export default function SolicitudesCompraPage() {
       setSolicitudId(null)
       toast('Lista limpiada al cambiar proveedor', { icon: '↩' })
     }
+    localStorage.removeItem('solicitud_proveedor_id')
     setSelectedProveedor(null)
   }
 
@@ -668,7 +689,16 @@ export default function SolicitudesCompraPage() {
         </div>
       </div>
 
-      {view === 'crear' ? (
+      {view === 'crear' && restaurando ? (
+        /* ── Skeleton de restauración de borrador ─────────────────────────── */
+        <div className="flex-1 grid grid-cols-[30%_1fr] gap-4 min-h-0 animate-pulse">
+          <div className="bg-base-200/60 rounded-[2rem]" />
+          <div className="flex flex-col gap-3">
+            <div className="h-16 bg-base-200/60 rounded-2xl" />
+            <div className="flex-1 bg-base-200/60 rounded-[2.5rem]" />
+          </div>
+        </div>
+      ) : view === 'crear' ? (
         selectedProveedor === null ? (
           /* ── PASO 1: Selección de proveedor ─────────────────────────────── */
           <div className="flex-1 flex flex-col gap-6 min-h-0">
@@ -709,7 +739,7 @@ export default function SolicitudesCompraPage() {
           <div className="flex-1 flex flex-col gap-4 min-h-0">
 
             {/* Banner proveedor */}
-            <div className="flex items-center gap-4 px-5 py-3 bg-primary/5 border border-primary/15 rounded-2xl">
+            <div className="flex items-center gap-4 px-5 py-3 bg-primary/5 border border-primary/15 rounded-2xl shrink-0">
               <div className="w-10 h-10 rounded-xl overflow-hidden shrink-0 flex items-center justify-center bg-base-200 text-2xl">
                 {selectedProveedor.icono
                   ? <img src={selectedProveedor.icono} alt={selectedProveedor.nombre} className="h-full w-full object-contain" />
@@ -754,43 +784,68 @@ export default function SolicitudesCompraPage() {
               </Button>
             </div>
 
-            {/* Panel dual 20/80 */}
-            <div className="flex-1 grid grid-cols-[20%_1fr] gap-4 min-h-0">
+            {/* Panel dual 30/70 */}
+            <div className="flex-1 grid grid-cols-[30%_1fr] gap-4 min-h-0">
 
-              {/* IZQUIERDO 20%: Tabs Quiebres / Buscar */}
+              {/* IZQUIERDO 30%: Tabs Quiebres / Buscar */}
               <div className="flex flex-col bg-base-100 rounded-[2rem] border border-base-300 shadow-sm overflow-hidden min-h-0">
-                {/* Tabs */}
-                <div className="flex border-b border-base-300 shrink-0">
-                  <button
-                    onClick={() => setTabIzquierdo('quiebres')}
-                    className={cn(
-                      "flex-1 py-3 text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5",
-                      tabIzquierdo === 'quiebres'
-                        ? "bg-error/5 text-error border-b-2 border-error"
-                        : "text-base-content/40 hover:text-base-content/60 border-b-2 border-transparent"
+
+                {/* Segmented tab control */}
+                <div className="shrink-0 p-2.5 border-b border-base-200">
+                  <div className="flex bg-base-200/70 rounded-xl p-0.5 gap-0.5">
+
+                    {/* Tab Buscar — primero y predeterminado */}
+                    <button
+                      onClick={() => setTabIzquierdo('buscar')}
+                      className={cn(
+                        "flex-1 py-2 text-[11px] font-bold rounded-[10px] transition-all flex items-center justify-center gap-1.5",
+                        tabIzquierdo === 'buscar'
+                          ? "bg-base-100 text-base-content shadow-sm"
+                          : "text-base-content/40 hover:text-base-content/60"
+                      )}
+                    >
+                      <Search className="h-3 w-3" />
+                      Buscar
+                    </button>
+
+                    {/* Tab Quiebres — deshabilitado si no hay */}
+                    {recsFiltered.length === 0 ? (
+                      <div className="flex-1 py-2 text-[11px] font-bold rounded-[10px] flex items-center justify-center gap-1.5 text-base-content/20 cursor-not-allowed select-none">
+                        <span>⚠</span>
+                        Sin quiebres
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setTabIzquierdo('quiebres')}
+                        className={cn(
+                          "relative flex-1 py-2 text-[11px] font-bold rounded-[10px] transition-all flex items-center justify-center gap-1.5",
+                          tabIzquierdo === 'quiebres'
+                            ? "bg-warning/15 text-warning shadow-sm"
+                            : "bg-warning/8 text-warning hover:bg-warning/20"
+                        )}
+                      >
+                        {/* Pulso de atención */}
+                        {tabIzquierdo !== 'quiebres' && (
+                          <span className="absolute inset-0 rounded-[10px] animate-ping bg-warning/20 pointer-events-none" />
+                        )}
+                        <span>⚠</span>
+                        Quiebres
+                        <span className={cn(
+                          "text-[9px] font-black min-w-[16px] h-4 flex items-center justify-center rounded-full px-1.5",
+                          tabIzquierdo === 'quiebres'
+                            ? "bg-warning text-warning-content"
+                            : "bg-warning text-warning-content animate-pulse"
+                        )}>
+                          {recsFiltered.length}
+                        </span>
+                      </button>
                     )}
-                  >
-                    ⚠ Quiebres
-                    {recsFiltered.length > 0 && (
-                      <span className="badge badge-error badge-xs font-bold">{recsFiltered.length}</span>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => setTabIzquierdo('buscar')}
-                    className={cn(
-                      "flex-1 py-3 text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5",
-                      tabIzquierdo === 'buscar'
-                        ? "bg-primary/5 text-primary border-b-2 border-primary"
-                        : "text-base-content/40 hover:text-base-content/60 border-b-2 border-transparent"
-                    )}
-                  >
-                    🔍 Buscar
-                  </button>
+                  </div>
                 </div>
 
                 {/* Contenido según tab */}
                 {tabIzquierdo === 'buscar' ? (
-                  <div className="p-3">
+                  <div className="p-3 overflow-visible">
                     <SolicitudBuscador
                       proveedorId={selectedProveedor.id}
                       monedaCodigo={monedaCodigo}
@@ -799,55 +854,120 @@ export default function SolicitudesCompraPage() {
                     />
                   </div>
                 ) : (
-                  <div className="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar min-h-0">
+                  <div className="flex-1 overflow-y-auto p-2.5 space-y-2 custom-scrollbar min-h-0">
                     {isLoadingRecs ? (
                       Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-20 rounded-2xl" />)
                     ) : recsFiltered.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center opacity-30 text-center p-6">
-                        <CheckCircle2 className="h-8 w-8 mb-2 stroke-[1.5px]" />
-                        <p className="font-bold text-xs">¡Todo al día!</p>
-                        <p className="text-[10px]">Sin quiebres para {selectedProveedor.nombre}.</p>
+                      <div className="h-full flex flex-col items-center justify-center opacity-30 text-center p-6 gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-base-200 flex items-center justify-center">
+                          <CheckCircle2 className="h-5 w-5 stroke-[1.5px]" />
+                        </div>
+                        <div>
+                          <p className="font-bold text-xs">¡Todo al día!</p>
+                          <p className="text-[10px] mt-0.5">Sin quiebres para {selectedProveedor.nombre}.</p>
+                        </div>
                       </div>
                     ) : (
                       recsFiltered.map(r => {
                         const alreadyAdded = items.some(i => i.producto_id === r.producto_id)
+                        const isCritica = r.nivel_urgencia === 'critica'
+                        const isAlta = r.nivel_urgencia === 'alta'
                         return (
                           <div
                             key={r.producto_id}
                             className={cn(
-                              "flex flex-col gap-2 p-3 rounded-2xl border transition-all",
+                              "relative flex flex-col gap-2 p-3 pl-4 rounded-2xl border transition-all overflow-hidden",
                               alreadyAdded
-                                ? "opacity-40 bg-base-200/40 border-transparent"
-                                : "bg-base-100 border-base-200 hover:border-primary/40 hover:shadow-sm"
+                                ? "opacity-40 bg-base-200/30 border-transparent"
+                                : isCritica
+                                  ? "bg-error/5 border-error/20 hover:border-error/40"
+                                  : isAlta
+                                    ? "bg-warning/5 border-warning/20 hover:border-warning/40"
+                                    : "bg-base-100 border-base-200 hover:border-primary/30"
                             )}
                           >
-                            <div className="flex items-start gap-2">
-                              <div className={cn(
-                                "w-1 min-h-[32px] self-stretch rounded-full flex-shrink-0",
-                                r.nivel_urgencia === 'critica' ? 'bg-error' : r.nivel_urgencia === 'alta' ? 'bg-warning' : 'bg-primary'
-                              )} />
-                              <div className="flex-1 min-w-0">
-                                <p className="font-bold text-xs truncate">{r.producto_nombre}</p>
-                                <p className="text-[9px] opacity-50 mt-0.5">
-                                  Stock: {parseFloat(r.stock_actual)} / {parseFloat(r.stock_seguridad)}
-                                </p>
-                                <p className="text-[9px] opacity-40 mt-0.5">
-                                  Sug: {r.cantidad_sugerida_presentacion
-                                    ? `${Math.ceil(parseFloat(r.cantidad_sugerida_presentacion))} ${r.presentacion_nombre_plural || r.presentacion_nombre}`
-                                    : `${Math.ceil(parseFloat(r.cantidad_sugerida_base))} ${r.unidad_base_plural || r.unidad_base}`
-                                  } · ~{horizonteGlobal}d
-                                </p>
-                              </div>
+                            {/* Accent bar */}
+                            <div className={cn(
+                              "absolute left-0 inset-y-0 w-[3px]",
+                              isCritica ? 'bg-error' : isAlta ? 'bg-warning' : 'bg-primary/40'
+                            )} />
+
+                            {/* Nombre + badge urgencia */}
+                            <div className="flex items-start justify-between gap-1">
+                              <p className="font-bold text-[11px] leading-snug line-clamp-2 flex-1 min-w-0">
+                                {r.producto_nombre}
+                              </p>
+                              {!alreadyAdded && (isCritica || isAlta) && (
+                                <span className={cn(
+                                  "shrink-0 text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full leading-tight",
+                                  isCritica ? "bg-error/15 text-error" : "bg-warning/15 text-warning"
+                                )}>
+                                  {isCritica ? "crítico" : "alta"}
+                                </span>
+                              )}
                             </div>
+
+                            {/* Stats */}
+                            {(() => {
+                              const yaPedido = parseFloat(r.ya_pedido_unidades)
+                              const sugBase = parseFloat(r.cantidad_sugerida_base)
+                              const sugLabel = r.cantidad_sugerida_presentacion
+                                ? `${Math.ceil(parseFloat(r.cantidad_sugerida_presentacion))} ${r.presentacion_nombre_plural || r.presentacion_nombre}`
+                                : `${Math.ceil(sugBase)} ${r.unidad_base_plural || r.unidad_base}`
+                              const unidadEnCamino = r.unidad_base_plural || r.unidad_base
+                              const cubierto = yaPedido > 0 && sugBase === 0
+                              return (
+                                <>
+                                  <div className="flex items-center justify-between">
+                                    <p className={cn(
+                                      "text-[9px] font-medium tabular-nums",
+                                      parseFloat(r.stock_actual) === 0 ? "text-error font-bold" : "text-base-content/40"
+                                    )}>
+                                      Stock: {parseFloat(r.stock_actual)} / {parseFloat(r.stock_seguridad)}
+                                    </p>
+                                    {yaPedido === 0 && (
+                                      <p className="text-[9px] text-base-content/35 font-medium">
+                                        Sug: {sugLabel}
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  {/* En camino */}
+                                  {yaPedido > 0 && (
+                                    <div className={cn(
+                                      "flex items-center gap-1.5 text-[9px] font-bold rounded-lg px-2 py-1",
+                                      cubierto
+                                        ? "bg-success/10 text-success border border-success/20"
+                                        : "bg-info/10 text-info border border-info/20"
+                                    )}>
+                                      <span>📦</span>
+                                      <span className="tabular-nums">{Math.round(yaPedido)} {unidadEnCamino} en camino</span>
+                                      <span className="ml-auto font-medium opacity-70 shrink-0">
+                                        {cubierto ? '✓ cubierto' : `+ ${sugLabel} sug.`}
+                                      </span>
+                                    </div>
+                                  )}
+                                </>
+                              )
+                            })()}
+
+                            {/* Botón agregar */}
                             <button
                               className={cn(
-                                "btn btn-xs w-full rounded-xl gap-1 transition-all",
-                                alreadyAdded ? "btn-ghost cursor-default" : "btn-primary shadow-sm shadow-primary/20"
+                                "btn btn-xs w-full rounded-xl gap-1 text-[10px] font-bold transition-all",
+                                alreadyAdded
+                                  ? "btn-ghost cursor-default text-success pointer-events-none"
+                                  : isCritica
+                                    ? "bg-error/10 text-error border border-error/30 hover:bg-error hover:text-white hover:border-error"
+                                    : "btn-primary shadow-sm shadow-primary/20"
                               )}
                               onClick={() => !alreadyAdded && handleAddFromRec(r)}
                               disabled={alreadyAdded}
                             >
-                              {alreadyAdded ? '✓ Agregado' : <><Plus className="h-3 w-3" /> Agregar</>}
+                              {alreadyAdded
+                                ? <><CheckCircle2 className="h-3 w-3" /> Agregado</>
+                                : <><Plus className="h-3 w-3" /> Agregar</>
+                              }
                             </button>
                           </div>
                         )
@@ -857,39 +977,41 @@ export default function SolicitudesCompraPage() {
                 )}
               </div>
 
-              {/* DERECHO 80%: Pedido */}
-              <div className="flex flex-col bg-base-100 rounded-[2.5rem] border border-base-300 shadow-2xl overflow-hidden relative min-w-0">
-                <div className="px-6 py-4 border-b border-base-200 bg-primary/5 space-y-3 shrink-0">
-                  {/* Título + estado */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-primary text-primary-content rounded-2xl shadow-lg">
-                        <ShoppingCart className="h-4 w-4" />
+              {/* DERECHO 70%: Pedido */}
+              <div className="flex flex-col bg-base-100 rounded-[2.5rem] border border-base-300 shadow-2xl overflow-hidden relative min-w-0 min-h-0">
+                <div className="px-4 py-3 border-b border-base-200 bg-primary/5 space-y-2 shrink-0">
+                  {/* Título + horizonte en la misma fila */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="p-1.5 bg-primary text-primary-content rounded-xl shadow-md shrink-0">
+                        <ShoppingCart className="h-3.5 w-3.5" />
                       </div>
-                      <div>
-                        <h2 className="text-sm font-bold leading-tight">
-                          Pedido a {selectedProveedor.nombre}
+                      <div className="min-w-0">
+                        <h2 className="text-xs font-bold leading-tight truncate">
+                          Pedido · {selectedProveedor.nombre}
                         </h2>
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-primary/50">
                           {items.length} {items.length === 1 ? 'producto' : 'productos'}
                         </p>
                       </div>
                     </div>
-                    {solicitudId && (
-                      <Badge className="bg-success/10 text-success border-success/20 px-2.5 py-1 text-[10px]">
-                        Guardado
-                      </Badge>
-                    )}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {solicitudId && (
+                        <Badge className="bg-success/10 text-success border-success/20 px-2 py-0.5 text-[9px]">
+                          Guardado
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                   {/* Selector de horizonte global */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] font-bold opacity-40 uppercase tracking-wider shrink-0">Cubrir por:</span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[9px] font-bold opacity-35 uppercase tracking-wider shrink-0">Cubrir:</span>
                     {HORIZONTE_CHIPS.map(d => (
                       <button
                         key={d}
                         onClick={() => handleGlobalHorizonteChange(d)}
                         className={cn(
-                          "px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all",
+                          "px-2 py-0.5 rounded-full text-[9px] font-bold border transition-all",
                           horizonteGlobal === d
                             ? "bg-primary text-primary-content border-primary shadow-sm"
                             : "bg-base-100 text-base-content/50 border-base-300 hover:border-primary/40 hover:text-primary"
@@ -901,14 +1023,16 @@ export default function SolicitudesCompraPage() {
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-5 space-y-3 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar min-h-0">
                   {items.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center opacity-25 p-8">
-                      <div className="w-16 h-16 bg-base-200 rounded-full flex items-center justify-center mb-4">
-                        <Plus className="h-8 w-8" />
+                    <div className="h-full flex flex-col items-center justify-center text-center opacity-25 p-8 gap-3">
+                      <div className="w-12 h-12 bg-base-200 rounded-full flex items-center justify-center">
+                        <Plus className="h-6 w-6" />
                       </div>
-                      <p className="font-bold">Lista vacía</p>
-                      <p className="text-xs mt-1">Agrega desde las sugerencias o el buscador.</p>
+                      <div>
+                        <p className="font-bold text-sm">Lista vacía</p>
+                        <p className="text-xs mt-0.5">Agrega desde las sugerencias o el buscador.</p>
+                      </div>
                     </div>
                   ) : (
                     items.map(item => {
@@ -916,100 +1040,107 @@ export default function SolicitudesCompraPage() {
                       const esPersonalizado = item.horizonte_personalizado === true
                       const popoverAbierto = popoverOpenId === item.producto_id
                       return (
-                        <div key={item.producto_id} className="flex items-center gap-3 px-3 py-2.5 bg-base-200/40 hover:bg-base-200/60 border border-transparent hover:border-primary/15 transition-all rounded-2xl group">
+                        <div key={item.producto_id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-base-200/50 border border-transparent hover:border-primary/10 transition-all rounded-xl group">
+                          {/* Imagen opcional */}
                           {item.imagen_url && (
                             <ProductoImage src={item.imagen_url} size="sm" className="shrink-0" />
                           )}
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-semibold text-xs leading-tight truncate">{item.producto_nombre}</h4>
-                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                              <div className="flex items-center bg-base-100 rounded-lg border border-base-300 p-0.5 shadow-inner">
-                                <button
-                                  className="btn btn-ghost btn-xs btn-circle h-5 w-5 min-h-0"
-                                  onClick={() => handleUpdateQty(item.producto_id, item.cantidad - 1)}
-                                >
-                                  <Minus className="h-2.5 w-2.5" />
-                                </button>
-                                <input
-                                  type="number"
-                                  className="w-10 text-center text-xs font-black bg-transparent focus:outline-none no-spinners"
-                                  value={item.cantidad}
-                                  onChange={e => handleUpdateQty(item.producto_id, parseInt(e.target.value) || 1)}
-                                />
-                                <button
-                                  className="btn btn-ghost btn-xs btn-circle h-5 w-5 min-h-0"
-                                  onClick={() => handleUpdateQty(item.producto_id, item.cantidad + 1)}
-                                >
-                                  <Plus className="h-2.5 w-2.5" />
-                                </button>
-                              </div>
-                              <span className="text-[10px] font-bold text-primary">{unidadLabel(item, item.cantidad)}</span>
-                              {equivalenciaBase(item) && (
-                                <span className="text-[9px] opacity-40">{equivalenciaBase(item)}</span>
+
+                          {/* Nombre — ocupa el espacio disponible y trunca */}
+                          <span className="flex-1 min-w-0 font-medium text-xs truncate">
+                            {item.producto_nombre}
+                          </span>
+
+                          {/* Pill de cobertura con popover */}
+                          <div className="relative shrink-0" data-popover-item>
+                            <button
+                              onClick={() => setPopoverOpenId(popoverAbierto ? null : item.producto_id)}
+                              className={cn(
+                                "text-[10px] font-bold border rounded-full px-2.5 py-1 whitespace-nowrap transition-all hover:opacity-80",
+                                pillClasses(diasCubiertos, esPersonalizado)
                               )}
-                              {/* Pill de cobertura con popover */}
-                              <div className="relative" data-popover-item>
-                                <button
-                                  onClick={() => setPopoverOpenId(popoverAbierto ? null : item.producto_id)}
-                                  className={cn(
-                                    "text-[9px] font-bold border rounded-full px-2 py-0.5 transition-all hover:opacity-80",
-                                    pillClasses(diasCubiertos, esPersonalizado)
-                                  )}
-                                >
-                                  {pillText(diasCubiertos, esPersonalizado)}
-                                </button>
-                                {popoverAbierto && (
-                                  <div className="absolute bottom-full left-0 mb-1.5 z-50 bg-base-100 border border-base-300 rounded-2xl shadow-2xl p-3 min-w-[220px]">
-                                    <p className="text-[10px] font-bold opacity-60 uppercase tracking-wider mb-2">
-                                      Ajustar horizonte
-                                    </p>
-                                    <div className="flex flex-wrap gap-1.5 mb-2">
-                                      {HORIZONTE_CHIPS.map(d => (
-                                        <button
-                                          key={d}
-                                          onClick={() => handleHorizonteChip(item.producto_id, d)}
-                                          className={cn(
-                                            "px-2 py-1 rounded-full text-[10px] font-bold border transition-all",
-                                            item.horizonte_dias === d
-                                              ? "bg-primary text-primary-content border-primary"
-                                              : "bg-base-100 text-base-content/50 border-base-300 hover:border-primary/40"
-                                          )}
-                                        >
-                                          {d >= 365 ? '1 año' : d >= 180 ? '6m' : d >= 90 ? '3m' : `${d}d`}
-                                          {d === horizonteGlobal && item.horizonte_dias !== d && (
-                                            <span className="ml-1 opacity-50 text-[8px]">global</span>
-                                          )}
-                                        </button>
-                                      ))}
-                                    </div>
-                                    {esPersonalizado && (
-                                      <button
-                                        onClick={() => handleResetHorizonteToGlobal(item.producto_id)}
-                                        className="text-[10px] text-primary hover:underline w-full text-left opacity-70"
-                                      >
-                                        ↩ Usar global ({horizonteGlobal}d)
-                                      </button>
-                                    )}
-                                  </div>
+                            >
+                              {pillText(diasCubiertos, esPersonalizado)}
+                            </button>
+                            {popoverAbierto && (
+                              <div className="absolute top-full right-0 mt-1.5 z-50 bg-base-100 border border-base-300 rounded-2xl shadow-2xl p-3 min-w-[220px]">
+                                <p className="text-[10px] font-bold opacity-60 uppercase tracking-wider mb-2">
+                                  Ajustar horizonte
+                                </p>
+                                <div className="flex flex-wrap gap-1.5 mb-2">
+                                  {HORIZONTE_CHIPS.map(d => (
+                                    <button
+                                      key={d}
+                                      onClick={() => handleHorizonteChip(item.producto_id, d)}
+                                      className={cn(
+                                        "px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all",
+                                        item.horizonte_dias === d
+                                          ? "bg-primary text-primary-content border-primary"
+                                          : "bg-base-100 text-base-content/50 border-base-300 hover:border-primary/40"
+                                      )}
+                                    >
+                                      {d >= 365 ? '1 año' : d >= 180 ? '6m' : d >= 90 ? '3m' : `${d}d`}
+                                      {d === horizonteGlobal && item.horizonte_dias !== d && (
+                                        <span className="ml-1 opacity-50 text-[8px]">global</span>
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                                {esPersonalizado && (
+                                  <button
+                                    onClick={() => handleResetHorizonteToGlobal(item.producto_id)}
+                                    className="text-[10px] text-primary hover:underline w-full text-left opacity-70"
+                                  >
+                                    ↩ Usar global ({horizonteGlobal}d)
+                                  </button>
                                 )}
                               </div>
-                            </div>
+                            )}
                           </div>
-                          <div className="text-right shrink-0">
+
+                          {/* Control de cantidad */}
+                          <div className="flex items-center bg-base-100 rounded-lg border border-base-300 p-0.5 shadow-inner shrink-0">
+                            <button
+                              className="btn btn-ghost btn-xs btn-circle h-5 w-5 min-h-0"
+                              onClick={() => handleUpdateQty(item.producto_id, item.cantidad - 1)}
+                            >
+                              <Minus className="h-2.5 w-2.5" />
+                            </button>
+                            <input
+                              type="number"
+                              className="w-9 text-center text-xs font-black bg-transparent focus:outline-none no-spinners"
+                              value={item.cantidad}
+                              onChange={e => handleUpdateQty(item.producto_id, parseInt(e.target.value) || 1)}
+                            />
+                            <button
+                              className="btn btn-ghost btn-xs btn-circle h-5 w-5 min-h-0"
+                              onClick={() => handleUpdateQty(item.producto_id, item.cantidad + 1)}
+                            >
+                              <Plus className="h-2.5 w-2.5" />
+                            </button>
+                          </div>
+
+                          {/* Unidad */}
+                          <span className="text-[10px] font-bold text-primary w-14 truncate shrink-0">
+                            {unidadLabel(item, item.cantidad)}
+                          </span>
+
+                          {/* Precio por unidad */}
+                          <div className="text-right w-24 shrink-0">
                             {item.presentacion_id && item.factor_conversion ? (
                               <>
-                                <p className="text-xs font-bold font-mono">
+                                <p className="text-[10px] font-bold font-mono truncate">
                                   {item.precio_unitario > 0
                                     ? `${fmt(item.precio_unitario * item.factor_conversion)} / ${item.presentacion_nombre ?? 'pres.'}`
                                     : <span className="opacity-30">—</span>
                                   }
                                 </p>
-                                <p className="text-[9px] opacity-35">
-                                  ({formatCantidad(item.factor_conversion, item.unidad_base, item.unidad_base_plural ?? undefined)})
+                                <p className="text-[9px] opacity-35 truncate">
+                                  {formatCantidad(item.factor_conversion, item.unidad_base, item.unidad_base_plural ?? undefined)}
                                 </p>
                               </>
                             ) : (
-                              <p className="text-xs font-bold font-mono">
+                              <p className="text-[10px] font-bold font-mono truncate">
                                 {item.precio_unitario > 0
                                   ? `${fmt(item.precio_unitario)} / ${item.unidad_base}`
                                   : <span className="opacity-30">—</span>
@@ -1017,6 +1148,8 @@ export default function SolicitudesCompraPage() {
                               </p>
                             )}
                           </div>
+
+                          {/* Eliminar */}
                           <button
                             className="btn btn-ghost btn-xs btn-circle text-error opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
                             onClick={() => handleRemove(item.producto_id)}
@@ -1029,34 +1162,35 @@ export default function SolicitudesCompraPage() {
                   )}
                 </div>
 
-                <div className="p-6 bg-base-200/50 border-t border-base-300 space-y-3">
-                  <div className="flex justify-between items-center px-1">
+                <div className="px-4 py-3 bg-base-200/50 border-t border-base-300 space-y-2.5 shrink-0">
+                  <div className="flex justify-between items-center">
                     <span className="opacity-40 uppercase tracking-widest text-[9px] font-bold">Costo Estimado</span>
-                    <span className="text-lg font-black flex items-center gap-1.5">
+                    <span className="text-base font-black flex items-center gap-1.5">
                       {fmt(items.reduce((acc, i) => acc + i.cantidad * (i.presentacion_id && i.factor_conversion ? i.precio_unitario * i.factor_conversion : i.precio_unitario), 0))}
                       <span className="badge badge-ghost badge-xs font-mono">{monedaCodigo}</span>
                     </span>
                   </div>
 
-                  <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
                     <Button
-                      className="rounded-2xl h-11 font-bold gap-2 shadow-lg shadow-primary/20 w-full"
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-xl h-9 text-xs font-medium px-3 opacity-50 hover:opacity-100 shrink-0"
+                      onClick={handleSaveBorrador}
+                      disabled={items.length === 0 || isSaving}
+                      title="Guarda el progreso para continuar más tarde"
+                    >
+                      {isSaving ? <span className="loading loading-spinner loading-xs" /> : 'Pausar'}
+                    </Button>
+                    <Button
+                      className="rounded-xl h-9 font-bold gap-2 shadow-md shadow-primary/20 flex-1"
                       disabled={items.length === 0 || guardarMutation.isPending}
                       onClick={() => guardarMutation.mutate()}
                     >
                       {guardarMutation.isPending
                         ? <span className="loading loading-spinner loading-sm" />
-                        : <><CheckCircle2 className="h-4 w-4" /> Guardar solicitud</>
+                        : <><CheckCircle2 className="h-4 w-4" /> Finalizar solicitud</>
                       }
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="rounded-xl h-8 text-xs font-medium w-full opacity-60 hover:opacity-100"
-                      onClick={handleSaveBorrador}
-                      disabled={items.length === 0 || isSaving}
-                    >
-                      {isSaving ? <span className="loading loading-spinner loading-xs" /> : 'Guardar borrador'}
                     </Button>
                   </div>
                 </div>
@@ -1173,7 +1307,7 @@ export default function SolicitudesCompraPage() {
                     <th>Proveedor</th>
                     <th className="text-center">Cant.</th>
                     <th>Unidad</th>
-                    <th className="text-right">Unitario</th>
+                    <th className="text-right">Precio c/u</th>
                     <th className="text-right">Total</th>
                   </tr>
                 </thead>
@@ -1190,7 +1324,16 @@ export default function SolicitudesCompraPage() {
                         <td className="text-[10px] opacity-60">{item.proveedor_nombre}</td>
                         <td className="text-center font-bold">{cant}</td>
                         <td className="text-[10px] uppercase font-bold opacity-50">{item.presentacion_nombre || item.unidad}</td>
-                        <td className="text-right font-mono text-[11px]">{fmt(precioUnit)}</td>
+                        <td className="text-right">
+                          <p className="font-mono text-[11px] font-bold">
+                            {precioUnit > 0 ? fmt(precioUnit) : <span className="opacity-30">—</span>}
+                          </p>
+                          {precioUnit > 0 && (
+                            <p className="text-[9px] opacity-35 font-medium">
+                              / {hasPres ? (item.presentacion_nombre ?? 'pres.') : item.unidad}
+                            </p>
+                          )}
+                        </td>
                         <td className="text-right font-bold text-xs">{fmt(cant * precioUnit)}</td>
                       </tr>
                     )
@@ -1261,6 +1404,7 @@ export default function SolicitudesCompraPage() {
                         producto_nombre: i.producto_nombre,
                         cantidad_sugerida: parseFloat(i.cantidad_sugerida),
                         unidad: i.unidad,
+                        unidad_plural: i.unidad_plural,
                         codigo_maestro: i.codigo_maestro,
                         codigo_proveedor: i.codigo_proveedor,
                         presentacion_nombre: i.presentacion_nombre,
@@ -1268,7 +1412,6 @@ export default function SolicitudesCompraPage() {
                         factor_conversion: i.factor_conversion ? parseFloat(i.factor_conversion) : null,
                         cantidad_presentaciones: i.cantidad_presentaciones ? parseFloat(i.cantidad_presentaciones) : null,
                         precio_unitario: i.precio_unitario ? parseFloat(i.precio_unitario) : null,
-                        horizonte_dias: i.horizonte_dias ?? null,
                       })),
                     })
                   }}

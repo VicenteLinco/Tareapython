@@ -6,10 +6,10 @@ import { formatDate, cn } from '@/lib/utils'
 import type { SesionConteo } from '@/types'
 
 const ESTADO_CONFIG = {
-  borrador:     { label: 'Borrador',     icon: AlertCircle,   className: 'badge-warning' },
-  en_progreso:  { label: 'En progreso',  icon: Clock,         className: 'badge-info' },
-  confirmado:   { label: 'Confirmado',   icon: CheckCircle2,  className: 'badge-success' },
-  cancelado:    { label: 'Cancelado',    icon: XCircle,       className: 'badge-ghost' },
+  borrador:     { label: 'Borrador',    icon: AlertCircle,  className: 'badge-warning', tooltip: 'Sesión creada pero no iniciada. Puedes editarla o eliminarla.' },
+  en_progreso:  { label: 'En progreso', icon: Clock,        className: 'badge-info',    tooltip: 'Sesión activa. Se están registrando conteos.' },
+  confirmado:   { label: 'Confirmado',  icon: CheckCircle2, className: 'badge-success', tooltip: 'Sesión cerrada. Los ajustes ya se aplicaron al stock.' },
+  cancelado:    { label: 'Cancelado',   icon: XCircle,      className: 'badge-ghost',   tooltip: 'Sesión cancelada. No se aplicaron ajustes.' },
 } as const
 
 interface AreaUrgencia {
@@ -66,39 +66,60 @@ export default function ConteoPage() {
       </div>
 
       {/* Áreas pendientes */}
-      {pendientes.length > 0 && (
-        <div className="mb-5 bg-warning/10 border border-warning/30 rounded-xl p-3">
-          <div className="flex items-center gap-2 mb-2.5">
+      {pendientes.length > 0 ? (
+        <div className="mb-5 bg-base-100 border border-base-200 rounded-xl overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-base-200 bg-base-200/40">
             <CalendarClock className="h-4 w-4 text-warning" />
-            <span className="text-sm font-semibold text-warning">
+            <span className="text-sm font-bold">
               {pendientes.length} área{pendientes.length !== 1 ? 's' : ''} pendiente{pendientes.length !== 1 ? 's' : ''} de contar
             </span>
           </div>
-          <div className="space-y-1.5">
-            {pendientes.map((p) => (
-              <div
-                key={p.area_id}
-                className="flex items-center justify-between bg-base-100 rounded-lg px-3 py-2"
-              >
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-3.5 w-3.5 opacity-40" />
-                  <span className="text-sm font-medium">{p.area_nombre}</span>
-                  <span className="text-xs opacity-40">
-                    {p.dias_desde_ultimo !== null
-                      ? `hace ${Math.round(p.dias_desde_ultimo)} días`
-                      : 'nunca contada'}
-                  </span>
-                </div>
-                <button
-                  className="btn btn-xs btn-warning"
-                  disabled={isCreating}
-                  onClick={() => handleCrear(p.area_id)}
-                >
-                  Contar
-                </button>
-              </div>
-            ))}
+          <div className="divide-y divide-base-200">
+            {pendientes
+              .slice()
+              .sort((a, b) => (b.dias_desde_ultimo ?? 9999) - (a.dias_desde_ultimo ?? 9999))
+              .map((p) => {
+                const dias = p.dias_desde_ultimo
+                const isAtrasada = dias === null || dias > (p.frecuencia_dias ?? 30)
+                const isProxima = !isAtrasada && dias !== null && dias >= (p.frecuencia_dias ?? 30) * 0.7
+                const urgenciaLabel = dias === null
+                  ? 'Nunca contada'
+                  : isAtrasada
+                    ? `Atrasada ${Math.round(dias)} días`
+                    : isProxima
+                      ? `Vence en ${Math.round((p.frecuencia_dias ?? 30) - dias)} días`
+                      : `Hace ${Math.round(dias)} días`
+                return (
+                  <div key={p.area_id} className="flex items-center justify-between px-4 py-2.5 hover:bg-base-200/30 transition-colors">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <MapPin className="h-3.5 w-3.5 opacity-30 shrink-0" />
+                      <span className="text-sm font-medium truncate">{p.area_nombre}</span>
+                      <span className={cn(
+                        "text-[10px] font-bold shrink-0",
+                        isAtrasada || dias === null ? "text-error" : isProxima ? "text-warning" : "text-base-content/40"
+                      )}>
+                        {urgenciaLabel}
+                      </span>
+                    </div>
+                    <button
+                      className={cn(
+                        "btn btn-xs shrink-0",
+                        isAtrasada || dias === null ? "btn-error" : isProxima ? "btn-warning" : "btn-ghost"
+                      )}
+                      disabled={isCreating}
+                      onClick={() => handleCrear(p.area_id)}
+                    >
+                      + Crear sesión
+                    </button>
+                  </div>
+                )
+              })}
           </div>
+        </div>
+      ) : (
+        <div className="mb-5 bg-success/5 border border-success/20 rounded-xl px-4 py-3 flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+          <span className="text-sm text-success font-medium">Todas las áreas al día en conteo</span>
         </div>
       )}
 
@@ -308,7 +329,10 @@ function SesionCard({ sesion, onClick }: { sesion: SesionConteo; onClick: () => 
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className={cn('badge badge-sm', config.className)}>
+            <span
+              className={cn('badge badge-sm cursor-help', config.className)}
+              title={config.tooltip}
+            >
               {config.label}
             </span>
           </div>

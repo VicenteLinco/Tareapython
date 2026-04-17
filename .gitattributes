@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# SQL y Rust siempre LF (evita VersionMismatch en sqlx entre Windows y Docker)
+*.sql text eol=lf
+*.rs  text eol=lf

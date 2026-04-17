@@ -764,7 +764,7 @@ function CreateProductoDialog({
 
             <div className="form-control">
               <label className="label py-0.5">
-                <span className="label-text text-sm font-medium">Proveedor</span>
+                <span className="label-text text-sm font-medium">Proveedor <span className="text-error">*</span></span>
               </label>
               <ProveedorSelect
                 value={form.proveedor_id}
@@ -1334,7 +1334,7 @@ function EditProductoDialog({
 
               <div className="form-control">
                 <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Proveedor</span>
+                  <span className="label-text text-sm font-medium">Proveedor <span className="text-error">*</span></span>
                 </label>
                 <ProveedorSelect
                   value={form.proveedor_id}

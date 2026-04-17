@@ -34,6 +34,8 @@ struct UpdateConfiguracion {
     moneda_codigo: Option<String>,
     moneda_simbolo: Option<String>,
     conteo_periodo_dias: Option<i32>,
+    ventana_consumo_dias: Option<i32>,
+    periodo_revision_dias: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -125,6 +127,7 @@ async fn actualizar(
     }
 
     if let Some(logo) = &body.logo_base64 {
+        let ant_logo: Option<String> = sqlx::query_scalar("SELECT valor_texto FROM configuracion WHERE clave = 'logo_base64'").fetch_optional(&state.pool).await?;
         sqlx::query(
             "INSERT INTO configuracion (clave, valor_texto) VALUES ('logo_base64', $1)
              ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
@@ -132,7 +135,14 @@ async fn actualizar(
         .bind(logo)
         .execute(&state.pool)
         .await?;
-        log_changes.push(("logo_base64", "old_logo".to_string(), "new_logo".to_string()));
+        let tenia_logo_antes = ant_logo.as_deref().map(|v| !v.is_empty()).unwrap_or(false);
+        let tiene_logo_ahora = !logo.is_empty();
+        if tenia_logo_antes != tiene_logo_ahora || !tenia_logo_antes {
+            log_changes.push(("logo_base64",
+                if tenia_logo_antes { "logo_presente".to_string() } else { "sin_logo".to_string() },
+                if tiene_logo_ahora { "logo_actualizado".to_string() } else { "logo_eliminado".to_string() },
+            ));
+        }
     }
 
     if let Some(pin) = &body.pin_kiosko {
@@ -214,6 +224,36 @@ async fn actualizar(
         .bind(&val)
         .execute(&state.pool)
         .await?;
+    }
+
+    if let Some(ventana) = body.ventana_consumo_dias {
+        let val = ventana.to_string();
+        let ant: Option<String> = sqlx::query_scalar("SELECT valor_texto FROM configuracion WHERE clave = 'ventana_consumo_dias'").fetch_optional(&state.pool).await?;
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('ventana_consumo_dias', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+        )
+        .bind(&val)
+        .execute(&state.pool)
+        .await?;
+        if ant.as_deref() != Some(&val) {
+            log_changes.push(("ventana_consumo_dias", ant.unwrap_or_else(|| "30".to_string()), val));
+        }
+    }
+
+    if let Some(revision) = body.periodo_revision_dias {
+        let val = revision.to_string();
+        let ant: Option<String> = sqlx::query_scalar("SELECT valor_texto FROM configuracion WHERE clave = 'periodo_revision_dias'").fetch_optional(&state.pool).await?;
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('periodo_revision_dias', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+        )
+        .bind(&val)
+        .execute(&state.pool)
+        .await?;
+        if ant.as_deref() != Some(&val) {
+            log_changes.push(("periodo_revision_dias", ant.unwrap_or_else(|| "30".to_string()), val));
+        }
     }
 
     for (clave, ant, nuev) in log_changes {

@@ -145,7 +145,7 @@ pub async fn aplicar_ingreso(
 
 #[derive(Debug, serde::Serialize, sqlx::FromRow, Type)]
 pub struct MovimientoGenerado {
-    pub id: i32,
+    pub id: Uuid,
     pub numero_documento: String,
     pub cantidad: Decimal,
     pub cantidad_resultante: Decimal,

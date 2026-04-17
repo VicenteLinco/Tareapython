@@ -37,9 +37,14 @@ struct ProductoListItem {
     proveedor: Option<ProveedorRef>,
     area: Option<AreaRef>,
     stock_minimo: Decimal,
+    precio_unidad: Option<Decimal>,
     lead_time_propio: Option<i32>,
     activo: bool,
     imagen_url: Option<String>,
+    pres_id: Option<i32>,
+    pres_nombre: Option<String>,
+    pres_nombre_plural: Option<String>,
+    pres_factor: Option<Decimal>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow, specta::Type)]
@@ -119,6 +124,7 @@ struct ProductoRow {
     codigo_proveedor: Option<String>,
     codigo_maestro: Option<String>,
     stock_minimo: Decimal,
+    precio_unidad: Option<Decimal>,
     lead_time_propio: Option<i32>,
     activo: bool,
     cat_id: Option<i32>,
@@ -132,6 +138,10 @@ struct ProductoRow {
     area_id: Option<i32>,
     area_nombre: Option<String>,
     imagen_url: Option<String>,
+    pres_id: Option<i32>,
+    pres_nombre: Option<String>,
+    pres_nombre_plural: Option<String>,
+    pres_factor: Option<Decimal>,
 }
 
 use crate::services::producto_service::ProductoService;
@@ -183,12 +193,16 @@ async fn listar(
     );
     let data_sql = format!(
         r#"SELECT p.id, p.codigo_interno, p.nombre, p.codigo_proveedor, p.codigo_maestro,
-                  p.stock_minimo, p.lead_time_propio, p.activo, p.imagen_url,
+                  p.stock_minimo, p.precio_unidad, p.lead_time_propio, p.activo, p.imagen_url,
                   c.id as cat_id, c.nombre as cat_nombre,
                   um.id as um_id, um.nombre as um_nombre, um.nombre_plural as um_nombre_plural,
                   pr.id as prov_id, pr.nombre as prov_nombre, pr.icono as prov_icono,
                   (SELECT a.id FROM areas a JOIN producto_area pa ON pa.area_id = a.id WHERE pa.producto_id = p.id ORDER BY a.nombre LIMIT 1) as area_id,
-                  (SELECT a.nombre FROM areas a JOIN producto_area pa ON pa.area_id = a.id WHERE pa.producto_id = p.id ORDER BY a.nombre LIMIT 1) as area_nombre
+                  (SELECT a.nombre FROM areas a JOIN producto_area pa ON pa.area_id = a.id WHERE pa.producto_id = p.id ORDER BY a.nombre LIMIT 1) as area_nombre,
+                  (SELECT id FROM presentaciones WHERE producto_id = p.id AND activa = true ORDER BY factor_conversion DESC LIMIT 1) as pres_id,
+                  (SELECT nombre FROM presentaciones WHERE producto_id = p.id AND activa = true ORDER BY factor_conversion DESC LIMIT 1) as pres_nombre,
+                  (SELECT nombre_plural FROM presentaciones WHERE producto_id = p.id AND activa = true ORDER BY factor_conversion DESC LIMIT 1) as pres_nombre_plural,
+                  (SELECT factor_conversion FROM presentaciones WHERE producto_id = p.id AND activa = true ORDER BY factor_conversion DESC LIMIT 1) as pres_factor
            FROM productos p
            LEFT JOIN categorias c ON c.id = p.categoria_id
            JOIN unidades_basicas um ON um.id = p.unidad_base_id
@@ -252,9 +266,14 @@ async fn listar(
                 nombre: r.area_nombre.unwrap_or_default(),
             }),
             stock_minimo: r.stock_minimo,
+            precio_unidad: r.precio_unidad,
             lead_time_propio: r.lead_time_propio,
             activo: r.activo,
             imagen_url: r.imagen_url,
+            pres_id: r.pres_id,
+            pres_nombre: r.pres_nombre,
+            pres_nombre_plural: r.pres_nombre_plural,
+            pres_factor: r.pres_factor,
         })
         .collect();
 

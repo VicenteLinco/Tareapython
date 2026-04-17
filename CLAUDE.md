@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # Inventario Laboratorio Clínico — CLAUDE.md
 
 ## Proyecto
@@ -73,7 +77,7 @@ frontend/
 - **Optimistic locking**: columna `version` en tablas editables. Incrementar y verificar en updates.
 - **Audit log**: tabla `audit_log` para cambios en catálogo.
 - **Soft delete en catálogos**: migration 025 añade `deleted_at`. Filtrar `WHERE deleted_at IS NULL` en queries de catálogo.
-- **Stock trigger**: migration 032 — hay un trigger en PostgreSQL que mantiene stock actualizado.
+- **Stock trigger**: migration 032 — hay un trigger en PostgreSQL que mantiene la tabla `stock` actualizada automáticamente a partir de movimientos. **Nunca insertar directamente en `stock`**; el trigger lo hace.
 - **Roles fijos**: `admin`, `tecnologo`, `consulta`. No hay RBAC configurable.
 - **Numeración de documentos**: formato `MOV-000001`, `REC-000001` (sin año, secuencias globales).
 
@@ -113,7 +117,7 @@ frontend/
 - `creador-productos/` — tabs: categorías, productos, proveedores, áreas
 - `recepciones/` — lista, nueva, detalle
 - `consumos/` — registro de consumos
-- `solicitudes-compra/` — CRUD de solicitudes (branch activo: `feat/solicitudes-compra-redesign`)
+- `solicitudes-compra/` — CRUD de solicitudes; usa subcarpeta `components/` para piezas reutilizables dentro de la página
 - `usuarios/` — gestión de usuarios
 - `configuracion/` — settings
 - `modo-qr/` — consumo por cámara (html5-qrcode)

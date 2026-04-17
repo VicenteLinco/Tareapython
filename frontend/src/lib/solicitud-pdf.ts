@@ -158,7 +158,7 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
       '#',
       'Producto',
       'Cantidad',
-      'P. Unitario',
+      'P. Unit. Base',
       'Total Neto',
     ]],
     body: items.map((item, index) => {
@@ -176,12 +176,9 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
       const baseUnitLabel = baseQty === 1
         ? item.unidad
         : (item.unidad_plural ?? autoPlural(item.unidad))
-      const horizonteLinea = item.horizonte_dias
-        ? `\ncubre ${item.horizonte_dias >= 365 ? '1 año' : item.horizonte_dias >= 180 ? '6 meses' : item.horizonte_dias >= 90 ? '3 meses' : `${item.horizonte_dias} días`}`
-        : ''
       const cantDisplay = usaPresentacion
-        ? `${item.cantidad_presentaciones} ${presLabel}\n= ${baseEquiv} ${baseEquiv === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}${horizonteLinea}`
-        : `${baseQty} ${baseUnitLabel}${horizonteLinea}`
+        ? `${item.cantidad_presentaciones} ${presLabel}\n= ${baseEquiv} ${baseEquiv === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}`
+        : `${baseQty} ${baseUnitLabel}`
 
       const precioBase = item.precio_unitario ?? 0
       const precioPres = (usaPresentacion && item.factor_conversion)
@@ -192,9 +189,9 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
       const hasPrice = item.precio_unitario != null && item.precio_unitario > 0
       const neto = hasPrice ? qty * precioEfectivo : 0
 
-      // Una sola columna de precio: mostrar precio de presentación si aplica, si no precio base
+      // Columna de precio: siempre precio por unidad base
       const precioDisplay = hasPrice
-        ? fmtMonto(precioPres ?? precioBase)
+        ? fmtMonto(precioBase)
         : '—'
 
       return [
@@ -227,7 +224,8 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
       if (data.section !== 'body' || data.column.index !== 1) return
       const item = items[data.row.index]
       if (!item) return
-      if (item.codigo_proveedor || item.codigo_maestro) {
+      const hasExtra = item.codigo_proveedor || item.codigo_maestro
+      if (hasExtra) {
         data.cell.styles.cellPadding = { top: 3, right: 2, bottom: 11, left: 3 }
       }
     },
@@ -235,17 +233,17 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
       if (data.section !== 'body' || data.column.index !== 1) return
       const item = items[data.row.index]
       if (!item) return
-      const codigos = [
-        item.codigo_proveedor ? `Prv: ${item.codigo_proveedor}` : null,
-        item.codigo_maestro   ? `Bod: ${item.codigo_maestro}`   : null,
-      ].filter(Boolean).join('   ·   ')
-      if (!codigos) return
+      const parts: string[] = []
+      if (item.codigo_proveedor) parts.push(`Prv: ${item.codigo_proveedor}`)
+      if (item.codigo_maestro)   parts.push(`Bod: ${item.codigo_maestro}`)
+      if (parts.length === 0) return
+      const line = parts.join('   ·   ')
       const prevSize = doc.getFontSize()
       const prevFont = doc.getFont()
       doc.setFontSize(5.5)
       doc.setTextColor(120, 130, 150)
       doc.setFont('helvetica', 'normal')
-      doc.text(codigos, data.cell.x + 3, data.cell.y + data.cell.height - 3.5)
+      doc.text(line, data.cell.x + 3, data.cell.y + data.cell.height - 3.5)
       doc.setFontSize(prevSize)
       doc.setTextColor(...C.textMain)
       doc.setFont(prevFont.fontName, prevFont.fontStyle)
@@ -268,8 +266,8 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
 
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(...C.textMain)
-  doc.text(`${sym}${Math.round(subtotal_neto).toLocaleString('es-CL')}`, W - 18, ty + 8, { align: 'right' })
-  doc.text(`${sym}${Math.round(iva).toLocaleString('es-CL')}`, W - 18, ty + 16, { align: 'right' })
+  doc.text(fmtMonto(subtotal_neto), W - 18, ty + 8, { align: 'right' })
+  doc.text(fmtMonto(iva), W - 18, ty + 16, { align: 'right' })
 
   doc.setDrawColor(...C.secondary)
   doc.setLineWidth(0.5)
@@ -278,26 +276,27 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
   doc.setFontSize(10)
   doc.setTextColor(...C.secondary)
   doc.text('Total con IVA:', boxX + 5, ty + 27)
-  doc.text(`${sym}${Math.round(total_con_iva).toLocaleString('es-CL')}`, W - 18, ty + 27, { align: 'right' })
+  doc.text(fmtMonto(total_con_iva), W - 18, ty + 27, { align: 'right' })
 
   // --- SECCIÓN RESPONSABLE ---
   const firmasStartY = tableEndY + 38
-  const signY = firmasStartY + 36 > H - 20
+  const signY = firmasStartY + 42 > H - 20
     ? (doc.addPage(), 45)
     : firmasStartY
 
+  const boxH = 38
   doc.setFillColor(...C.bgLight)
-  doc.roundedRect(15, signY - 4, W - 30, 28, 2, 2, 'F')
+  doc.roundedRect(15, signY - 4, W - 30, boxH, 2, 2, 'F')
   doc.setDrawColor(...C.muted)
   doc.setLineWidth(0.3)
-  doc.roundedRect(15, signY - 4, W - 30, 28, 2, 2, 'S')
+  doc.roundedRect(15, signY - 4, W - 30, boxH, 2, 2, 'S')
 
   doc.setFontSize(6.5)
   doc.setTextColor(...C.textLight)
   doc.setFont('helvetica', 'bold')
-  doc.text('RESPONSABLE', W / 2, signY + 2, { align: 'center' })
+  doc.text('RESPONSABLE', W / 2, signY + 4, { align: 'center' })
 
-  const lineY = signY + 16
+  const lineY = signY + 20
   const centerX = W / 2
   doc.setDrawColor(...C.primary)
   doc.setLineWidth(0.4)
@@ -311,7 +310,7 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
   doc.setFont('helvetica', 'bold')
   doc.text(
     (firma_solicitante_label || usuario_nombre).toUpperCase(),
-    centerX, lineY + 9, { align: 'center' }
+    centerX, lineY + 10, { align: 'center' }
   )
 
   // --- FOOTER ---

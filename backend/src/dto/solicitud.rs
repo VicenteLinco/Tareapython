@@ -29,6 +29,7 @@ pub struct ItemRecomendado {
     pub unidad_base: String,
     pub unidad_base_plural: Option<String>,
     pub imagen_url: Option<String>,
+    pub ya_pedido_unidades: Decimal,
 }
 
 #[derive(Debug, Deserialize, Type)]
@@ -77,6 +78,7 @@ pub struct SolicitudDetalleItem {
     pub producto_nombre: String,
     pub cantidad_sugerida: Decimal,
     pub unidad: String,
+    pub unidad_plural: Option<String>,
     pub codigo_proveedor: Option<String>,
     pub codigo_maestro: Option<String>,
     pub proveedor_nombre: Option<String>,

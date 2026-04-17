@@ -87,7 +87,7 @@ export function QrScanner({ onScan, active, paused, className }: QrScannerProps)
   return (
     <div className={cn(
       "relative w-full aspect-square max-w-sm mx-auto overflow-hidden rounded-[2.5rem] bg-black shadow-2xl transition-all duration-500",
-      isReady ? "opacity-100 scale-100" : "opacity-0 scale-95",
+      (isReady || !!error) ? "opacity-100 scale-100" : "opacity-0 scale-95",
       className
     )}>
       {/* El div donde se renderiza el video de html5-qrcode */}

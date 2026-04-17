@@ -227,9 +227,6 @@ export default function SolicitudesCompraPage() {
   // Prevent borrador from reloading after it's been intentionally cleared
   const borradorCargado = useRef(false)
 
-  // Restauración diferida del proveedor cuando borrador carga antes que la lista de proveedores
-  const [pendingProveedorId, setPendingProveedorId] = useState<number | null>(null)
-
   // Sync view from navigation state
   useEffect(() => {
     if (location.state?.view) setView(location.state.view)
@@ -280,26 +277,24 @@ export default function SolicitudesCompraPage() {
   const monedaCodigo = configuracion?.moneda_codigo ?? 'CLP'
   const fmt = (v: number | string | null) => formatPesos(v, monedaCodigo)
 
-  // Restaurar proveedor guardado cuando la lista de proveedores cargue
-  // (debe ir después de la query de proveedores para evitar temporal dead zone)
-  useEffect(() => {
-    if (!pendingProveedorId || !proveedores || selectedProveedor) return
-    const prov = proveedores.find(p => p.id === pendingProveedorId)
-    if (prov) {
-      setSelectedProveedor(prov)
-      setPendingProveedorId(null)
-    }
-  }, [pendingProveedorId, proveedores, selectedProveedor])
-
-  // Load borrador once on mount (guarded to prevent reload after intentional clear)
+  // Restauración unificada: borrador + proveedor en un solo efecto determinístico
   useEffect(() => {
     if (view !== 'crear' || borradorCargado.current) return
     borradorCargado.current = true
     const productoId = searchParams.get('select')
 
-    api.get<{ borrador: SolicitudDetalle | null }>('/solicitudes-compra/borrador')
-      .then(res => {
-        const b = res.data.borrador
+    async function restaurar() {
+      setRestaurando(true)
+      try {
+        // Cargar borrador y proveedores en paralelo para reducir latencia
+        const [borradorRes, proveedoresRes] = await Promise.all([
+          api.get<{ borrador: SolicitudDetalle | null }>('/solicitudes-compra/borrador'),
+          api.get<Proveedor[]>('/proveedores'),
+        ])
+
+        const b = borradorRes.data.borrador
+        const provs = proveedoresRes.data
+
         const borradorItems: SolicitudItem[] = b ? b.items.map(item => ({
           producto_id: item.producto_id,
           producto_nombre: item.producto_nombre,
@@ -327,17 +322,20 @@ export default function SolicitudesCompraPage() {
 
         if (b) setSolicitudId(b.id)
 
-        // Restaurar proveedor guardado para continuar editando el borrador
+        // Restaurar proveedor en el mismo efecto (sin dead zone)
         if (borradorItems.length > 0) {
           const savedId = localStorage.getItem('solicitud_proveedor_id')
-          if (savedId) setPendingProveedorId(parseInt(savedId))
+          if (savedId) {
+            const prov = provs.find(p => p.id === parseInt(savedId))
+            if (prov) setSelectedProveedor(prov)
+          }
         }
 
         if (productoId && !borradorItems.some(i => i.producto_id === productoId)) {
-          api.get<Producto>(`/productos/${productoId}`)
-            .then(res2 => {
-              const p = res2.data
-              if (!p) { setItems(borradorItems); setRestaurando(false); return }
+          try {
+            const res2 = await api.get<Producto>(`/productos/${productoId}`)
+            const p = res2.data
+            if (p) {
               const newItem: SolicitudItem = {
                 producto_id: p.id,
                 producto_nombre: p.nombre,
@@ -364,15 +362,20 @@ export default function SolicitudesCompraPage() {
               }
               setItems([...borradorItems, newItem])
               setView('crear')
-              setRestaurando(false)
-            })
-            .catch(() => { setItems(borradorItems); setRestaurando(false) })
+            } else {
+              setItems(borradorItems)
+            }
+          } catch {
+            setItems(borradorItems)
+          }
         } else {
           setItems(borradorItems)
-          setRestaurando(false)
         }
-      })
-      .catch(() => setRestaurando(false))
+      } catch { /* restauración silenciosa */ }
+      setRestaurando(false)
+    }
+
+    restaurar()
   }, [view, searchParams])
 
   // ── Mutations ────────────────────────────────────────────────────────────────

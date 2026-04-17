@@ -79,6 +79,7 @@ async fn obtener_solicitud_por_id(
             p.nombre as producto_nombre,
             d.cantidad_sugerida,
             d.unidad,
+            ub.nombre_plural as unidad_plural,
             p.codigo_proveedor,
             p.codigo_maestro,
             prov.nombre as proveedor_nombre,
@@ -94,6 +95,7 @@ async fn obtener_solicitud_por_id(
             d.horizonte_razon
            FROM solicitud_compra_detalle d
            JOIN productos p ON p.id = d.producto_id
+           LEFT JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
            LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
            LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
            WHERE d.solicitud_id = $1
@@ -369,14 +371,14 @@ base AS (
         END                                                                     AS autonomia_dias,
         CASE
             WHEN COALESCE(st.stock_actual, 0) < COALESCE(p.stock_minimo, 0)
-                THEN 'critico'
+                THEN 'critica'
             WHEN COALESCE(c.consumo_diario, 0) > 0
               AND COALESCE(st.stock_actual, 0) < (
                   COALESCE(p.stock_minimo, 0)
                   + COALESCE(c.consumo_diario, 0)
                   * COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)
               )
-                THEN 'planificar'
+                THEN 'alta'
             ELSE NULL
         END                                                                     AS nivel_urgencia,
         GREATEST(0, CEIL(
@@ -410,7 +412,8 @@ base AS (
         COALESCE(up.precio_unitario, p.precio_unidad)                           AS precio_ultima_recepcion,
         ub.nombre                                                               AS unidad_base,
         ub.nombre_plural                                                        AS unidad_base_plural,
-        p.imagen_url
+        p.imagen_url,
+        COALESCE(pev.cantidad_pedida, 0)                                        AS ya_pedido_unidades
     FROM productos p
     CROSS JOIN cfg
     LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
@@ -428,8 +431,8 @@ FROM base
 WHERE nivel_urgencia IS NOT NULL
 ORDER BY
     CASE nivel_urgencia
-        WHEN 'critico'    THEN 1
-        WHEN 'planificar' THEN 2
+        WHEN 'critica' THEN 1
+        WHEN 'alta'    THEN 2
         ELSE 3
     END,
     COALESCE(autonomia_dias, 0)"#

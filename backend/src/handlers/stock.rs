@@ -25,6 +25,7 @@ struct StockQuery {
     stock_bajo: Option<bool>,
     con_alertas: Option<bool>,
     filter: Option<String>,
+    estado: Option<String>,  // nuevo param unificado: todos|normal|bajo|critico|sin_stock
     page: Option<i64>,
     per_page: Option<i64>,
 }
@@ -51,7 +52,18 @@ async fn listar(
     let limit = pagination.per_page();
     let offset = pagination.offset();
 
-    let filter = params.filter.as_deref().unwrap_or("");
+    // Resolver filtro: `estado` es el nuevo param unificado; `filter` y `con_alertas`/`stock_bajo` se mantienen por compatibilidad
+    let estado = params.estado.as_deref().unwrap_or("");
+    let filter = if !estado.is_empty() {
+        // Mapear estado → valor de filter legacy
+        match estado {
+            "critico"   => "critico",
+            "sin_stock" => "sin-stock",
+            _ => params.filter.as_deref().unwrap_or(""),
+        }
+    } else {
+        params.filter.as_deref().unwrap_or("")
+    };
     let con_alertas = params.con_alertas == Some(true) || !filter.is_empty();
 
     let mut param_idx = 0;
@@ -89,14 +101,17 @@ async fn listar(
         "".to_string()
     };
 
-    // Filter by type (Dashboard logic)
+    // Filter by type — `estado` param + legacy compat
+    let stock_bajo_estado = estado == "bajo" || params.stock_bajo == Some(true);
+    let normal_estado = estado == "normal";
     let type_filter = match filter {
         "critico" => "AND ((stock_total <= 0 AND stock_minimo > 0) OR (stock_minimo > 0 AND stock_total < stock_minimo) OR (consumo_diario_ajustado > 0.0001 AND (stock_total / consumo_diario_ajustado) <= 7))",
         "vencimiento" => "AND (proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days' AND proximo_vencimiento >= CURRENT_DATE)",
         "vencidos" => "AND proximo_vencimiento < CURRENT_DATE",
         "sin-stock" => "AND stock_total <= 0 AND stock_minimo > 0",
         _ if params.con_alertas == Some(true) => "AND ((stock_total < stock_minimo AND stock_minimo > 0) OR proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days')",
-        _ if params.stock_bajo == Some(true) => "AND stock_total < stock_minimo",
+        _ if stock_bajo_estado => "AND stock_total < stock_minimo AND stock_minimo > 0",
+        _ if normal_estado => "AND (stock_minimo = 0 OR stock_total >= stock_minimo)",
         _ => ""
     };
 
@@ -416,16 +431,7 @@ async fn alertas(
     let page = params.page.max(1);
     let offset = (page - 1) * per_page;
 
-    // Verificar si las tablas de solicitudes de compra ya existen (migraciones 019+)
-    let solicitudes_disponibles: bool = sqlx::query_scalar(
-        "SELECT to_regclass('public.solicitudes_compra') IS NOT NULL"
-    )
-    .fetch_one(&state.pool)
-    .await
-    .unwrap_or(false);
-
-    let pedidos_cte = if solicitudes_disponibles {
-        r#"pedidos_pendientes AS (
+    let pedidos_cte = r#"pedidos_pendientes AS (
                SELECT
                    producto_id,
                    SUM(cantidad_sugerida) as total_en_camino
@@ -433,13 +439,7 @@ async fn alertas(
                JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
                WHERE sc.estado = 'guardada'
                GROUP BY producto_id
-           ),"#
-    } else {
-        // Tablas no disponibles aún: CTE vacío para no romper el query
-        r#"pedidos_pendientes AS (
-               SELECT NULL::UUID as producto_id, NULL::NUMERIC as total_en_camino WHERE FALSE
-           ),"#
-    };
+           ),"#;
 
     let sql = format!(
         r#"WITH stock_stats AS (

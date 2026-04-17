@@ -1,25 +1,19 @@
 import React from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { 
-  Package, 
-  AlertTriangle, 
-  Clock, 
-  TrendingDown, 
-  ChevronRight, 
-  History, 
-  Info, 
-  TrendingUp,
+import {
+  Package,
+  AlertTriangle,
+  Clock,
+  TrendingDown,
+  ChevronRight,
   ShoppingCart,
   Search,
-  Eye,
   AlertCircle,
-  Truck,
   CheckCircle2,
-  ArrowDownLeft
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
-import type { Alerta, PaginatedResponse, StockItem, Movimiento } from '@/types'
+import type { Alerta, PaginatedResponse, StockItem } from '@/types'
 import { cn, daysUntil, autoPlural } from '@/lib/utils'
 
 // Helpers nativos para evitar dependencias externas
@@ -30,11 +24,12 @@ const formatStock = (val: number | string | null) => {
   return Math.abs(num - Math.round(num)) < 0.0001 ? Math.round(num).toString() : num.toFixed(2)
 }
 
-const formatDate = (dateStr: string) => {
+// Formato compacto sin año: "15 ene" — distinto de formatDate en utils (que incluye año)
+const formatDateShort = (dateStr: string) => {
   try {
     const date = new Date(dateStr + 'T12:00:00');
     return new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: 'short' }).format(date);
-  } catch (e) {
+  } catch {
     return dateStr;
   }
 }
@@ -44,33 +39,16 @@ const formatRelative = (dateStr: string) => {
     const date = new Date(dateStr + 'T12:00:00');
     const now = new Date();
     const diffInDays = Math.round((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-    
+
     const rtf = new Intl.RelativeTimeFormat('es', { numeric: 'auto' });
-    
+
     if (Math.abs(diffInDays) < 30) {
       return rtf.format(diffInDays, 'day');
     } else {
       const diffInMonths = Math.round(diffInDays / 30);
       return rtf.format(diffInMonths, 'month');
     }
-  } catch (e) {
-    return '';
-  }
-}
-
-const formatDistanceSimple = (dateStr: string) => {
-  try {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffInMs = now.getTime() - date.getTime();
-    const diffInMins = Math.round(diffInMs / (1000 * 60));
-    
-    if (diffInMins < 60) return `hace ${diffInMins} min`;
-    const diffInHours = Math.round(diffInMins / 60);
-    if (diffInHours < 24) return `hace ${diffInHours} h`;
-    const diffInDays = Math.round(diffInHours / 24);
-    return `hace ${diffInDays} d`;
-  } catch (e) {
+  } catch {
     return '';
   }
 }
@@ -91,11 +69,6 @@ export default function DashboardPage() {
     retry: 1,
   })
 
-  const { data: movimientosRecientes, isLoading: loadingMovimientos } = useQuery({
-    queryKey: ['movimientos-recientes'],
-    queryFn: () => api.get<PaginatedResponse<Movimiento>>('/movimientos', { params: { per_page: 40 } }).then(r => r.data),
-    refetchInterval: 60000
-  })
 const totalItems = stockData?.total ?? 0
 const alerts = alertasResponse?.data ?? []
 
@@ -113,16 +86,6 @@ const porVencer = alerts.filter(a =>
 ).length
 
 const quebrados = alerts.filter(a => a.tipo_alerta === 'sin_stock').length
-
-
-  const alertaProductoIds = new Set(alerts.map(a => a.producto_id))
-  
-  const resoluciones = (movimientosRecientes?.data ?? []).filter(m => {
-      const tiposResolucion = ['ENTRADA', 'AJUSTE_POSITIVO', 'RECEPCION']
-      return tiposResolucion.includes(m.tipo) && !alertaProductoIds.has(m.producto_id)
-  }).slice(0, 8)
-
-  const loadingResoluciones = alertasLoading || loadingMovimientos
 
   return (
     <div className="p-4 sm:p-6 space-y-8 max-w-[1600px] mx-auto animate-in fade-in duration-500">
@@ -170,7 +133,7 @@ const quebrados = alerts.filter(a => a.tipo_alerta === 'sin_stock').length
           color="bg-error/10 text-error"
           loading={alertasLoading}
           alert={quebrados > 0}
-          onClick={() => navigate('/stock?filter=sin-stock')}
+          onClick={() => navigate('/stock?estado=sin_stock')}
         />
         <StatCard
           label="Stock Crítico"
@@ -179,7 +142,7 @@ const quebrados = alerts.filter(a => a.tipo_alerta === 'sin_stock').length
           color="bg-error/10 text-error"
           loading={alertasLoading}
           alert={criticos > 0}
-          onClick={() => navigate('/stock?alertas=true&filter=critico')}
+          onClick={() => navigate('/stock?estado=critico')}
         />
         <StatCard
           label="Por Vencer"
@@ -188,12 +151,11 @@ const quebrados = alerts.filter(a => a.tipo_alerta === 'sin_stock').length
           color="bg-warning/10 text-warning"
           loading={alertasLoading}
           alert={porVencer > 0}
-          onClick={() => navigate('/stock?alertas=true&filter=vencimiento')}
+          onClick={() => navigate('/stock?estado=vencimiento')}
         />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        <div className="xl:col-span-8 space-y-4">
+      <div className="space-y-4">
           <div className="flex items-center justify-between px-2">
             <h2 className="text-base font-bold flex items-center gap-2">
               Alertas que requieren atención
@@ -235,67 +197,22 @@ const quebrados = alerts.filter(a => a.tipo_alerta === 'sin_stock').length
               <AlertList alerts={alerts} />
             )}
           </div>
-        </div>
-
-        <div className="xl:col-span-4 space-y-6">
-          <div className="bg-base-100/40 rounded-3xl border border-base-200/60 p-5 shadow-sm backdrop-blur-sm">
-            <h2 className="text-xs font-semibold uppercase tracking-wide opacity-50 mb-4 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              Recuperaciones Recientes
-            </h2>
-            
-            {loadingResoluciones ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map(i => <div key={i} className="h-12 bg-base-200/50 rounded-xl animate-pulse" />)}
-              </div>
-            ) : resoluciones.length === 0 ? (
-              <div className="py-8 text-center opacity-30 italic text-sm">Sin acciones recientes</div>
-            ) : (
-              <div className="space-y-3">
-                {resoluciones.map((res) => (
-                  <div key={res.id} className="flex items-center gap-3 p-3 rounded-2xl bg-success/5 border border-success/10 group hover:bg-success/10 transition-colors">
-                    <div className="p-2 bg-success/10 text-success rounded-lg">
-                      <ArrowDownLeft className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold truncate text-success">{res.producto_nombre}</p>
-                      <p className="text-xs opacity-60 font-medium">Stock normalizado por {res.tipo}</p>
-                    </div>
-                    <div className="text-xs opacity-40 font-bold">
-                       {res.created_at && formatDistanceSimple(res.created_at)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="bg-primary/5 rounded-3xl border border-primary/10 p-5 relative overflow-hidden group">
-             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
-               <TrendingUp className="w-20 h-20" />
-             </div>
-             <div className="relative z-10">
-               <h3 className="text-primary font-bold text-sm mb-1 uppercase tracking-tight">Estado Operativo</h3>
-               <p className="text-xs opacity-70 mb-4 font-medium italic">Todo el sistema está sincronizado correctamente.</p>
-               <div className="flex items-center gap-4">
-                  <div className="text-center px-4 border-r border-primary/10">
-                    <p className="text-xl font-bold text-primary">{totalItems}</p>
-                    <p className="text-xs font-bold uppercase opacity-50">SKUs</p>
-                  </div>
-                  <div className="text-center px-4">
-                    <p className="text-xl font-bold text-error">{quebrados}</p>
-                    <p className="text-xs font-bold uppercase opacity-50">Críticos</p>
-                  </div>
-               </div>
-             </div>
-          </div>
-        </div>
       </div>
     </div>
   )
 }
 
-function StatCard({ label, value, icon, color, loading, alert, onClick }: any) {
+interface StatCardProps {
+  label: string
+  value: string | number
+  icon: React.ReactNode
+  color: string
+  loading?: boolean
+  alert?: boolean
+  onClick?: () => void
+}
+
+function StatCard({ label, value, icon, color, loading, alert, onClick }: StatCardProps) {
   return (
     <div 
       onClick={onClick}
@@ -330,7 +247,7 @@ function StatCard({ label, value, icon, color, loading, alert, onClick }: any) {
 
 function AlertList({ alerts }: { alerts?: Alerta[] }) {
   const navigate = useNavigate()
-  
+
   if (!alerts) return null
 
   if (alerts.length === 0) {
@@ -340,86 +257,22 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
           <CheckCircle2 className="w-12 h-12" />
         </div>
         <div>
-          <h3 className="text-lg font-bold italic">¡Todo bajo control!</h3>
-          <p className="text-sm opacity-40 max-w-xs mx-auto">No hay alertas críticas en este momento. El inventario está operando normalmente.</p>
+          <h3 className="text-base font-bold">Todo bajo control</h3>
+          <p className="text-sm opacity-40 max-w-xs mx-auto mt-1">No hay alertas en este momento.</p>
         </div>
       </div>
     )
   }
 
   const severityConfig = {
-    vencido: { 
-      label: 'Vencido', 
-      bg: 'bg-error/10 text-error border-error/20', 
-      icon: <AlertTriangle />,
-      actionLabel: 'Descartar',
-      actionIcon: <AlertTriangle className="w-3 h-3" />,
-      actionClass: 'btn-error text-white hover:bg-error/90 border-none shadow-sm',
-      path: (a: Alerta) => `/stock?search=${encodeURIComponent(a.nombre)}&select=${a.producto_id}&action=discard`
-    },
-    sin_stock: {
-      label: 'Sin Stock',
-      bg: 'bg-error/10 text-error border-error/20 ring-1 ring-error/30',
-      icon: <AlertCircle />,
-      actionLabel: 'Comprar YA',
-      actionIcon: <ShoppingCart className="w-3 h-3" />,
-      actionClass: 'btn-error text-white animate-pulse shadow-lg border-none',
-      path: (a: Alerta) => `/solicitudes-compra?select=${a.producto_id}`
-    },
-    agotamiento_proximo: { 
-      label: 'Agotamiento crítico', 
-      bg: 'bg-error/10 text-error border-error/20 ring-1 ring-error/30', 
-      icon: <AlertCircle />,
-      actionLabel: 'Pedir YA',
-      actionIcon: <ShoppingCart className="w-3 h-3" />,
-      actionClass: 'btn-error text-white animate-pulse shadow-lg border-none',
-      path: (a: Alerta) => `/solicitudes-compra?select=${a.producto_id}`
-    },
-    bajo_minimo: { 
-      label: 'Stock bajo', 
-      bg: 'bg-error/10 text-error border-error/20', 
-      icon: <TrendingDown />,
-      actionLabel: 'Pedir',
-      actionIcon: <ShoppingCart className="w-3 h-3" />,
-      actionClass: 'btn-primary text-primary-content hover:bg-primary/90 border-none shadow-sm',
-      path: (a: Alerta) => `/solicitudes-compra?select=${a.producto_id}`
-    },
-    vence_30d: { 
-      label: 'Por vencer', 
-      bg: 'bg-warning/10 text-warning border-warning/20', 
-      icon: <Clock />,
-      actionLabel: 'Priorizar',
-      actionIcon: <TrendingUp className="w-3 h-3" />,
-      actionClass: 'btn-warning text-white hover:bg-warning/90 border-none shadow-sm',
-      path: (a: Alerta) => `/stock?search=${encodeURIComponent(a.nombre)}&select=${a.producto_id}`
-    },
-    vence_90d: { 
-      label: 'Aviso', 
-      bg: 'bg-info/10 text-info border-info/20', 
-      icon: <Info />,
-      actionLabel: 'Revisar',
-      actionIcon: <Eye className="w-3 h-3" />,
-      actionClass: 'btn-info text-white hover:bg-info/90 border-none shadow-sm',
-      path: (a: Alerta) => `/stock?search=${encodeURIComponent(a.nombre)}&select=${a.producto_id}`
-    },
-    dead_stock: { 
-      label: 'Sin movimiento', 
-      bg: 'bg-base-300 text-base-content border-base-content/20', 
-      icon: <History />,
-      actionLabel: 'Evaluar',
-      actionIcon: <Search className="w-3 h-3" />,
-      actionClass: 'btn-ghost bg-base-300 hover:bg-base-content hover:text-base-100',
-      path: (a: Alerta) => `/stock?search=${encodeURIComponent(a.nombre)}&select=${a.producto_id}`
-    },
-    anomalia_consumo: { 
-      label: 'Consumo inusual', 
-      bg: 'bg-secondary/10 text-secondary border-secondary/20', 
-      icon: <TrendingUp />,
-      actionLabel: 'Auditar',
-      actionIcon: <Search className="w-3 h-3" />,
-      actionClass: 'btn-secondary text-secondary-content hover:bg-secondary/90 border-none shadow-sm',
-      path: (a: Alerta) => `/stock?search=${encodeURIComponent(a.nombre)}&select=${a.producto_id}`
-    },
+    vencido:           { label: 'Vencido',            bg: 'bg-error/10 text-error border-error/20',              path: (a: Alerta) => `/stock?search=${encodeURIComponent(a.nombre)}&select=${a.producto_id}` },
+    sin_stock:         { label: 'Sin Stock',           bg: 'bg-error/10 text-error border-error/20 ring-1 ring-error/30', path: (a: Alerta) => `/solicitudes-compra?select=${a.producto_id}` },
+    agotamiento_proximo: { label: 'Agotamiento',       bg: 'bg-error/10 text-error border-error/20 ring-1 ring-error/30', path: (a: Alerta) => `/solicitudes-compra?select=${a.producto_id}` },
+    bajo_minimo:       { label: 'Stock bajo',          bg: 'bg-error/10 text-error border-error/20',              path: (a: Alerta) => `/solicitudes-compra?select=${a.producto_id}` },
+    vence_30d:         { label: 'Por vencer',          bg: 'bg-warning/10 text-warning border-warning/20',        path: (a: Alerta) => `/stock?search=${encodeURIComponent(a.nombre)}&select=${a.producto_id}` },
+    vence_90d:         { label: 'Aviso vencimiento',  bg: 'bg-info/10 text-info border-info/20',                 path: (a: Alerta) => `/stock?search=${encodeURIComponent(a.nombre)}&select=${a.producto_id}` },
+    dead_stock:        { label: 'Sin movimiento',      bg: 'bg-base-300 text-base-content border-base-content/20', path: (a: Alerta) => `/stock?search=${encodeURIComponent(a.nombre)}&select=${a.producto_id}` },
+    anomalia_consumo:  { label: 'Consumo inusual',     bg: 'bg-secondary/10 text-secondary border-secondary/20', path: (a: Alerta) => `/stock?search=${encodeURIComponent(a.nombre)}&select=${a.producto_id}` },
   }
 
   const groupedAlerts = Object.values(
@@ -431,96 +284,78 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
   )
 
   return (
-    <div className="max-h-[600px] overflow-y-auto space-y-2 p-2 custom-scrollbar">
+    <div className="max-h-[600px] overflow-y-auto space-y-1.5 p-2">
       {groupedAlerts.slice(0, 50).map((group, i) => {
         const alerta = group[0]
         const config = severityConfig[alerta.tipo_alerta as keyof typeof severityConfig] ?? severityConfig.vence_90d
-        
-        const isBajoMinimo = group.some(a => a.tipo_alerta === 'bajo_minimo')
-        const isAgotamiento = group.some(a => a.tipo_alerta === 'agotamiento_proximo')
-        const isSinStock = group.some(a => a.tipo_alerta === 'sin_stock')
-        const isDeadStock = group.some(a => a.tipo_alerta === 'dead_stock')
-        const isAnomalia = group.some(a => a.tipo_alerta === 'anomalia_consumo')
+
+        const isBajoMinimo    = group.some(a => a.tipo_alerta === 'bajo_minimo')
+        const isAgotamiento   = group.some(a => a.tipo_alerta === 'agotamiento_proximo')
+        const isSinStock      = group.some(a => a.tipo_alerta === 'sin_stock')
+        const isDeadStock     = group.some(a => a.tipo_alerta === 'dead_stock')
+        const isAnomalia      = group.some(a => a.tipo_alerta === 'anomalia_consumo')
         const isVencidoAlerta = group.some(a => a.tipo_alerta === 'vencido')
         const days = alerta.proxima_fecha_venc ? daysUntil(alerta.proxima_fecha_venc) : null
         const isVencidoReal = days !== null && days <= 0
-        const isVenceSoon = days !== null && days > 0
+        const isVenceSoon   = days !== null && days > 0
 
         const totalLabel = formatStock(alerta.total)
-        const minLabel = formatStock(alerta.stock_minimo)
-        const isPlural = (alerta.total || 0) !== 1
-        const unit = isPlural ? (alerta.unidad_plural ?? autoPlural(alerta.unidad || '')) : (alerta.unidad || '')
+        const minLabel   = formatStock(alerta.stock_minimo)
+        const isPlural   = (alerta.total || 0) !== 1
+        const unit       = isPlural ? (alerta.unidad_plural ?? autoPlural(alerta.unidad || '')) : (alerta.unidad || '')
 
         return (
           <div
             key={`${alerta.producto_id}-${i}`}
-            className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-base-200/50 bg-base-100/50 p-4 hover:bg-base-200 hover:shadow-md transition-all group relative overflow-hidden"
+            onClick={() => navigate(config.path(alerta))}
+            className="cursor-pointer flex items-center gap-3 rounded-xl border border-base-200/50 bg-base-100/50 px-4 py-3 hover:bg-base-200 transition-colors group relative overflow-hidden"
           >
-            <div className={cn("absolute left-0 top-0 bottom-0 w-1", config.bg.split(' ')[0])} />
+            <div className={cn('absolute left-0 top-0 bottom-0 w-1 rounded-l-xl', config.bg.split(' ')[0])} />
 
-            <div className="flex flex-col gap-1.5 min-w-0 flex-1 pl-2">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-col gap-1 min-w-0 flex-1 pl-1">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {group.map(a => {
-                   const aConfig = severityConfig[a.tipo_alerta as keyof typeof severityConfig] ?? severityConfig.vence_90d
-                   return (
-                     <span key={a.tipo_alerta} className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-bold uppercase tracking-wider', aConfig.bg)}>
-                       {aConfig.label}
-                     </span>
-                   )
+                  const aConfig = severityConfig[a.tipo_alerta as keyof typeof severityConfig] ?? severityConfig.vence_90d
+                  return (
+                    <span key={a.tipo_alerta} className={cn('inline-flex items-center rounded border px-1.5 py-px text-xs font-semibold uppercase tracking-wide', aConfig.bg)}>
+                      {aConfig.label}
+                    </span>
+                  )
                 })}
-                <span className="text-sm font-bold truncate group-hover:text-primary transition-colors" title={alerta.nombre}>{alerta.nombre}</span>
+                <span className="text-sm font-semibold truncate group-hover:text-primary transition-colors" title={alerta.nombre}>
+                  {alerta.nombre}
+                </span>
               </div>
 
-              <p className="text-sm opacity-60 font-medium">
+              <p className="text-xs text-base-content/50">
                 {isSinStock ? (
-                  <span className="font-bold text-error uppercase italic ring-1 ring-error/20 px-1 rounded bg-error/5 flex items-center gap-1 w-fit">
-                    <AlertCircle className="w-3 h-3" /> ¡Producto totalmente agotado!
+                  <span className="text-error font-semibold flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> Totalmente agotado
                   </span>
                 ) : isAgotamiento ? (
-                  <>
-                    Stock actual: <span className="font-bold text-error">{totalLabel}</span> {unit} |{' '}
-                    <span className="text-error font-bold italic underline">Queda poco tiempo</span>
-                  </>
+                  <>Stock: <span className="font-semibold text-error">{totalLabel}</span> {unit} — queda poco</>
                 ) : isAnomalia && group.length === 1 ? (
-                  <>Stock actual: <span className="font-bold text-base-content">{totalLabel}</span> {unit} | <span className="text-secondary font-bold">Pico de consumo detectado</span></>
+                  <>Stock: <span className="font-semibold">{totalLabel}</span> {unit} — pico de consumo detectado</>
                 ) : isBajoMinimo ? (
-                  <>
-                    Stock actual: <span className="font-bold text-base-content">{totalLabel}</span> {unit} <span className="opacity-40">(Mín: {minLabel})</span>
-                  </>
+                  <>Stock: <span className="font-semibold">{totalLabel}</span> {unit} <span className="opacity-60">(mín. {minLabel})</span></>
                 ) : isDeadStock ? (
-                    <span className="text-slate-500 font-bold">Sin movimientos hace {alerta.dias_inactivo || '90+'} días</span>
+                  <>Sin movimientos hace {alerta.dias_inactivo || '90+'} días</>
                 ) : (
                   <>
-                    Stock actual: <span className="font-bold text-base-content">{totalLabel}</span> {unit} |{' '}
+                    Stock: <span className="font-semibold">{totalLabel}</span> {unit} —{' '}
                     {isVencidoReal || isVencidoAlerta ? (
-                      <span className="text-error font-bold uppercase">Venció {alerta.proxima_fecha_venc && formatRelative(alerta.proxima_fecha_venc)}</span>
+                      <span className="text-error font-semibold">venció {alerta.proxima_fecha_venc && formatRelative(alerta.proxima_fecha_venc)}</span>
                     ) : isVenceSoon ? (
-                      <span className="text-warning font-bold">Vence {alerta.proxima_fecha_venc && formatRelative(alerta.proxima_fecha_venc)}</span>
+                      <span className="text-warning font-semibold">vence {alerta.proxima_fecha_venc && formatRelative(alerta.proxima_fecha_venc)}</span>
                     ) : (
-                      <span>Vence el {alerta.proxima_fecha_venc && formatDate(alerta.proxima_fecha_venc)}</span>
+                      <>vence el {alerta.proxima_fecha_venc && formatDateShort(alerta.proxima_fecha_venc)}</>
                     )}
                   </>
                 )}
               </p>
             </div>
-            
-            <div className="flex items-center gap-2">
-               {alerta.tiene_pedido_pendiente && (
-                  <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-info/10 text-info border border-info/20 text-xs font-bold animate-pulse">
-                    <Truck className="w-3 h-3" /> EN CAMINO
-                  </div>
-                )}
-                <button
-                onClick={() => navigate(config.path(alerta))}
-                className={cn(
-                    "btn btn-sm h-10 px-4 rounded-xl font-bold transition-all flex items-center gap-2",
-                    config.actionClass || "btn-ghost border-base-200"
-                )}
-                >
-                {config.actionIcon || <ChevronRight className="w-3.5 h-3.5" />}
-                <span>{config.actionLabel || 'Ver detalles'}</span>
-                </button>
-            </div>
+
+            <ChevronRight className="w-4 h-4 opacity-20 flex-shrink-0 group-hover:opacity-60 transition-opacity" />
           </div>
         )
       })}

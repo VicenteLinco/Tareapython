@@ -614,7 +614,7 @@ export default function SolicitudesCompraPage() {
     }, { onSettled: () => setIsSaving(false) })
   }
 
-  const handleSelectProveedor = (p: Proveedor) => {
+  const handleSelectProveedor = async (p: Proveedor) => {
     if (items.length > 0) {
       setItems([])
       setSolicitudId(null)
@@ -622,6 +622,68 @@ export default function SolicitudesCompraPage() {
     }
     localStorage.setItem('solicitud_proveedor_id', String(p.id))
     setSelectedProveedor(p)
+
+    // Prefill desde ?prefill=id1,id2,id3 (navegación desde Stock)
+    const prefillIds = searchParams.get('prefill')?.split(',').filter(Boolean) ?? []
+    if (prefillIds.length === 0) return
+
+    type ProductoExt = Producto & {
+      imagen_url?: string | null
+      unidad_base?: { nombre: string; nombre_plural: string }
+    }
+
+    const prefillItems: SolicitudItem[] = []
+    await Promise.allSettled(prefillIds.map(async (pid) => {
+      try {
+        const [horizData, prodRes] = await Promise.all([
+          fetchHorizonte(pid, p.id),
+          api.get<ProductoExt[]>('/productos', { params: { ids: pid, per_page: 1 } }).then(r => r.data[0]).catch(() =>
+            api.get<ProductoExt>(`/productos/${pid}`).then(r => r.data)
+          ),
+        ])
+        const prod = prodRes
+        if (!prod) return
+
+        const consumoDiario = horizData.consumo_diario ?? 0
+        const leadTime = prod.lead_time_propio ?? 0
+        const stockMinimo = horizData.stock_minimo ?? 0
+        const stockActual = horizData.stock_actual ?? 0
+        const cantidad = calcularCantidad(horizonteGlobal, consumoDiario, leadTime, stockMinimo, stockActual)
+        const unidadNombre = prod.unidad_base?.nombre ?? 'u'
+        const unidadPlural = prod.unidad_base?.nombre_plural ?? 'u'
+
+        prefillItems.push({
+          producto_id: prod.id,
+          producto_nombre: prod.nombre,
+          codigo_proveedor: prod.codigo_proveedor,
+          codigo_maestro: prod.codigo_maestro,
+          proveedor_id: p.id,
+          proveedor_nombre: p.nombre,
+          lead_time: leadTime,
+          presentacion_id: null,
+          presentacion_nombre: null,
+          presentacion_nombre_plural: null,
+          factor_conversion: null,
+          unidad_base: unidadNombre,
+          unidad_base_plural: unidadPlural,
+          cantidad,
+          precio_unitario: prod.precio_unidad ? parseFloat(String(prod.precio_unidad)) : 0,
+          imagen_url: prod.imagen_url ?? null,
+          consumo_diario: consumoDiario,
+          stock_actual: stockActual,
+          stock_minimo: stockMinimo,
+          horizonte_dias: horizonteGlobal,
+          horizonte_sugerido: horizData.horizonte_sugerido ?? null,
+          horizonte_razon: horizData.razon ?? null,
+          horizonte_personalizado: false,
+        })
+      } catch { /* ignorar items que fallen */ }
+    }))
+
+    if (prefillItems.length > 0) {
+      setItems(prefillItems)
+      toast.success(`${prefillItems.length} ${prefillItems.length === 1 ? 'producto precargado' : 'productos precargados'} desde Stock`)
+    }
   }
 
   const handleCambiarProveedor = () => {

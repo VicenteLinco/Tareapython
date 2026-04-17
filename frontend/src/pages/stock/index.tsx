@@ -34,12 +34,28 @@ export default function StockPage() {
   const [view, setView] = useState<'grid' | 'list'>('list')
   const [categoriaId, setCategoriaId] = useState<number | null>(null)
   const [proveedorId, setProveedorId] = useState<number | null>(null)
-  const [stockBajo, setStockBajo] = useState(false)
-  const [conAlertas, setConAlertas] = useState(searchParams.get('alertas') === 'true')
-  const [filter, setFilter] = useState(searchParams.get('filter') || '')
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('select') || null)
   const [areaId, setAreaId] = useState<number | null>(null)
   const [showPdfModal, setShowPdfModal] = useState(false)
+
+  // Selector único de estado — lee ?estado= con compat ?filter=
+  type EstadoFiltro = 'todos' | 'normal' | 'bajo' | 'critico' | 'sin_stock'
+  const estadoParam = (searchParams.get('estado') ?? searchParams.get('filter') ?? 'todos') as string
+  const estadoValido: EstadoFiltro = (['todos','normal','bajo','critico','sin_stock'] as string[]).includes(estadoParam)
+    ? estadoParam as EstadoFiltro
+    : estadoParam === 'sin-stock' ? 'sin_stock'  // compat legacy
+    : 'todos'
+  const [estado, setEstadoState] = useState<EstadoFiltro>(estadoValido)
+
+  const setEstado = (e: EstadoFiltro) => {
+    setEstadoState(e)
+    const newParams = new URLSearchParams(searchParams)
+    newParams.delete('filter')
+    newParams.delete('alertas')
+    if (e === 'todos') newParams.delete('estado')
+    else newParams.set('estado', e)
+    setSearchParams(newParams)
+  }
 
   const usuario = useAuthStore(s => s.usuario)
 
@@ -47,27 +63,28 @@ export default function StockPage() {
   useEffect(() => {
     const s = searchParams.get('search')
     const sel = searchParams.get('select')
-    const alertas = searchParams.get('alertas') === 'true'
-    const f = searchParams.get('filter') || ''
     if (s !== null && s !== search) setSearch(s)
     if (sel !== null && sel !== selectedId) setSelectedId(sel)
-    if (alertas !== conAlertas) setConAlertas(alertas)
-    if (f !== filter) setFilter(f)
+    // Sincronizar estado desde URL (navegación externa como Dashboard)
+    const eParam = searchParams.get('estado') ?? searchParams.get('filter') ?? 'todos'
+    const eValido: EstadoFiltro = (['todos','normal','bajo','critico','sin_stock'] as string[]).includes(eParam)
+      ? eParam as EstadoFiltro
+      : eParam === 'sin-stock' ? 'sin_stock'
+      : 'todos'
+    if (eValido !== estado) setEstadoState(eValido)
   }, [searchParams])
 
   // Queries
   const { data: stockResponse, isLoading } = useQuery({
-    queryKey: ['stock', { search, categoriaId, proveedorId, stockBajo, conAlertas, areaId, filter }],
+    queryKey: ['stock', { search, categoriaId, proveedorId, areaId, estado }],
     queryFn: () =>
       api.get<PaginatedResponse<StockItem>>('/stock', {
         params: {
           q: search || undefined,
           categoria_id: categoriaId || undefined,
           proveedor_id: proveedorId || undefined,
-          stock_bajo: stockBajo || undefined,
-          con_alertas: conAlertas || undefined,
           area_id: areaId || undefined,
-          filter: filter || undefined,
+          estado: estado !== 'todos' ? estado : undefined,
           per_page: 100
         },
       }).then((r) => r.data),
@@ -98,37 +115,28 @@ export default function StockPage() {
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight text-base-content">
-              {filter === 'critico' ? 'Riesgo de Quiebre' : 
-               filter === 'vencimiento' ? 'Próximos a Vencer' :
-               filter === 'vencidos' ? 'Lotes Vencidos' : 
-               filter === 'sin-stock' ? 'Stock Quebrado' : 'Inventario Global'}
+              {estado === 'critico' ? 'Riesgo de Quiebre' :
+               estado === 'bajo'    ? 'Stock Bajo' :
+               estado === 'sin_stock' ? 'Stock Quebrado' :
+               estado === 'normal'  ? 'Stock Normal' : 'Inventario Global'}
             </h1>
-            {filter && (
+            {estado !== 'todos' && (
               <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 gap-1 px-3 py-1 rounded-full text-[10px] font-bold">
-                Filtro Activo: {filter.toUpperCase()}
-                <button 
-                  className="hover:text-error ml-1 transition-colors" 
-                  onClick={() => {
-                    const newParams = new URLSearchParams(searchParams)
-                    newParams.delete('filter')
-                    newParams.delete('alertas')
-                    setSearchParams(newParams)
-                  }}
-                >
-                  ✕
-                </button>
+                {estado.toUpperCase()}
+                <button className="hover:text-error ml-1 transition-colors" onClick={() => setEstado('todos')}>✕</button>
               </Badge>
             )}
           </div>
           <p className="text-sm text-base-content/50">
-            {filter ? 'Mostrando items que requieren atención prioritaria' : 'Consulta y gestión de existencias en tiempo real'}
+            {estado !== 'todos' ? 'Mostrando items que requieren atención prioritaria' : 'Consulta y gestión de existencias en tiempo real'}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {filter === 'critico' && (
-            <Button size="sm" className="h-9 rounded-xl btn-primary shadow-lg shadow-primary/20 text-white" onClick={() => navigate('/solicitudes-compra')}>
+          {(estado === 'critico' || estado === 'bajo') && items.length > 0 && (
+            <Button size="sm" className="h-9 rounded-xl btn-primary shadow-lg shadow-primary/20 text-white"
+              onClick={() => navigate(`/solicitudes-compra?prefill=${items.map(i => i.producto_id).join(',')}`)}>
               <ShoppingCart className="w-4 h-4 mr-2" />
-              Generar Pedido
+              Crear solicitud ({items.length})
             </Button>
           )}
           <Button variant="outline" size="sm" className="h-9 rounded-xl border-base-300" onClick={() => setShowPdfModal(true)}>
@@ -190,31 +198,18 @@ export default function StockPage() {
         </div>
 
         <div className="md:col-span-3 flex items-center justify-between gap-2 pl-2">
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5 cursor-pointer group" title="Mostrar solo productos con alertas">
-              <input 
-                type="checkbox" 
-                className="checkbox checkbox-xs checkbox-error rounded-md" 
-                checked={conAlertas || !!filter}
-                onChange={(e) => {
-                  setConAlertas(e.target.checked)
-                  if (!e.target.checked) setFilter('')
-                }}
-              />
-              <span className={cn("text-[9px] font-bold uppercase tracking-wider transition-opacity", (conAlertas || !!filter) ? "text-error" : "opacity-50 group-hover:opacity-100")}>Con Alertas</span>
-            </label>
-            <label className="flex items-center gap-1.5 cursor-pointer group">
-              <input 
-                type="checkbox" 
-                className="checkbox checkbox-xs checkbox-primary rounded-md" 
-                checked={stockBajo}
-                onChange={(e) => {
-                  setStockBajo(e.target.checked)
-                  if (e.target.checked) setFilter('') // Clear specific alert filter if stockBajo is checked
-                }}
-              />
-              <span className={cn("text-[9px] font-bold uppercase tracking-wider transition-opacity", stockBajo ? "text-primary" : "opacity-50 group-hover:opacity-100")}>Stock Bajo</span>
-            </label>
+          <div className="flex items-center gap-2">
+            <select
+              className="select select-sm h-10 bg-base-200/50 border-none rounded-xl text-xs font-medium"
+              value={estado}
+              onChange={e => setEstado(e.target.value as EstadoFiltro)}
+            >
+              <option value="todos">Todos</option>
+              <option value="normal">Normal</option>
+              <option value="bajo">Stock bajo</option>
+              <option value="critico">Crítico</option>
+              <option value="sin_stock">Sin stock</option>
+            </select>
           </div>
           <div className="flex bg-base-200 p-1 rounded-lg">
             <button 
@@ -235,7 +230,10 @@ export default function StockPage() {
 
       {/* Main Content */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <div className={cn("transition-all duration-300", selectedId ? "lg:col-span-7" : "lg:col-span-12")}>
+        <div className={cn(
+          "transition-all duration-300",
+          selectedId ? "hidden lg:block lg:col-span-7" : "lg:col-span-12"
+        )}>
           {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {[1, 2, 3, 4, 5, 6].map(i => <Skeleton key={i} className="h-32 w-full rounded-2xl" />)}
@@ -334,11 +332,18 @@ export default function StockPage() {
 
         {/* Detail Panel */}
         {selectedId && (
-          <div className="lg:col-span-5 sticky top-24 animate-in slide-in-from-right-4 duration-300">
+          <div className="col-span-1 lg:col-span-5 lg:sticky lg:top-24 animate-in slide-in-from-right-4 duration-300">
             <div className="bg-base-100 border border-base-200 rounded-[2.5rem] shadow-2xl overflow-hidden">
               <div className="flex items-center justify-between p-6 bg-base-200/30 border-b border-base-200">
-                <h2 className="font-bold text-lg">{selectedId === 'new' ? 'Nuevo Producto' : 'Detalle de Inventario'}</h2>
-                <button className="btn btn-sm btn-ghost btn-circle" onClick={() => setSelectedId(null)}>✕</button>
+                {/* ← Volver solo en móvil */}
+                <button
+                  className="flex items-center gap-1.5 text-sm font-bold text-base-content/60 hover:text-base-content transition-colors lg:hidden"
+                  onClick={() => setSelectedId(null)}
+                >
+                  <ChevronRight className="w-4 h-4 rotate-180" /> Volver
+                </button>
+                <h2 className="font-bold text-lg hidden lg:block">{selectedId === 'new' ? 'Nuevo Producto' : 'Detalle de Inventario'}</h2>
+                <button className="btn btn-sm btn-ghost btn-circle hidden lg:flex" onClick={() => setSelectedId(null)}>✕</button>
               </div>
               <div className="p-6 custom-scrollbar max-h-[calc(100vh-250px)] overflow-y-auto">
                 {selectedId === 'new' ? (

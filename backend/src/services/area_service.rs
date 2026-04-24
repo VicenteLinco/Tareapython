@@ -6,6 +6,14 @@ use crate::dto::area::{CreateArea, UpdateArea, ProductoAreaRow};
 use crate::errors::AppError;
 use validator::Validate;
 
+#[derive(Debug)]
+pub enum EliminarResultado {
+    /// El área fue eliminada definitivamente (no tenía stock)
+    Eliminada,
+    /// El área fue desactivada (tenía stock activo, soft-delete)
+    Desactivada,
+}
+
 pub async fn listar(pool: &PgPool) -> Result<Vec<Area>, AppError> {
     sqlx::query_as::<_, Area>(
         r#"SELECT a.id, a.nombre, a.es_bodega, a.activa, a.created_at, a.version, a.conteo_frecuencia_dias,
@@ -26,7 +34,8 @@ pub async fn crear(
     let nombre = req.nombre.trim().to_string();
 
     let area = sqlx::query_as::<_, Area>(
-        "INSERT INTO areas (nombre, es_bodega) VALUES ($1, $2) RETURNING *",
+        "INSERT INTO areas (nombre, es_bodega) VALUES ($1, $2) \
+         RETURNING id, nombre, es_bodega, activa, created_at, version, conteo_frecuencia_dias, 0::int AS total_items_stock",
     )
     .bind(&nombre)
     .bind(req.es_bodega.unwrap_or(false))
@@ -74,7 +83,7 @@ pub async fn actualizar(
     let area = sqlx::query_as::<_, Area>(
         "UPDATE areas SET nombre = $1, es_bodega = $2, conteo_frecuencia_dias = $3, version = version + 1 \
          WHERE id = $4 AND version = $5 \
-         RETURNING id, nombre, es_bodega, activa, created_at, version, conteo_frecuencia_dias",
+         RETURNING id, nombre, es_bodega, activa, created_at, version, conteo_frecuencia_dias, 0::int AS total_items_stock",
     )
     .bind(nombre)
     .bind(es_bodega)
@@ -105,20 +114,19 @@ pub async fn eliminar(
     pool: &PgPool,
     id: i32,
     usuario_id: Uuid,
-) -> Result<(), AppError> {
-    // Verificar si tiene stock
+) -> Result<EliminarResultado, AppError> {
     let stock_count: (i64,) =
         sqlx::query_as("SELECT COUNT(*) FROM stock WHERE area_id = $1 AND cantidad > 0")
             .bind(id)
             .fetch_one(pool)
             .await?;
 
-    if stock_count.0 > 0 {
-        // Soft delete si tiene stock
+    let resultado = if stock_count.0 > 0 {
         sqlx::query("UPDATE areas SET activa = false WHERE id = $1")
             .bind(id)
             .execute(pool)
             .await?;
+        EliminarResultado::Desactivada
     } else {
         let result = sqlx::query("DELETE FROM areas WHERE id = $1")
             .bind(id)
@@ -127,14 +135,20 @@ pub async fn eliminar(
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound("Área no encontrada".into()));
         }
-    }
+        EliminarResultado::Eliminada
+    };
+
+    let accion = match resultado {
+        EliminarResultado::Eliminada => "DELETE",
+        EliminarResultado::Desactivada => "DEACTIVATE",
+    };
 
     crate::services::audit::registrar(
-        pool, "areas", &id.to_string(), "DELETE",
+        pool, "areas", &id.to_string(), accion,
         None, None, usuario_id,
     ).await?;
 
-    Ok(())
+    Ok(resultado)
 }
 
 pub async fn listar_productos(pool: &PgPool, area_id: i32) -> Result<Vec<ProductoAreaRow>, AppError> {
@@ -142,7 +156,7 @@ pub async fn listar_productos(pool: &PgPool, area_id: i32) -> Result<Vec<Product
         .bind(area_id)
         .fetch_one(pool)
         .await?;
-    
+
     if !exists {
         return Err(AppError::NotFound("Área no encontrada".into()));
     }

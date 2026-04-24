@@ -40,10 +40,14 @@ async fn eliminar(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     Path(id): Path<i32>,
-) -> Result<axum::http::StatusCode, AppError> {
+) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
-    area_service::eliminar(&state.pool, id, claims.sub).await?;
-    Ok(axum::http::StatusCode::NO_CONTENT)
+    let resultado = area_service::eliminar(&state.pool, id, claims.sub).await?;
+    let mensaje = match resultado {
+        area_service::EliminarResultado::Eliminada => "Área eliminada",
+        area_service::EliminarResultado::Desactivada => "Área desactivada (tiene stock activo)",
+    };
+    Ok(Json(serde_json::json!({ "ok": true, "mensaje": mensaje })))
 }
 
 async fn listar_productos_area(

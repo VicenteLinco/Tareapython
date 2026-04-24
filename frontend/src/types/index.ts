@@ -237,15 +237,7 @@ export interface RecepcionCreateRequest {
   }[]
 }
 
-export interface DescarteRequest {
-  items: {
-    lote_id: string
-    area_id: number
-    cantidad: number
-    tipo: string
-    nota?: string
-  }[]
-}
+// DescarteRequest is re-exported from generated.ts (nota: string | null)
 
 // --- Conteo de Inventario ---
 export interface SesionConteo {
@@ -280,7 +272,7 @@ export interface ConteoDetalle {
   sesion: SesionConteo
   nota: string | null
   items: ConteoItem[]
-  presentaciones: any[] // TODO: Usar Presentacion de generated
+  presentaciones: Presentacion[]
 }
 
 export interface PaginatedSesiones {

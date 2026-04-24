@@ -24,15 +24,60 @@ pub async fn crear(
     let nombre = req.nombre.trim().to_string();
     let nombre_plural = req.nombre_plural.trim().to_string();
 
+    // ── Verificar si ya existe un registro con ese nombre ────────────────────
+    let existente: Option<(i32, bool)> = sqlx::query_as(
+        "SELECT id, activo FROM unidades_basicas WHERE nombre = $1 LIMIT 1"
+    )
+    .bind(&nombre)
+    .fetch_optional(pool)
+    .await?;
+
+    match existente {
+        Some((_, true)) => {
+            return Err(AppError::Conflict(format!(
+                "La unidad básica '{}' ya existe",
+                nombre
+            )));
+        }
+        Some((id, false)) => {
+            // Reactivar explícitamente
+            let unidad = sqlx::query_as::<_, UnidadBasica>(
+                "UPDATE unidades_basicas \
+                 SET activo = true, nombre_plural = $1, version = version + 1 \
+                 WHERE id = $2 \
+                 RETURNING id, nombre, nombre_plural, activo, version",
+            )
+            .bind(&nombre_plural)
+            .bind(id)
+            .fetch_one(pool)
+            .await?;
+
+            crate::services::audit::registrar(
+                pool, "unidades_basicas", &unidad.id.to_string(), "REACTIVATE",
+                Some(json!({"activo": false})),
+                Some(json!({"nombre": &unidad.nombre, "nombre_plural": &unidad.nombre_plural, "activo": true})),
+                usuario_id,
+            ).await?;
+
+            return Ok(unidad);
+        }
+        None => {} // continúa con insert normal
+    }
+
     let unidad = sqlx::query_as::<_, UnidadBasica>(
-        r#"INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ($1, $2)
-           ON CONFLICT (nombre) DO UPDATE SET activo = true, nombre_plural = EXCLUDED.nombre_plural, version = unidades_basicas.version + 1
-           RETURNING id, nombre, nombre_plural, activo, version"#,
+        "INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ($1, $2) \
+         RETURNING id, nombre, nombre_plural, activo, version",
     )
     .bind(&nombre)
     .bind(&nombre_plural)
     .fetch_one(pool)
-    .await?;
+    .await
+    .map_err(|e| match &e {
+        sqlx::Error::Database(db) if db.is_unique_violation() => {
+            AppError::Conflict(format!("La unidad básica '{}' ya existe", nombre))
+        }
+        _ => e.into(),
+    })?;
 
     crate::services::audit::registrar(
         pool, "unidades_basicas", &unidad.id.to_string(), "CREATE",
@@ -64,7 +109,7 @@ pub async fn actualizar(
     let unidad = sqlx::query_as::<_, UnidadBasica>(
         "UPDATE unidades_basicas SET nombre = $1, nombre_plural = $2, version = version + 1 \
          WHERE id = $3 AND version = $4 \
-         RETURNING id, nombre, nombre_plural, activo, created_at, version",
+         RETURNING id, nombre, nombre_plural, version",
     )
     .bind(nombre)
     .bind(nombre_plural)

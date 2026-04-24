@@ -178,14 +178,31 @@ async fn crear(
 
     let mut tx = state.pool.begin().await?;
 
-    let (solicitud_id, _numero): (Uuid, String) = sqlx::query_as(
+    let insert_result = sqlx::query_as::<_, (Uuid, String)>(
         "INSERT INTO solicitudes_compra (usuario_id, nota, estado)
          VALUES ($1, $2, 'borrador') RETURNING id, numero_documento"
     )
     .bind(claims.sub)
     .bind(&payload.nota)
     .fetch_one(&mut *tx)
-    .await?;
+    .await;
+
+    let solicitud_id = match insert_result {
+        Ok((id, _)) => id,
+        Err(sqlx::Error::Database(ref db_err)) if db_err.is_unique_violation() => {
+            // Race condition: another request inserted a draft between our SELECT and this INSERT.
+            // Roll back and return the existing draft id.
+            tx.rollback().await.ok();
+            let existing_id: Uuid = sqlx::query_scalar(
+                "SELECT id FROM solicitudes_compra WHERE usuario_id = $1 AND estado = 'borrador'"
+            )
+            .bind(claims.sub)
+            .fetch_one(&state.pool)
+            .await?;
+            return Ok(Json(serde_json::json!({ "id": existing_id })));
+        }
+        Err(e) => return Err(e.into()),
+    };
 
     for item in &payload.items {
         insertar_item(&mut tx, solicitud_id, item).await?;
@@ -424,7 +441,6 @@ base AS (
     LEFT JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
     LEFT JOIN pedidos_en_vuelo pev ON pev.producto_id = p.id
     WHERE p.activo = true
-      AND p.deleted_at IS NULL
 )
 SELECT *
 FROM base

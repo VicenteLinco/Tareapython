@@ -37,7 +37,6 @@ thiserror = "2"
 validator = { version = "0.18", features = ["derive"] }
 csv = "1"
 base64 = "0.22"
-regex = "1"
 specta = { version = "2.0.0-rc.20", features = ["uuid", "chrono", "rust_decimal", "derive"] }
 specta-typescript = "0.0.7"
 utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono", "decimal"] }

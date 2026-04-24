@@ -216,79 +216,77 @@ async fn listar(
     State(state): State<AppState>,
     Query(params): Query<SolicitudListParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let per_page = params.per_page.unwrap_or(20).max(1);
+    let per_page = params.per_page.unwrap_or(20).max(1).min(100);
     let page = params.page.unwrap_or(1).max(1);
     let offset = (page - 1) * per_page;
 
-    let mut where_clauses: Vec<String> = Vec::new();
-    let mut bind_idx: i32 = 1;
-
-    if params.q.is_some() {
-        where_clauses.push(format!(
-            "(s.numero_documento ILIKE ${} OR u.nombre ILIKE ${})",
-            bind_idx, bind_idx + 1
-        ));
-        bind_idx += 2;
-    }
-    if params.estado.is_some() {
-        where_clauses.push(format!("s.estado = ${}", bind_idx));
-        bind_idx += 1;
-    }
-    if params.proveedor_id.is_some() {
-        where_clauses.push(format!(
-            "EXISTS (SELECT 1 FROM solicitud_compra_detalle scd JOIN productos p ON p.id = scd.producto_id WHERE scd.solicitud_id = s.id AND p.proveedor_id = ${})",
-            bind_idx
-        ));
-        bind_idx += 1;
-    }
-
-    let where_sql = if where_clauses.is_empty() {
-        String::new()
-    } else {
-        format!("WHERE {}", where_clauses.join(" AND "))
-    };
-
-    let count_sql = format!(
-        "SELECT COUNT(*) FROM solicitudes_compra s JOIN usuarios u ON u.id = s.usuario_id {}",
-        where_sql
-    );
-    let list_sql = format!(
-        r#"SELECT s.id, s.numero_documento, s.fecha_creacion, s.estado,
-                u.nombre as usuario_nombre,
-                (SELECT COUNT(*)::integer FROM solicitud_compra_detalle WHERE solicitud_id = s.id) as items_count
-           FROM solicitudes_compra s
-           JOIN usuarios u ON u.id = s.usuario_id
-           {} ORDER BY s.fecha_creacion DESC
-           LIMIT ${} OFFSET ${}"#,
-        where_sql, bind_idx, bind_idx + 1
-    );
-
     let q_pattern = params.q.as_ref().map(|q| format!("%{}%", q));
 
-    // Bind helpers — we build both queries with the same bind sequence
-    macro_rules! bind_filters {
-        ($query:expr) => {{
-            let mut q = $query;
-            if let Some(ref pat) = q_pattern {
-                q = q.bind(pat).bind(pat);
-            }
-            if let Some(ref estado) = params.estado {
-                q = q.bind(estado);
-            }
-            if let Some(proveedor_id) = params.proveedor_id {
-                q = q.bind(proveedor_id);
-            }
-            q
-        }};
+    // ── COUNT ────────────────────────────────────────────────────────────────
+    let mut count_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(
+        "SELECT COUNT(*) FROM solicitudes_compra s JOIN usuarios u ON u.id = s.usuario_id WHERE 1=1"
+    );
+    if let Some(ref pat) = q_pattern {
+        count_builder.push(" AND (s.numero_documento ILIKE ");
+        count_builder.push_bind(pat);
+        count_builder.push(" OR u.nombre ILIKE ");
+        count_builder.push_bind(pat);
+        count_builder.push(")");
     }
-
-    let total: i64 = bind_filters!(sqlx::query_scalar::<_, i64>(&count_sql))
+    if let Some(ref estado) = params.estado {
+        count_builder.push(" AND s.estado = ");
+        count_builder.push_bind(estado);
+    }
+    if let Some(proveedor_id) = params.proveedor_id {
+        count_builder.push(
+            " AND EXISTS (SELECT 1 FROM solicitud_compra_detalle scd \
+             JOIN productos p ON p.id = scd.producto_id \
+             WHERE scd.solicitud_id = s.id AND p.proveedor_id = "
+        );
+        count_builder.push_bind(proveedor_id);
+        count_builder.push(")");
+    }
+    let total: i64 = count_builder
+        .build_query_scalar()
         .fetch_one(&state.pool)
         .await?;
 
-    let solicitudes = bind_filters!(sqlx::query_as::<_, SolicitudResumen>(&list_sql))
-        .bind(per_page)
-        .bind(offset)
+    // ── LIST ─────────────────────────────────────────────────────────────────
+    let mut list_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(
+        r#"SELECT s.id, s.numero_documento, s.fecha_creacion, s.estado,
+                  u.nombre as usuario_nombre,
+                  (SELECT COUNT(*)::integer FROM solicitud_compra_detalle WHERE solicitud_id = s.id) as items_count
+           FROM solicitudes_compra s
+           JOIN usuarios u ON u.id = s.usuario_id
+           WHERE 1=1"#
+    );
+    if let Some(ref pat) = q_pattern {
+        list_builder.push(" AND (s.numero_documento ILIKE ");
+        list_builder.push_bind(pat);
+        list_builder.push(" OR u.nombre ILIKE ");
+        list_builder.push_bind(pat);
+        list_builder.push(")");
+    }
+    if let Some(ref estado) = params.estado {
+        list_builder.push(" AND s.estado = ");
+        list_builder.push_bind(estado);
+    }
+    if let Some(proveedor_id) = params.proveedor_id {
+        list_builder.push(
+            " AND EXISTS (SELECT 1 FROM solicitud_compra_detalle scd \
+             JOIN productos p ON p.id = scd.producto_id \
+             WHERE scd.solicitud_id = s.id AND p.proveedor_id = "
+        );
+        list_builder.push_bind(proveedor_id);
+        list_builder.push(")");
+    }
+    list_builder.push(" ORDER BY s.fecha_creacion DESC LIMIT ");
+    list_builder.push_bind(per_page);
+    list_builder.push(" OFFSET ");
+    list_builder.push_bind(offset);
+
+    let solicitudes = list_builder
+        .build_query_as::<SolicitudResumen>()
         .fetch_all(&state.pool)
         .await?;
 

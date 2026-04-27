@@ -603,138 +603,87 @@ async fn horizonte_sugerido(
     State(state): State<AppState>,
     Query(params): Query<HorizonteParams>,
 ) -> Result<Json<HorizonteResponse>, AppError> {
-    // ── 1. Ciclo histórico ──────────────────────────────────────────────────
-    let ciclo_row = sqlx::query!(
-        r#"
-        SELECT
-            COUNT(gap_dias)::INT                         AS "n_pedidos!: i32",
-            AVG(gap_dias)::INT                           AS "ciclo_dias?: i32"
-        FROM (
-            SELECT DATE_PART('day',
-                LAG(fecha_creacion) OVER (ORDER BY fecha_creacion DESC)
-                - fecha_creacion
-            )::INT AS gap_dias
-            FROM (
-                SELECT DISTINCT sc.fecha_creacion
-                FROM solicitudes_compra sc
-                JOIN solicitud_compra_detalle scd ON scd.solicitud_id = sc.id
-                WHERE scd.producto_id = $1
-                  AND sc.estado IN ('guardada', 'aprobada')
-                ORDER BY sc.fecha_creacion DESC
-                LIMIT 5
-            ) pedidos
-        ) gaps
-        WHERE gap_dias IS NOT NULL
-        "#,
-        params.producto_id
-    )
-    .fetch_one(&state.pool)
-    .await?;
+    let cfg = load_forecast_config(&state.pool).await?;
 
-    let n_pedidos = ciclo_row.n_pedidos;
-    let ciclo_dias = ciclo_row.ciclo_dias;
-
-    // ── 2. Variabilidad de consumo semanal (últimos 90 días) ───────────────
-    let var_row = sqlx::query!(
+    // 1. Serie diaria, stock, ya_pedido, lead time del producto
+    let row = sqlx::query!(
         r#"
-        SELECT
-            COALESCE(AVG(consumo_semana), 0)::FLOAT8    AS "media!: f64",
-            COALESCE(STDDEV(consumo_semana), 0)::FLOAT8 AS "stddev!: f64"
-        FROM (
-            SELECT DATE_TRUNC('week', m.created_at),
-                   SUM(m.cantidad)::FLOAT8 AS consumo_semana
+        WITH ventana AS (SELECT NOW() - ($2::int * INTERVAL '1 day') AS desde),
+        dias AS (
+            SELECT generate_series((SELECT desde FROM ventana)::date, NOW()::date, INTERVAL '1 day')::date AS dia
+        ),
+        consumo_dia AS (
+            SELECT m.created_at::date AS dia, SUM(m.cantidad)::FLOAT8 AS cantidad
             FROM movimientos m
             JOIN lotes l ON l.id = m.lote_id
             WHERE l.producto_id = $1
               AND m.tipo = 'CONSUMO'
-              AND m.created_at >= NOW() - INTERVAL '90 days'
-            GROUP BY DATE_TRUNC('week', m.created_at)
-        ) semanas
-        "#,
-        params.producto_id
-    )
-    .fetch_one(&state.pool)
-    .await?;
-
-    let media = var_row.media;
-    let stddev = var_row.stddev;
-    let cv = if media > 0.0 { stddev / media } else { 0.0 };
-
-    // ── 3. Lead time, stock actual, stock mínimo, consumo diario ──────────
-    let info_row = sqlx::query!(
-        r#"
+              AND m.created_at >= (SELECT desde FROM ventana)
+            GROUP BY m.created_at::date
+        ),
+        serie AS (
+            SELECT array_agg(COALESCE(cd.cantidad, 0) ORDER BY d.dia)::FLOAT8[] AS serie
+            FROM dias d
+            LEFT JOIN consumo_dia cd ON cd.dia = d.dia
+        )
         SELECT
-            COALESCE(p.stock_minimo, 0)::FLOAT8                        AS "stock_minimo!: f64",
-            COALESCE(
-                (SELECT SUM(s.cantidad)::FLOAT8
-                 FROM stock s JOIN lotes l2 ON l2.id = s.lote_id
-                 WHERE l2.producto_id = p.id), 0
-            )                                                           AS "stock_actual!: f64",
-            COALESCE(prov.dias_despacho_tierra,
-                     prov.dias_despacho_aereo, 7)::INT                 AS "lead_time!: i32",
-            COALESCE(
-                (SELECT (SUM(m.cantidad)::FLOAT8 /
-                    GREATEST(DATE_PART('day', NOW() - MIN(m.created_at)), 1))
-                 FROM movimientos m JOIN lotes l3 ON l3.id = m.lote_id
-                 WHERE l3.producto_id = p.id AND m.tipo = 'CONSUMO'
-                   AND m.created_at >= NOW() - INTERVAL '30 days'
-                ), 0
-            )                                                           AS "consumo_diario!: f64"
+            COALESCE(p.stock_minimo, 0)::FLOAT8                              AS "stock_minimo!: f64",
+            COALESCE((SELECT SUM(s.cantidad)::FLOAT8 FROM stock s
+                      JOIN lotes l2 ON l2.id = s.lote_id WHERE l2.producto_id = p.id), 0)
+                                                                              AS "stock_actual!: f64",
+            COALESCE(p.lead_time_propio,
+                     prov.dias_despacho_tierra,
+                     prov.dias_despacho_aereo, 7)::INT                        AS "lead_time!: i32",
+            (SELECT serie FROM serie)                                         AS "serie!: Vec<f64>"
         FROM productos p
-        LEFT JOIN proveedores prov ON prov.id = $2
+        LEFT JOIN proveedores prov ON prov.id = $3
         WHERE p.id = $1
         "#,
         params.producto_id,
+        cfg.ventana_demanda_dias,
         params.proveedor_id
     )
     .fetch_optional(&state.pool)
     .await?
     .ok_or(AppError::NotFound("Producto no encontrado".into()))?;
 
-    let lead_time = info_row.lead_time;
-    let stock_minimo = info_row.stock_minimo;
-    let stock_actual = info_row.stock_actual;
-    let consumo_diario = info_row.consumo_diario;
+    // 2. Forecast
+    let res = compute_forecast(
+        &row.serie,
+        row.stock_actual,
+        row.stock_minimo,
+        0.0, // no descuento ya_pedido aquí — el cliente ajusta horizonte sobre el item
+        row.lead_time,
+        cfg,
+    );
 
-    // ── 4. Algoritmo de horizonte ──────────────────────────────────────────
-    let (horizonte_base, razon_base) = if n_pedidos >= 2 {
-        let dias = ciclo_dias.unwrap_or(30);
-        (dias, format!("ciclo histórico ~{}d con este proveedor", dias))
+    // 3. Horizonte sugerido = lead_time + revisión, clampado a un piso de 7d.
+    //    Si la confianza es baja, no inventar horizonte: devolver lead_time × 3.
+    let horizonte_sugerido = if res.confianza == forecast::Confianza::Baja {
+        ((row.lead_time as f64 * 3.0) as i32).max(30)
     } else {
-        let fallback = ((lead_time as f64 * 3.0) as i32).max(30);
-        (fallback, "sin historial — estimación conservadora".to_string())
+        let base = row.lead_time + cfg.periodo_revision_dias;
+        let cv = if res.mu > 0.0 { res.sigma / res.mu } else { 0.0 };
+        let mult = if cv < 0.3 { 1.0 } else if cv < 0.7 { 1.3 } else { 1.5 };
+        let ajustado = (base as f64 * mult) as i32;
+        let piso = ((row.lead_time as f64 * 1.5) as i32).max(7);
+        ajustado.max(piso)
     };
 
-    let (multiplicador, razon) = if n_pedidos >= 2 {
-        if cv < 0.3 {
-            (1.0f64, razon_base)
-        } else if cv < 0.7 {
-            (1.3f64, format!("ciclo histórico ~{}d + buffer por consumo variable",
-                ciclo_dias.unwrap_or(30)))
-        } else {
-            (1.5f64, format!("ciclo histórico ~{}d + buffer por consumo irregular",
-                ciclo_dias.unwrap_or(30)))
-        }
-    } else {
-        (1.0f64, razon_base)
-    };
-
-    let horizonte_ajustado = (horizonte_base as f64 * multiplicador) as i32;
-    let piso = ((lead_time as f64 * 1.5) as i32).max(7);
-    let horizonte_sugerido = horizonte_ajustado.max(piso);
+    let cv = if res.mu > 0.0 { res.sigma / res.mu } else { 0.0 };
 
     Ok(Json(HorizonteResponse {
         horizonte_sugerido,
-        razon,
-        consumo_diario,
-        stock_actual,
-        stock_minimo,
+        razon: res.razon.clone(),
+        consumo_diario: res.mu,
+        stock_actual: row.stock_actual,
+        stock_minimo: row.stock_minimo,
         factores: HorizonteFactores {
-            ciclo_historico_dias: ciclo_dias,
-            n_pedidos_historico: n_pedidos,
+            ciclo_historico_dias: None,
+            n_pedidos_historico: 0,
             coeficiente_variacion: (cv * 100.0).round() / 100.0,
-            multiplicador_variabilidad: multiplicador,
-            lead_time,
+            multiplicador_variabilidad: 1.0,
+            lead_time: row.lead_time,
         },
     }))
 }

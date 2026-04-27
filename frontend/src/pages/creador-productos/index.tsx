@@ -39,7 +39,7 @@ export default function CreadorProductosPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-base-200 overflow-x-auto pb-0">
+      <div className="flex items-center gap-1 border-b border-base-200 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pb-0">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}

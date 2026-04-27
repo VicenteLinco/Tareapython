@@ -469,7 +469,7 @@ function drawResumen(
 function drawAreaPage(
   doc: jsPDF,
   W: number,
-  H: number,
+  _H: number,
   area: Area,
   items: StockItem[],
   nombreLaboratorio: string,
@@ -613,7 +613,7 @@ function drawAreaPage(
       }
     },
 
-    didDrawPage: (data: any) => {
+    didDrawPage: (_data: any) => {
       // Header siempre
       drawHeader(doc, W, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr)
 

@@ -4,6 +4,7 @@ use axum::extract::DefaultBodyLimit;
 use axum::Router;
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -148,6 +149,9 @@ async fn main() {
 
     let app = Router::new()
         .merge(routes::create_routes(state.clone()))
+        .fallback_service(
+            ServeDir::new("static").fallback(ServeFile::new("static/index.html")),
+        )
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             middleware::rate_limit::rate_limit_middleware,

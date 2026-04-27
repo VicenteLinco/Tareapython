@@ -17,7 +17,7 @@ import {
 import api from '@/lib/api'
 import { ProductoImage } from '@/components/ui/producto-image'
 import type { StockItem, PaginatedResponse, Categoria, Proveedor, Area } from '@/types'
-import { autoPlural, cn, daysUntil } from '@/lib/utils'
+import { cn, daysUntil, formatCantidad } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -280,7 +280,9 @@ export default function StockPage() {
                       <td className="text-center">
                         <div className="flex flex-col items-center">
                           <span className="font-mono font-bold text-base leading-none">{Math.round(item.stock_total ?? 0)}</span>
-                          <span className="text-[9px] opacity-40 uppercase font-bold mt-1">{(item.stock_total ?? 0) === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}</span>
+                          <span className="text-[9px] opacity-40 uppercase font-bold mt-1">
+                            {formatCantidad(item.stock_total ?? 0, item.unidad, item.unidad_plural ?? undefined).replace(/^[\d.,\s]+/, '').trim()}
+                          </span>
                         </div>
                       </td>
                       <td>
@@ -317,7 +319,7 @@ export default function StockPage() {
                       <p className="text-[10px] font-bold opacity-30 uppercase mb-1">Disponible</p>
                       <div className="flex items-baseline gap-1">
                         <span className="text-2xl font-bold tabular-nums leading-none">{Math.round(item.stock_total ?? 0)}</span>
-                        <span className="text-xs opacity-40">{(item.stock_total ?? 0) === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}</span>
+                        <span className="text-xs opacity-40">{formatCantidad(item.stock_total ?? 0, item.unidad, item.unidad_plural ?? undefined).replace(/^[\d.,\s]+/, '').trim()}</span>
                       </div>
                     </div>
                     <div className="h-8 w-8 rounded-xl bg-base-200 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -350,7 +352,18 @@ export default function StockPage() {
                   <p className="text-sm opacity-50 p-10 text-center italic">Formulario de creación pendiente...</p>
                 ) : selectedItem ? (
                   <StockDetail item={selectedItem} areaId={areaId} />
-                ) : null}
+                ) : (
+                  <div className="py-12 text-center space-y-3">
+                    <Package className="w-8 h-8 mx-auto opacity-20" />
+                    <p className="text-sm font-medium opacity-40">Producto no visible con los filtros actuales</p>
+                    <button
+                      className="btn btn-ghost btn-sm rounded-xl text-primary"
+                      onClick={() => { setEstado('todos'); setSearch(''); setCategoriaId(null); setProveedorId(null); setAreaId(null) }}
+                    >
+                      Limpiar filtros
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>

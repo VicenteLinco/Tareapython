@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
-import { formatDate, daysUntil, cn, autoPlural } from '@/lib/utils'
+import { formatDate, daysUntil, cn, autoPlural, formatCantidad } from '@/lib/utils'
 import type { StockItem, Movimiento, PaginatedResponse } from '@/types'
 import { DiscardLoteDialog } from './discard-lote-dialog'
 import { Trash2, ShoppingCart, AlertCircle, Play, History, Box, ArrowUpRight, ArrowDownLeft, FileText, User } from 'lucide-react'
@@ -106,7 +106,7 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
           <span className="text-sm opacity-40">{stockTotal === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}</span>
         </div>
         <p className="text-xs opacity-35 mt-2">
-          Mínimo: {minimoLabel} {minimoLabel === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}
+          Mínimo: {formatCantidad(minimoLabel, item.unidad, item.unidad_plural)}
         </p>
 
         {isLow && (
@@ -115,7 +115,7 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
               <AlertCircle className="w-3.5 h-3.5" />
               Resolución: Reponer Stock
             </div>
-            <p className="text-[11px] leading-snug">Se recomienda comprar al menos <strong>{buyAmount} {item.unidad_plural ?? autoPlural(item.unidad)}</strong> para cubrir la demanda y mantener el stock de seguridad.</p>
+            <p className="text-[11px] leading-snug">Se recomienda comprar al menos <strong>{formatCantidad(buyAmount, item.unidad, item.unidad_plural)}</strong> para cubrir la demanda y mantener el stock de seguridad.</p>
             <button 
               className="btn btn-xs btn-error btn-block gap-2 h-8 rounded-lg"
               onClick={() => navigate(`/solicitudes-compra?select=${item.producto_id}`)}

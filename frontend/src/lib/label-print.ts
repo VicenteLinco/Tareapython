@@ -102,7 +102,7 @@ ${filas.join('\n')}
     await Promise.all(imgs.map(img =>
       img.complete
         ? Promise.resolve()
-        : new Promise<void>(res => img.addEventListener('load', res, { once: true }))
+        : new Promise<void>(res => img.addEventListener('load', () => res(), { once: true }))
     ))
   }
 

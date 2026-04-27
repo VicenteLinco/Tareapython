@@ -137,7 +137,7 @@ export default function DescartesPage() {
         return {
           lote_id: i.lote_id,
           area_id: areaId,
-          cantidad: i.cantidad_descartar,
+          cantidad: String(i.cantidad_descartar),
           tipo,
           ...(justificacion && isHealthy && { nota: justificacion })
         }

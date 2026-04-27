@@ -5,34 +5,18 @@ import { useNavigate } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
-import type { Proveedor } from '@/types'
+import type { Proveedor, RecepcionListItem } from '@/types'
 import { formatDate } from '@/lib/utils'
 import { toast } from 'sonner'
 
 const PAGE_SIZE = 15
 
 interface PaginatedRecepciones {
-  data: RecepcionRow[]
+  data: RecepcionListItem[]
   total: number
   page: number
   per_page: number
   total_pages: number
-}
-
-interface RecepcionRow {
-  id: string
-  numero_documento: string
-  proveedor_nombre: string
-  proveedor_icono: string | null
-  guia_despacho?: string | null
-  estado: string
-  fecha_recepcion: string
-  usuario_nombre: string
-  created_at: string
-  areas_destino: string | null
-  tiene_foto: boolean
-  items_count: number
-  lotes_count: number
 }
 
 type TabActivo = 'borradores' | 'confirmadas' | 'todas'
@@ -212,7 +196,7 @@ export default function RecepcionesPage() {
                         </div>
                       </td>
                       <td className="text-sm">{formatDate(item.fecha_recepcion)}</td>
-                      <td className="text-sm">{item.usuario_nombre}</td>
+                      <td className="text-sm hidden md:table-cell">{item.usuario_nombre}</td>
                       <td>
                         <div className="flex flex-col gap-0.5">
                           <Badge variant={item.estado === 'completa' || item.estado === 'confirmada' ? 'success' : 'secondary'}>

@@ -5,7 +5,7 @@ import { DataTable } from '@/components/ui/data-table'
 import { Pagination } from '@/components/ui/pagination'
 import api from '@/lib/api'
 import type { PaginatedResponse, Movimiento, Area } from '@/types'
-import { formatDateTime } from '@/lib/utils'
+import { formatDateTime, formatCantidad } from '@/lib/utils'
 import { useAreaStore } from '@/hooks/use-area-store'
 
 const tipoConfig: Record<string, { label: string; variant: 'success' | 'destructive' | 'info' | 'warning' | 'secondary' }> = {
@@ -14,6 +14,8 @@ const tipoConfig: Record<string, { label: string; variant: 'success' | 'destruct
   descarte: { label: 'Descarte', variant: 'destructive' },
   ajuste_pos: { label: 'Ajuste (+)', variant: 'success' },
   ajuste_neg: { label: 'Ajuste (-)', variant: 'destructive' },
+  transferencia_entrada: { label: 'Transferencia (+)', variant: 'info' },
+  transferencia_salida: { label: 'Transferencia (-)', variant: 'warning' },
 }
 
 export default function MovimientosPage() {
@@ -71,12 +73,12 @@ export default function MovimientosPage() {
         // ajuste_neg (AJUSTE_NEGATIVO), transferencia_salida (TRANSFERENCIA_SALIDA).
         const neg = ['salida', 'descarte', 'ajuste_neg', 'transferencia_salida'].includes(item.tipo)
         const cantidadEntera = Math.round(item.cantidad)
+        const unidadLabel = formatCantidad(cantidadEntera, item.unidad_base_nombre || '', item.unidad_base_nombre_plural ?? undefined)
+          .replace(/^[\d.,\s]+/, '').trim()
         return (
           <span className={`font-mono font-semibold text-sm ${neg ? 'text-error' : 'text-success'}`}>
             {neg ? '-' : '+'}{cantidadEntera}
-            <span className="text-[10px] opacity-40 ml-0.5">
-              {cantidadEntera === 1 ? item.unidad_base_nombre : item.unidad_base_nombre_plural}
-            </span>
+            <span className="text-[10px] opacity-40 ml-0.5">{unidadLabel}</span>
           </span>
         )
       },
@@ -122,9 +124,10 @@ export default function MovimientosPage() {
           ))}
         </select>
         <div className="flex items-center gap-1.5">
+          <label className="text-xs opacity-40 font-medium">Desde</label>
           <input type="date" className="input input-bordered input-sm h-9 w-36" value={desde}
             onChange={(e) => { setDesde(e.target.value); setPage(1) }} />
-          <span className="text-xs opacity-30 font-medium">a</span>
+          <label className="text-xs opacity-40 font-medium">hasta</label>
           <input type="date" className="input input-bordered input-sm h-9 w-36" value={hasta}
             onChange={(e) => { setHasta(e.target.value); setPage(1) }} />
         </div>

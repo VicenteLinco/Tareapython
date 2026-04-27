@@ -14,7 +14,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
 import type { Alerta, PaginatedResponse, StockItem } from '@/types'
-import { cn, daysUntil, autoPlural } from '@/lib/utils'
+import { cn, daysUntil, formatCantidad } from '@/lib/utils'
 
 // Helpers nativos para evitar dependencias externas
 const formatStock = (val: number | string | null) => {
@@ -72,16 +72,16 @@ export default function DashboardPage() {
 const totalItems = stockData?.total ?? 0
 const alerts = alertasResponse?.data ?? []
 
-// Métricas para las tarjetas superiores - Alineado con lógica de Backend
-const criticos = alerts.filter(a => 
-  a.tipo_alerta === 'sin_stock' || 
-  a.tipo_alerta === 'agotamiento_proximo' || 
+// Métricas para las tarjetas superiores - sin_stock está en su propia tarjeta "Sin Stock"
+// así que "Stock Crítico" solo cuenta los que tienen algo pero están muy bajos
+const criticos = alerts.filter(a =>
+  a.tipo_alerta === 'agotamiento_proximo' ||
   a.tipo_alerta === 'bajo_minimo'
 ).length
 
-const porVencer = alerts.filter(a => 
-  a.tipo_alerta === 'vencido' || 
-  a.tipo_alerta === 'vence_30d' || 
+const porVencer = alerts.filter(a =>
+  a.tipo_alerta === 'vencido' ||
+  a.tipo_alerta === 'vence_30d' ||
   a.tipo_alerta === 'vence_90d'
 ).length
 
@@ -285,7 +285,7 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
 
   return (
     <div className="max-h-[600px] overflow-y-auto space-y-1.5 p-2">
-      {groupedAlerts.slice(0, 50).map((group, i) => {
+      {groupedAlerts.slice(0, 50).map((group) => {
         const alerta = group[0]
         const config = severityConfig[alerta.tipo_alerta as keyof typeof severityConfig] ?? severityConfig.vence_90d
 
@@ -301,8 +301,8 @@ function AlertList({ alerts }: { alerts?: Alerta[] }) {
 
         const totalLabel = formatStock(alerta.total)
         const minLabel   = formatStock(alerta.stock_minimo)
-        const isPlural   = (alerta.total || 0) !== 1
-        const unit       = isPlural ? (alerta.unidad_plural ?? autoPlural(alerta.unidad || '')) : (alerta.unidad || '')
+        const unit       = formatCantidad(alerta.total ?? 0, alerta.unidad || '', alerta.unidad_plural ?? undefined)
+          .replace(/^[\d.,\s]+/, '').trim()
 
         return (
           <div

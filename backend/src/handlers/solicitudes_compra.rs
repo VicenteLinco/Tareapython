@@ -606,7 +606,7 @@ async fn horizonte_sugerido(
     let cfg = load_forecast_config(&state.pool).await?;
 
     // 1. Serie diaria, stock, ya_pedido, lead time del producto
-    let row = sqlx::query!(
+    let row_opt = sqlx::query!(
         r#"
         WITH ventana AS (SELECT NOW() - ($2::int * INTERVAL '1 day') AS desde),
         dias AS (
@@ -644,8 +644,9 @@ async fn horizonte_sugerido(
         params.proveedor_id
     )
     .fetch_optional(&state.pool)
-    .await?
-    .ok_or(AppError::NotFound("Producto no encontrado".into()))?;
+    .await?;
+
+    let row = row_opt.ok_or_else(|| AppError::NotFound("Producto no encontrado".into()))?;
 
     // 2. Forecast
     let res = compute_forecast(

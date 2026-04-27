@@ -112,7 +112,7 @@ export default function ConsumosPage() {
     })
     // Fetch lotes con indicador de carga
     api.get<{ id: string; numero_lote: string; stock_total: string | null; fecha_vencimiento: string }[]>('/lotes', {
-      params: { producto_id: p.producto_id, con_stock: true, vencido: false, ...(areaFiltro && { area_id: areaFiltro }) }
+      params: { producto_id: p.producto_id, con_stock: true, vencido: false }
     }).then(res => {
       const lotes: LoteDisponible[] = res.data.map(l => ({
         lote_id: l.id,
@@ -214,7 +214,10 @@ export default function ConsumosPage() {
   const drawerCount = Object.keys(cart).length
 
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)] overflow-hidden">
+    <div
+      className="flex flex-col h-[calc(100vh-64px)] overflow-hidden transition-[margin] duration-300"
+      style={{ marginRight: drawerCount > 0 ? '320px' : 0 }}
+    >
 
       {/* ── Header: título + área ── */}
       <div className="flex items-center justify-between px-4 pt-3 pb-2 flex-shrink-0">
@@ -263,9 +266,9 @@ export default function ConsumosPage() {
         style={{ paddingBottom: drawerCount > 0 ? '80px' : '16px' }}
       >
         {isLoading ? (
-          <div className="grid grid-cols-2 gap-3">
-            {Array(6).fill(0).map((_, i) => (
-              <div key={i} className="h-28 bg-base-200 rounded-2xl animate-pulse" />
+          <div className="flex flex-col gap-2">
+            {Array(8).fill(0).map((_, i) => (
+              <div key={i} className="h-[60px] bg-base-200 rounded-2xl animate-pulse" />
             ))}
           </div>
         ) : emptyRecents ? (
@@ -284,13 +287,20 @@ export default function ConsumosPage() {
             {hasNoSearch && recentIds.length > 0 && (
               <p className="text-xs text-base-content/40 mb-2 px-1">Usados recientemente</p>
             )}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
               {productsToShow.map(p => (
                 <ProductoCard
                   key={p.producto_id}
                   producto={p}
                   isEnCarrito={!!cart[p.producto_id]}
+                  cantidadEnCarrito={cart[p.producto_id]?.cantidad_descontar ?? 0}
                   onAdd={() => addToCart(p)}
+                  onIncrement={() => updateCantidad(p.producto_id, (cart[p.producto_id]?.cantidad_descontar ?? 0) + 1)}
+                  onDecrement={() => {
+                    const cur = cart[p.producto_id]?.cantidad_descontar ?? 0
+                    if (cur <= 1) removeItem(p.producto_id)
+                    else updateCantidad(p.producto_id, cur - 1)
+                  }}
                 />
               ))}
             </div>

@@ -118,10 +118,11 @@ async fn listar(
     // Base query using the already updated 'stock' table
     let sql = format!(
         r#"WITH stock_stats AS (
-               SELECT 
+               SELECT
                    l.producto_id,
                    SUM(s.cantidad) AS total,
-                   MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0) AS proxima_fecha_venc
+                   MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0) AS proxima_fecha_venc,
+                   COUNT(DISTINCT l.id) FILTER (WHERE s.cantidad > 0) AS lotes_con_stock
                FROM stock s
                JOIN lotes l ON l.id = s.lote_id
                WHERE 1=1 {}
@@ -158,6 +159,7 @@ async fn listar(
                    um.nombre as unidad,
                    um.nombre_plural as unidad_plural,
                    COALESCE(ss.total, 0) as stock_total,
+                   COALESCE(ss.lotes_con_stock, 0) as lotes_count,
                    p.stock_minimo,
                    p.lead_time_propio,
                    ss.proxima_fecha_venc as proximo_vencimiento,
@@ -262,6 +264,7 @@ struct StockItemRow {
     unidad: String,
     unidad_plural: Option<String>,
     stock_total: Option<Decimal>,
+    lotes_count: i64,
     stock_minimo: Decimal,
     proximo_vencimiento: Option<NaiveDate>,
     proveedor_nombre: Option<String>,

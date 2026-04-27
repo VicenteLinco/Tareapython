@@ -32,6 +32,7 @@ export interface StockItem {
   unidad: string
   unidad_plural: string | null
   stock_total: number | null
+  lotes_count?: number
   stock_minimo: number
   dias_autonomia?: number
   lead_time_propio?: number

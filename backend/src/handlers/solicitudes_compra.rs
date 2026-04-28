@@ -17,10 +17,11 @@ struct SolicitudListParams {
 use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::dto::solicitud::{
-    CreateSolicitudItem, ItemRecomendado, SolicitudDetalle, SolicitudDetalleItem,
+    CreateSolicitudItem, SolicitudDetalle, SolicitudDetalleItem,
     SolicitudResumen, UpdateSolicitudRequest,
 };
 use crate::errors::AppError;
+use crate::services::forecast::{self, compute_forecast, ForecastConfig};
 
 #[derive(Debug, Deserialize)]
 struct HorizonteParams {
@@ -304,156 +305,206 @@ async fn listar(
 pub async fn recomendaciones(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let items = sqlx::query_as::<_, ItemRecomendado>(
-        r#"WITH
-cfg AS (
-    SELECT
-        COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'ventana_consumo_dias'), 30)  AS ventana_dias,
-        COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'periodo_revision_dias'), 30) AS revision_dias
-),
-consumo AS (
-    SELECT
-        l.producto_id,
-        (SUM(m.cantidad)::float
-            / GREATEST(DATE_PART('day', NOW() - MIN(m.created_at)), 1)
-        )::DECIMAL(15,6)                                              AS consumo_diario,
-        DATE_PART('day', NOW() - MIN(m.created_at))::INT              AS dias_historia
-    FROM movimientos m
-    JOIN lotes l ON l.id = m.lote_id
-    WHERE m.tipo = 'CONSUMO'
-      AND m.created_at >= NOW() - ((SELECT ventana_dias FROM cfg) * INTERVAL '1 day')
-    GROUP BY l.producto_id
-),
-stock_total AS (
-    SELECT l.producto_id, SUM(s.cantidad) AS stock_actual
-    FROM stock s
-    JOIN lotes l ON l.id = s.lote_id
-    GROUP BY l.producto_id
-),
-pedidos_en_vuelo AS (
-    SELECT
-        scd.producto_id,
-        SUM(scd.cantidad_sugerida) AS cantidad_pedida
-    FROM solicitud_compra_detalle scd
-    JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
-    JOIN productos p2 ON p2.id = scd.producto_id
-    LEFT JOIN proveedores prov2 ON prov2.id = p2.proveedor_id
-    WHERE sc.estado = 'guardada'
-      AND sc.fecha_creacion >= NOW() - (
-          COALESCE(prov2.dias_despacho_tierra, prov2.dias_despacho_aereo, 7)::int
-          * 2 * INTERVAL '1 day'
-      )
-    GROUP BY scd.producto_id
-),
-ultimo_precio AS (
-    SELECT DISTINCT ON (rd.producto_id)
-        rd.producto_id,
-        CASE
-            WHEN rd.factor_conversion_usado IS NOT NULL AND rd.factor_conversion_usado > 0
-            THEN rd.precio_unitario / rd.factor_conversion_usado
-            ELSE rd.precio_unitario
-        END AS precio_unitario
-    FROM recepcion_detalle rd
-    JOIN recepciones r ON r.id = rd.recepcion_id
-    WHERE rd.precio_unitario IS NOT NULL
-      AND r.estado IN ('completa', 'parcial')
-    ORDER BY rd.producto_id, r.fecha_recepcion DESC
-),
-pres AS (
-    SELECT DISTINCT ON (producto_id)
-        producto_id, id, nombre, nombre_plural, factor_conversion
-    FROM presentaciones
-    WHERE activa = true
-    ORDER BY producto_id, factor_conversion DESC
-),
-base AS (
-    SELECT
-        p.id                                                                    AS producto_id,
-        p.nombre                                                                AS producto_nombre,
-        p.codigo_proveedor,
-        p.codigo_maestro,
-        prov.id                                                                 AS proveedor_id,
-        prov.nombre                                                             AS proveedor_nombre,
-        COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)::INT  AS lead_time,
-        COALESCE(st.stock_actual, 0)                                            AS stock_actual,
-        COALESCE(p.stock_minimo, 0)                                             AS stock_seguridad,
-        COALESCE(c.consumo_diario, 0)                                           AS consumo_diario,
-        COALESCE(c.dias_historia, 0)::INT                                       AS dias_historia,
-        CASE
-            WHEN COALESCE(c.consumo_diario, 0) > 0
-            THEN (COALESCE(st.stock_actual, 0)::float / c.consumo_diario::float)
-            ELSE NULL
-        END                                                                     AS autonomia_dias,
-        CASE
-            WHEN COALESCE(st.stock_actual, 0) < COALESCE(p.stock_minimo, 0)
-                THEN 'critica'
-            WHEN COALESCE(c.consumo_diario, 0) > 0
-              AND COALESCE(st.stock_actual, 0) < (
-                  COALESCE(p.stock_minimo, 0)
-                  + COALESCE(c.consumo_diario, 0)
-                  * COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)
+    // 1. Cargar configuración
+    let cfg = load_forecast_config(&state.pool).await?;
+
+    // 2. Una sola query: por producto, devuelve la serie diaria de consumo
+    //    de los últimos `ventana_demanda_dias` días + metadata.
+    let rows = sqlx::query!(
+        r#"
+        WITH ventana AS (
+            SELECT NOW() - ($1::int * INTERVAL '1 day') AS desde
+        ),
+        dias AS (
+            SELECT generate_series(
+                (SELECT desde FROM ventana)::date,
+                NOW()::date,
+                INTERVAL '1 day'
+            )::date AS dia
+        ),
+        productos_con_movimiento AS (
+            SELECT DISTINCT l.producto_id
+            FROM movimientos m
+            JOIN lotes l ON l.id = m.lote_id
+            WHERE m.tipo = 'CONSUMO'
+              AND m.created_at >= (SELECT desde FROM ventana)
+        ),
+        consumo_dia AS (
+            SELECT
+                l.producto_id,
+                m.created_at::date AS dia,
+                SUM(m.cantidad)::FLOAT8 AS cantidad
+            FROM movimientos m
+            JOIN lotes l ON l.id = m.lote_id
+            WHERE m.tipo = 'CONSUMO'
+              AND m.created_at >= (SELECT desde FROM ventana)
+            GROUP BY l.producto_id, m.created_at::date
+        ),
+        series AS (
+            SELECT
+                pcm.producto_id,
+                array_agg(COALESCE(cd.cantidad, 0) ORDER BY d.dia)::FLOAT8[] AS serie
+            FROM productos_con_movimiento pcm
+            CROSS JOIN dias d
+            LEFT JOIN consumo_dia cd
+              ON cd.producto_id = pcm.producto_id AND cd.dia = d.dia
+            GROUP BY pcm.producto_id
+        ),
+        stock_total AS (
+            SELECT l.producto_id, SUM(s.cantidad)::FLOAT8 AS stock_actual
+            FROM stock s
+            JOIN lotes l ON l.id = s.lote_id
+            GROUP BY l.producto_id
+        ),
+        pedidos_en_vuelo AS (
+            SELECT
+                scd.producto_id,
+                SUM(scd.cantidad_sugerida)::FLOAT8 AS cantidad_pedida
+            FROM solicitud_compra_detalle scd
+            JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
+            JOIN productos p2 ON p2.id = scd.producto_id
+            LEFT JOIN proveedores prov2 ON prov2.id = p2.proveedor_id
+            WHERE sc.estado = 'guardada'
+              AND sc.fecha_creacion >= NOW() - (
+                  COALESCE(p2.lead_time_propio,
+                           prov2.dias_despacho_tierra,
+                           prov2.dias_despacho_aereo, 7)::int
+                  * 2 * INTERVAL '1 day'
               )
-                THEN 'alta'
-            ELSE NULL
-        END                                                                     AS nivel_urgencia,
-        GREATEST(0, CEIL(
-            COALESCE(p.stock_minimo, 0)
-            + COALESCE(c.consumo_diario, 0) * (
-                COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)
-                + cfg.revision_dias
-            )
-            - COALESCE(st.stock_actual, 0)
-            - COALESCE(pev.cantidad_pedida, 0)
-        ))                                                                      AS cantidad_sugerida_base,
-        pres.id                                                                 AS presentacion_id,
-        pres.nombre                                                             AS presentacion_nombre,
-        pres.nombre_plural                                                      AS presentacion_nombre_plural,
-        pres.factor_conversion,
-        CASE
-            WHEN pres.factor_conversion IS NOT NULL AND pres.factor_conversion > 0
-            THEN CEIL(
-                GREATEST(0,
-                    COALESCE(p.stock_minimo, 0)
-                    + COALESCE(c.consumo_diario, 0) * (
-                        COALESCE(prov.dias_despacho_tierra, prov.dias_despacho_aereo, 7)
-                        + cfg.revision_dias
-                    )
-                    - COALESCE(st.stock_actual, 0)
-                    - COALESCE(pev.cantidad_pedida, 0)
-                ) / pres.factor_conversion
-            )
-            ELSE NULL
-        END                                                                     AS cantidad_sugerida_presentacion,
-        COALESCE(up.precio_unitario, p.precio_unidad)                           AS precio_ultima_recepcion,
-        ub.nombre                                                               AS unidad_base,
-        ub.nombre_plural                                                        AS unidad_base_plural,
-        p.imagen_url,
-        COALESCE(pev.cantidad_pedida, 0)                                        AS ya_pedido_unidades
-    FROM productos p
-    CROSS JOIN cfg
-    LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
-    LEFT JOIN consumo c ON c.producto_id = p.id
-    LEFT JOIN stock_total st ON st.producto_id = p.id
-    LEFT JOIN ultimo_precio up ON up.producto_id = p.id
-    LEFT JOIN pres ON pres.producto_id = p.id
-    LEFT JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-    LEFT JOIN pedidos_en_vuelo pev ON pev.producto_id = p.id
-    WHERE p.activo = true
-      AND p.deleted_at IS NULL
-)
-SELECT *
-FROM base
-WHERE nivel_urgencia IS NOT NULL
-ORDER BY
-    CASE nivel_urgencia
-        WHEN 'critica' THEN 1
-        WHEN 'alta'    THEN 2
-        ELSE 3
-    END,
-    COALESCE(autonomia_dias, 0)"#
+            GROUP BY scd.producto_id
+        ),
+        ultimo_precio AS (
+            SELECT DISTINCT ON (rd.producto_id)
+                rd.producto_id,
+                CASE
+                    WHEN rd.factor_conversion_usado IS NOT NULL AND rd.factor_conversion_usado > 0
+                    THEN rd.precio_unitario / rd.factor_conversion_usado
+                    ELSE rd.precio_unitario
+                END AS precio_unitario
+            FROM recepcion_detalle rd
+            JOIN recepciones r ON r.id = rd.recepcion_id
+            WHERE rd.precio_unitario IS NOT NULL
+              AND r.estado IN ('completa', 'parcial')
+            ORDER BY rd.producto_id, r.fecha_recepcion DESC
+        ),
+        pres AS (
+            SELECT DISTINCT ON (producto_id)
+                producto_id, id, nombre, nombre_plural, factor_conversion
+            FROM presentaciones
+            WHERE activa = true
+            ORDER BY producto_id, factor_conversion DESC
+        )
+        SELECT
+            p.id                                                              AS "producto_id!: Uuid",
+            p.nombre                                                          AS "producto_nombre!: String",
+            p.codigo_proveedor                                                AS "codigo_proveedor: String",
+            p.codigo_maestro                                                  AS "codigo_maestro: String",
+            prov.id                                                           AS "proveedor_id: i32",
+            prov.nombre                                                       AS "proveedor_nombre: String",
+            COALESCE(p.lead_time_propio,
+                     prov.dias_despacho_tierra,
+                     prov.dias_despacho_aereo, 7)::INT                        AS "lead_time!: i32",
+            COALESCE(st.stock_actual, 0)::FLOAT8                              AS "stock_actual!: f64",
+            COALESCE(p.stock_minimo, 0)::FLOAT8                               AS "stock_minimo!: f64",
+            COALESCE(pev.cantidad_pedida, 0)::FLOAT8                          AS "ya_pedido!: f64",
+            s.serie                                                           AS "serie!: Vec<f64>",
+            pres.id                                                           AS "presentacion_id: i32",
+            pres.nombre                                                       AS "presentacion_nombre: String",
+            pres.nombre_plural                                                AS "presentacion_nombre_plural: String",
+            pres.factor_conversion::FLOAT8                                    AS "factor_conversion: f64",
+            COALESCE(up.precio_unitario, p.precio_unidad)::FLOAT8             AS "precio_ultimo: f64",
+            ub.nombre                                                         AS "unidad_base!: String",
+            ub.nombre_plural                                                  AS "unidad_base_plural: String",
+            p.imagen_url                                                      AS "imagen_url: String"
+        FROM productos p
+        JOIN series s ON s.producto_id = p.id
+        LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
+        LEFT JOIN stock_total st ON st.producto_id = p.id
+        LEFT JOIN ultimo_precio up ON up.producto_id = p.id
+        LEFT JOIN pres ON pres.producto_id = p.id
+        LEFT JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
+        LEFT JOIN pedidos_en_vuelo pev ON pev.producto_id = p.id
+        WHERE p.activo = true
+        "#,
+        cfg.ventana_demanda_dias
     )
     .fetch_all(&state.pool)
     .await?;
+
+    // 3. Para cada producto, ejecutar el forecast en Rust
+    let mut items: Vec<serde_json::Value> = Vec::new();
+    for r in rows {
+        let res = compute_forecast(
+            &r.serie,
+            r.stock_actual,
+            r.stock_minimo,
+            r.ya_pedido,
+            r.lead_time,
+            cfg,
+        );
+
+        // Solo aparecen en la lista los que tienen alguna urgencia
+        let Some(urgencia) = res.urgencia else { continue };
+
+        // Productos con confianza baja sólo se muestran si stock_actual < stock_minimo
+        if res.confianza == forecast::Confianza::Baja && res.cantidad_sugerida == 0.0 {
+            continue;
+        }
+
+        let cantidad_pres: Option<f64> = r.factor_conversion
+            .filter(|f| *f > 0.0)
+            .map(|f: f64| (res.cantidad_sugerida / f).ceil());
+
+        let autonomia = if res.mu > 0.0 { Some(r.stock_actual / res.mu) } else { None };
+
+        items.push(serde_json::json!({
+            "producto_id": r.producto_id,
+            "producto_nombre": r.producto_nombre,
+            "codigo_proveedor": r.codigo_proveedor,
+            "codigo_maestro": r.codigo_maestro,
+            "proveedor_id": r.proveedor_id,
+            "proveedor_nombre": r.proveedor_nombre,
+            "lead_time": r.lead_time,
+            "autonomia_dias": autonomia,
+            "nivel_urgencia": urgencia.as_str(),
+            "stock_actual": r.stock_actual,
+            "stock_seguridad": r.stock_minimo,
+            "consumo_diario": res.mu,
+            "consumo_sigma": res.sigma,
+            "dias_historia": r.serie.len() as i32,
+            "dias_con_consumo": res.dias_con_consumo,
+            "confianza": res.confianza.as_str(),
+            "razon": res.razon,
+            "safety_stock": res.safety_stock,
+            "target_stock": res.target_stock,
+            "reorder_point": res.reorder_point,
+            "cantidad_sugerida_base": res.cantidad_sugerida.ceil(),
+            "presentacion_id": r.presentacion_id,
+            "presentacion_nombre": r.presentacion_nombre,
+            "presentacion_nombre_plural": r.presentacion_nombre_plural,
+            "factor_conversion": r.factor_conversion,
+            "cantidad_sugerida_presentacion": cantidad_pres,
+            "precio_ultima_recepcion": r.precio_ultimo,
+            "unidad_base": r.unidad_base,
+            "unidad_base_plural": r.unidad_base_plural,
+            "imagen_url": r.imagen_url,
+            "ya_pedido_unidades": r.ya_pedido,
+        }));
+    }
+
+    // 4. Ordenar: críticas primero, luego por menor autonomía
+    items.sort_by(|a, b| {
+        let rank = |s: &str| match s {
+            "critica" => 1, "alta" => 2, _ => 3
+        };
+        let ra = rank(a["nivel_urgencia"].as_str().unwrap_or(""));
+        let rb = rank(b["nivel_urgencia"].as_str().unwrap_or(""));
+        ra.cmp(&rb).then_with(|| {
+            let aa = a["autonomia_dias"].as_f64().unwrap_or(f64::INFINITY);
+            let bb = b["autonomia_dias"].as_f64().unwrap_or(f64::INFINITY);
+            aa.partial_cmp(&bb).unwrap_or(std::cmp::Ordering::Equal)
+        })
+    });
 
     Ok(Json(serde_json::json!({ "data": items })))
 }
@@ -552,140 +603,112 @@ async fn horizonte_sugerido(
     State(state): State<AppState>,
     Query(params): Query<HorizonteParams>,
 ) -> Result<Json<HorizonteResponse>, AppError> {
-    // ── 1. Ciclo histórico ──────────────────────────────────────────────────
-    let ciclo_row = sqlx::query!(
-        r#"
-        SELECT
-            COUNT(gap_dias)::INT                         AS "n_pedidos!: i32",
-            AVG(gap_dias)::INT                           AS "ciclo_dias?: i32"
-        FROM (
-            SELECT DATE_PART('day',
-                LAG(fecha_creacion) OVER (ORDER BY fecha_creacion DESC)
-                - fecha_creacion
-            )::INT AS gap_dias
-            FROM (
-                SELECT DISTINCT sc.fecha_creacion
-                FROM solicitudes_compra sc
-                JOIN solicitud_compra_detalle scd ON scd.solicitud_id = sc.id
-                WHERE scd.producto_id = $1
-                  AND sc.estado IN ('guardada', 'aprobada')
-                ORDER BY sc.fecha_creacion DESC
-                LIMIT 5
-            ) pedidos
-        ) gaps
-        WHERE gap_dias IS NOT NULL
-        "#,
-        params.producto_id
-    )
-    .fetch_one(&state.pool)
-    .await?;
+    let cfg = load_forecast_config(&state.pool).await?;
 
-    let n_pedidos = ciclo_row.n_pedidos;
-    let ciclo_dias = ciclo_row.ciclo_dias;
-
-    // ── 2. Variabilidad de consumo semanal (últimos 90 días) ───────────────
-    let var_row = sqlx::query!(
+    // 1. Serie diaria, stock, ya_pedido, lead time del producto
+    let row_opt = sqlx::query!(
         r#"
-        SELECT
-            COALESCE(AVG(consumo_semana), 0)::FLOAT8    AS "media!: f64",
-            COALESCE(STDDEV(consumo_semana), 0)::FLOAT8 AS "stddev!: f64"
-        FROM (
-            SELECT DATE_TRUNC('week', m.created_at),
-                   SUM(m.cantidad)::FLOAT8 AS consumo_semana
+        WITH ventana AS (SELECT NOW() - ($2::int * INTERVAL '1 day') AS desde),
+        dias AS (
+            SELECT generate_series((SELECT desde FROM ventana)::date, NOW()::date, INTERVAL '1 day')::date AS dia
+        ),
+        consumo_dia AS (
+            SELECT m.created_at::date AS dia, SUM(m.cantidad)::FLOAT8 AS cantidad
             FROM movimientos m
             JOIN lotes l ON l.id = m.lote_id
             WHERE l.producto_id = $1
               AND m.tipo = 'CONSUMO'
-              AND m.created_at >= NOW() - INTERVAL '90 days'
-            GROUP BY DATE_TRUNC('week', m.created_at)
-        ) semanas
-        "#,
-        params.producto_id
-    )
-    .fetch_one(&state.pool)
-    .await?;
-
-    let media = var_row.media;
-    let stddev = var_row.stddev;
-    let cv = if media > 0.0 { stddev / media } else { 0.0 };
-
-    // ── 3. Lead time, stock actual, stock mínimo, consumo diario ──────────
-    let info_row = sqlx::query!(
-        r#"
+              AND m.created_at >= (SELECT desde FROM ventana)
+            GROUP BY m.created_at::date
+        ),
+        serie AS (
+            SELECT array_agg(COALESCE(cd.cantidad, 0) ORDER BY d.dia)::FLOAT8[] AS serie
+            FROM dias d
+            LEFT JOIN consumo_dia cd ON cd.dia = d.dia
+        )
         SELECT
-            COALESCE(p.stock_minimo, 0)::FLOAT8                        AS "stock_minimo!: f64",
-            COALESCE(
-                (SELECT SUM(s.cantidad)::FLOAT8
-                 FROM stock s JOIN lotes l2 ON l2.id = s.lote_id
-                 WHERE l2.producto_id = p.id), 0
-            )                                                           AS "stock_actual!: f64",
-            COALESCE(prov.dias_despacho_tierra,
-                     prov.dias_despacho_aereo, 7)::INT                 AS "lead_time!: i32",
-            COALESCE(
-                (SELECT (SUM(m.cantidad)::FLOAT8 /
-                    GREATEST(DATE_PART('day', NOW() - MIN(m.created_at)), 1))
-                 FROM movimientos m JOIN lotes l3 ON l3.id = m.lote_id
-                 WHERE l3.producto_id = p.id AND m.tipo = 'CONSUMO'
-                   AND m.created_at >= NOW() - INTERVAL '30 days'
-                ), 0
-            )                                                           AS "consumo_diario!: f64"
+            COALESCE(p.stock_minimo, 0)::FLOAT8                              AS "stock_minimo!: f64",
+            COALESCE((SELECT SUM(s.cantidad)::FLOAT8 FROM stock s
+                      JOIN lotes l2 ON l2.id = s.lote_id WHERE l2.producto_id = p.id), 0)
+                                                                              AS "stock_actual!: f64",
+            COALESCE(p.lead_time_propio,
+                     prov.dias_despacho_tierra,
+                     prov.dias_despacho_aereo, 7)::INT                        AS "lead_time!: i32",
+            (SELECT serie FROM serie)                                         AS "serie!: Vec<f64>"
         FROM productos p
-        LEFT JOIN proveedores prov ON prov.id = $2
+        LEFT JOIN proveedores prov ON prov.id = $3
         WHERE p.id = $1
         "#,
         params.producto_id,
+        cfg.ventana_demanda_dias,
         params.proveedor_id
     )
     .fetch_optional(&state.pool)
-    .await?
-    .ok_or(AppError::NotFound("Producto no encontrado".into()))?;
+    .await?;
 
-    let lead_time = info_row.lead_time;
-    let stock_minimo = info_row.stock_minimo;
-    let stock_actual = info_row.stock_actual;
-    let consumo_diario = info_row.consumo_diario;
+    let row = row_opt.ok_or_else(|| AppError::NotFound("Producto no encontrado".into()))?;
 
-    // ── 4. Algoritmo de horizonte ──────────────────────────────────────────
-    let (horizonte_base, razon_base) = if n_pedidos >= 2 {
-        let dias = ciclo_dias.unwrap_or(30);
-        (dias, format!("ciclo histórico ~{}d con este proveedor", dias))
+    // 2. Forecast
+    let res = compute_forecast(
+        &row.serie,
+        row.stock_actual,
+        row.stock_minimo,
+        0.0, // no descuento ya_pedido aquí — el cliente ajusta horizonte sobre el item
+        row.lead_time,
+        cfg,
+    );
+
+    // 3. Horizonte sugerido = lead_time + revisión, clampado a un piso de 7d.
+    //    Si la confianza es baja, no inventar horizonte: devolver lead_time × 3.
+    let horizonte_sugerido = if res.confianza == forecast::Confianza::Baja {
+        ((row.lead_time as f64 * 3.0) as i32).max(30)
     } else {
-        let fallback = ((lead_time as f64 * 3.0) as i32).max(30);
-        (fallback, "sin historial — estimación conservadora".to_string())
+        let base = row.lead_time + cfg.periodo_revision_dias;
+        let cv = if res.mu > 0.0 { res.sigma / res.mu } else { 0.0 };
+        let mult = if cv < 0.3 { 1.0 } else if cv < 0.7 { 1.3 } else { 1.5 };
+        let ajustado = (base as f64 * mult) as i32;
+        let piso = ((row.lead_time as f64 * 1.5) as i32).max(7);
+        ajustado.max(piso)
     };
 
-    let (multiplicador, razon) = if n_pedidos >= 2 {
-        if cv < 0.3 {
-            (1.0f64, razon_base)
-        } else if cv < 0.7 {
-            (1.3f64, format!("ciclo histórico ~{}d + buffer por consumo variable",
-                ciclo_dias.unwrap_or(30)))
-        } else {
-            (1.5f64, format!("ciclo histórico ~{}d + buffer por consumo irregular",
-                ciclo_dias.unwrap_or(30)))
-        }
-    } else {
-        (1.0f64, razon_base)
-    };
-
-    let horizonte_ajustado = (horizonte_base as f64 * multiplicador) as i32;
-    let piso = ((lead_time as f64 * 1.5) as i32).max(7);
-    let horizonte_sugerido = horizonte_ajustado.max(piso);
+    let cv = if res.mu > 0.0 { res.sigma / res.mu } else { 0.0 };
 
     Ok(Json(HorizonteResponse {
         horizonte_sugerido,
-        razon,
-        consumo_diario,
-        stock_actual,
-        stock_minimo,
+        razon: res.razon.clone(),
+        consumo_diario: res.mu,
+        stock_actual: row.stock_actual,
+        stock_minimo: row.stock_minimo,
         factores: HorizonteFactores {
-            ciclo_historico_dias: ciclo_dias,
-            n_pedidos_historico: n_pedidos,
+            ciclo_historico_dias: None,
+            n_pedidos_historico: 0,
             coeficiente_variacion: (cv * 100.0).round() / 100.0,
-            multiplicador_variabilidad: multiplicador,
-            lead_time,
+            multiplicador_variabilidad: 1.0,
+            lead_time: row.lead_time,
         },
     }))
+}
+
+/// Carga la configuración del forecast desde la tabla `configuracion`.
+async fn load_forecast_config(pool: &sqlx::PgPool) -> Result<ForecastConfig, AppError> {
+    let row = sqlx::query!(
+        r#"
+        SELECT
+            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'ventana_demanda_dias'), 60)   AS "ventana!: i32",
+            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'periodo_revision_dias'), 30)  AS "revision!: i32",
+            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'dias_minimos_historia'), 14)  AS "minimos!: i32",
+            COALESCE((SELECT valor_texto::float8 FROM configuracion WHERE clave = 'nivel_servicio_z'), 1.65)  AS "z!: f64"
+        "#
+    )
+    .fetch_one(pool)
+    .await?;
+
+    Ok(ForecastConfig {
+        ventana_demanda_dias: row.ventana,
+        periodo_revision_dias: row.revision,
+        dias_minimos_historia: row.minimos,
+        nivel_servicio_z: row.z,
+    })
 }
 
 pub fn routes() -> Router<AppState> {

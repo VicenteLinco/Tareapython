@@ -264,7 +264,8 @@ export default function SolicitudesCompraPage() {
     const stockActual = parseFloat(r.stock_actual.toString())
     const stockMinimo = parseFloat(r.stock_seguridad.toString())
     const factorConv = r.factor_conversion ? parseFloat(r.factor_conversion.toString()) : null
-    const cantidad = calcularCantidad(horizonteGlobal, consumoDiario, r.lead_time, stockMinimo, stockActual, factorConv)
+    const cantidadCalc = calcularCantidad(horizonteGlobal, consumoDiario, r.lead_time, stockMinimo, stockActual, factorConv)
+    const cantidad = r.confianza === 'baja' ? 0 : cantidadCalc
 
     setItems(prev => [...prev, {
       producto_id: r.producto_id,

@@ -16,9 +16,16 @@ pub struct ItemRecomendado {
     pub autonomia_dias: Option<f64>,
     pub nivel_urgencia: String,
     pub stock_actual: Decimal,
-    pub stock_seguridad: Decimal,
-    pub consumo_diario: Decimal,
-    pub dias_historia: i32,
+    pub stock_seguridad: Decimal,         // == producto.stock_minimo (alerta manual)
+    pub consumo_diario: Decimal,          // μ (EWMA winsorizada)
+    pub consumo_sigma: Decimal,           // σ diaria
+    pub dias_historia: i32,               // longitud de la serie usada
+    pub dias_con_consumo: i32,            // días no-cero en la serie
+    pub confianza: String,                // "alta" | "media" | "baja"
+    pub razon: String,                    // explicación humana del cálculo
+    pub safety_stock: Decimal,            // Z·σ·√(L+T)
+    pub target_stock: Decimal,            // S
+    pub reorder_point: Decimal,           // ROP
     pub cantidad_sugerida_base: Decimal,
     pub presentacion_id: Option<i32>,
     pub presentacion_nombre: Option<String>,

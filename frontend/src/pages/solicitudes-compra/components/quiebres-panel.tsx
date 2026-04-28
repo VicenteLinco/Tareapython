@@ -109,6 +109,13 @@ export function QuiebresPanelIzquierdo({
               const alreadyAdded = excluidos.includes(r.producto_id)
               const isCritica = r.nivel_urgencia === 'critica'
               const isAlta = r.nivel_urgencia === 'alta'
+              const confianza = (r.confianza ?? 'baja') as 'alta' | 'media' | 'baja'
+              const confianzaColor = confianza === 'alta' ? 'bg-success/15 text-success'
+                                   : confianza === 'media' ? 'bg-warning/15 text-warning'
+                                   : 'bg-base-300 text-base-content/60'
+              const confianzaLabel = confianza === 'alta' ? '✓ datos sólidos'
+                                   : confianza === 'media' ? '~ datos parciales'
+                                   : '⚠ historial corto'
               const yaPedido = parseFloat(r.ya_pedido_unidades)
               const sugBase = parseFloat(r.cantidad_sugerida_base)
               const sugLabel = r.cantidad_sugerida_presentacion
@@ -148,6 +155,17 @@ export function QuiebresPanelIzquierdo({
                         {isCritica ? "crítico" : "alta"}
                       </span>
                     )}
+                    {!alreadyAdded && (
+                      <span
+                        className={cn(
+                          "shrink-0 text-[8px] font-medium px-1.5 py-0.5 rounded-full leading-tight",
+                          confianzaColor
+                        )}
+                        title={r.razon ?? ''}
+                      >
+                        {confianzaLabel}
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between">
@@ -158,7 +176,7 @@ export function QuiebresPanelIzquierdo({
                       Stock: {parseFloat(r.stock_actual)} / {parseFloat(r.stock_seguridad)}
                     </p>
                     {yaPedido === 0 && (
-                      <p className="text-[9px] text-base-content/35 font-medium">Sug: {sugLabel}</p>
+                      <p className="text-[9px] text-base-content/35 font-medium" title={r.razon ?? ''}>Sug: {sugLabel}</p>
                     )}
                   </div>
 

@@ -12,6 +12,9 @@ use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::dto::pagination::PaginationParams;
 use crate::errors::AppError;
+use crate::services::forecast::{
+    ForecastConfig, consumo_base_adaptivo, consumo_pico_7d, ewma, winsorize_p95,
+};
 use crate::services::stock_ops;
 
 // === DTOs ===
@@ -25,7 +28,7 @@ struct StockQuery {
     stock_bajo: Option<bool>,
     con_alertas: Option<bool>,
     filter: Option<String>,
-    estado: Option<String>,  // nuevo param unificado: todos|normal|bajo|critico|sin_stock
+    estado: Option<String>, // nuevo param unificado: todos|normal|bajo|critico|sin_stock
     page: Option<i64>,
     per_page: Option<i64>,
 }
@@ -38,6 +41,8 @@ async fn listar(
     Extension(claims): Extension<Claims>,
     Query(params): Query<StockQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let forecast_cfg = load_forecast_config(&state.pool).await?;
+
     // Si se filtra por área, validar acceso
     if let Some(aid) = params.area_id {
         stock_ops::validar_acceso_area(&state.pool, claims.sub, aid, &claims.rol).await?;
@@ -57,7 +62,7 @@ async fn listar(
     let filter = if !estado.is_empty() {
         // Mapear estado → valor de filter legacy
         match estado {
-            "critico"   => "critico",
+            "critico" => "critico",
             "sin_stock" => "sin-stock",
             _ => params.filter.as_deref().unwrap_or(""),
         }
@@ -80,7 +85,10 @@ async fn listar(
     let q_filter = if let Some(q) = &params.q {
         param_idx += 1;
         binds.push(format!("%{}%", q));
-        format!("AND (p.nombre ILIKE ${0} OR p.codigo_interno ILIKE ${0})", param_idx)
+        format!(
+            "AND (p.nombre ILIKE ${0} OR p.codigo_interno ILIKE ${0})",
+            param_idx
+        )
     } else {
         "".to_string()
     };
@@ -105,19 +113,58 @@ async fn listar(
     let stock_bajo_estado = estado == "bajo" || params.stock_bajo == Some(true);
     let normal_estado = estado == "normal";
     let type_filter = match filter {
-        "critico" => "AND ((stock_total <= 0 AND stock_minimo > 0) OR (stock_minimo > 0 AND stock_total < stock_minimo) OR (consumo_diario_ajustado > 0.0001 AND (stock_total / consumo_diario_ajustado) <= 7))",
-        "vencimiento" => "AND (proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days' AND proximo_vencimiento >= CURRENT_DATE)",
+        "critico" => {
+            // Usa consumo_base_estimado (espejo de calcular_autonomia en Rust) y lead_time_propio
+            // para que el filtro coincida con el badge "Crítico" del frontend.
+            "AND ((stock_total <= 0 AND stock_minimo > 0) OR (stock_minimo > 0 AND stock_total < stock_minimo) OR (consumo_base_estimado > 0.0001 AND (stock_total / consumo_base_estimado) <= COALESCE(lead_time_propio, 3)))"
+        }
+        "vencimiento" => {
+            "AND (proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days' AND proximo_vencimiento >= CURRENT_DATE)"
+        }
         "vencidos" => "AND proximo_vencimiento < CURRENT_DATE",
         "sin-stock" => "AND stock_total <= 0 AND stock_minimo > 0",
-        _ if params.con_alertas == Some(true) => "AND ((stock_total < stock_minimo AND stock_minimo > 0) OR proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days')",
+        _ if params.con_alertas == Some(true) => {
+            "AND ((stock_total < stock_minimo AND stock_minimo > 0) OR proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days')"
+        }
         _ if stock_bajo_estado => "AND stock_total < stock_minimo AND stock_minimo > 0",
         _ if normal_estado => "AND (stock_minimo = 0 OR stock_total >= stock_minimo)",
-        _ => ""
+        _ => "",
     };
 
     // Base query using the already updated 'stock' table
     let sql = format!(
-        r#"WITH stock_stats AS (
+        r#"WITH ventana AS (
+               SELECT NOW() - ({}::int * INTERVAL '1 day') AS desde
+           ),
+           dias AS (
+               SELECT generate_series(
+                   (SELECT desde FROM ventana)::date,
+                   NOW()::date,
+                   INTERVAL '1 day'
+               )::date AS dia
+           ),
+           consumo_dia AS (
+               SELECT
+                   l.producto_id,
+                   m.created_at::date AS dia,
+                   SUM(m.cantidad)::FLOAT8 AS cantidad
+               FROM movimientos m
+               JOIN lotes l ON l.id = m.lote_id
+               WHERE m.tipo = 'CONSUMO'
+                 AND m.created_at >= (SELECT desde FROM ventana)
+               GROUP BY l.producto_id, m.created_at::date
+           ),
+           series AS (
+               SELECT
+                   p.id AS producto_id,
+                   array_agg(COALESCE(cd.cantidad, 0) ORDER BY d.dia)::FLOAT8[] AS serie
+               FROM productos p
+               CROSS JOIN dias d
+               LEFT JOIN consumo_dia cd ON cd.producto_id = p.id AND cd.dia = d.dia
+               WHERE p.activo = true
+               GROUP BY p.id
+           ),
+           stock_stats AS (
                SELECT
                    l.producto_id,
                    SUM(s.cantidad) AS total,
@@ -129,16 +176,17 @@ async fn listar(
                GROUP BY l.producto_id
            ),
            movimiento_stats AS (
-               SELECT 
+               SELECT
                    l.producto_id,
                    (
                      (COALESCE(SUM(CASE WHEN m.tipo = 'CONSUMO' AND m.created_at >= NOW() - INTERVAL '7 days' THEN m.cantidad ELSE 0 END), 0) / 7.0 * 0.7) +
                      (COALESCE(SUM(CASE WHEN m.tipo = 'CONSUMO' AND m.created_at BETWEEN NOW() - INTERVAL '30 days' AND NOW() - INTERVAL '7 days' THEN m.cantidad ELSE 0 END), 0) / 23.0 * 0.3)
                    ) AS consumo_diario_ponderado,
+                   COALESCE(SUM(m.cantidad), 0)::FLOAT8 AS total_consumo_ventana,
                    COUNT(DISTINCT CASE WHEN m.tipo = 'CONSUMO' THEN m.created_at::date END) AS dias_con_consumo,
                    EXTRACT(DAY FROM (NOW() - MIN(m.created_at)))::INT + 1 AS dias_vida_sistema
                FROM lotes l
-               LEFT JOIN movimientos m ON m.lote_id = l.id AND m.tipo = 'CONSUMO' AND m.created_at >= NOW() - INTERVAL '30 days'
+               LEFT JOIN movimientos m ON m.lote_id = l.id AND m.tipo = 'CONSUMO' AND m.created_at >= NOW() - ({}::int * INTERVAL '1 day')
                GROUP BY l.producto_id
            ),
            fefo_prov AS (
@@ -151,7 +199,7 @@ async fn listar(
                ORDER BY l2.producto_id, l2.fecha_vencimiento ASC
            ),
            final_stats AS (
-               SELECT 
+               SELECT
                    p.id as producto_id,
                    p.codigo_interno,
                    p.nombre as producto_nombre,
@@ -166,16 +214,29 @@ async fn listar(
                    fp.nombre as proveedor_nombre,
                    fp.icono as proveedor_icono,
                    p.imagen_url,
-                   CASE 
+                   COALESCE(sr.serie, ARRAY[]::FLOAT8[]) as serie,
+                   COALESCE(ms.dias_con_consumo, 0) as dias_con_consumo,
+                   CASE
                        WHEN ms.dias_vida_sistema < 30 AND ms.dias_con_consumo >= 3 THEN
                            COALESCE(ms.consumo_diario_ponderado * (30.0 / NULLIF(ms.dias_vida_sistema, 0)), 0)::NUMERIC(15,4)
-                       ELSE COALESCE(ms.consumo_diario_ponderado, 0)::NUMERIC(15,4)                   END AS consumo_diario_ajustado
+                       ELSE COALESCE(ms.consumo_diario_ponderado, 0)::NUMERIC(15,4)
+                   END AS consumo_diario_ajustado,
+                   -- consumo_base_estimado replica la lógica de calcular_autonomia en Rust:
+                   -- ≥14 días con consumo → ponderado; 2-13 → total/días_reales; <2 → 0
+                   CASE
+                       WHEN COALESCE(ms.dias_con_consumo, 0) >= 14
+                           THEN COALESCE(ms.consumo_diario_ponderado, 0)::FLOAT8
+                       WHEN COALESCE(ms.dias_con_consumo, 0) >= 2
+                           THEN COALESCE(ms.total_consumo_ventana, 0) / GREATEST(ms.dias_vida_sistema::FLOAT8, 1)
+                       ELSE 0.0
+                   END AS consumo_base_estimado
                FROM productos p
                JOIN unidades_basicas um ON um.id = p.unidad_base_id
                LEFT JOIN categorias c ON c.id = p.categoria_id
                LEFT JOIN stock_stats ss ON ss.producto_id = p.id
                LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
                LEFT JOIN fefo_prov fp ON fp.producto_id = p.id
+               LEFT JOIN series sr ON sr.producto_id = p.id
                WHERE p.activo = true {} {} {}
            ),
            filtered AS (
@@ -188,11 +249,17 @@ async fn listar(
            FROM filtered f, total_count tc
            ORDER BY f.producto_nombre
            LIMIT ${} OFFSET ${}"#,
+        forecast_cfg.ventana_demanda_dias,
         area_filter,
+        forecast_cfg.ventana_demanda_dias,
         q_filter,
         cat_filter,
         prov_filter,
-        if !con_alertas && params.q.is_none() && params.categoria_id.is_none() && params.proveedor_id.is_none() {
+        if !con_alertas
+            && params.q.is_none()
+            && params.categoria_id.is_none()
+            && params.proveedor_id.is_none()
+        {
             "AND (stock_total > 0 OR stock_minimo > 0)"
         } else {
             ""
@@ -201,7 +268,7 @@ async fn listar(
         param_idx + 1,
         param_idx + 2
     );
-    
+
     let mut query = sqlx::query_as::<_, StockItemRow>(&sql);
     for b in binds {
         query = query.bind(b);
@@ -209,8 +276,19 @@ async fn listar(
     query = query.bind(limit).bind(offset);
 
     let rows = query.fetch_all(&state.pool).await?;
+    let rows: Vec<StockItemRow> = rows
+        .into_iter()
+        .map(|mut row| {
+            calcular_autonomia(&mut row, forecast_cfg);
+            row
+        })
+        .collect();
     let total = rows.first().map(|r| r.full_count).unwrap_or(0);
-    let total_pages = if limit > 0 { (total + limit - 1) / limit } else { 1 };
+    let total_pages = if limit > 0 {
+        (total + limit - 1) / limit
+    } else {
+        1
+    };
 
     // Resumen
     let resumen_total: (i64,) = sqlx::query_as(
@@ -271,9 +349,61 @@ struct StockItemRow {
     proveedor_icono: Option<String>,
     imagen_url: Option<String>,
     consumo_diario_ajustado: Decimal,
+    dias_con_consumo: i64,
+    #[sqlx(default)]
+    dias_autonomia: Option<i32>,
+    #[sqlx(default)]
+    dias_autonomia_pico: Option<i32>,
     lead_time_propio: Option<i32>,
     #[serde(skip)]
+    serie: Vec<f64>,
+    #[serde(skip)]
     full_count: i64,
+}
+
+fn decimal_to_f64(value: Decimal) -> f64 {
+    value.to_string().parse::<f64>().unwrap_or(0.0)
+}
+
+/// Calcula (dias_normal, dias_pico) para un producto.
+///
+/// - dias_normal: stock / consumo_base_adaptivo (ventana real, sin descuento)
+///   Si hay suficiente historia usa EWMA sobre serie winsorizada; con pocos datos
+///   usa la ventana real desde el primer evento.
+/// - dias_pico: stock / consumo_pico_7d. Solo se emite si el pico es ≥30% mayor
+///   que el consumo base (señal de variabilidad significativa).
+fn calcular_autonomia(row: &mut StockItemRow, cfg: ForecastConfig) {
+    let stock_actual = decimal_to_f64(row.stock_total.unwrap_or(Decimal::ZERO));
+    if stock_actual <= 0.0 {
+        row.dias_autonomia = Some(0);
+        row.dias_autonomia_pico = None;
+        return;
+    }
+
+    let dias_con_consumo = row.dias_con_consumo as i32;
+
+    let consumo_base = if dias_con_consumo >= cfg.dias_minimos_historia {
+        let serie_w = winsorize_p95(&row.serie);
+        ewma(&serie_w, 0.2)
+    } else {
+        consumo_base_adaptivo(&row.serie)
+    };
+
+    let pico = consumo_pico_7d(&row.serie);
+
+    row.dias_autonomia = if consumo_base > 0.0001 {
+        Some((stock_actual / consumo_base).floor().min(999.0) as i32)
+    } else {
+        None
+    };
+
+    // Emitir días en pico solo cuando hay base válida y el pico la supera en ≥30%.
+    // Sin base válida no hay referencia contra la que comparar el pico.
+    row.dias_autonomia_pico = if consumo_base > 0.0001 && pico > consumo_base * 1.3 {
+        Some((stock_actual / pico).floor().min(999.0) as i32)
+    } else {
+        None
+    };
 }
 
 /// GET /api/v1/stock/area/:area_id — Stock de un área específica
@@ -284,15 +414,16 @@ async fn stock_por_area(
     Query(params): Query<StockQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     stock_ops::validar_acceso_area(&state.pool, claims.sub, area_id, &claims.rol).await?;
-    let area = sqlx::query_as::<_, AreaRef>(
-        "SELECT id, nombre FROM areas WHERE id = $1",
-    )
-    .bind(area_id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(AppError::NotFound("Área no encontrada".into()))?;
+    let area = sqlx::query_as::<_, AreaRef>("SELECT id, nombre FROM areas WHERE id = $1")
+        .bind(area_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(AppError::NotFound("Área no encontrada".into()))?;
 
-    let pagination = PaginationParams { page: params.page, per_page: params.per_page };
+    let pagination = PaginationParams {
+        page: params.page,
+        per_page: params.per_page,
+    };
     let limit = pagination.per_page();
     let offset = pagination.offset();
 
@@ -398,8 +529,35 @@ struct AlertasParams {
     per_page: i64,
 }
 
-fn default_page() -> i64 { 1 }
-fn default_per_page() -> i64 { 50 }
+fn default_page() -> i64 {
+    1
+}
+fn default_per_page() -> i64 {
+    50
+}
+
+async fn load_forecast_config(pool: &sqlx::PgPool) -> Result<ForecastConfig, AppError> {
+    let row: (i32, i32, i32, f64, f64) = sqlx::query_as(
+        r#"
+        SELECT
+            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'ventana_demanda_dias'), 60),
+            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'periodo_revision_dias'), 30),
+            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'dias_minimos_historia'), 14),
+            COALESCE((SELECT valor_texto::float8 FROM configuracion WHERE clave = 'nivel_servicio_z'), 1.65),
+            COALESCE((SELECT valor_texto::float8 FROM configuracion WHERE clave = 'factor_historial_corto'), 0.35)
+        "#
+    )
+    .fetch_one(pool)
+    .await?;
+
+    Ok(ForecastConfig {
+        ventana_demanda_dias: row.0,
+        periodo_revision_dias: row.1,
+        dias_minimos_historia: row.2,
+        nivel_servicio_z: row.3,
+        factor_historial_corto: row.4.clamp(0.0, 1.0),
+    })
+}
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 struct AlertaRow {
@@ -566,10 +724,10 @@ async fn alertas(
     );
 
     let rows = sqlx::query_as::<_, AlertaRow>(&sql)
-    .bind(per_page)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+        .bind(per_page)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await?;
 
     let total = rows.first().map(|r| r.total_count).unwrap_or(0);
     let total_pages = (total + per_page - 1) / per_page;
@@ -582,7 +740,6 @@ async fn alertas(
         "total_pages": total_pages,
     })))
 }
-
 
 pub fn routes() -> Router<AppState> {
     Router::new()

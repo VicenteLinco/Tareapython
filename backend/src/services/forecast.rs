@@ -4,7 +4,11 @@
 //! serie diaria de consumo desde Postgres y delegan toda la matemática aquí.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Confianza { Alta, Media, Baja }
+pub enum Confianza {
+    Alta,
+    Media,
+    Baja,
+}
 
 impl Confianza {
     pub fn as_str(self) -> &'static str {
@@ -17,7 +21,11 @@ impl Confianza {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Urgencia { Critica, Alta, Media }
+pub enum Urgencia {
+    Critica,
+    Alta,
+    Media,
+}
 
 impl Urgencia {
     pub fn as_str(self) -> &'static str {
@@ -36,6 +44,7 @@ pub struct ForecastConfig {
     pub periodo_revision_dias: i32,
     pub dias_minimos_historia: i32,
     pub nivel_servicio_z: f64,
+    pub factor_historial_corto: f64,
 }
 
 impl Default for ForecastConfig {
@@ -45,6 +54,7 @@ impl Default for ForecastConfig {
             periodo_revision_dias: 30,
             dias_minimos_historia: 14,
             nivel_servicio_z: 1.65,
+            factor_historial_corto: 0.35,
         }
     }
 }
@@ -52,32 +62,78 @@ impl Default for ForecastConfig {
 /// Resultado del cálculo para un producto.
 #[derive(Debug, Clone)]
 pub struct ForecastResult {
-    pub mu: f64,                 // demanda diaria esperada (u/día)
-    pub sigma: f64,              // desviación estándar diaria (u/día)
+    pub mu: f64,    // demanda diaria esperada (u/día)
+    pub sigma: f64, // desviación estándar diaria (u/día)
     pub dias_con_consumo: i32,
     pub confianza: Confianza,
     pub razon: String,
-    pub safety_stock: f64,       // Z · σ · √(L + T)
-    pub target_stock: f64,       // S = μ·(L+T) + safety_stock
-    pub reorder_point: f64,      // ROP = μ·L + Z·σ·√L
-    pub cantidad_sugerida: f64,  // max(0, S − stock_actual − ya_pedido)  [unidades base]
+    pub safety_stock: f64,      // Z · σ · √(L + T)
+    pub target_stock: f64,      // S = μ·(L+T) + safety_stock
+    pub reorder_point: f64,     // ROP = μ·L + Z·σ·√L
+    pub cantidad_sugerida: f64, // max(0, S − stock_actual − ya_pedido)  [unidades base]
     pub urgencia: Option<Urgencia>,
 }
 
-/// Winsoriza una serie al percentil 95: cualquier valor por encima del p95
-/// queda recortado a p95. Útil para neutralizar picos de carga inicial /
-/// pruebas / calibraciones que distorsionarían el promedio.
+#[derive(Debug, Clone, Copy)]
+pub struct ShortHistoryEstimate {
+    pub consumo_diario: f64,
+    pub promedio_ventana: f64,
+    pub promedio_reciente_desc: f64,
+    pub dias_desde_primer_consumo: i32,
+    pub factor_descuento: f64,
+}
+
+/// Winsoriza una serie al percentil 95 calculado sobre los valores no-cero.
+/// Los ceros (días sin consumo) son parte del patrón de demanda intermitente,
+/// no outliers, por lo que no deben influir en el umbral de recorte.
 pub fn winsorize_p95(serie: &[f64]) -> Vec<f64> {
     if serie.is_empty() {
         return Vec::new();
     }
-    let mut ordenado: Vec<f64> = serie.to_vec();
+    let no_ceros: Vec<f64> = serie.iter().copied().filter(|&v| v > 0.0).collect();
+    if no_ceros.is_empty() {
+        return serie.to_vec();
+    }
+    let mut ordenado = no_ceros.clone();
     ordenado.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let n = ordenado.len();
-    // índice del p95 (interpolación nearest-rank)
-    let idx = ((0.95 * (n as f64)).ceil() as usize).saturating_sub(1).min(n - 1);
+    let idx = ((0.95 * (n as f64)).ceil() as usize)
+        .saturating_sub(1)
+        .min(n - 1);
     let p95 = ordenado[idx];
-    serie.iter().map(|&v| v.min(p95)).collect()
+    serie.iter().map(|&v| if v > 0.0 { v.min(p95) } else { 0.0 }).collect()
+}
+
+/// Estima el consumo diario base usando la ventana real desde el primer consumo.
+/// Sin factor de descuento: divide el total consumido entre los días transcurridos
+/// desde el primer evento, no entre toda la ventana de observación.
+/// Devuelve 0.0 si no hay consumo o solo hay un evento (insuficiente para proyectar).
+pub fn consumo_base_adaptivo(serie: &[f64]) -> f64 {
+    let total: f64 = serie.iter().sum();
+    if total <= 0.0 {
+        return 0.0;
+    }
+    let dias_con_consumo = serie.iter().filter(|&&v| v > 0.0).count();
+    if dias_con_consumo < 2 {
+        return 0.0;
+    }
+    let primer_idx = serie.iter().position(|&v| v > 0.0).unwrap_or(serie.len());
+    let dias_reales = (serie.len().saturating_sub(primer_idx)).max(1) as f64;
+    total / dias_reales
+}
+
+/// Devuelve el mayor promedio de consumo diario observado en cualquier ventana
+/// de 7 días consecutivos dentro de la serie. Sirve como proxy del "peor pico"
+/// reciente para calcular un escenario conservador de días de autonomía.
+/// Requiere al menos 7 elementos; con menos retorna 0.0 (sin pico definible).
+pub fn consumo_pico_7d(serie: &[f64]) -> f64 {
+    if serie.len() < 7 {
+        return 0.0;
+    }
+    serie
+        .windows(7)
+        .map(|w| w.iter().sum::<f64>() / 7.0)
+        .fold(0.0_f64, f64::max)
 }
 
 /// Promedio móvil exponencial: μ_t = α·x_t + (1-α)·μ_{t-1}.
@@ -114,6 +170,43 @@ pub fn classify_confianza(dias_con_consumo: i32, umbral_minimo: i32) -> Confianz
     } else {
         Confianza::Baja
     }
+}
+
+/// Estima demanda para planificar horizontes cuando existe consumo real pero
+/// aun no hay suficientes dias para confiar en el forecast automatico.
+pub fn estimate_short_history_demand(
+    serie_diaria: &[f64],
+    min_dias_historia: i32,
+    factor_descuento: f64,
+) -> Option<ShortHistoryEstimate> {
+    let dias_con_consumo = serie_diaria.iter().filter(|&&v| v > 0.0).count() as i32;
+    if dias_con_consumo <= 1 || dias_con_consumo >= min_dias_historia {
+        return None;
+    }
+
+    let total_consumo: f64 = serie_diaria.iter().sum();
+    if total_consumo <= 0.0 {
+        return None;
+    }
+
+    let dias_ventana = serie_diaria.len().max(1) as f64;
+    let primer_idx = serie_diaria
+        .iter()
+        .position(|&v| v > 0.0)
+        .unwrap_or(serie_diaria.len().saturating_sub(1));
+    let dias_desde_primer = (serie_diaria.len().saturating_sub(primer_idx)).max(1) as f64;
+
+    let promedio_ventana = total_consumo / dias_ventana;
+    let promedio_reciente_desc = (total_consumo / dias_desde_primer) * factor_descuento;
+    let consumo_diario = promedio_ventana.max(promedio_reciente_desc);
+
+    Some(ShortHistoryEstimate {
+        consumo_diario,
+        promedio_ventana,
+        promedio_reciente_desc,
+        dias_desde_primer_consumo: dias_desde_primer as i32,
+        factor_descuento,
+    })
 }
 
 pub fn classify_urgencia(
@@ -195,20 +288,38 @@ pub fn compute_forecast(
 
     let cantidad_sugerida = (target_stock - stock_actual - ya_pedido).max(0.0);
     let urgencia = classify_urgencia(
-        stock_actual, ya_pedido, stock_minimo,
-        mu, l, reorder_point, target_stock,
+        stock_actual,
+        ya_pedido,
+        stock_minimo,
+        mu,
+        l,
+        reorder_point,
+        target_stock,
     );
 
     let razon = format!(
         "μ={:.2} u/día (EWMA winsorizada p95, {} días con consumo de {}), \
          σ={:.2}, L={:.0}d, T={:.0}d, Z={:.2}",
-        mu, dias_con_consumo, serie_diaria.len(), sigma, l, t, z
+        mu,
+        dias_con_consumo,
+        serie_diaria.len(),
+        sigma,
+        l,
+        t,
+        z
     );
 
     ForecastResult {
-        mu, sigma, dias_con_consumo, confianza, razon,
-        safety_stock, target_stock, reorder_point,
-        cantidad_sugerida, urgencia,
+        mu,
+        sigma,
+        dias_con_consumo,
+        confianza,
+        razon,
+        safety_stock,
+        target_stock,
+        reorder_point,
+        cantidad_sugerida,
+        urgencia,
     }
 }
 
@@ -216,15 +327,33 @@ pub fn compute_forecast(
 mod tests {
     use super::*;
 
-    fn approx(a: f64, b: f64, eps: f64) -> bool { (a - b).abs() < eps }
+    fn approx(a: f64, b: f64, eps: f64) -> bool {
+        (a - b).abs() < eps
+    }
 
     #[test]
-    fn winsorize_recorta_picos_al_p95() {
-        // 19 ceros + un valor extremo = el p95 (índice 18) es 0
-        let mut s = vec![0.0; 19];
+    fn winsorize_recorta_pico_real_entre_no_ceros() {
+        // 19 valores normales de 5 + un outlier de 100 → p95 de no-ceros recorta 100
+        let mut s = vec![5.0; 19];
         s.push(100.0);
         let w = winsorize_p95(&s);
-        assert_eq!(w[19], 0.0, "el pico debe quedar recortado al p95 (=0)");
+        // p95 de [5×19, 100]: índice 18 de 20 sorted = 5... wait, sorted=[5,5,...,5,100]
+        // p95 = sorted[ceil(0.95*20)-1] = sorted[18] = 5
+        assert_eq!(w[19], 5.0, "el outlier real debe quedar recortado al p95 de no-ceros");
+    }
+
+    #[test]
+    fn winsorize_no_recorta_consumos_reales_en_serie_esparsa() {
+        // 57 ceros + consumos de 10, 30, 100 → con la corrección NO se recortan
+        let mut s = vec![0.0; 57];
+        s.push(10.0);
+        s.push(30.0);
+        s.push(100.0);
+        let w = winsorize_p95(&s);
+        // p95 de no-ceros [10,30,100]: índice 2 de 3 = 100
+        assert_eq!(w[57], 10.0);
+        assert_eq!(w[58], 30.0);
+        assert_eq!(w[59], 100.0, "los consumos reales no deben recortarse en serie esparsa");
     }
 
     #[test]
@@ -234,13 +363,62 @@ mod tests {
     }
 
     #[test]
+    fn consumo_base_adaptivo_usa_ventana_real() {
+        // Consumos de 100, 30, 10 en los últimos 6 días de una ventana de 60
+        let mut s = vec![0.0; 54];
+        s.push(100.0); // día 54
+        s.push(0.0);
+        s.push(30.0);  // día 56
+        s.push(0.0);
+        s.push(0.0);
+        s.push(10.0);  // día 59
+        assert_eq!(s.len(), 60);
+        let c = consumo_base_adaptivo(&s);
+        // dias_reales = 60 - 54 = 6, total = 140 → 140/6 ≈ 23.33
+        assert!((c - 23.333).abs() < 0.01, "consumo_base_adaptivo dio {}", c);
+    }
+
+    #[test]
+    fn consumo_base_adaptivo_un_evento_devuelve_cero() {
+        let mut s = vec![0.0; 59];
+        s.push(100.0);
+        assert_eq!(consumo_base_adaptivo(&s), 0.0);
+    }
+
+    #[test]
+    fn consumo_pico_7d_detecta_semana_de_alta_demanda() {
+        // 53 días normales a 5/día + 7 días de pico a 30/día
+        let mut s = vec![5.0; 53];
+        s.extend(vec![30.0; 7]);
+        let pico = consumo_pico_7d(&s);
+        assert!((pico - 30.0).abs() < 0.01, "pico esperado 30, dio {}", pico);
+    }
+
+    #[test]
+    fn consumo_pico_7d_serie_uniforme_igual_al_promedio() {
+        let s = vec![7.0; 30];
+        assert!((consumo_pico_7d(&s) - 7.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn consumo_pico_7d_serie_menor_de_7_devuelve_cero() {
+        // Sin 7 días no hay ventana completa: no hay "pico" definible
+        let s = vec![10.0, 20.0, 5.0];
+        assert_eq!(consumo_pico_7d(&s), 0.0);
+    }
+
+    #[test]
     fn ewma_da_mas_peso_a_valores_recientes() {
         // [10×10, 0×10] con α=0.2: EWMA debe quedar por debajo del promedio simple (5.0)
         // porque los ceros recientes (alta ponderación) arrastran la media hacia abajo.
         let mut s = vec![10.0; 10];
         s.extend(vec![0.0; 10]);
         let mu = ewma(&s, 0.2);
-        assert!(mu < 5.0, "EWMA debería bajar tras los ceros recientes, dio {}", mu);
+        assert!(
+            mu < 5.0,
+            "EWMA debería bajar tras los ceros recientes, dio {}",
+            mu
+        );
     }
 
     #[test]
@@ -275,14 +453,41 @@ mod tests {
         // ~1093 unidades. Debe usar stock_mínimo como referencia.
         let mut serie = vec![0.0; 60];
         serie[56] = 100.0; // hace 4 días
-        serie[57] = 1.0;   // hace 3 días
-        serie[59] = 30.0;  // hoy
+        serie[57] = 1.0; // hace 3 días
+        serie[59] = 30.0; // hoy
         let r = compute_forecast(&serie, 169.0, 50.0, 0.0, 10, ForecastConfig::default());
         assert_eq!(r.confianza, Confianza::Baja);
         assert_eq!(r.dias_con_consumo, 3);
         // Stock 169 ya cubre el mínimo 50 → cantidad sugerida = 0
         assert_eq!(r.cantidad_sugerida, 0.0);
         assert!(r.razon.contains("Historial insuficiente"));
+    }
+
+    #[test]
+    fn estimacion_historial_corto_combina_ventana_y_reciente_descontado() {
+        let mut serie = vec![0.0; 61];
+        serie[55] = 100.0;
+        serie[56] = 1.0;
+        serie[59] = 30.0;
+
+        let est = estimate_short_history_demand(&serie, 14, 0.35)
+            .expect("debe estimar con 3 dias de consumo");
+
+        assert_eq!(est.dias_desde_primer_consumo, 6);
+        assert!(approx(est.promedio_ventana, 131.0 / 61.0, 0.001));
+        assert!(approx(
+            est.promedio_reciente_desc,
+            (131.0 / 6.0) * 0.35,
+            0.001
+        ));
+        assert!(approx(est.consumo_diario, (131.0 / 6.0) * 0.35, 0.001));
+    }
+
+    #[test]
+    fn estimacion_historial_corto_no_estima_con_un_solo_dia() {
+        let mut serie = vec![0.0; 60];
+        serie[59] = 100.0;
+        assert!(estimate_short_history_demand(&serie, 14, 0.35).is_none());
     }
 
     #[test]
@@ -307,7 +512,11 @@ mod tests {
         let mut serie = vec![5.0; 60];
         serie[0] = 500.0;
         let r = compute_forecast(&serie, 100.0, 0.0, 0.0, 7, ForecastConfig::default());
-        assert!(r.mu < 6.0, "μ con winsorización debería ser ~5, dio {}", r.mu);
+        assert!(
+            r.mu < 6.0,
+            "μ con winsorización debería ser ~5, dio {}",
+            r.mu
+        );
     }
 
     #[test]

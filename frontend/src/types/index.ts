@@ -1,4 +1,5 @@
 export * from './generated'
+import type { Presentacion } from './generated'
 
 // --- Auth (Frontend Specific or Not Yet Generated) ---
 export interface LoginRequest {
@@ -34,7 +35,9 @@ export interface StockItem {
   stock_total: number | null
   lotes_count?: number
   stock_minimo: number
-  dias_autonomia?: number
+  dias_autonomia?: number | null
+  dias_autonomia_pico?: number | null
+  dias_con_consumo?: number
   lead_time_propio?: number
   proximo_vencimiento: string | null
   proveedor_nombre: string | null
@@ -165,6 +168,7 @@ export interface SolicitudItem {
   horizonte_dias: number | null      // null = chip desactivado (cantidad manual)
   horizonte_sugerido: number | null  // calculado al agregar, no cambia
   horizonte_razon: string | null     // texto del badge, no cambia
+  tipo_estimacion_demanda?: 'forecast' | 'historial_corto' | 'sin_historial' | 'sin_proveedor'
   horizonte_personalizado?: boolean  // true = override del global; undefined/false = sigue el global
 }
 

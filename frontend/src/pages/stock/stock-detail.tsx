@@ -7,7 +7,7 @@ import api from '@/lib/api'
 import { formatDate, daysUntil, cn, autoPlural, formatCantidad } from '@/lib/utils'
 import type { StockItem, Movimiento, PaginatedResponse } from '@/types'
 import { DiscardLoteDialog } from './discard-lote-dialog'
-import { Trash2, ShoppingCart, AlertCircle, Play, History, Box, ArrowUpRight, ArrowDownLeft, FileText, User } from 'lucide-react'
+import { Trash2, ShoppingCart, AlertCircle, Play, History, Box, ArrowUpRight, ArrowDownLeft, FileText, User, TrendingUp, Info } from 'lucide-react'
 import { ProductoImage } from '@/components/ui/producto-image'
 
 interface LoteSummary {
@@ -126,6 +126,45 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
           </div>
         )}
       </div>
+
+      {/* Autonomía de stock */}
+      {(item.dias_autonomia != null || item.dias_autonomia_pico != null) && (
+        <div className="rounded-xl border border-base-200 bg-base-100 divide-y divide-base-200">
+          {item.dias_autonomia != null && (
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium opacity-50">Duración estimada</span>
+                {(item.dias_con_consumo ?? 0) > 0 && (item.dias_con_consumo ?? 0) < 14 && (
+                  <span
+                    className="text-[9px] font-bold uppercase tracking-wider text-amber-600 border border-amber-300 bg-amber-50 px-1.5 py-0.5 rounded cursor-default"
+                    title={`Estimado con solo ${item.dias_con_consumo} día(s) con consumo. El cálculo puede no ser preciso.`}
+                  >
+                    <Info className="w-2.5 h-2.5 inline mr-0.5" />
+                    Pocos datos
+                  </span>
+                )}
+              </div>
+              <span className="text-sm font-bold tabular-nums">
+                ~{Math.round(item.dias_autonomia)} días
+              </span>
+            </div>
+          )}
+          {item.dias_autonomia_pico != null && (
+            <div
+              className="flex items-center justify-between px-4 py-3 bg-amber-50/60"
+              title={`En tu mayor pico reciente agotarías el stock en ~${item.dias_autonomia_pico} días. Considera reponer si se acerca temporada alta (influenza, VRS).`}
+            >
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-3.5 h-3.5 text-amber-500" />
+                <span className="text-xs font-medium text-amber-700">En pico máximo reciente</span>
+              </div>
+              <span className="text-sm font-bold text-amber-700 tabular-nums">
+                ~{Math.round(item.dias_autonomia_pico)} días
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex p-1 bg-base-200 rounded-xl">

@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
-use axum::extract::DefaultBodyLimit;
 use axum::Router;
+use axum::extract::DefaultBodyLimit;
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
@@ -49,16 +49,17 @@ async fn main() {
     // --- BLOQUE DE EMERGENCIA: Reset Admin ---
     {
         let email = "admin@laboratorio.cl";
-        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM usuarios WHERE email = $1)")
-            .bind(email)
-            .fetch_one(&pool)
-            .await
-            .unwrap_or(false);
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM usuarios WHERE email = $1)")
+                .bind(email)
+                .fetch_one(&pool)
+                .await
+                .unwrap_or(false);
 
         if !exists {
             use argon2::password_hash::SaltString;
-            use argon2::{Argon2, PasswordHasher};
             use argon2::password_hash::rand_core::OsRng;
+            use argon2::{Argon2, PasswordHasher};
 
             let salt = SaltString::generate(&mut OsRng);
             let password = "Admin123!";
@@ -73,7 +74,8 @@ async fn main() {
             )
             .bind(email)
             .bind(hash)
-            .execute(&pool).await;
+            .execute(&pool)
+            .await;
 
             match res {
                 Ok(_) => tracing::info!("Admin creado exitosamente"),
@@ -123,12 +125,16 @@ async fn main() {
     };
 
     // Rate limiters: aumentados para desarrollo
-    let login_limiter = RateLimiter::new(100, 60);    // Auth: 100 req/min
+    let login_limiter = RateLimiter::new(100, 60); // Auth: 100 req/min
     let mutation_limiter = RateLimiter::new(200, 60); // Mutaciones: 200 req/min
-    let read_limiter = RateLimiter::new(1000, 60);    // Lecturas: 1000 req/min
+    let read_limiter = RateLimiter::new(1000, 60); // Lecturas: 1000 req/min
 
     // Tarea de limpieza periódica de los rate limiters
-    let (c1, c2, c3) = (login_limiter.clone(), mutation_limiter.clone(), read_limiter.clone());
+    let (c1, c2, c3) = (
+        login_limiter.clone(),
+        mutation_limiter.clone(),
+        read_limiter.clone(),
+    );
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
         loop {
@@ -149,9 +155,7 @@ async fn main() {
 
     let app = Router::new()
         .merge(routes::create_routes(state.clone()))
-        .fallback_service(
-            ServeDir::new("static").fallback(ServeFile::new("static/index.html")),
-        )
+        .fallback_service(ServeDir::new("static").fallback(ServeFile::new("static/index.html")))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             middleware::rate_limit::rate_limit_middleware,

@@ -1,9 +1,9 @@
-use sqlx::PgPool;
-use serde_json::json;
-use uuid::Uuid;
-use crate::models::proveedor::Proveedor;
-use crate::dto::proveedor::{CreateProveedor, UpdateProveedor, ProveedorQuery};
+use crate::dto::proveedor::{CreateProveedor, ProveedorQuery, UpdateProveedor};
 use crate::errors::AppError;
+use crate::models::proveedor::Proveedor;
+use serde_json::json;
+use sqlx::PgPool;
+use uuid::Uuid;
 use validator::Validate;
 
 pub async fn listar(pool: &PgPool, params: ProveedorQuery) -> Result<Vec<Proveedor>, AppError> {
@@ -66,11 +66,15 @@ pub async fn crear(
     .await?;
 
     crate::services::audit::registrar(
-        pool, "proveedores", &proveedor.id.to_string(), "CREATE",
+        pool,
+        "proveedores",
+        &proveedor.id.to_string(),
+        "CREATE",
         None,
         Some(json!({"nombre": &proveedor.nombre})),
         usuario_id,
-    ).await?;
+    )
+    .await?;
 
     Ok(proveedor)
 }
@@ -89,7 +93,11 @@ pub async fn actualizar(
         .await?
         .ok_or(AppError::NotFound("Proveedor no encontrado".into()))?;
 
-    let nombre = req.nombre.as_deref().map(str::trim).unwrap_or(&anterior.nombre);
+    let nombre = req
+        .nombre
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or(&anterior.nombre);
 
     let proveedor = sqlx::query_as::<_, Proveedor>(
         r#"UPDATE proveedores
@@ -113,42 +121,45 @@ pub async fn actualizar(
     .ok_or(AppError::Conflict("El registro fue modificado por otro usuario".into()))?;
 
     crate::services::audit::registrar(
-        pool, "proveedores", &id.to_string(), "UPDATE",
+        pool,
+        "proveedores",
+        &id.to_string(),
+        "UPDATE",
         Some(json!({"nombre": &anterior.nombre})),
         Some(json!({"nombre": &proveedor.nombre})),
         usuario_id,
-    ).await?;
+    )
+    .await?;
 
     Ok(proveedor)
 }
 
-pub async fn eliminar(
-    pool: &PgPool,
-    id: i32,
-    usuario_id: Uuid,
-) -> Result<(), AppError> {
-    let result = sqlx::query("UPDATE proveedores SET activa = false WHERE id = $1 AND activa = true")
-        .bind(id)
-        .execute(pool)
-        .await?;
+pub async fn eliminar(pool: &PgPool, id: i32, usuario_id: Uuid) -> Result<(), AppError> {
+    let result =
+        sqlx::query("UPDATE proveedores SET activa = false WHERE id = $1 AND activa = true")
+            .bind(id)
+            .execute(pool)
+            .await?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Proveedor no encontrado".into()));
     }
 
     crate::services::audit::registrar(
-        pool, "proveedores", &id.to_string(), "DELETE",
-        None, None, usuario_id,
-    ).await?;
+        pool,
+        "proveedores",
+        &id.to_string(),
+        "DELETE",
+        None,
+        None,
+        usuario_id,
+    )
+    .await?;
 
     Ok(())
 }
 
-pub async fn reactivar(
-    pool: &PgPool,
-    id: i32,
-    usuario_id: Uuid,
-) -> Result<Proveedor, AppError> {
+pub async fn reactivar(pool: &PgPool, id: i32, usuario_id: Uuid) -> Result<Proveedor, AppError> {
     let proveedor = sqlx::query_as::<_, Proveedor>(
         "UPDATE proveedores SET activa = true WHERE id = $1 \
          RETURNING id, nombre, contacto, telefono, email, icono, activa, dias_despacho_aereo, dias_despacho_tierra, version, created_at, 0::int AS total_productos",
@@ -159,11 +170,15 @@ pub async fn reactivar(
     .ok_or(AppError::NotFound("Proveedor no encontrado".into()))?;
 
     crate::services::audit::registrar(
-        pool, "proveedores", &id.to_string(), "REACTIVATE",
+        pool,
+        "proveedores",
+        &id.to_string(),
+        "REACTIVATE",
         None,
         Some(json!({"activa": true})),
         usuario_id,
-    ).await?;
+    )
+    .await?;
 
     Ok(proveedor)
 }

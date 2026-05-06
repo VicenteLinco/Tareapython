@@ -1,7 +1,7 @@
 // frontend/src/pages/solicitudes-compra/components/proveedor-gallery.tsx
 import { Clock, Mail, Phone } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Skeleton } from '@/components/ui/skeleton'
+import { PageLoading } from '@/components/ui/page-state'
 import type { Proveedor } from '@/types'
 
 interface UrgenciaCount { total: number; criticos: number }
@@ -112,9 +112,7 @@ export function ProveedorGallery({
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-          {Array(6).fill(0).map((_, i) => <Skeleton key={i} className="h-36 rounded-3xl" />)}
-        </div>
+        <PageLoading label="Cargando proveedores..." />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 overflow-y-auto custom-scrollbar pb-2">
           {(proveedores ?? []).filter(p => p.activa).map(p => (

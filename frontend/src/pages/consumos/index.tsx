@@ -9,10 +9,13 @@ import type { ConsumoBatchRequest, StockItem, PaginatedResponse } from '@/types'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { QrScanner } from '@/components/shared/qr-scanner'
+import { PageLoading } from '@/components/ui/page-state'
 import { ProductoCard } from './components/producto-card'
 import { ConsumoDrawer } from './components/consumo-drawer'
 import type { CartItem } from './components/producto-card'
 import type { LoteDisponible } from './components/lote-selector'
+import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut'
+import { KeyboardLegend } from '@/components/ui/keyboard-legend'
 
 // ─── Helpers localStorage para productos recientes ───────────────────────────
 
@@ -102,7 +105,7 @@ export default function ConsumosPage() {
           area_id: p.area_id ?? areaFiltro ?? 0,
           area_nombre: p.area_nombre ?? '',
           imagen_url: p.imagen_url,
-          categoria: (p as any).categoria ?? null,
+          categoria: p.categoria ?? null,
           lotes: [],
           cargando_lotes: true,
           lote_elegido_id: null,
@@ -176,7 +179,7 @@ export default function ConsumosPage() {
       setIsDrawerExpanded(false)
       toast.success('Consumo registrado')
     },
-    onError: (err: any) => toast.error(parseApiError(err)),
+    onError: (err: unknown) => toast.error(parseApiError(err)),
   })
 
   const handleConfirm = () => {
@@ -193,6 +196,11 @@ export default function ConsumosPage() {
       nota: notas || undefined,
     })
   }
+
+  // ── Atajos de teclado ─────────────────────────────────────────────────────
+
+  useKeyboardShortcut({ key: '/', onKeyDown: (e) => { e.preventDefault(); inputRef.current?.focus() } })
+  useKeyboardShortcut({ key: 'Escape', ignoreInputs: false, onKeyDown: () => { setSearchQuery(''); inputRef.current?.blur() } })
 
   // ── Helpers carrito ────────────────────────────────────────────────────────
 
@@ -221,7 +229,14 @@ export default function ConsumosPage() {
 
       {/* ── Header: título + área ── */}
       <div className="flex items-center justify-between px-4 pt-3 pb-2 flex-shrink-0">
-        <h1 className="font-bold text-base">Registrar consumo</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="font-bold text-base">Registrar consumo</h1>
+          <KeyboardLegend shortcuts={[
+            { keys: ['/'], description: 'Enfocar búsqueda' },
+            { keys: ['Esc'], description: 'Limpiar búsqueda' },
+            { keys: ['?'], description: 'Ver atajos' },
+          ]} />
+        </div>
         <select
           className="select select-bordered select-sm rounded-xl text-sm max-w-[160px]"
           value={areaFiltro ?? ''}
@@ -266,11 +281,7 @@ export default function ConsumosPage() {
         style={{ paddingBottom: drawerCount > 0 ? '80px' : '16px' }}
       >
         {isLoading ? (
-          <div className="flex flex-col gap-2">
-            {Array(8).fill(0).map((_, i) => (
-              <div key={i} className="h-[60px] bg-base-200 rounded-2xl animate-pulse" />
-            ))}
-          </div>
+          <PageLoading label="Cargando productos..." />
         ) : emptyRecents ? (
           <div className="py-20 text-center opacity-30">
             <Package className="h-10 w-10 mx-auto mb-2" />

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
@@ -7,8 +7,10 @@ import api from '@/lib/api'
 import { formatDate, daysUntil, cn, autoPlural, formatCantidad } from '@/lib/utils'
 import type { StockItem, Movimiento, PaginatedResponse } from '@/types'
 import { DiscardLoteDialog } from './discard-lote-dialog'
-import { Trash2, ShoppingCart, AlertCircle, Play, History, Box, ArrowUpRight, ArrowDownLeft, FileText, User, TrendingUp, Info } from 'lucide-react'
+import { Trash2, AlertCircle, Play, History, Box, ArrowUpRight, ArrowDownLeft, FileText, User, TrendingUp, Info } from 'lucide-react'
+import { MetricTooltip } from '@/components/ui/metric-tooltip'
 import { ProductoImage } from '@/components/ui/producto-image'
+import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from 'recharts'
 
 interface LoteSummary {
   id: string
@@ -72,8 +74,6 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
     (a, b) => new Date(a.fecha_vencimiento).getTime() - new Date(b.fecha_vencimiento).getTime()
   )
 
-  const buyAmount = Math.max(0, (minimoLabel * 2) - stockTotal)
-
   return (
     <div className="space-y-6">
       {/* Imagen + Meta */}
@@ -105,24 +105,23 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
           <span className="text-4xl font-bold tabular-nums">{stockTotal}</span>
           <span className="text-sm opacity-40">{stockTotal === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}</span>
         </div>
-        <p className="text-xs opacity-35 mt-2">
-          Mínimo: {formatCantidad(minimoLabel, item.unidad, item.unidad_plural)}
-        </p>
+        <div className="flex items-center gap-1.5 mt-2">
+          <p className="text-xs opacity-35">
+            Mínimo: {formatCantidad(minimoLabel, item.unidad, item.unidad_plural)}
+          </p>
+          <MetricTooltip
+            size="sm"
+            position="right"
+            text="Stock mínimo definido para el producto. Si el stock cae por debajo, el sistema genera una alerta."
+          />
+        </div>
 
         {isLow && (
-          <div className="mt-4 p-3 bg-error/10 rounded-xl border border-error/20 space-y-3">
+          <div className="mt-4 p-3 bg-error/10 rounded-xl border border-error/20">
             <div className="flex items-center gap-2 text-xs font-bold text-error uppercase">
               <AlertCircle className="w-3.5 h-3.5" />
-              Resolución: Reponer Stock
+              Stock bajo mínimo
             </div>
-            <p className="text-[11px] leading-snug">Se recomienda comprar al menos <strong>{formatCantidad(buyAmount, item.unidad, item.unidad_plural)}</strong> para cubrir la demanda y mantener el stock de seguridad.</p>
-            <button 
-              className="btn btn-xs btn-error btn-block gap-2 h-8 rounded-lg"
-              onClick={() => navigate(`/solicitudes-compra?select=${item.producto_id}`)}
-            >
-              <ShoppingCart className="w-3 h-3" />
-              Generar Sugerencia de Compra
-            </button>
           </div>
         )}
       </div>
@@ -134,6 +133,10 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
             <div className="flex items-center justify-between px-4 py-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-medium opacity-50">Duración estimada</span>
+                <MetricTooltip
+                  size="sm"
+                  text={`Días que durará el stock al ritmo de consumo actual (promedio móvil con EWMA). Lead time configurado: ${item.lead_time_propio ?? 3} días.`}
+                />
                 {(item.dias_con_consumo ?? 0) > 0 && (item.dias_con_consumo ?? 0) < 14 && (
                   <span
                     className="text-[9px] font-bold uppercase tracking-wider text-amber-600 border border-amber-300 bg-amber-50 px-1.5 py-0.5 rounded cursor-default"
@@ -150,13 +153,14 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
             </div>
           )}
           {item.dias_autonomia_pico != null && (
-            <div
-              className="flex items-center justify-between px-4 py-3 bg-amber-50/60"
-              title={`En tu mayor pico reciente agotarías el stock en ~${item.dias_autonomia_pico} días. Considera reponer si se acerca temporada alta (influenza, VRS).`}
-            >
+            <div className="flex items-center justify-between px-4 py-3 bg-amber-50/60">
               <div className="flex items-center gap-2">
                 <TrendingUp className="w-3.5 h-3.5 text-amber-500" />
                 <span className="text-xs font-medium text-amber-700">En pico máximo reciente</span>
+                <MetricTooltip
+                  size="sm"
+                  text={`Si el consumo alcanzara el pico más alto registrado recientemente, el stock duraría ~${item.dias_autonomia_pico} días. Útil para anticipar temporadas de alta demanda (influenza, VRS, etc.).`}
+                />
               </div>
               <span className="text-sm font-bold text-amber-700 tabular-nums">
                 ~{Math.round(item.dias_autonomia_pico)} días
@@ -297,7 +301,7 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
             )}
           </div>
         ) : (
-          <ProductTimeline productoId={item.producto_id} areaId={areaId} />
+          <ProductTimeline productoId={item.producto_id} areaId={areaId} unidad={item.unidad} />
         )}
       </div>
 
@@ -315,13 +319,53 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
   )
 }
 
-function ProductTimeline({ productoId, areaId }: { productoId: string; areaId: number | null }) {
+type TipoFiltro = 'todos' | 'entradas' | 'consumos' | 'descartes'
+
+function ProductTimeline({ productoId, areaId, unidad }: { productoId: string; areaId: number | null; unidad: string }) {
+  const [tipoFiltro, setTipoFiltro] = useState<TipoFiltro>('todos')
+
+  const desde = useMemo(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 90)
+    return d.toISOString().split('T')[0]
+  }, [])
+
   const { data: historial, isLoading } = useQuery({
-    queryKey: ['historial-producto', productoId, areaId],
-    queryFn: () => 
+    queryKey: ['historial-producto', productoId, areaId, desde],
+    queryFn: () =>
       api.get<PaginatedResponse<Movimiento>>('/movimientos', {
-        params: { producto_id: productoId, area_id: areaId || undefined, per_page: 20 }
-      }).then(r => r.data)
+        params: { producto_id: productoId, area_id: areaId || undefined, per_page: 200, desde },
+      }).then(r => r.data),
+  })
+
+  const todosEventos = useMemo(() => historial?.data ?? [], [historial?.data])
+
+  // Gráfico semanal: agrupar consumos (salida + descarte) por semana
+  const chartData = useMemo(() => {
+    const semanas: Record<string, { semana: string; consumo: number; entradas: number }> = {}
+    todosEventos.forEach(ev => {
+      const d = new Date(ev.created_at)
+      // Inicio de semana (lunes)
+      const day = d.getDay()
+      const diff = (day === 0 ? -6 : 1) - day
+      const lunes = new Date(d)
+      lunes.setDate(d.getDate() + diff)
+      const key = lunes.toISOString().split('T')[0]
+      const label = lunes.toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })
+      if (!semanas[key]) semanas[key] = { semana: label, consumo: 0, entradas: 0 }
+      if (ev.tipo === 'salida' || ev.tipo === 'descarte') semanas[key].consumo += Math.round(ev.cantidad)
+      if (ev.tipo === 'entrada') semanas[key].entradas += Math.round(ev.cantidad)
+    })
+    return Object.entries(semanas)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, v]) => v)
+  }, [todosEventos])
+
+  const eventos = todosEventos.filter(ev => {
+    if (tipoFiltro === 'entradas') return ev.tipo === 'entrada'
+    if (tipoFiltro === 'consumos') return ev.tipo === 'salida'
+    if (tipoFiltro === 'descartes') return ev.tipo === 'descarte'
+    return true
   })
 
   if (isLoading) {
@@ -332,89 +376,116 @@ function ProductTimeline({ productoId, areaId }: { productoId: string; areaId: n
     )
   }
 
-  const eventos = historial?.data || []
-
-  if (eventos.length === 0) {
-    return (
-      <div className="py-12 text-center opacity-30">
-        <History className="w-10 h-10 mx-auto mb-2" />
-        <p className="text-sm font-medium">Sin movimientos registrados</p>
-      </div>
-    )
-  }
-
   return (
-    <div className="relative py-4 pl-4 space-y-6">
-      {/* Vertical line */}
-      <div className="absolute left-[23px] top-6 bottom-6 w-0.5 bg-base-200" />
+    <div className="space-y-4">
+      {/* Mini gráfico semanal */}
+      {chartData.length > 1 && (
+        <div className="bg-base-200/40 rounded-2xl p-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider opacity-30 mb-2">Consumo semanal (90 días)</p>
+          <ResponsiveContainer width="100%" height={60}>
+            <BarChart data={chartData} barSize={8} margin={{ top: 2, right: 4, left: -28, bottom: 0 }}>
+              <XAxis dataKey="semana" tick={{ fontSize: 8, opacity: 0.4 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 8, opacity: 0.4 }} tickLine={false} axisLine={false} />
+              <RechartsTooltip
+                contentStyle={{ fontSize: 10, borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                formatter={(val) => [`${val} ${unidad}`, 'Consumo']}
+              />
+              <Bar dataKey="consumo" radius={[3, 3, 0, 0]}>
+                {chartData.map((_, i) => (
+                  <Cell key={i} fill="hsl(var(--p))" opacity={0.7} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
-      {eventos.map((ev) => {
-        const isEntrada = ev.tipo === 'entrada'
-        const isSalida = ev.tipo === 'salida'
-        const isDescarte = ev.tipo === 'descarte'
-        
-        return (
-          <div key={ev.id} className="relative flex gap-4 items-start">
-            {/* Dot/Icon */}
-            <div className={cn(
-              "relative z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ring-4 ring-base-100 shadow-sm",
-              isEntrada ? "bg-success text-success-content" : 
-              isDescarte ? "bg-error text-error-content" : 
-              isSalida ? "bg-primary text-primary-content" : 
-              "bg-base-300 text-base-content"
-            )}>
-              {isEntrada ? <ArrowDownLeft className="w-3 h-3" /> : 
-               isSalida ? <ArrowUpRight className="w-3 h-3" /> :
-               isDescarte ? <Trash2 className="w-3 h-3" /> :
-               <Box className="w-3 h-3" />}
-            </div>
+      {/* Filtros de tipo */}
+      <div className="flex gap-1.5 flex-wrap">
+        {([
+          { key: 'todos', label: 'Todos', count: todosEventos.length },
+          { key: 'entradas', label: 'Entradas', count: todosEventos.filter(e => e.tipo === 'entrada').length },
+          { key: 'consumos', label: 'Consumos', count: todosEventos.filter(e => e.tipo === 'salida').length },
+          { key: 'descartes', label: 'Descartes', count: todosEventos.filter(e => e.tipo === 'descarte').length },
+        ] as const).map(f => (
+          <button
+            key={f.key}
+            onClick={() => setTipoFiltro(f.key as TipoFiltro)}
+            className={cn(
+              'flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all',
+              tipoFiltro === f.key
+                ? 'bg-primary/10 text-primary border-primary/30'
+                : 'border-base-300 opacity-50 hover:opacity-80'
+            )}
+          >
+            {f.label}
+            <span className="opacity-60">{f.count}</span>
+          </button>
+        ))}
+        <span className="ml-auto text-[10px] opacity-30 self-center">Últimos 90 días</span>
+      </div>
 
-            <div className="flex-1 min-w-0 bg-base-100/50 border border-base-200/50 rounded-2xl p-3 hover:bg-base-200/20 transition-colors">
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider opacity-40">
-                  {new Date(ev.created_at).toLocaleString('es-ES', { 
-                    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' 
-                  })}
-                </span>
-                <span className="text-[10px] font-mono opacity-30">#{ev.numero_documento?.slice(-6)}</span>
-              </div>
-              
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <p className="text-xs font-bold capitalize">
-                  {isEntrada ? 'Ingreso a Stock' : 
-                   isSalida ? 'Consumo' : 
-                   isDescarte ? 'Baja / Descarte' : 
-                   ev.tipo.replace('_', ' ')}
-                </p>
+      {/* Timeline */}
+      {eventos.length === 0 ? (
+        <div className="py-10 text-center opacity-30">
+          <History className="w-8 h-8 mx-auto mb-2" />
+          <p className="text-sm font-medium">Sin movimientos</p>
+        </div>
+      ) : (
+        <div className="relative py-2 pl-4 space-y-5">
+          <div className="absolute left-[23px] top-4 bottom-4 w-0.5 bg-base-200" />
+          {eventos.map(ev => {
+            const isEntrada = ev.tipo === 'entrada'
+            const isSalida = ev.tipo === 'salida'
+            const isDescarte = ev.tipo === 'descarte'
+            return (
+              <div key={ev.id} className="relative flex gap-4 items-start">
                 <div className={cn(
-                  "px-1.5 py-0.5 rounded text-[10px] font-bold",
-                  isEntrada ? "bg-success/10 text-success" : "bg-base-200 opacity-60"
+                  'relative z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ring-4 ring-base-100 shadow-sm',
+                  isEntrada ? 'bg-success text-success-content' :
+                  isDescarte ? 'bg-error text-error-content' :
+                  isSalida ? 'bg-primary text-primary-content' :
+                  'bg-base-300 text-base-content'
                 )}>
-                  {isEntrada ? '+' : '-'}{Math.round(ev.cantidad)} {ev.unidad_base_nombre}
+                  {isEntrada ? <ArrowDownLeft className="w-3 h-3" /> :
+                   isSalida ? <ArrowUpRight className="w-3 h-3" /> :
+                   isDescarte ? <Trash2 className="w-3 h-3" /> :
+                   <Box className="w-3 h-3" />}
+                </div>
+                <div className="flex-1 min-w-0 bg-base-100/50 border border-base-200/50 rounded-2xl p-3 hover:bg-base-200/20 transition-colors">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider opacity-40">
+                      {new Date(ev.created_at).toLocaleString('es-ES', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <span className="text-[10px] font-mono opacity-30">#{ev.numero_documento?.slice(-6)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <p className="text-xs font-bold capitalize">
+                      {isEntrada ? 'Ingreso a Stock' : isSalida ? 'Consumo' : isDescarte ? 'Baja / Descarte' : ev.tipo.replace('_', ' ')}
+                    </p>
+                    <div className={cn(
+                      'px-1.5 py-0.5 rounded text-[10px] font-bold',
+                      isEntrada ? 'bg-success/10 text-success' : 'bg-base-200 opacity-60'
+                    )}>
+                      {isEntrada ? '+' : '-'}{Math.round(ev.cantidad)} {ev.unidad_base_nombre}
+                    </div>
+                  </div>
+                  {ev.notas && (
+                    <div className="flex items-start gap-1.5 mb-2 p-2 bg-base-200/50 rounded-lg">
+                      <FileText className="w-3 h-3 mt-0.5 opacity-30" />
+                      <p className="text-[11px] leading-snug italic opacity-70">{ev.notas}</p>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3 mt-2 text-[10px] opacity-40 font-medium">
+                    <span className="flex items-center gap-1"><User className="w-2.5 h-2.5" />{ev.usuario_nombre}</span>
+                    <span className="flex items-center gap-1"><Box className="w-2.5 h-2.5" />Lote: {ev.codigo_lote}</span>
+                  </div>
                 </div>
               </div>
-
-              {ev.notas && (
-                <div className="flex items-start gap-1.5 mb-2 p-2 bg-base-200/50 rounded-lg">
-                  <FileText className="w-3 h-3 mt-0.5 opacity-30" />
-                  <p className="text-[11px] leading-snug italic opacity-70">{ev.notas}</p>
-                </div>
-              )}
-
-              <div className="flex items-center gap-3 mt-2 text-[10px] opacity-40 font-medium">
-                <span className="flex items-center gap-1">
-                  <User className="w-2.5 h-2.5" />
-                  {ev.usuario_nombre}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Box className="w-2.5 h-2.5" />
-                  Lote: {ev.codigo_lote}
-                </span>
-              </div>
-            </div>
-          </div>
-        )
-      })}
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

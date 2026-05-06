@@ -21,9 +21,13 @@ pub fn extract_idempotency_key(headers: &HeaderMap) -> Result<String, AppError> 
         ));
     }
 
-    if !key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+    if !key
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
         return Err(AppError::Validation(
-            "X-Idempotency-Key solo acepta caracteres alfanuméricos, guiones y guiones bajos".into(),
+            "X-Idempotency-Key solo acepta caracteres alfanuméricos, guiones y guiones bajos"
+                .into(),
         ));
     }
 

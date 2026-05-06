@@ -62,8 +62,12 @@ const adminItems = [
   { to: '/setup', icon: Rocket, label: 'Setup' },
 ]
 
-export function Sidebar() {
-  const [expanded, setExpanded] = useState(false)
+interface SidebarProps {
+  expanded: boolean
+  onExpandedChange: (expanded: boolean) => void
+}
+
+export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
   const [isDark, setIsDark] = useState(
     document.documentElement.getAttribute('data-theme') === 'dark'
   )
@@ -71,7 +75,7 @@ export function Sidebar() {
   const isAdmin = usuario?.rol === 'admin'
 
   const toggleTheme = () => {
-    const next = isDark ? 'emerald' : 'dark'
+    const next = isDark ? 'light' : 'dark'
     document.documentElement.setAttribute('data-theme', next)
     localStorage.setItem('lab-theme', next)
     setIsDark(!isDark)
@@ -83,8 +87,8 @@ export function Sidebar() {
         'fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-base-200 bg-base-100 transition-all duration-300 ease-out',
         expanded ? 'w-56' : 'w-[60px]'
       )}
-      onMouseEnter={() => setExpanded(true)}
-      onMouseLeave={() => setExpanded(false)}
+      onMouseEnter={() => onExpandedChange(true)}
+      onMouseLeave={() => onExpandedChange(false)}
     >
       {/* Logo */}
       <div className="flex h-[60px] items-center gap-2.5 px-4 border-b border-base-200">
@@ -158,7 +162,7 @@ export function Sidebar() {
           </span>
         </button>
         <button
-          onClick={() => setExpanded((e) => !e)}
+          onClick={() => onExpandedChange(!expanded)}
           className="flex h-9 w-full items-center justify-center rounded-lg opacity-30 hover:opacity-70 hover:bg-base-200 transition-all cursor-pointer"
         >
           {expanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}

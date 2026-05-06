@@ -1,5 +1,11 @@
 import { AlertTriangle } from 'lucide-react'
 
+export interface ImpactoItem {
+  label: string
+  valor: string
+  destacado?: boolean
+}
+
 interface ConfirmDialogProps {
   open: boolean
   onClose: () => void
@@ -9,6 +15,8 @@ interface ConfirmDialogProps {
   description: string
   confirmLabel?: string
   variant?: 'danger' | 'warning'
+  /** Filas de resumen de impacto mostradas antes de los botones */
+  impacto?: ImpactoItem[]
 }
 
 export function ConfirmDialog({
@@ -20,6 +28,7 @@ export function ConfirmDialog({
   description,
   confirmLabel = 'Confirmar',
   variant = 'danger',
+  impacto,
 }: ConfirmDialogProps) {
   if (!open) return null
   return (
@@ -34,6 +43,20 @@ export function ConfirmDialog({
             <p className="text-sm text-base-content/60 mt-1">{description}</p>
           </div>
         </div>
+
+        {impacto && impacto.length > 0 && (
+          <div className="mb-4 rounded-xl border border-base-200 bg-base-50 divide-y divide-base-200">
+            {impacto.map((item) => (
+              <div key={item.label} className="flex justify-between px-3 py-2 text-sm">
+                <span className="text-base-content/60">{item.label}</span>
+                <span className={item.destacado ? 'font-semibold text-error' : 'font-medium text-base-content'}>
+                  {item.valor}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="modal-action mt-2">
           <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={loading}>
             Cancelar

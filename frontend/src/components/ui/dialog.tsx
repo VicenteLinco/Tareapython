@@ -8,9 +8,10 @@ interface DialogProps {
   title: string
   children: React.ReactNode
   className?: string
+  closeOnBackdrop?: boolean
 }
 
-export function Dialog({ open, onClose, title, children, className }: DialogProps) {
+export function Dialog({ open, onClose, title, children, className, closeOnBackdrop = true }: DialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
@@ -20,12 +21,20 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
     if (!open && dialog.open) dialog.close()
   }, [open])
 
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog || closeOnBackdrop) return
+    const onCancel = (e: Event) => e.preventDefault()
+    dialog.addEventListener('cancel', onCancel)
+    return () => dialog.removeEventListener('cancel', onCancel)
+  }, [closeOnBackdrop])
+
   return (
     <dialog
       ref={dialogRef}
       className={cn('modal', open && 'modal-open')}
       onClose={onClose}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      onClick={(e) => { if (closeOnBackdrop && e.target === e.currentTarget) onClose() }}
     >
       <div className={cn('modal-box max-w-lg', className)}>
         <div className="flex items-center justify-between mb-4">

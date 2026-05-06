@@ -5,7 +5,8 @@ import { formatCantidad } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { imprimirEtiquetas, type LoteParaEtiqueta } from '@/lib/label-print'
 import { toast } from 'sonner'
-import { isLoteComplete, type DetalleLineUI } from './item-card'
+import type { DetalleLineUI } from './item-card'
+import { isLoteComplete } from './item-card-utils'
 
 interface Props {
   // Fase 1: durante el llenado del formulario

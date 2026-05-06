@@ -2,6 +2,7 @@
 import { formatCantidad } from '@/lib/utils'
 import type { SolicitudItem } from '@/types'
 import api from '@/lib/api'
+import Decimal from 'decimal.js'
 
 export const HORIZONTE_CHIPS = [7, 15, 30, 90, 180, 365] as const
 export type HorizonChip = typeof HORIZONTE_CHIPS[number]
@@ -15,13 +16,17 @@ export function calcularCantidad(
   stockActual: number,
   factorConversion?: number | null,
 ): number {
-  const base = Math.max(1, Math.ceil(
-    stockMinimo + consumoDiario * (leadTime + horizonte) - stockActual
-  ))
+  const base = Decimal.max(
+    1,
+    new Decimal(stockMinimo)
+      .plus(new Decimal(consumoDiario).times(leadTime + horizonte))
+      .minus(stockActual)
+      .ceil(),
+  )
   if (factorConversion && factorConversion > 0) {
-    return Math.max(1, Math.ceil(base / factorConversion))
+    return Decimal.max(1, base.dividedBy(factorConversion).ceil()).toNumber()
   }
-  return base
+  return base.toNumber()
 }
 
 /** Días de stock cubiertos con la cantidad actual del ítem. */
@@ -73,6 +78,9 @@ export async function fetchHorizonte(productoId: string, proveedorId: number | n
       horizonte_sugerido: 30,
       razon: 'sin proveedor — estimación por defecto',
       consumo_diario: 0,
+      consumo_diario_forecast: 0,
+      consumo_diario_planificacion: 0,
+      tipo_estimacion_demanda: 'sin_proveedor' as const,
       stock_actual: 0,
       stock_minimo: 0,
     }
@@ -81,6 +89,9 @@ export async function fetchHorizonte(productoId: string, proveedorId: number | n
     horizonte_sugerido: number
     razon: string
     consumo_diario: number
+    consumo_diario_forecast: number
+    consumo_diario_planificacion: number
+    tipo_estimacion_demanda: 'forecast' | 'historial_corto' | 'sin_historial' | 'sin_proveedor'
     stock_actual: number
     stock_minimo: number
   }>('/solicitudes-compra/horizonte', {

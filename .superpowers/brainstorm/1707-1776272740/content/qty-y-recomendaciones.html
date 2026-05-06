@@ -1,0 +1,285 @@
+<h2>Dos preguntas de comportamiento</h2>
+<p class="subtitle">¿Qué pasa cuando cambias la cantidad manualmente? ¿Y cómo se ven las recomendaciones de quiebres?</p>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div style="max-width:980px; margin:0 auto; display:flex; flex-direction:column; gap:24px;">
+
+  <!-- PREGUNTA 1: CAMBIO DE CANTIDAD -->
+  <div style="background:#1e293b; border-radius:12px; border:1px solid #334155; overflow:hidden;">
+    <div style="padding:10px 16px; background:#f59e0b10; border-bottom:1px solid #334155; display:flex; align-items:center; gap:10px;">
+      <span style="background:#f59e0b; color:#0f172a; border-radius:20px; padding:3px 12px; font-size:10px; font-weight:bold; flex-shrink:0;">Pregunta 1</span>
+      <span style="font-size:12px; color:#e2e8f0; font-weight:bold;">Cambiar cantidad con −/+ sin tocar los días</span>
+    </div>
+    <div style="padding:16px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; align-items:start;">
+
+      <!-- Caso A: qty reduce → días bajan -->
+      <div>
+        <div style="font-size:9px; color:#64748b; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px; text-align:center;">A — Bajas qty → días bajan</div>
+        <div style="background:#0f172a; border-radius:8px; padding:9px 11px; border:1px solid #334155;">
+          <div style="font-size:9px; color:#e2e8f0; font-weight:bold; margin-bottom:5px;">Guantes XL</div>
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+            <span style="font-size:7px; color:#64748b;">$2.400/caja</span>
+            <!-- pill amarilla porque bajó a ~12d -->
+            <span style="font-size:7px; background:#ef444415; color:#fca5a5; border:1px solid #ef444430; border-radius:10px; padding:1px 6px;">📅 ~12 días</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div style="display:flex; align-items:center; background:#334155; border-radius:5px; padding:2px; flex:none;">
+              <div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#94a3b8;">−</div>
+              <div style="width:24px;text-align:center;font-size:10px;font-weight:bold;color:#e2e8f0;">4</div>
+              <div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#94a3b8;">+</div>
+            </div>
+            <div style="font-size:8px;color:#e2e8f0;font-weight:bold;">$9.600</div>
+          </div>
+        </div>
+        <div style="margin-top:6px; font-size:8px; color:#64748b; text-align:center; line-height:1.4;">
+          Tenía 10 cajas → 30 días<br>
+          Bajó a 4 → pill recalcula a ~12d<br>
+          <span style="color:#fca5a5;">Se pone roja: bajo cobertura</span>
+        </div>
+      </div>
+
+      <!-- Caso B: qty sube → días suben -->
+      <div>
+        <div style="font-size:9px; color:#64748b; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px; text-align:center;">B — Subes qty → días suben</div>
+        <div style="background:#0f172a; border-radius:8px; padding:9px 11px; border:1px solid #334155;">
+          <div style="font-size:9px; color:#e2e8f0; font-weight:bold; margin-bottom:5px;">Guantes XL</div>
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+            <span style="font-size:7px; color:#64748b;">$2.400/caja</span>
+            <!-- pill azul porque subió a ~75d -->
+            <span style="font-size:7px; background:#3b82f615; color:#93c5fd; border:1px solid #3b82f630; border-radius:10px; padding:1px 6px;">📅 ~75 días</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div style="display:flex; align-items:center; background:#334155; border-radius:5px; padding:2px; flex:none;">
+              <div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#94a3b8;">−</div>
+              <div style="width:24px;text-align:center;font-size:10px;font-weight:bold;color:#e2e8f0;">25</div>
+              <div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#94a3b8;">+</div>
+            </div>
+            <div style="font-size:8px;color:#e2e8f0;font-weight:bold;">$60.000</div>
+          </div>
+        </div>
+        <div style="margin-top:6px; font-size:8px; color:#64748b; text-align:center; line-height:1.4;">
+          Subió de 10 a 25 cajas<br>
+          Pill recalcula a ~75d<br>
+          <span style="color:#93c5fd;">Azul: alta cobertura</span>
+        </div>
+      </div>
+
+      <!-- Caso C: la pill NO se vuelve lila (✏ es solo para cambio de horizonte) -->
+      <div>
+        <div style="font-size:9px; color:#f59e0b; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px; text-align:center;">C — La pill ✏ NO aparece aquí</div>
+        <div style="background:#0f172a; border-radius:8px; padding:9px 11px; border:1px solid #334155;">
+          <div style="display:flex; flex-direction:column; gap:5px;">
+            <div style="display:flex; align-items:center; gap:4px;">
+              <span style="font-size:9px; background:#22c55e15; color:#86efac; border:1px solid #22c55e30; border-radius:10px; padding:2px 7px; font-size:8px;">📅 ~30 días</span>
+              <span style="font-size:8px; color:#64748b;">= global, sin cambios</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:4px;">
+              <span style="font-size:9px; background:#fca5a515; color:#fca5a5; border:1px solid #fca5a530; border-radius:10px; padding:2px 7px; font-size:8px;">📅 ~12 días</span>
+              <span style="font-size:8px; color:#64748b;">= qty reducida</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:4px;">
+              <span style="font-size:9px; background:#7c3aed15; color:#c4b5fd; border:1px solid #7c3aed30; border-radius:10px; padding:2px 7px; font-size:8px;">📅 ~90 días ✏</span>
+              <span style="font-size:8px; color:#64748b;">= horizonte personalizado</span>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:6px; font-size:8px; color:#64748b; text-align:center; line-height:1.4;">
+          El ✏ lila solo aparece cuando<br>cambias los días en el popover.<br>
+          <span style="color:#e2e8f0;">Cambiar qty ≠ personalizar horizonte.</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- PREGUNTA 2: QUIEBRES / RECOMENDACIONES -->
+  <div style="background:#1e293b; border-radius:12px; border:1px solid #334155; overflow:hidden;">
+    <div style="padding:10px 16px; background:#ef444410; border-bottom:1px solid #334155; display:flex; align-items:center; gap:10px;">
+      <span style="background:#ef4444; color:white; border-radius:20px; padding:3px 12px; font-size:10px; font-weight:bold; flex-shrink:0;">Pregunta 2</span>
+      <span style="font-size:12px; color:#e2e8f0; font-weight:bold;">Las recomendaciones — panel izquierdo y cómo pasan al pedido</span>
+    </div>
+    <div style="padding:16px; display:grid; grid-template-columns:22% 1fr; gap:12px;">
+
+      <!-- PANEL IZQUIERDO completo -->
+      <div>
+        <div style="font-size:9px; color:#64748b; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px;">Panel izquierdo (20%)</div>
+        <div style="background:#0f172a; border-radius:10px; border:1px solid #334155; overflow:hidden; height:380px; display:flex; flex-direction:column;">
+          <!-- Tabs -->
+          <div style="display:flex; border-bottom:1px solid #334155; flex-shrink:0;">
+            <div style="flex:1; padding:7px 4px; background:#ef444410; color:#fca5a5; font-size:8px; text-align:center; font-weight:bold; border-bottom:2px solid #ef4444;">
+              ⚠ Quiebres
+              <span style="background:#ef4444; color:white; border-radius:10px; padding:0 5px; font-size:7px; margin-left:2px;">4</span>
+            </div>
+            <div style="flex:1; padding:7px 4px; color:#64748b; font-size:8px; text-align:center; border-bottom:2px solid transparent;">🔍 Buscar</div>
+          </div>
+          <!-- Lista quiebres -->
+          <div style="flex:1; padding:8px; display:flex; flex-direction:column; gap:6px; overflow:hidden;">
+
+            <!-- Quiebre 1: Crítico — YA AGREGADO (opaco) -->
+            <div style="background:#1a1a1a; border-left:2px solid #4b5563; border-radius:0 6px 6px 0; padding:6px 8px; opacity:0.4;">
+              <div style="display:flex; align-items:center; justify-content:space-between;">
+                <div>
+                  <div style="font-size:8px; color:#9ca3af; font-weight:bold;">Guantes XL</div>
+                  <div style="font-size:7px; color:#6b7280; margin-top:1px;">● Crítico · ya en pedido</div>
+                </div>
+                <div style="width:18px;height:18px;background:#374151;border-radius:4px;display:flex;align-items:center;justify-content:center;">
+                  <span style="font-size:9px;color:#6b7280;">✓</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Quiebre 2: Alta urgencia -->
+            <div style="background:#7f1d1d20; border-left:2px solid #ef4444; border-radius:0 6px 6px 0; padding:6px 8px;">
+              <div style="font-size:8px; color:#fca5a5; font-weight:bold;">Alcohol 70% 1L</div>
+              <div style="font-size:7px; color:#f87171; margin-top:1px;">● Crítico · Stock: 3/30</div>
+              <div style="font-size:7px; color:#64748b; margin-top:1px;">Sug: 4 botellas · ~30d</div>
+              <div style="display:flex; justify-content:flex-end; margin-top:5px;">
+                <button style="background:#3b82f6; color:white; border:none; border-radius:5px; padding:3px 8px; font-size:7px; font-weight:bold; cursor:pointer;">+ Agregar</button>
+              </div>
+            </div>
+
+            <!-- Quiebre 3: Alta -->
+            <div style="background:#78350f15; border-left:2px solid #f59e0b; border-radius:0 6px 6px 0; padding:6px 8px;">
+              <div style="font-size:8px; color:#fde68a; font-weight:bold;">Tubos EDTA 3mL</div>
+              <div style="font-size:7px; color:#fdba74; margin-top:1px;">▲ Alta · Stock: 10/100</div>
+              <div style="font-size:7px; color:#64748b; margin-top:1px;">Sug: 2 cajas · ~30d</div>
+              <div style="display:flex; justify-content:flex-end; margin-top:5px;">
+                <button style="background:#3b82f6; color:white; border:none; border-radius:5px; padding:3px 8px; font-size:7px; font-weight:bold; cursor:pointer;">+ Agregar</button>
+              </div>
+            </div>
+
+            <!-- Quiebre 4: Normal -->
+            <div style="background:#1e3a5f15; border-left:2px solid #3b82f6; border-radius:0 6px 6px 0; padding:6px 8px;">
+              <div style="font-size:8px; color:#93c5fd; font-weight:bold;">Jabón Antiséptico</div>
+              <div style="font-size:7px; color:#60a5fa; margin-top:1px;">◆ Media · Stock: 2/10</div>
+              <div style="font-size:7px; color:#64748b; margin-top:1px;">Sug: 6 unid · ~30d</div>
+              <div style="display:flex; justify-content:flex-end; margin-top:5px;">
+                <button style="background:#3b82f6; color:white; border:none; border-radius:5px; padding:3px 8px; font-size:7px; font-weight:bold; cursor:pointer;">+ Agregar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PANEL DERECHO: qué pasa al agregar desde quiebres -->
+      <div>
+        <div style="font-size:9px; color:#64748b; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px;">Panel derecho — qué pasa al hacer "Agregar"</div>
+        <div style="background:#0f172a; border-radius:10px; border:1px solid #334155; overflow:hidden; height:380px; display:flex; flex-direction:column;">
+          <!-- Header con horizonte global -->
+          <div style="padding:8px 12px; border-bottom:1px solid #334155; background:#3b82f608; flex-shrink:0;">
+            <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+              <div style="width:22px;height:22px;background:#3b82f6;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px;">🛒</div>
+              <div style="font-size:9px; color:#e2e8f0; font-weight:bold;">Pedido a Proveedor ABC</div>
+              <span style="font-size:8px; color:#3b82f6; font-weight:bold; margin-left:4px;">3 productos</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:5px;">
+              <span style="font-size:7px; color:#64748b; white-space:nowrap;">Cubrir por:</span>
+              <div style="display:flex; gap:3px;">
+                <span style="font-size:7px; background:#334155; color:#64748b; border-radius:8px; padding:2px 6px;">7d</span>
+                <span style="font-size:7px; background:#334155; color:#64748b; border-radius:8px; padding:2px 6px;">15d</span>
+                <span style="font-size:7px; background:#3b82f6; color:white; border-radius:8px; padding:2px 6px; font-weight:bold;">30d ✓</span>
+                <span style="font-size:7px; background:#334155; color:#64748b; border-radius:8px; padding:2px 6px;">90d</span>
+                <span style="font-size:7px; background:#334155; color:#64748b; border-radius:8px; padding:2px 6px;">180d</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Items -->
+          <div style="flex:1; padding:8px; display:flex; flex-direction:column; gap:5px; overflow:hidden;">
+
+            <!-- Item 1: venía de quiebre, pill verde normal -->
+            <div style="background:#1e293b; border-radius:7px; padding:7px 10px; display:flex; align-items:center; gap:8px; border:1px solid #334155;">
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:9px; color:#e2e8f0; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Guantes XL</div>
+                <div style="display:flex; align-items:center; gap:5px; margin-top:2px;">
+                  <span style="font-size:7px; color:#64748b;">$2.400/caja</span>
+                  <span style="font-size:7px; background:#22c55e15; color:#86efac; border:1px solid #22c55e30; border-radius:10px; padding:1px 5px;">📅 ~30 días</span>
+                </div>
+              </div>
+              <div style="display:flex; align-items:center; background:#334155; border-radius:5px; padding:1px; flex-shrink:0;">
+                <div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#94a3b8;">−</div>
+                <div style="width:22px;text-align:center;font-size:9px;font-weight:bold;color:#e2e8f0;">10</div>
+                <div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#94a3b8;">+</div>
+              </div>
+              <div style="font-size:8px;color:#e2e8f0;font-weight:bold;flex-shrink:0;">$24.000</div>
+            </div>
+
+            <!-- Item 2: venía de quiebre, misma pill -->
+            <div style="background:#1e293b; border-radius:7px; padding:7px 10px; display:flex; align-items:center; gap:8px; border:1px solid #334155;">
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:9px; color:#e2e8f0; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Tubos EDTA 3mL</div>
+                <div style="display:flex; align-items:center; gap:5px; margin-top:2px;">
+                  <span style="font-size:7px; color:#64748b;">$18.000/caja</span>
+                  <span style="font-size:7px; background:#22c55e15; color:#86efac; border:1px solid #22c55e30; border-radius:10px; padding:1px 5px;">📅 ~30 días</span>
+                </div>
+              </div>
+              <div style="display:flex; align-items:center; background:#334155; border-radius:5px; padding:1px; flex-shrink:0;">
+                <div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#94a3b8;">−</div>
+                <div style="width:22px;text-align:center;font-size:9px;font-weight:bold;color:#e2e8f0;">2</div>
+                <div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#94a3b8;">+</div>
+              </div>
+              <div style="font-size:8px;color:#e2e8f0;font-weight:bold;flex-shrink:0;">$36.000</div>
+            </div>
+
+            <!-- Item 3: recién agregado desde quiebre — animación de entrada -->
+            <div style="background:#1e3a5f30; border-radius:7px; padding:7px 10px; display:flex; align-items:center; gap:8px; border:1px solid #3b82f650;">
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:9px; color:#e2e8f0; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                  Jabón Antiséptico 500mL
+                  <span style="font-size:7px; color:#3b82f6; background:#3b82f615; border-radius:6px; padding:1px 5px; margin-left:4px;">✦ recién agregado</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:5px; margin-top:2px;">
+                  <span style="font-size:7px; color:#64748b;">$4.100/unidad</span>
+                  <span style="font-size:7px; background:#22c55e15; color:#86efac; border:1px solid #22c55e30; border-radius:10px; padding:1px 5px;">📅 ~30 días</span>
+                </div>
+              </div>
+              <div style="display:flex; align-items:center; background:#334155; border-radius:5px; padding:1px; flex-shrink:0;">
+                <div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#94a3b8;">−</div>
+                <div style="width:22px;text-align:center;font-size:9px;font-weight:bold;color:#e2e8f0;">6</div>
+                <div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#94a3b8;">+</div>
+              </div>
+              <div style="font-size:8px;color:#e2e8f0;font-weight:bold;flex-shrink:0;">$24.600</div>
+            </div>
+
+          </div>
+
+          <!-- Nota -->
+          <div style="padding:6px 10px; background:#1e293b; border-top:1px solid #334155; flex-shrink:0;">
+            <div style="font-size:8px; color:#475569; line-height:1.5;">
+              Al agregar desde quiebres: la cantidad se calcula con el <strong style="color:#64748b;">horizonte global activo</strong> (aquí 30d) y la pill aparece verde automáticamente. En el panel izquierdo, ese quiebre queda <span style="color:#6b7280; opacity:0.7;">✓ opaco</span> para indicar que ya fue agregado.
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- RESUMEN -->
+  <div style="background:#1e293b; border-radius:10px; border:1px solid #334155; padding:14px 16px;">
+    <div style="font-size:10px; color:#e2e8f0; font-weight:bold; margin-bottom:10px;">Resumen de reglas</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:9px; color:#94a3b8;">
+      <div style="display:flex; flex-direction:column; gap:5px;">
+        <div style="display:flex; gap:6px; align-items:flex-start;">
+          <span style="color:#3b82f6; flex-shrink:0;">→</span>
+          <span><strong style="color:#e2e8f0;">Cambias qty con −/+</strong>: pill recalcula días en tiempo real. Color cambia según los nuevos días. <strong>Sin ✏</strong>.</span>
+        </div>
+        <div style="display:flex; gap:6px; align-items:flex-start;">
+          <span style="color:#7c3aed; flex-shrink:0;">→</span>
+          <span><strong style="color:#e2e8f0;">Cambias días en el popover</strong>: qty se recalcula para cubrir esos días. Pill queda <span style="color:#c4b5fd;">lila ✏</span>.</span>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:5px;">
+        <div style="display:flex; gap:6px; align-items:flex-start;">
+          <span style="color:#22c55e; flex-shrink:0;">→</span>
+          <span><strong style="color:#e2e8f0;">Agregas desde quiebres</strong>: cantidad calculada con el global activo. Pill verde. Quiebre queda opaco en panel izquierdo.</span>
+        </div>
+        <div style="display:flex; gap:6px; align-items:flex-start;">
+          <span style="color:#f59e0b; flex-shrink:0;">→</span>
+          <span><strong style="color:#e2e8f0;">Cambias horizonte global</strong>: todos los items sin ✏ recalculan qty y pill. Los ✏ no se tocan.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>

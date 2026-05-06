@@ -120,7 +120,7 @@ export function ProveedorSelect({
       </button>
 
       {open && (
-        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-base-100 border border-base-300 rounded-lg shadow-xl ring-1 ring-base-content/10 max-h-60 overflow-y-auto">
+        <div className="app-floating-menu absolute top-full mt-1 left-0 right-0 rounded-box max-h-60 overflow-y-auto">
           {allLabel !== undefined && (
             <div
               className={`flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-200 text-sm text-base-content/40 ${!value ? 'bg-base-200' : ''}`}

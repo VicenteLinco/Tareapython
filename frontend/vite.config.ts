@@ -18,4 +18,17 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          charts: ['recharts'],
+          pdf: ['jspdf', 'jspdf-autotable'],
+          canvas: ['html2canvas'],
+          scanner: ['html5-qrcode', 'qrcode'],
+        },
+      },
+    },
+  },
 })

@@ -12,8 +12,8 @@ import {
   ChevronRight,
   Package,
   Info,
-  ShoppingCart,
   TrendingUp,
+  X,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { ProductoImage } from '@/components/ui/producto-image'
@@ -28,17 +28,24 @@ import { StockDetail } from './stock-detail'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { exportarStockPDF } from '@/lib/stock-pdf'
 import { toast } from 'sonner'
+import { useFilterStorage } from '@/hooks/use-filter-storage'
 
 export default function StockPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const [view, setView] = useState<'grid' | 'list'>('list')
-  const [categoriaId, setCategoriaId] = useState<number | null>(null)
-  const [proveedorId, setProveedorId] = useState<number | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('select') || null)
-  const [areaId, setAreaId] = useState<number | null>(null)
   const [showPdfModal, setShowPdfModal] = useState(false)
+
+  const STOCK_FILTER_DEFAULTS = { categoriaId: null as number | null, proveedorId: null as number | null, areaId: null as number | null }
+  const { filters: sf, setFilters: setSf, clearFilters: clearSf, hasActiveFilters: hasSfActive } = useFilterStorage('stock', STOCK_FILTER_DEFAULTS)
+  const categoriaId = sf.categoriaId
+  const proveedorId = sf.proveedorId
+  const areaId = sf.areaId
+  const setCategoriaId = (v: number | null) => setSf(f => ({ ...f, categoriaId: v }))
+  const setProveedorId = (v: number | null) => setSf(f => ({ ...f, proveedorId: v }))
+  const setAreaId = (v: number | null) => setSf(f => ({ ...f, areaId: v }))
 
   // Selector único de estado — lee ?estado= con compat ?filter=
   type EstadoFiltro = 'todos' | 'normal' | 'bajo' | 'critico' | 'sin_stock'
@@ -134,13 +141,6 @@ export default function StockPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {(estado === 'critico' || estado === 'bajo') && items.length > 0 && (
-            <Button size="sm" className="h-9 rounded-xl btn-primary shadow-lg shadow-primary/20 text-white"
-              onClick={() => navigate(`/solicitudes-compra?prefill=${items.map(i => i.producto_id).join(',')}`)}>
-              <ShoppingCart className="w-4 h-4 mr-2" />
-              Crear solicitud ({items.length})
-            </Button>
-          )}
           <Button variant="outline" size="sm" className="h-9 rounded-xl border-base-300" onClick={() => setShowPdfModal(true)}>
             <FileDown className="w-4 h-4 mr-2 opacity-50" />
             Exportar
@@ -214,13 +214,13 @@ export default function StockPage() {
             </select>
           </div>
           <div className="flex bg-base-200 p-1 rounded-lg">
-            <button 
+            <button
               className={cn("p-1 rounded-md transition-all", view === 'list' ? "bg-base-100 shadow-sm" : "opacity-40")}
               onClick={() => setView('list')}
             >
               <ListIcon className="w-3.5 h-3.5" />
             </button>
-            <button 
+            <button
               className={cn("p-1 rounded-md transition-all", view === 'grid' ? "bg-base-100 shadow-sm" : "opacity-40")}
               onClick={() => setView('grid')}
             >
@@ -228,6 +228,38 @@ export default function StockPage() {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Chips de filtros rápidos + Limpiar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-wider opacity-40">Acceso rápido:</span>
+        {([
+          { label: 'Crítico', valor: 'critico' as EstadoFiltro, color: 'text-error border-error/30 bg-error/5' },
+          { label: 'Stock bajo', valor: 'bajo' as EstadoFiltro, color: 'text-warning border-warning/30 bg-warning/5' },
+          { label: 'Sin stock', valor: 'sin_stock' as EstadoFiltro, color: 'text-base-content/60 border-base-300 bg-base-200/60' },
+          { label: 'Normal', valor: 'normal' as EstadoFiltro, color: 'text-success border-success/30 bg-success/5' },
+        ] as const).map(chip => (
+          <button
+            key={chip.valor}
+            onClick={() => setEstado(estado === chip.valor ? 'todos' : chip.valor)}
+            className={cn(
+              'px-3 py-1 rounded-full border text-[11px] font-bold transition-all',
+              chip.color,
+              estado === chip.valor ? 'ring-2 ring-offset-1 ring-current opacity-100' : 'opacity-60 hover:opacity-90'
+            )}
+          >
+            {chip.label}
+          </button>
+        ))}
+        {(hasSfActive || estado !== 'todos' || search) && (
+          <button
+            onClick={() => { clearSf(); setEstado('todos'); setSearch('') }}
+            className="ml-auto flex items-center gap-1 px-3 py-1 rounded-full border border-base-300 text-[11px] font-bold text-base-content/60 hover:text-error hover:border-error/40 transition-all"
+          >
+            <X className="w-3 h-3" />
+            Limpiar filtros
+          </button>
+        )}
       </div>
 
       {/* Main Content */}
@@ -361,7 +393,7 @@ export default function StockPage() {
                     <p className="text-sm font-medium opacity-40">Producto no visible con los filtros actuales</p>
                     <button
                       className="btn btn-ghost btn-sm rounded-xl text-primary"
-                      onClick={() => { setEstado('todos'); setSearch(''); setCategoriaId(null); setProveedorId(null); setAreaId(null) }}
+                      onClick={() => { clearSf(); setEstado('todos'); setSearch('') }}
                     >
                       Limpiar filtros
                     </button>

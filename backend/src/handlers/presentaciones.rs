@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::auth::models::Claims;
 use crate::db::AppState;
-use crate::errors::{validate_text_length, AppError};
+use crate::errors::{AppError, validate_text_length};
 use crate::models::presentacion::Presentacion;
 
 #[derive(Debug, Deserialize)]
@@ -69,11 +69,10 @@ async fn crear(
     }
 
     // Verificar que el producto existe
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1)")
-            .bind(producto_id)
-            .fetch_one(&state.pool)
-            .await?;
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1)")
+        .bind(producto_id)
+        .fetch_one(&state.pool)
+        .await?;
     if !exists {
         return Err(AppError::NotFound("Producto no encontrado".into()));
     }
@@ -109,12 +108,11 @@ async fn actualizar(
 ) -> Result<Json<Presentacion>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
-    let anterior =
-        sqlx::query_as::<_, Presentacion>("SELECT * FROM presentaciones WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&state.pool)
-            .await?
-            .ok_or(AppError::NotFound("Presentación no encontrada".into()))?;
+    let anterior = sqlx::query_as::<_, Presentacion>("SELECT * FROM presentaciones WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(AppError::NotFound("Presentación no encontrada".into()))?;
 
     if req.version != anterior.version {
         return Err(AppError::Conflict(
@@ -142,8 +140,16 @@ async fn actualizar(
         }
     }
 
-    let nombre = req.nombre.as_deref().map(str::trim).unwrap_or(&anterior.nombre);
-    let nombre_plural = req.nombre_plural.as_deref().map(str::trim).unwrap_or(&anterior.nombre_plural);
+    let nombre = req
+        .nombre
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or(&anterior.nombre);
+    let nombre_plural = req
+        .nombre_plural
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or(&anterior.nombre_plural);
     let factor = req.factor_conversion.unwrap_or(anterior.factor_conversion);
 
     let presentacion = sqlx::query_as::<_, Presentacion>(
@@ -181,12 +187,11 @@ async fn eliminar(
 ) -> Result<axum::http::StatusCode, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
-    let result = sqlx::query(
-        "UPDATE presentaciones SET activa = false WHERE id = $1 AND activa = true",
-    )
-    .bind(id)
-    .execute(&state.pool)
-    .await?;
+    let result =
+        sqlx::query("UPDATE presentaciones SET activa = false WHERE id = $1 AND activa = true")
+            .bind(id)
+            .execute(&state.pool)
+            .await?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Presentación no encontrada".into()));

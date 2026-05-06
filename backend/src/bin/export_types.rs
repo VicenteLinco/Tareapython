@@ -1,27 +1,30 @@
+use inventario_lab_backend::dto::{
+    area::{AsignarProductosRequest, CreateArea, ProductoAreaRow, UpdateArea},
+    categoria::{CreateCategoria, UpdateCategoria},
+    descarte::{DescarteItem, DescarteRequest, DescarteResponse},
+    proveedor::{CreateProveedor, ProveedorQuery, UpdateProveedor},
+    recepcion::{
+        CreateRecepcion, DetalleRecepcionInput, DetalleRecepcionRow, LoteCreado,
+        PaginatedRecepciones, RecepcionListItem, RecepcionQuery, SubirFotoInput,
+    },
+    solicitud::{
+        CreateSolicitudItem, ItemRecomendado, SolicitudDetalle, SolicitudDetalleItem,
+        SolicitudResumen, UpdateSolicitudRequest,
+    },
+    unidad_basica::{CreateUnidadBasica, UpdateUnidadBasica},
+    usuario::{
+        AreaSimple, CreateUsuario, ResetPasswordRequest, UpdateUsuario, UsuarioQuery,
+        UsuarioResponse,
+    },
+};
 /// Genera tipos TypeScript desde los modelos y DTOs Rust usando specta.
 /// Ejecutar con: cargo run --bin export_types
 use inventario_lab_backend::models::{
-    area::Area,
-    categoria::Categoria,
-    lote::Lote,
-    presentacion::Presentacion,
-    producto::Producto,
-    proveedor::Proveedor,
-    unidad_basica::UnidadBasica,
-    usuario::Usuario,
-};
-use inventario_lab_backend::dto::{
-    area::{CreateArea, UpdateArea, ProductoAreaRow, AsignarProductosRequest},
-    proveedor::{CreateProveedor, UpdateProveedor, ProveedorQuery},
-    usuario::{CreateUsuario, UpdateUsuario, UsuarioResponse, AreaSimple, UsuarioQuery, ResetPasswordRequest},
-    categoria::{CreateCategoria, UpdateCategoria},
-    unidad_basica::{CreateUnidadBasica, UpdateUnidadBasica},
-    solicitud::{ItemRecomendado, UpdateSolicitudRequest, CreateSolicitudItem, SolicitudResumen, SolicitudDetalle, SolicitudDetalleItem},
-    descarte::{DescarteRequest, DescarteItem, DescarteResponse},
-    recepcion::{RecepcionQuery, PaginatedRecepciones, RecepcionListItem, SubirFotoInput, CreateRecepcion, DetalleRecepcionInput, DetalleRecepcionRow, LoteCreado},
+    area::Area, categoria::Categoria, lote::Lote, presentacion::Presentacion, producto::Producto,
+    proveedor::Proveedor, unidad_basica::UnidadBasica, usuario::Usuario,
 };
 use inventario_lab_backend::services::stock_ops::MovimientoGenerado;
-use specta_typescript::{export, Typescript};
+use specta_typescript::{Typescript, export};
 use std::fmt::Write as FmtWrite;
 use std::fs;
 use std::path::Path;
@@ -31,8 +34,16 @@ fn main() {
     let out_path = Path::new("../frontend/src/types/generated.ts");
 
     let mut output = String::new();
-    writeln!(output, "// @generated: Generado automáticamente por el backend.").unwrap();
-    writeln!(output, "// Ejecutar `cargo run --bin export_types` para regenerar.").unwrap();
+    writeln!(
+        output,
+        "// @generated: Generado automáticamente por el backend."
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "// Ejecutar `cargo run --bin export_types` para regenerar."
+    )
+    .unwrap();
     writeln!(output, "// NO editar manualmente.\n").unwrap();
 
     macro_rules! append {

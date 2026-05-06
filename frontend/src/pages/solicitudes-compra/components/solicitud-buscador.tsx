@@ -92,7 +92,7 @@ export function SolicitudBuscador({ proveedorId, monedaCodigo = 'CLP', excluidos
 
   return (
     <div ref={containerRef} className="relative">
-      <div className="flex items-center gap-2 bg-base-100 border border-base-300 rounded-2xl px-3 h-11 shadow-sm focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary/40 transition-all">
+      <div className="input flex h-11 w-full items-center gap-2 border-base-300 bg-base-100 px-3 focus-within:border-primary focus-within:outline focus-within:outline-2 focus-within:outline-primary/25 transition-all">
         <Search className="h-4 w-4 opacity-30 flex-shrink-0" />
         <input
           ref={inputRef}
@@ -117,7 +117,7 @@ export function SolicitudBuscador({ proveedorId, monedaCodigo = 'CLP', excluidos
       </div>
 
       {showDropdown && (
-        <div className="absolute top-full left-0 right-0 mt-1.5 bg-base-100 border border-base-300 rounded-2xl shadow-2xl z-[200] overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+        <div className="app-floating-menu absolute top-full left-0 right-0 mt-1.5 rounded-box overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
           {suggestions.length === 0 && !isFetching ? (
             <div className="px-4 py-5 text-sm text-center opacity-40">
               {debouncedQuery ? `Sin resultados para "${debouncedQuery}"` : 'Sin productos para este proveedor'}

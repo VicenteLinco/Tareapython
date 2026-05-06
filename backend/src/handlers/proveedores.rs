@@ -4,7 +4,7 @@ use axum::{Extension, Json, Router};
 
 use crate::auth::models::Claims;
 use crate::db::AppState;
-use crate::dto::proveedor::{CreateProveedor, UpdateProveedor, ProveedorQuery};
+use crate::dto::proveedor::{CreateProveedor, ProveedorQuery, UpdateProveedor};
 use crate::errors::AppError;
 use crate::models::proveedor::Proveedor;
 use crate::services::proveedor_service;

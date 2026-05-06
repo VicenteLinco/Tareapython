@@ -6,7 +6,7 @@ pub mod presentacion;
 pub mod producto;
 pub mod proveedor;
 pub mod recepcion;
+pub mod solicitud;
 pub mod stock;
 pub mod unidad_basica;
 pub mod usuario;
-pub mod solicitud;

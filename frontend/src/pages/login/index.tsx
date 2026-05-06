@@ -4,7 +4,7 @@ import { FlaskConical, ArrowRight } from 'lucide-react'
 import fondoLogin from '@/assets/fondo-login.gif'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import api from '@/lib/api'
-import type { LoginResponse, MeResponse } from '@/types'
+import type { LoginResponse, MeResponse, Usuario } from '@/types'
 import { clearDeviceMode } from '@/lib/device-mode'
 
 export default function LoginPage() {
@@ -37,14 +37,14 @@ export default function LoginPage() {
         headers: { Authorization: `Bearer ${access_token}` },
       })
       
-      const usuarioFull = {
+      const usuarioFull: Usuario = {
         ...meRes.data,
         activo: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }
       
-      login(access_token, refresh_token, usuarioFull as any)
+      login(access_token, refresh_token, usuarioFull)
       navigate('/', { replace: true })
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number } }

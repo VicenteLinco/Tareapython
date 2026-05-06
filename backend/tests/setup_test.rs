@@ -68,9 +68,15 @@ Buffer pH 7.0,Buffer de calibración,unidad,1000
     let response = app.clone().oneshot(req).await.unwrap();
     let status = response.status();
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap_or(serde_json::json!({}));
+    let json: serde_json::Value =
+        serde_json::from_slice(&body_bytes).unwrap_or(serde_json::json!({}));
 
-    assert_eq!(status, StatusCode::OK, "Status should be 200, got body: {:?}", json);
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "Status should be 200, got body: {:?}",
+        json
+    );
     assert_eq!(json["importados"].as_u64().unwrap(), 3);
     assert_eq!(json["errores"].as_array().unwrap().len(), 0);
 }
@@ -113,7 +119,10 @@ async fn setup_finalizar_y_bloquear(pool: PgPool) {
         .method(Method::POST)
         .uri("/api/v1/setup/importar-productos")
         .header("Authorization", format!("Bearer {}", token))
-        .header("Content-Type", format!("multipart/form-data; boundary={}", boundary))
+        .header(
+            "Content-Type",
+            format!("multipart/form-data; boundary={}", boundary),
+        )
         .body(Body::from(body))
         .unwrap();
 

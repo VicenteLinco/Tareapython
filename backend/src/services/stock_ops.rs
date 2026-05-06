@@ -1,7 +1,7 @@
 use rust_decimal::Decimal;
+use specta::Type;
 use sqlx::PgPool;
 use uuid::Uuid;
-use specta::Type;
 
 use crate::errors::AppError;
 
@@ -150,7 +150,6 @@ pub struct MovimientoGenerado {
     pub cantidad: Decimal,
     pub cantidad_resultante: Decimal,
 }
-
 
 /// Valida que el usuario tiene acceso al área
 pub async fn validar_acceso_area(

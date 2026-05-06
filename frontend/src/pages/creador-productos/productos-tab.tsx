@@ -6,6 +6,7 @@ import { Plus, Pencil, Trash2, Search, Eye, Package, Tag, FileText, Camera, Rota
 import { comprimirImagen } from '@/lib/image-utils'
 import { ProductoImage } from '@/components/ui/producto-image'
 import { DataTable } from '@/components/ui/data-table'
+import { PageLoading } from '@/components/ui/page-state'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/pagination'
 import { Dialog } from '@/components/ui/dialog'
@@ -24,6 +25,7 @@ import type {
   Area,
   Proveedor,
   Presentacion,
+  CreateProducto,
   UpdateProducto,
 } from '@/types'
 
@@ -37,6 +39,29 @@ interface ProductoListItem {
   proveedor: { id: number; nombre: string; icono: string | null } | null
   area: { id: number; nombre: string } | null
   stock_minimo: string
+  activo: boolean
+  version: number
+  imagen_url?: string | null
+}
+
+interface ProductoDetailResponse {
+  id: string
+  codigo_interno: string | null
+  nombre: string
+  descripcion: string | null
+  categoria_id?: number | null
+  categoria?: { id: number; nombre: string } | null
+  categoria_nombre?: string | null
+  unidad_base?: { id: number; nombre: string } | null
+  proveedor?: { id: number; nombre: string; icono: string | null } | null
+  areas: { id: number; nombre: string }[]
+  presentaciones: Presentacion[]
+  codigo_proveedor: string | null
+  codigo_maestro: string | null
+  stock_minimo: string
+  precio_unidad: string | null
+  lead_time_propio: number | null
+  ubicacion: string | null
   activo: boolean
   version: number
   imagen_url?: string | null
@@ -143,7 +168,7 @@ export default function ProductosTab() {
       render: (item: ProductoListItem) => (
         item.proveedor ? (
           <div className={`flex items-center gap-1.5 ${!item.activo ? 'opacity-50' : ''}`}>
-            <ProveedorIcon proveedor={item.proveedor as any} className="h-4 w-4" />
+            <ProveedorIcon proveedor={item.proveedor} className="h-4 w-4" />
             <span className="text-sm">{item.proveedor.nombre}</span>
           </div>
         ) : (
@@ -271,9 +296,7 @@ export default function ProductosTab() {
       </div>
 
       {isLoading ? (
-        <div className="space-y-1.5">
-          {[1, 2, 3, 4, 5].map((i) => <div key={i} className="skeleton h-14 w-full rounded-lg" />)}
-        </div>
+        <PageLoading label="Cargando productos..." />
       ) : (
         <>
           <DataTable
@@ -558,7 +581,7 @@ function CreateProductoDialog({
   const [scannerOpen, setScannerOpen] = useState(false)
 
   const createMut = useMutation({
-    mutationFn: (data: any) => api.post('/productos', data),
+    mutationFn: (data: CreateProducto) => api.post('/productos', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productos'] })
       toast.success('Producto creado')
@@ -665,7 +688,7 @@ function CreateProductoDialog({
 
   return (
     <>
-      <Dialog open={open} onClose={handleClose} title="Nuevo producto" className="max-w-2xl">
+      <Dialog open={open} onClose={handleClose} title="Nuevo producto" className="max-w-2xl" closeOnBackdrop={false}>
         <form onSubmit={handleSubmit} className="space-y-4">
 
           {/* ── Identificación ── */}
@@ -1049,7 +1072,7 @@ function EditProductoDialog({
 
   const { data: producto, isLoading } = useQuery({
     queryKey: ['producto-detail', productoId],
-    queryFn: () => api.get<any>(`/productos/${productoId}`).then((r) => r.data),
+    queryFn: () => api.get<ProductoDetailResponse>(`/productos/${productoId}`).then((r) => r.data),
     enabled: open,
   })
 
@@ -1243,11 +1266,9 @@ function EditProductoDialog({
 
   return (
     <>
-      <Dialog open={open} onClose={onClose} title="Editar producto" className="max-w-2xl">
+      <Dialog open={open} onClose={onClose} title="Editar producto" className="max-w-2xl" closeOnBackdrop={false}>
         {isLoading ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => <div key={i} className="skeleton h-10 w-full rounded" />)}
-          </div>
+          <PageLoading label="Cargando producto..." size="md" />
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
 
@@ -1476,7 +1497,7 @@ function EditProductoDialog({
               <div className="flex items-center gap-1.5">
                 <Package className="h-3.5 w-3.5 text-base-content/30" />
                 <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
-                  {form.pres_id ? 'Presentación asignada' : (producto?.presentaciones?.length > 1 ? 'Agregar presentación' : 'Presentación')}
+                  {form.pres_id ? 'Presentación asignada' : ((producto?.presentaciones?.length ?? 0) > 1 ? 'Agregar presentación' : 'Presentación')}
                 </span>
               </div>
               <div className="bg-base-200/60 rounded-lg p-3 space-y-3">
@@ -1663,11 +1684,11 @@ function EditProductoDialog({
 function ProductoDetail({ id }: { id: string }) {
   const { data: producto, isLoading } = useQuery({
     queryKey: ['producto-detail', id],
-    queryFn: () => api.get<any>(`/productos/${id}`).then((r) => r.data),
+    queryFn: () => api.get<ProductoDetailResponse>(`/productos/${id}`).then((r) => r.data),
   })
 
   if (isLoading) {
-    return <div className="space-y-3">{[1, 2, 3].map((i) => <div key={i} className="skeleton h-6 w-full" />)}</div>
+    return <PageLoading label="Cargando detalle..." size="md" />
   }
 
   if (!producto) return <p className="text-sm opacity-40">No encontrado</p>

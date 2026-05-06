@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { X, Smartphone } from 'lucide-react'
+import QRCode from 'qrcode'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 
@@ -33,11 +34,9 @@ export function QrScannerSession({ onItemsScanned, onClose }: QrScannerSessionPr
   useEffect(() => {
     if (!token) return
     const scanUrl = `${window.location.origin}/scan/${token}`
-    import('qrcode').then(QRCode => {
-      QRCode.toDataURL(scanUrl, { width: 200, margin: 2 })
-        .then(url => setQrDataUrl(url))
-        .catch(() => {})
-    })
+    QRCode.toDataURL(scanUrl, { width: 200, margin: 2 })
+      .then(url => setQrDataUrl(url))
+      .catch(() => toast.error('No se pudo generar el QR'))
   }, [token])
 
   useEffect(() => {
@@ -49,7 +48,9 @@ export function QrScannerSession({ onItemsScanned, onClose }: QrScannerSessionPr
           setAccumulatedItems(prev => [...prev, ...res.data.items])
           toast.success(`${res.data.items.length} ítem(s) escaneado(s)`)
         }
-      } catch (_) {}
+      } catch {
+        // El polling puede fallar transitoriamente; se reintenta en el siguiente intervalo.
+      }
     }, 2000)
     return () => clearInterval(interval)
   }, [token])

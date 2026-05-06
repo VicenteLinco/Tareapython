@@ -1,0 +1,150 @@
+<h2>Layout del flujo completo — Opción A</h2>
+<p class="subtitle">Paso 1: elegir proveedor → Paso 2: ver productos + recomendaciones de ese proveedor</p>
+
+<div class="section">
+  <div class="label">PASO 1 — Selección de proveedor</div>
+  <div class="mockup">
+    <div class="mockup-header">Solicitudes de Compra › Nueva Solicitud</div>
+    <div class="mockup-body" style="font-family:sans-serif;padding:16px;">
+      <div style="font-size:11px;opacity:.5;margin-bottom:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em">¿A qué proveedor vas a pedir?</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+        <div style="border:1.5px solid #6366f1;border-radius:12px;padding:12px;text-align:center;background:#eef2ff;cursor:pointer;">
+          <div style="font-size:22px;margin-bottom:4px">🏥</div>
+          <div style="font-size:12px;font-weight:800">MedLab S.A.</div>
+          <div style="font-size:10px;opacity:.5;margin-top:2px">24 productos</div>
+          <div style="margin-top:6px;background:#fef9c3;color:#a16207;border-radius:6px;padding:2px 6px;font-size:9px;font-weight:800;display:inline-block">⚠ 3 quiebres</div>
+        </div>
+        <div style="border:1px solid #e5e7eb;border-radius:12px;padding:12px;text-align:center;background:#fff;cursor:pointer;">
+          <div style="font-size:22px;margin-bottom:4px">⚗️</div>
+          <div style="font-size:12px;font-weight:800">BioQuim</div>
+          <div style="font-size:10px;opacity:.5;margin-top:2px">38 productos</div>
+          <div style="margin-top:6px;background:#fee2e2;color:#991b1b;border-radius:6px;padding:2px 6px;font-size:9px;font-weight:800;display:inline-block">🔴 7 críticos</div>
+        </div>
+        <div style="border:1px solid #e5e7eb;border-radius:12px;padding:12px;text-align:center;background:#fff;cursor:pointer;">
+          <div style="font-size:22px;margin-bottom:4px">🔬</div>
+          <div style="font-size:12px;font-weight:800">LabSupply</div>
+          <div style="font-size:10px;opacity:.5;margin-top:2px">15 productos</div>
+          <div style="margin-top:6px;background:#dcfce7;color:#166534;border-radius:6px;padding:2px 6px;font-size:9px;font-weight:800;display:inline-block">✓ Stock OK</div>
+        </div>
+      </div>
+      <div style="font-size:10px;text-align:center;opacity:.3;margin-top:12px">El proveedor queda fijo para toda la solicitud</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">PASO 2 — Productos y carrito (proveedor seleccionado: MedLab)</div>
+  <div class="mockup">
+    <div class="mockup-header">Solicitudes de Compra › Nueva Solicitud</div>
+    <div class="mockup-body" style="font-family:sans-serif;padding:0;">
+      <!-- Banner proveedor -->
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:#eef2ff;border-bottom:1px solid #c7d2fe;">
+        <div style="font-size:20px">🏥</div>
+        <div>
+          <div style="font-size:12px;font-weight:800;color:#4338ca">MedLab S.A.</div>
+          <div style="font-size:10px;color:#6366f1;opacity:.7">24 productos disponibles</div>
+        </div>
+        <div style="margin-left:auto;font-size:10px;color:#6366f1;font-weight:700;cursor:pointer;border:1px solid #c7d2fe;border-radius:6px;padding:3px 8px;">← Cambiar proveedor</div>
+      </div>
+
+      <div style="display:flex;gap:0;min-height:280px;">
+
+        <!-- Panel izquierdo -->
+        <div style="flex:1;border-right:1px solid #f3f4f6;display:flex;flex-direction:column;">
+
+          <!-- Buscador -->
+          <div style="padding:10px 12px;border-bottom:1px solid #f3f4f6;">
+            <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font-size:10px;opacity:.5;">🔍 Buscar en MedLab...</div>
+          </div>
+
+          <!-- Recomendaciones SIEMPRE VISIBLES -->
+          <div style="padding:10px 12px;flex:1;overflow:hidden;">
+            <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;opacity:.4;margin-bottom:8px;">⚠ Quiebres de stock — MedLab (3)</div>
+
+            <div style="border:1px solid #fde68a;border-radius:10px;padding:8px 10px;background:#fffbeb;display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <div style="width:3px;height:28px;background:#f59e0b;border-radius:2px;flex-shrink:0"></div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:11px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Tubos EDTA 5ml</div>
+                <div style="font-size:9px;opacity:.5">Stock: 12 / Mín: 100</div>
+              </div>
+              <div style="text-align:right;margin-right:4px;">
+                <div style="font-size:9px;opacity:.4;font-weight:700">Sugerido</div>
+                <div style="font-size:11px;font-weight:900;color:#6366f1">200 u</div>
+              </div>
+              <div style="width:24px;height:24px;background:#6366f1;border-radius:6px;display:flex;align-items:center;justify-content:center;color:white;font-size:14px;flex-shrink:0;cursor:pointer">+</div>
+            </div>
+
+            <div style="border:1px solid #fecaca;border-radius:10px;padding:8px 10px;background:#fff5f5;display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <div style="width:3px;height:28px;background:#ef4444;border-radius:2px;flex-shrink:0"></div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:11px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Agujas 21G x100</div>
+                <div style="font-size:9px;opacity:.5">Stock: 0 / Mín: 50</div>
+              </div>
+              <div style="text-align:right;margin-right:4px;">
+                <div style="font-size:9px;opacity:.4;font-weight:700">Sugerido</div>
+                <div style="font-size:11px;font-weight:900;color:#6366f1">5 cajas</div>
+              </div>
+              <div style="width:24px;height:24px;background:#6366f1;border-radius:6px;display:flex;align-items:center;justify-content:center;color:white;font-size:14px;flex-shrink:0;cursor:pointer">+</div>
+            </div>
+
+            <div style="border:1px solid #e5e7eb;border-radius:10px;padding:8px 10px;background:#f9fafb;display:flex;align-items:center;gap:8px;">
+              <div style="width:3px;height:28px;background:#6366f1;border-radius:2px;flex-shrink:0"></div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:11px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Guantes Nitrilo M</div>
+                <div style="font-size:9px;opacity:.5">Stock: 30 / Mín: 200</div>
+              </div>
+              <div style="text-align:right;margin-right:4px;">
+                <div style="font-size:9px;opacity:.4;font-weight:700">Sugerido</div>
+                <div style="font-size:11px;font-weight:900;color:#6366f1">10 cajas</div>
+              </div>
+              <div style="width:24px;height:24px;background:#6366f1;border-radius:6px;display:flex;align-items:center;justify-content:center;color:white;font-size:14px;flex-shrink:0;cursor:pointer">+</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel derecho: carrito -->
+        <div style="width:220px;display:flex;flex-direction:column;background:#fafafa;">
+          <div style="padding:10px 12px;border-bottom:1px solid #f3f4f6;">
+            <div style="font-size:11px;font-weight:800">🛒 Solicitud</div>
+            <div style="font-size:9px;opacity:.4">2 productos</div>
+          </div>
+          <div style="flex:1;padding:10px 12px;overflow-y:auto;">
+            <div style="border:1px solid #e5e7eb;border-radius:8px;padding:8px;margin-bottom:6px;background:#fff;">
+              <div style="font-size:10px;font-weight:800;margin-bottom:4px">Tubos EDTA 5ml</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <div style="display:flex;align-items:center;gap:4px;background:#f3f4f6;border-radius:6px;padding:2px 6px;">
+                  <span style="font-size:12px;cursor:pointer">−</span>
+                  <span style="font-size:11px;font-weight:800;min-width:16px;text-align:center">200</span>
+                  <span style="font-size:12px;cursor:pointer">+</span>
+                </div>
+                <span style="font-size:9px;color:#6366f1;font-weight:700">u</span>
+              </div>
+            </div>
+            <div style="border:1px solid #e5e7eb;border-radius:8px;padding:8px;background:#fff;">
+              <div style="font-size:10px;font-weight:800;margin-bottom:4px">Agujas 21G</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <div style="display:flex;align-items:center;gap:4px;background:#f3f4f6;border-radius:6px;padding:2px 6px;">
+                  <span style="font-size:12px;cursor:pointer">−</span>
+                  <span style="font-size:11px;font-weight:800;min-width:16px;text-align:center">5</span>
+                  <span style="font-size:12px;cursor:pointer">+</span>
+                </div>
+                <span style="font-size:9px;color:#6366f1;font-weight:700">cajas</span>
+              </div>
+            </div>
+          </div>
+          <div style="padding:10px 12px;border-top:1px solid #e5e7eb;">
+            <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:8px;">
+              <span style="opacity:.5;font-weight:700">ESTIMADO</span>
+              <span style="font-weight:900">$124.500</span>
+            </div>
+            <div style="background:#6366f1;color:#fff;border-radius:8px;padding:7px;text-align:center;font-size:11px;font-weight:800;cursor:pointer;margin-bottom:4px">Guardar borrador</div>
+            <div style="border:1.5px solid #6366f1;color:#6366f1;border-radius:8px;padding:6px;text-align:center;font-size:11px;font-weight:800;cursor:pointer">Enviar →</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="text-align:center;margin-top:8px">¿Este layout te hace sentido? ¿Cambiarías algo antes de avanzar?</p>

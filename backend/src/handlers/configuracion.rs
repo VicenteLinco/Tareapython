@@ -21,6 +21,7 @@ struct ConfiguracionResponse {
     conteo_periodo_dias: i32,
     ventana_consumo_dias: i32,
     periodo_revision_dias: i32,
+    factor_historial_corto: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -36,6 +37,7 @@ struct UpdateConfiguracion {
     conteo_periodo_dias: Option<i32>,
     ventana_consumo_dias: Option<i32>,
     periodo_revision_dias: Option<i32>,
+    factor_historial_corto: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,15 +46,13 @@ struct VerificarPinInput {
 }
 
 /// GET /api/v1/configuracion — Obtener configuración del sistema
-async fn obtener(
-    State(state): State<AppState>,
-) -> Result<Json<ConfiguracionResponse>, AppError> {
+async fn obtener(State(state): State<AppState>) -> Result<Json<ConfiguracionResponse>, AppError> {
     let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT clave, valor_texto FROM configuracion WHERE clave IN (
             'nombre_laboratorio','logo_base64','pin_kiosko','conteo_ciego',
             'dias_autonomia_objetivo','lead_time_default',
             'moneda_codigo','moneda_simbolo','conteo_periodo_dias',
-            'ventana_consumo_dias','periodo_revision_dias'
+            'ventana_consumo_dias','periodo_revision_dias','factor_historial_corto'
         )",
     )
     .fetch_all(&state.pool)
@@ -69,6 +69,7 @@ async fn obtener(
     let mut conteo_periodo_dias = 30;
     let mut ventana_consumo_dias = 30;
     let mut periodo_revision_dias = 30;
+    let mut factor_historial_corto = 0.35;
 
     for (clave, valor) in rows {
         match clave.as_str() {
@@ -83,6 +84,9 @@ async fn obtener(
             "conteo_periodo_dias" => conteo_periodo_dias = valor.parse().unwrap_or(30),
             "ventana_consumo_dias" => ventana_consumo_dias = valor.parse().unwrap_or(30),
             "periodo_revision_dias" => periodo_revision_dias = valor.parse().unwrap_or(30),
+            "factor_historial_corto" => {
+                factor_historial_corto = valor.parse::<f64>().unwrap_or(0.35).clamp(0.0, 1.0)
+            }
             _ => {}
         }
     }
@@ -99,6 +103,7 @@ async fn obtener(
         conteo_periodo_dias,
         ventana_consumo_dias,
         periodo_revision_dias,
+        factor_historial_corto,
     }))
 }
 
@@ -113,7 +118,11 @@ async fn actualizar(
     let mut log_changes = Vec::new();
 
     if let Some(nombre) = &body.nombre_laboratorio {
-        let ant: Option<String> = sqlx::query_scalar("SELECT valor_texto FROM configuracion WHERE clave = 'nombre_laboratorio'").fetch_optional(&state.pool).await?;
+        let ant: Option<String> = sqlx::query_scalar(
+            "SELECT valor_texto FROM configuracion WHERE clave = 'nombre_laboratorio'",
+        )
+        .fetch_optional(&state.pool)
+        .await?;
         sqlx::query(
             "INSERT INTO configuracion (clave, valor_texto) VALUES ('nombre_laboratorio', $1)
              ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
@@ -122,12 +131,19 @@ async fn actualizar(
         .execute(&state.pool)
         .await?;
         if ant.as_deref() != Some(nombre) {
-            log_changes.push(("nombre_laboratorio", ant.unwrap_or_default(), nombre.clone()));
+            log_changes.push((
+                "nombre_laboratorio",
+                ant.unwrap_or_default(),
+                nombre.clone(),
+            ));
         }
     }
 
     if let Some(logo) = &body.logo_base64 {
-        let ant_logo: Option<String> = sqlx::query_scalar("SELECT valor_texto FROM configuracion WHERE clave = 'logo_base64'").fetch_optional(&state.pool).await?;
+        let ant_logo: Option<String> =
+            sqlx::query_scalar("SELECT valor_texto FROM configuracion WHERE clave = 'logo_base64'")
+                .fetch_optional(&state.pool)
+                .await?;
         sqlx::query(
             "INSERT INTO configuracion (clave, valor_texto) VALUES ('logo_base64', $1)
              ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
@@ -138,9 +154,18 @@ async fn actualizar(
         let tenia_logo_antes = ant_logo.as_deref().map(|v| !v.is_empty()).unwrap_or(false);
         let tiene_logo_ahora = !logo.is_empty();
         if tenia_logo_antes != tiene_logo_ahora || !tenia_logo_antes {
-            log_changes.push(("logo_base64",
-                if tenia_logo_antes { "logo_presente".to_string() } else { "sin_logo".to_string() },
-                if tiene_logo_ahora { "logo_actualizado".to_string() } else { "logo_eliminado".to_string() },
+            log_changes.push((
+                "logo_base64",
+                if tenia_logo_antes {
+                    "logo_presente".to_string()
+                } else {
+                    "sin_logo".to_string()
+                },
+                if tiene_logo_ahora {
+                    "logo_actualizado".to_string()
+                } else {
+                    "logo_eliminado".to_string()
+                },
             ));
         }
     }
@@ -158,7 +183,11 @@ async fn actualizar(
 
     if let Some(ciego) = body.conteo_ciego {
         let val = if ciego { "true" } else { "false" };
-        let ant: Option<String> = sqlx::query_scalar("SELECT valor_texto FROM configuracion WHERE clave = 'conteo_ciego'").fetch_optional(&state.pool).await?;
+        let ant: Option<String> = sqlx::query_scalar(
+            "SELECT valor_texto FROM configuracion WHERE clave = 'conteo_ciego'",
+        )
+        .fetch_optional(&state.pool)
+        .await?;
         sqlx::query(
             "INSERT INTO configuracion (clave, valor_texto) VALUES ('conteo_ciego', $1)
              ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
@@ -167,7 +196,11 @@ async fn actualizar(
         .execute(&state.pool)
         .await?;
         if ant.as_deref() != Some(val) {
-            log_changes.push(("conteo_ciego", ant.unwrap_or_else(|| "false".to_string()), val.to_string()));
+            log_changes.push((
+                "conteo_ciego",
+                ant.unwrap_or_else(|| "false".to_string()),
+                val.to_string(),
+            ));
         }
     }
 
@@ -228,7 +261,11 @@ async fn actualizar(
 
     if let Some(ventana) = body.ventana_consumo_dias {
         let val = ventana.to_string();
-        let ant: Option<String> = sqlx::query_scalar("SELECT valor_texto FROM configuracion WHERE clave = 'ventana_consumo_dias'").fetch_optional(&state.pool).await?;
+        let ant: Option<String> = sqlx::query_scalar(
+            "SELECT valor_texto FROM configuracion WHERE clave = 'ventana_consumo_dias'",
+        )
+        .fetch_optional(&state.pool)
+        .await?;
         sqlx::query(
             "INSERT INTO configuracion (clave, valor_texto) VALUES ('ventana_consumo_dias', $1)
              ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
@@ -237,13 +274,21 @@ async fn actualizar(
         .execute(&state.pool)
         .await?;
         if ant.as_deref() != Some(&val) {
-            log_changes.push(("ventana_consumo_dias", ant.unwrap_or_else(|| "30".to_string()), val));
+            log_changes.push((
+                "ventana_consumo_dias",
+                ant.unwrap_or_else(|| "30".to_string()),
+                val,
+            ));
         }
     }
 
     if let Some(revision) = body.periodo_revision_dias {
         let val = revision.to_string();
-        let ant: Option<String> = sqlx::query_scalar("SELECT valor_texto FROM configuracion WHERE clave = 'periodo_revision_dias'").fetch_optional(&state.pool).await?;
+        let ant: Option<String> = sqlx::query_scalar(
+            "SELECT valor_texto FROM configuracion WHERE clave = 'periodo_revision_dias'",
+        )
+        .fetch_optional(&state.pool)
+        .await?;
         sqlx::query(
             "INSERT INTO configuracion (clave, valor_texto) VALUES ('periodo_revision_dias', $1)
              ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
@@ -252,7 +297,35 @@ async fn actualizar(
         .execute(&state.pool)
         .await?;
         if ant.as_deref() != Some(&val) {
-            log_changes.push(("periodo_revision_dias", ant.unwrap_or_else(|| "30".to_string()), val));
+            log_changes.push((
+                "periodo_revision_dias",
+                ant.unwrap_or_else(|| "30".to_string()),
+                val,
+            ));
+        }
+    }
+
+    if let Some(factor) = body.factor_historial_corto {
+        let factor = factor.clamp(0.0, 1.0);
+        let val = format!("{:.4}", factor);
+        let ant: Option<String> = sqlx::query_scalar(
+            "SELECT valor_texto FROM configuracion WHERE clave = 'factor_historial_corto'",
+        )
+        .fetch_optional(&state.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('factor_historial_corto', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+        )
+        .bind(&val)
+        .execute(&state.pool)
+        .await?;
+        if ant.as_deref() != Some(&val) {
+            log_changes.push((
+                "factor_historial_corto",
+                ant.unwrap_or_else(|| "0.35".to_string()),
+                val,
+            ));
         }
     }
 
@@ -279,11 +352,10 @@ async fn verificar_pin(
     State(state): State<AppState>,
     Json(body): Json<VerificarPinInput>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let stored: Option<String> = sqlx::query_scalar(
-        "SELECT valor_texto FROM configuracion WHERE clave = 'pin_kiosko'",
-    )
-    .fetch_optional(&state.pool)
-    .await?;
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT valor_texto FROM configuracion WHERE clave = 'pin_kiosko'")
+            .fetch_optional(&state.pool)
+            .await?;
 
     // Si no hay PIN configurado, siempre válido (setup inicial)
     let valido = match stored.as_deref() {

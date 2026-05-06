@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Upload, Save, X, Building2, Lock, Eye, EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
+import { PageLoading } from '@/components/ui/page-state'
 
 interface Configuracion {
   nombre_laboratorio: string
@@ -14,6 +15,7 @@ interface Configuracion {
   moneda_codigo: string
   moneda_simbolo: string
   conteo_periodo_dias: number
+  factor_historial_corto: number
 }
 
 export default function ConfiguracionPage() {
@@ -35,6 +37,7 @@ export default function ConfiguracionPage() {
   const [monedaCodigo, setMonedaCodigo] = useState('CLP')
   const [monedaSimbolo, setMonedaSimbolo] = useState('$')
   const [conteoPeriodoDias, setConteoPeriodoDias] = useState(30)
+  const [factorHistorialCorto, setFactorHistorialCorto] = useState(0.35)
   const [showPin, setShowPin] = useState(false)
   const [pinOrigenConfigurado, setPinOrigenConfigurado] = useState(false)
 
@@ -52,6 +55,7 @@ export default function ConfiguracionPage() {
     setMonedaCodigo(data.moneda_codigo || 'CLP')
     setMonedaSimbolo(data.moneda_simbolo || '$')
     setConteoPeriodoDias(data.conteo_periodo_dias || 30)
+    setFactorHistorialCorto(data.factor_historial_corto ?? 0.35)
     initialized.current = true
   }
 
@@ -66,6 +70,7 @@ export default function ConfiguracionPage() {
       moneda_codigo: string;
       moneda_simbolo: string;
       conteo_periodo_dias: number;
+      factor_historial_corto: number;
     }) =>
       api.put<Configuracion>('/configuracion', payload).then((r) => r.data),
     onSuccess: () => {
@@ -113,15 +118,13 @@ export default function ConfiguracionPage() {
       moneda_codigo: monedaCodigo,
       moneda_simbolo: monedaSimbolo,
       conteo_periodo_dias: conteoPeriodoDias,
+      factor_historial_corto: factorHistorialCorto,
     })
   }
 
   if (isLoading) {
     return (
-      <div className="space-y-4 max-w-xl">
-        <div className="skeleton h-8 w-48" />
-        <div className="skeleton h-40 w-full rounded-xl" />
-      </div>
+      <PageLoading label="Cargando configuración..." />
     )
   }
 
@@ -268,6 +271,7 @@ export default function ConfiguracionPage() {
               <p className="text-xs opacity-50 mt-1">Aparece en precios, solicitudes y PDF</p>
             </div>
           </div>
+
         </div>
 
         {/* Período de Conteo */}
@@ -330,6 +334,21 @@ export default function ConfiguracionPage() {
                 max={90}
               />
               <p className="text-[9px] opacity-40 px-1">Días que tardan los proveedores si no se especifica en el producto.</p>
+            </div>
+            <div className="space-y-1.5 col-span-2">
+              <label className="text-xs font-bold opacity-60 ml-1">Factor Historial Corto</label>
+              <input
+                type="number"
+                className="input input-bordered w-full h-11 rounded-xl font-bold"
+                value={factorHistorialCorto}
+                onChange={e => setFactorHistorialCorto(Number(e.target.value))}
+                min={0}
+                max={1}
+                step={0.05}
+              />
+              <p className="text-[9px] opacity-40 px-1">
+                Pondera el ritmo reciente cuando hay 2 a 13 dias con consumo. 0.35 = prudente; 1.00 = agresivo.
+              </p>
             </div>
           </div>
         </div>

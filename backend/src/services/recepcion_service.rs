@@ -1,9 +1,12 @@
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use uuid::Uuid;
 use validator::Validate;
-use rust_decimal::Decimal;
 
-use crate::dto::recepcion::{CreateRecepcion, LoteCreado, RecepcionListItem, PaginatedRecepciones, RecepcionQuery, DetalleRecepcionRow};
+use crate::dto::recepcion::{
+    CreateRecepcion, DetalleRecepcionRow, LoteCreado, PaginatedRecepciones, RecepcionListItem,
+    RecepcionQuery,
+};
 use crate::errors::AppError;
 use crate::services::stock_ops;
 
@@ -92,17 +95,31 @@ pub async fn listar(
            {}
            ORDER BY r.fecha_recepcion DESC, r.created_at DESC
            LIMIT ${} OFFSET ${}"#,
-        where_clause, param_idx, param_idx + 1
+        where_clause,
+        param_idx,
+        param_idx + 1
     );
 
     let mut query = sqlx::query_as::<_, RecepcionListItem>(&sql);
-    
-    if params.proveedor_id.is_some() { query = query.bind(pid_val); }
-    if params.estado.is_some() { query = query.bind(estado_val); }
-    if params.desde.is_some() { query = query.bind(desde_val); }
-    if params.hasta.is_some() { query = query.bind(hasta_val); }
-    if params.busqueda.is_some() { query = query.bind(busqueda_val); }
-    if params.area_id.is_some() { query = query.bind(aid_val); }
+
+    if params.proveedor_id.is_some() {
+        query = query.bind(pid_val);
+    }
+    if params.estado.is_some() {
+        query = query.bind(estado_val);
+    }
+    if params.desde.is_some() {
+        query = query.bind(desde_val);
+    }
+    if params.hasta.is_some() {
+        query = query.bind(hasta_val);
+    }
+    if params.busqueda.is_some() {
+        query = query.bind(busqueda_val);
+    }
+    if params.area_id.is_some() {
+        query = query.bind(aid_val);
+    }
 
     let data = query.bind(per_page).bind(offset).fetch_all(pool).await?;
 
@@ -124,7 +141,8 @@ pub async fn crear_recepcion(
     req: CreateRecepcion,
     usuario_id: Uuid,
 ) -> Result<(Uuid, Vec<LoteCreado>), AppError> {
-    req.validate().map_err(|e| AppError::Validation(e.to_string()))?;
+    req.validate()
+        .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let estado = req.estado.as_deref().unwrap_or("completa");
     if !["completa", "parcial", "rechazada", "borrador"].contains(&estado) {
@@ -133,7 +151,9 @@ pub async fn crear_recepcion(
 
     // Para rechazada: no se necesitan ítems en detalle
     if estado != "rechazada" && req.detalle.is_empty() {
-        return Err(AppError::Validation("Se requiere al menos un ítem en el detalle".into()));
+        return Err(AppError::Validation(
+            "Se requiere al menos un ítem en el detalle".into(),
+        ));
     }
 
     let mut tx = pool.begin().await?;
@@ -159,12 +179,16 @@ pub async fn crear_recepcion(
     if estado != "rechazada" {
         for item in &req.detalle {
             // Obtener nombre del producto y área para el LoteCreado
-            let (producto_nombre, presentacion_nombre, area_nombre): (String, Option<String>, String) = sqlx::query_as(
+            let (producto_nombre, presentacion_nombre, area_nombre): (
+                String,
+                Option<String>,
+                String,
+            ) = sqlx::query_as(
                 r#"SELECT p.nombre,
                           (SELECT pr.nombre FROM presentaciones pr WHERE pr.id = $2),
                           a.nombre
                    FROM productos p, areas a
-                   WHERE p.id = $1 AND a.id = $3"#
+                   WHERE p.id = $1 AND a.id = $3"#,
             )
             .bind(item.producto_id)
             .bind(item.presentacion_id)
@@ -189,7 +213,7 @@ pub async fn crear_recepcion(
 
             let factor = if let Some(pres_id) = item.presentacion_id {
                 sqlx::query_scalar::<_, Decimal>(
-                    "SELECT factor_conversion FROM presentaciones WHERE id = $1 AND activa = true"
+                    "SELECT factor_conversion FROM presentaciones WHERE id = $1 AND activa = true",
                 )
                 .bind(pres_id)
                 .fetch_one(&mut *tx)
@@ -345,7 +369,10 @@ pub async fn confirmar_borrador(
     Ok(id)
 }
 
-pub async fn obtener_detalles(pool: &PgPool, id: Uuid) -> Result<Vec<DetalleRecepcionRow>, AppError> {
+pub async fn obtener_detalles(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Vec<DetalleRecepcionRow>, AppError> {
     sqlx::query_as::<_, DetalleRecepcionRow>(
         r#"SELECT 
             rd.id, p.nombre as producto_nombre, l.numero_lote, l.fecha_vencimiento,
@@ -360,7 +387,7 @@ pub async fn obtener_detalles(pool: &PgPool, id: Uuid) -> Result<Vec<DetalleRece
            JOIN areas a ON a.id = rd.area_destino_id
            LEFT JOIN presentaciones pr ON pr.id = rd.presentacion_id
            WHERE rd.recepcion_id = $1
-           ORDER BY p.nombre"#
+           ORDER BY p.nombre"#,
     )
     .bind(id)
     .fetch_all(pool)

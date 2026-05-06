@@ -1,10 +1,11 @@
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 use specta::Type;
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, sqlx::FromRow, Type)]
+#[allow(dead_code)]
 pub struct ItemRecomendado {
     pub producto_id: Uuid,
     pub producto_nombre: String,
@@ -16,16 +17,16 @@ pub struct ItemRecomendado {
     pub autonomia_dias: Option<f64>,
     pub nivel_urgencia: String,
     pub stock_actual: Decimal,
-    pub stock_seguridad: Decimal,         // == producto.stock_minimo (alerta manual)
-    pub consumo_diario: Decimal,          // μ (EWMA winsorizada)
-    pub consumo_sigma: Decimal,           // σ diaria
-    pub dias_historia: i32,               // longitud de la serie usada
-    pub dias_con_consumo: i32,            // días no-cero en la serie
-    pub confianza: String,                // "alta" | "media" | "baja"
-    pub razon: String,                    // explicación humana del cálculo
-    pub safety_stock: Decimal,            // Z·σ·√(L+T)
-    pub target_stock: Decimal,            // S
-    pub reorder_point: Decimal,           // ROP
+    pub stock_seguridad: Decimal, // == producto.stock_minimo (alerta manual)
+    pub consumo_diario: Decimal,  // μ (EWMA winsorizada)
+    pub consumo_sigma: Decimal,   // σ diaria
+    pub dias_historia: i32,       // longitud de la serie usada
+    pub dias_con_consumo: i32,    // días no-cero en la serie
+    pub confianza: String,        // "alta" | "media" | "baja"
+    pub razon: String,            // explicación humana del cálculo
+    pub safety_stock: Decimal,    // Z·σ·√(L+T)
+    pub target_stock: Decimal,    // S
+    pub reorder_point: Decimal,   // ROP
     pub cantidad_sugerida_base: Decimal,
     pub presentacion_id: Option<i32>,
     pub presentacion_nombre: Option<String>,
@@ -66,6 +67,8 @@ pub struct SolicitudResumen {
     pub estado: String,
     pub usuario_nombre: String,
     pub items_count: i32, // Cambiado de i64 a i32
+    pub fecha_envio: Option<DateTime<Utc>>,
+    pub fecha_cierre: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Serialize, Type)]
@@ -76,6 +79,10 @@ pub struct SolicitudDetalle {
     pub estado: String,
     pub usuario_nombre: String,
     pub nota: Option<String>,
+    pub fecha_envio: Option<DateTime<Utc>>,
+    pub fecha_cierre: Option<DateTime<Utc>>,
+    pub motivo_cierre: Option<String>,
+    pub metodo_envio: Option<String>,
     pub items: Vec<SolicitudDetalleItem>,
 }
 

@@ -29,7 +29,9 @@ pub async fn require_auth(
     Ok(next.run(request).await)
 }
 
-pub fn require_role<'a>(allowed_roles: &'a [&'a str]) -> impl Fn(&Claims) -> Result<(), AppError> + 'a {
+pub fn require_role<'a>(
+    allowed_roles: &'a [&'a str],
+) -> impl Fn(&Claims) -> Result<(), AppError> + 'a {
     move |claims: &Claims| {
         if allowed_roles.contains(&claims.rol.as_str()) {
             Ok(())

@@ -1,5 +1,6 @@
 // frontend/src/pages/solicitudes-compra/components/quiebres-panel.tsx
 import { Search, CheckCircle2, Plus } from 'lucide-react'
+import { MetricTooltip } from '@/components/ui/metric-tooltip'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SolicitudBuscador } from './solicitud-buscador'
@@ -116,6 +117,11 @@ export function QuiebresPanelIzquierdo({
               const confianzaLabel = confianza === 'alta' ? '✓ datos sólidos'
                                    : confianza === 'media' ? '~ datos parciales'
                                    : '⚠ historial corto'
+              const confianzaTooltip = confianza === 'alta'
+                ? 'Predicción basada en historial sólido (≥30 días con consumo). La cantidad sugerida es confiable.'
+                : confianza === 'media'
+                ? 'Historial parcial (14–29 días). La cantidad sugerida es orientativa; se recomienda revisar.'
+                : 'Historial insuficiente (<14 días con consumo). No se genera cantidad automática; ingresar manualmente.'
               const yaPedido = parseFloat(r.ya_pedido_unidades)
               const sugBase = parseFloat(r.cantidad_sugerida_base)
               const sugLabel = r.cantidad_sugerida_presentacion
@@ -156,14 +162,16 @@ export function QuiebresPanelIzquierdo({
                       </span>
                     )}
                     {!alreadyAdded && (
-                      <span
-                        className={cn(
-                          "shrink-0 text-[8px] font-medium px-1.5 py-0.5 rounded-full leading-tight",
-                          confianzaColor
-                        )}
-                        title={r.razon ?? ''}
-                      >
-                        {confianzaLabel}
+                      <span className="flex items-center gap-0.5 shrink-0">
+                        <span
+                          className={cn(
+                            "text-[8px] font-medium px-1.5 py-0.5 rounded-full leading-tight",
+                            confianzaColor
+                          )}
+                        >
+                          {confianzaLabel}
+                        </span>
+                        <MetricTooltip size="sm" position="left" text={confianzaTooltip} />
                       </span>
                     )}
                   </div>

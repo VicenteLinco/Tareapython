@@ -2,15 +2,15 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::dto::recepcion::{CreateRecepcion, RecepcionQuery, SubirFotoInput};
 use crate::errors::AppError;
-use crate::services::{recepcion_service, idempotency, storage};
+use crate::services::{idempotency, recepcion_service, storage};
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct RecepcionConProveedor {
@@ -93,11 +93,14 @@ async fn subir_foto(
 ) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
 
-    let exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM recepciones WHERE id = $1)")
-        .bind(id)
-        .fetch_one(&state.pool)
-        .await?;
-    if !exists { return Err(AppError::NotFound("Recepción no encontrada".into())); }
+    let exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM recepciones WHERE id = $1)")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
+    if !exists {
+        return Err(AppError::NotFound("Recepción no encontrada".into()));
+    }
 
     let path = storage::save_base64_image(&req.data_url, "recepciones", &id.to_string()).await?;
 
@@ -118,7 +121,7 @@ async fn crear_scanner_session(
 
     let token: (Uuid, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
         "INSERT INTO scanner_sessions (expires_at) VALUES (NOW() + INTERVAL '10 minutes')
-         RETURNING token, expires_at"
+         RETURNING token, expires_at",
     )
     .fetch_one(&state.pool)
     .await?;
@@ -140,12 +143,14 @@ async fn scan_codigo(
     Json(body): Json<ScanInput>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let valid = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM scanner_sessions WHERE token = $1 AND expires_at > NOW())"
+        "SELECT EXISTS(SELECT 1 FROM scanner_sessions WHERE token = $1 AND expires_at > NOW())",
     )
     .bind(token)
     .fetch_one(&state.pool)
     .await?;
-    if !valid { return Err(AppError::Forbidden("Sesión expirada o inválida".into())); }
+    if !valid {
+        return Err(AppError::Forbidden("Sesión expirada o inválida".into()));
+    }
 
     let producto: Option<(Uuid, String)> = sqlx::query_as(
         "SELECT id, nombre FROM productos WHERE (codigo_interno = $1 OR codigo_proveedor = $1) AND activo = true LIMIT 1"
@@ -183,7 +188,7 @@ async fn get_scanner_items(
     let items: Vec<(uuid::Uuid, String, Option<uuid::Uuid>, Option<String>)> = sqlx::query_as(
         "UPDATE scanner_items SET fetched = TRUE
          WHERE session_token = $1 AND fetched = FALSE
-         RETURNING id, codigo, producto_id, producto_nombre"
+         RETURNING id, codigo, producto_id, producto_nombre",
     )
     .bind(token)
     .fetch_all(&state.pool)

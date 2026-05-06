@@ -1,7 +1,7 @@
 // frontend/src/pages/consumos/components/consumo-drawer.tsx
 // REDISEÑO: Panel lateral fijo en desktop (md+) + bottom drawer en móvil
-import { useRef, useEffect } from 'react'
-import { Zap, ChevronDown, Trash2, Minus, Plus, X, AlertTriangle, ShoppingCart } from 'lucide-react'
+import { useRef, useEffect, useState } from 'react'
+import { Zap, ChevronDown, Trash2, Minus, Plus, X, AlertTriangle, ShoppingCart, CheckCircle2, XCircle } from 'lucide-react'
 import { cn, formatCantidad } from '@/lib/utils'
 import { LoteSelector } from './lote-selector'
 import type { CartItem } from './producto-card'
@@ -29,6 +29,7 @@ export function ConsumoDrawer({
   const items = Object.values(cart)
   const count = items.length
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [showValidacion, setShowValidacion] = useState(false)
 
   const hayCargando = items.some(i => i.cargando_lotes)
   const itemsDesajustados = areaFiltro
@@ -43,7 +44,71 @@ export function ConsumoDrawer({
     const s = stockLoteSeleccionado(i)
     return s !== null && i.cantidad_descontar > s
   })
-  const confirmarBloqueado = hayCargando || hayDesajuste || itemsConExceso.length > 0
+  const confirmarBloqueado = hayCargando || hayDesajuste
+
+  /* Lanzar validación previa cuando hay ítems problemáticos */
+  const handleConfirmClick = () => {
+    if (itemsConExceso.length > 0) {
+      setShowValidacion(true)
+    } else {
+      onConfirm()
+    }
+  }
+
+  /* Modal de validación previa */
+  const ValidacionModal = () => {
+    if (!showValidacion) return null
+    return (
+      <div className="modal modal-open z-50">
+        <div className="modal-box max-w-md">
+          <h3 className="font-bold text-base mb-1">Revisión antes de confirmar</h3>
+          <p className="text-sm text-base-content/60 mb-4">
+            {itemsConExceso.length} {itemsConExceso.length === 1 ? 'ítem excede' : 'ítems exceden'} el stock disponible.
+          </p>
+          <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
+            {items.map(item => {
+              const stock = stockLoteSeleccionado(item)
+              const excede = stock !== null && item.cantidad_descontar > stock
+              return (
+                <div key={item.producto_id} className={cn(
+                  'flex items-center justify-between rounded-xl px-3 py-2 text-sm',
+                  excede ? 'bg-error/8 border border-error/20' : 'bg-success/8 border border-success/20',
+                )}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {excede
+                      ? <XCircle className="size-4 text-error shrink-0" />
+                      : <CheckCircle2 className="size-4 text-success shrink-0" />}
+                    <span className="truncate font-medium">{item.nombre}</span>
+                  </div>
+                  <span className={cn('shrink-0 text-xs tabular-nums', excede ? 'text-error' : 'text-success')}>
+                    {formatCantidad(item.cantidad_descontar, item.unidad, item.unidad_plural)}
+                    {excede && stock !== null && (
+                      <span className="opacity-60"> / {formatCantidad(stock, item.unidad, item.unidad_plural)}</span>
+                    )}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-xs text-base-content/50 mb-4">
+            El backend usará FEFO automático. Si el stock total es insuficiente, el consumo fallará.
+          </p>
+          <div className="modal-action">
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowValidacion(false)}>
+              Corregir
+            </button>
+            <button
+              className="btn btn-error btn-sm"
+              onClick={() => { setShowValidacion(false); onConfirm() }}
+            >
+              Confirmar de todas formas
+            </button>
+          </div>
+        </div>
+        <div className="modal-backdrop" onClick={() => setShowValidacion(false)} />
+      </div>
+    )
+  }
 
   useEffect(() => {
     if (isExpanded) scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -119,12 +184,24 @@ export function ConsumoDrawer({
                 >
                   <Minus className="h-3 w-3" />
                 </button>
-                <span className={cn(
-                  'text-sm font-bold min-w-[20px] text-center tabular-nums',
-                  excedeLote ? 'text-error' : 'text-base-content'
-                )}>
-                  {item.cantidad_descontar}
-                </span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={1}
+                  className={cn(
+                    'input input-bordered input-xs h-7 w-14 rounded-lg px-1 text-center text-sm font-bold tabular-nums',
+                    '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
+                    excedeLote ? 'input-error text-error' : 'text-base-content'
+                  )}
+                  value={item.cantidad_descontar}
+                  onChange={e => {
+                    const next = Number(e.target.value)
+                    onUpdateCantidad(item.producto_id, Number.isFinite(next) ? Math.max(1, Math.trunc(next)) : 1)
+                  }}
+                  onFocus={e => e.currentTarget.select()}
+                  aria-label={`Cantidad de ${item.nombre}`}
+                />
                 <button
                   className={cn(
                     'w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium',
@@ -163,7 +240,7 @@ export function ConsumoDrawer({
       <button
         className="btn btn-primary w-full rounded-xl gap-2"
         disabled={isPending || confirmarBloqueado}
-        onClick={onConfirm}
+        onClick={handleConfirmClick}
       >
         {isPending
           ? <span className="loading loading-spinner loading-sm" />
@@ -176,6 +253,8 @@ export function ConsumoDrawer({
 
   return (
     <>
+      <ValidacionModal />
+
       {/* ━━━ DESKTOP: Panel lateral fijo (md+) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       <div className={cn(
         'hidden md:flex flex-col',
@@ -243,7 +322,7 @@ export function ConsumoDrawer({
               <button
                 type="button"
                 className="btn btn-primary btn-sm rounded-xl gap-1 flex-shrink-0"
-                onClick={e => { e.stopPropagation(); onConfirm() }}
+                onClick={e => { e.stopPropagation(); handleConfirmClick() }}
                 disabled={isPending || confirmarBloqueado}
               >
                 {isPending

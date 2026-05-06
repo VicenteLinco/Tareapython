@@ -1,7 +1,7 @@
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use uuid::Uuid;
 use validator::Validate;
-use rust_decimal::Decimal;
 
 use crate::dto::descarte::{DescarteRequest, DescarteResponse};
 use crate::errors::AppError;
@@ -22,7 +22,9 @@ pub async fn procesar_descartes(
     // Validar acceso a las áreas y cantidades
     for item in &req.items {
         if item.cantidad <= Decimal::ZERO {
-            return Err(AppError::Validation("La cantidad debe ser mayor a 0".into()));
+            return Err(AppError::Validation(
+                "La cantidad debe ser mayor a 0".into(),
+            ));
         }
         stock_ops::validar_acceso_area(pool, usuario_id, item.area_id, rol).await?;
     }
@@ -34,7 +36,10 @@ pub async fn procesar_descartes(
     for item in &req.items {
         // Bloquear stock para el lote en el área
         #[derive(sqlx::FromRow)]
-        struct StockUpdateRow { stock_id: i32, cantidad: Decimal }
+        struct StockUpdateRow {
+            stock_id: i32,
+            cantidad: Decimal,
+        }
 
         let stock = sqlx::query_as::<_, StockUpdateRow>(
             "SELECT id as stock_id, cantidad FROM stock WHERE lote_id = $1 AND area_id = $2 AND cantidad > 0 FOR UPDATE"
@@ -47,7 +52,10 @@ pub async fn procesar_descartes(
 
         if stock.cantidad < item.cantidad {
             return Err(AppError::BusinessLogic(
-                format!("Stock insuficiente. Disponible: {}, solicitado: {}", stock.cantidad, item.cantidad),
+                format!(
+                    "Stock insuficiente. Disponible: {}, solicitado: {}",
+                    stock.cantidad, item.cantidad
+                ),
                 "STOCK_INSUFICIENTE".into(),
             ));
         }

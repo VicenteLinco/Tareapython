@@ -1,7 +1,7 @@
 // frontend/src/pages/solicitudes-compra/index.tsx
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useLocation, useSearchParams } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { ShoppingCart, Plus, History, Clock, Mail, Phone, ChevronLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
@@ -25,12 +25,12 @@ import { QuiebresPanelIzquierdo } from './components/quiebres-panel'
 import { PedidoPanel } from './components/pedido-panel'
 import { HistorialView } from './components/historial-view'
 import { DetalleModal } from './components/detalle-modal'
+import { RevisionView } from './components/revision-view'
 
 export default function SolicitudesCompraPage() {
   useAuthStore()
   const queryClient = useQueryClient()
   const location = useLocation()
-  const [searchParams] = useSearchParams()
 
   const [view, setView] = useState<'crear' | 'historial'>('crear')
   const [selectedProveedor, setSelectedProveedor] = useState<Proveedor | null>(null)
@@ -38,6 +38,7 @@ export default function SolicitudesCompraPage() {
   const [solicitudId, setSolicitudId] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [historialSearch, setHistorialSearch] = useState('')
+  const [historialEstado, setHistorialEstado] = useState<string | null>(null)
   const [selectedSolicitudId, setSelectedSolicitudId] = useState<string | null>(null)
   const [pdfFirmaLabel, setPdfFirmaLabel] = useState('')
   const [horizonteGlobal, setHorizonteGlobal] = useState<number>(30)
@@ -46,8 +47,38 @@ export default function SolicitudesCompraPage() {
   const [restaurando, setRestaurando] = useState(true)
   const borradorCargado = useRef(false)
 
+  // Modo revisión
+  const [modoRevision, setModoRevision] = useState(() => localStorage.getItem('solicitud-modo') !== 'avanzado')
+  const [descartados, setDescartados] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('solicitud-descartados') ?? '[]')) } catch { return new Set() }
+  })
+
+  const setModo = (revision: boolean) => {
+    setModoRevision(revision)
+    localStorage.setItem('solicitud-modo', revision ? 'revision' : 'avanzado')
+  }
+
+  const handleDescartar = (productoId: string) => {
+    setDescartados(prev => {
+      const next = new Set(prev)
+      next.add(productoId)
+      localStorage.setItem('solicitud-descartados', JSON.stringify([...next]))
+      return next
+    })
+  }
+
+  const handleRestaurar = (productoId: string) => {
+    setDescartados(prev => {
+      const next = new Set(prev)
+      next.delete(productoId)
+      localStorage.setItem('solicitud-descartados', JSON.stringify([...next]))
+      return next
+    })
+  }
+
   useEffect(() => {
     if (location.state?.view) setView(location.state.view)
+    if (location.state?.estado) setHistorialEstado(location.state.estado)
   }, [location.state])
 
   useEffect(() => {
@@ -75,10 +106,14 @@ export default function SolicitudesCompraPage() {
   })
 
   const { data: historial, isLoading: isLoadingHistorial } = useQuery({
-    queryKey: ['solicitudes-historial', historialSearch],
+    queryKey: ['solicitudes-historial', historialSearch, historialEstado],
     queryFn: () =>
       api.get<PaginatedResponse<SolicitudResumen>>('/solicitudes-compra', {
-        params: { q: historialSearch || undefined },
+        params: {
+          q: historialSearch || undefined,
+          estado: historialEstado || undefined,
+          per_page: 50,
+        },
       }).then(r => r.data),
     enabled: view === 'historial',
   })
@@ -98,7 +133,6 @@ export default function SolicitudesCompraPage() {
   useEffect(() => {
     if (view !== 'crear' || borradorCargado.current) return
     borradorCargado.current = true
-    const productoId = searchParams.get('select')
 
     async function restaurar() {
       setRestaurando(true)
@@ -145,51 +179,13 @@ export default function SolicitudesCompraPage() {
           }
         }
 
-        if (productoId && !borradorItems.some(i => i.producto_id === productoId)) {
-          try {
-            const res2 = await api.get<Producto>(`/productos/${productoId}`)
-            const p = res2.data
-            if (p) {
-              const newItem: SolicitudItem = {
-                producto_id: p.id,
-                producto_nombre: p.nombre,
-                codigo_proveedor: p.codigo_proveedor,
-                codigo_maestro: p.codigo_maestro,
-                proveedor_id: p.proveedor_id,
-                proveedor_nombre: 'Manual',
-                lead_time: p.lead_time_propio || 0,
-                presentacion_id: null,
-                presentacion_nombre: null,
-                presentacion_nombre_plural: null,
-                factor_conversion: null,
-                unidad_base: 'u',
-                unidad_base_plural: 'u',
-                cantidad: 1,
-                precio_unitario: p.precio_unidad ? parseFloat(String(p.precio_unidad)) : 0,
-                imagen_url: (p as Producto & { imagen_url?: string | null }).imagen_url,
-                consumo_diario: 0,
-                stock_actual: 0,
-                stock_minimo: 0,
-                horizonte_dias: null,
-                horizonte_sugerido: null,
-                horizonte_razon: null,
-              }
-              setItems([...borradorItems, newItem])
-            } else {
-              setItems(borradorItems)
-            }
-          } catch {
-            setItems(borradorItems)
-          }
-        } else {
-          setItems(borradorItems)
-        }
+        setItems(borradorItems)
       } catch (err) { console.warn('[solicitudes] Error restaurando borrador:', err) }
       setRestaurando(false)
     }
 
     restaurar()
-  }, [view, searchParams])
+  }, [view])
 
   // ── Mutations ────────────────────────────────────────────────────────────────
 
@@ -290,7 +286,44 @@ export default function SolicitudesCompraPage() {
       horizonte_dias: horizonteGlobal,
       horizonte_sugerido: horizData.horizonte_sugerido,
       horizonte_razon: horizData.razon,
+      tipo_estimacion_demanda: r.confianza === 'baja' ? 'sin_historial' : 'forecast',
       horizonte_personalizado: false,
+    }])
+  }
+
+  const handleAddFromRecConCantidad = async (r: ItemRecomendado, cantidad: number) => {
+    if (items.find(i => i.producto_id === r.producto_id)) {
+      toast.error('Producto ya está en la lista')
+      return
+    }
+    const proveedorId = r.proveedor_id ?? selectedProveedor?.id ?? null
+    const horizData = await fetchHorizonte(r.producto_id, proveedorId)
+    const factorConv = r.factor_conversion ? parseFloat(r.factor_conversion.toString()) : null
+    setItems(prev => [...prev, {
+      producto_id: r.producto_id,
+      producto_nombre: r.producto_nombre,
+      codigo_proveedor: r.codigo_proveedor,
+      codigo_maestro: r.codigo_maestro,
+      proveedor_id: proveedorId,
+      proveedor_nombre: r.proveedor_nombre || 'S/P',
+      lead_time: r.lead_time,
+      presentacion_id: r.presentacion_id,
+      presentacion_nombre: r.presentacion_nombre,
+      presentacion_nombre_plural: r.presentacion_nombre_plural,
+      factor_conversion: factorConv,
+      unidad_base: r.unidad_base,
+      unidad_base_plural: r.unidad_base_plural || autoPlural(r.unidad_base),
+      cantidad,
+      precio_unitario: r.precio_ultima_recepcion ? parseFloat(r.precio_ultima_recepcion.toString()) : 0,
+      imagen_url: r.imagen_url,
+      consumo_diario: parseFloat(r.consumo_diario.toString()),
+      stock_actual: parseFloat(r.stock_actual.toString()),
+      stock_minimo: parseFloat(r.stock_seguridad.toString()),
+      horizonte_dias: horizonteGlobal,
+      horizonte_sugerido: horizData.horizonte_sugerido,
+      horizonte_razon: horizData.razon,
+      tipo_estimacion_demanda: r.confianza === 'baja' ? 'sin_historial' : 'forecast',
+      horizonte_personalizado: true,
     }])
   }
 
@@ -339,6 +372,7 @@ export default function SolicitudesCompraPage() {
       horizonte_dias: horizonteGlobal,
       horizonte_sugerido: horizData.horizonte_sugerido,
       horizonte_razon: horizData.razon,
+      tipo_estimacion_demanda: horizData.tipo_estimacion_demanda,
       horizonte_personalizado: false,
     }])
   }
@@ -409,7 +443,7 @@ export default function SolicitudesCompraPage() {
     )
   }
 
-  const handleSelectProveedor = async (p: Proveedor) => {
+  const handleSelectProveedor = (p: Proveedor) => {
     if (items.length > 0) {
       setItems([])
       setSolicitudId(null)
@@ -418,56 +452,6 @@ export default function SolicitudesCompraPage() {
     localStorage.setItem('solicitud_proveedor_id', String(p.id))
     setSelectedProveedor(p)
 
-    const prefillIds = searchParams.get('prefill')?.split(',').filter(Boolean) ?? []
-    if (prefillIds.length === 0) return
-
-    type ProductoExt = Producto & { imagen_url?: string | null; unidad_base?: { nombre: string; nombre_plural: string } }
-    const prefillItems: SolicitudItem[] = []
-    await Promise.allSettled(prefillIds.map(async (pid) => {
-      try {
-        const [horizData, prodRes] = await Promise.all([
-          fetchHorizonte(pid, p.id),
-          api.get<ProductoExt[]>('/productos', { params: { ids: pid, per_page: 1 } })
-            .then(r => r.data[0])
-            .catch(() => api.get<ProductoExt>(`/productos/${pid}`).then(r => r.data)),
-        ])
-        const prod = prodRes
-        if (!prod) return
-        const consumoDiario = horizData.consumo_diario ?? 0
-        const leadTime = prod.lead_time_propio ?? 0
-        const cantidad = calcularCantidad(horizonteGlobal, consumoDiario, leadTime, horizData.stock_minimo ?? 0, horizData.stock_actual ?? 0)
-        prefillItems.push({
-          producto_id: prod.id,
-          producto_nombre: prod.nombre,
-          codigo_proveedor: prod.codigo_proveedor,
-          codigo_maestro: prod.codigo_maestro,
-          proveedor_id: p.id,
-          proveedor_nombre: p.nombre,
-          lead_time: leadTime,
-          presentacion_id: null,
-          presentacion_nombre: null,
-          presentacion_nombre_plural: null,
-          factor_conversion: null,
-          unidad_base: prod.unidad_base?.nombre ?? 'u',
-          unidad_base_plural: prod.unidad_base?.nombre_plural ?? 'u',
-          cantidad,
-          precio_unitario: prod.precio_unidad ? parseFloat(String(prod.precio_unidad)) : 0,
-          imagen_url: prod.imagen_url ?? null,
-          consumo_diario: consumoDiario,
-          stock_actual: horizData.stock_actual ?? 0,
-          stock_minimo: horizData.stock_minimo ?? 0,
-          horizonte_dias: horizonteGlobal,
-          horizonte_sugerido: horizData.horizonte_sugerido ?? null,
-          horizonte_razon: horizData.razon ?? null,
-          horizonte_personalizado: false,
-        })
-      } catch { /* ignorar items que fallen */ }
-    }))
-
-    if (prefillItems.length > 0) {
-      setItems(prefillItems)
-      toast.success(`${prefillItems.length} ${prefillItems.length === 1 ? 'producto precargado' : 'productos precargados'} desde Stock`)
-    }
   }
 
   const handleCambiarProveedor = () => {
@@ -500,7 +484,7 @@ export default function SolicitudesCompraPage() {
     if (pid == null) return acc
     if (!acc[pid]) acc[pid] = { total: 0, criticos: 0 }
     acc[pid].total++
-    if (r.nivel_urgencia === 'critica') acc[pid].criticos++
+    if (r.nivel_urgencia === 'critica' || r.nivel_urgencia === 'critico') acc[pid].criticos++
     return acc
   }, {})
 
@@ -518,19 +502,37 @@ export default function SolicitudesCompraPage() {
           </h1>
           <p className="text-sm opacity-50">Gestiona tus pedidos y revisa recomendaciones basadas en stock</p>
         </div>
-        <div className="tabs tabs-boxed bg-base-200 p-1 rounded-2xl self-start">
-          <button
-            className={cn("tab gap-2 rounded-xl transition-all px-6 h-10", view === 'crear' ? "tab-active bg-primary text-primary-content font-bold shadow-lg" : "hover:bg-base-300")}
-            onClick={() => setView('crear')}
-          >
-            <Plus className="h-4 w-4" /> Nueva
-          </button>
-          <button
-            className={cn("tab gap-2 rounded-xl transition-all px-6 h-10", view === 'historial' ? "tab-active bg-primary text-primary-content font-bold shadow-lg" : "hover:bg-base-300")}
-            onClick={() => setView('historial')}
-          >
-            <History className="h-4 w-4" /> Historial
-          </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {view === 'crear' && (
+            <div className="tabs tabs-boxed bg-base-200 p-1 rounded-xl self-start">
+              <button
+                className={cn("tab gap-1.5 rounded-lg transition-all px-4 h-8 text-xs font-bold", modoRevision ? "tab-active bg-base-100 shadow-sm" : "opacity-50 hover:opacity-80")}
+                onClick={() => setModo(true)}
+              >
+                Revisión
+              </button>
+              <button
+                className={cn("tab gap-1.5 rounded-lg transition-all px-4 h-8 text-xs font-bold", !modoRevision ? "tab-active bg-base-100 shadow-sm" : "opacity-50 hover:opacity-80")}
+                onClick={() => setModo(false)}
+              >
+                Avanzado
+              </button>
+            </div>
+          )}
+          <div className="tabs tabs-boxed bg-base-200 p-1 rounded-2xl self-start">
+            <button
+              className={cn("tab gap-2 rounded-xl transition-all px-6 h-10", view === 'crear' ? "tab-active bg-primary text-primary-content font-bold shadow-lg" : "hover:bg-base-300")}
+              onClick={() => setView('crear')}
+            >
+              <Plus className="h-4 w-4" /> Nueva
+            </button>
+            <button
+              className={cn("tab gap-2 rounded-xl transition-all px-6 h-10", view === 'historial' ? "tab-active bg-primary text-primary-content font-bold shadow-lg" : "hover:bg-base-300")}
+              onClick={() => setView('historial')}
+            >
+              <History className="h-4 w-4" /> Historial
+            </button>
+          </div>
         </div>
       </div>
 
@@ -541,6 +543,45 @@ export default function SolicitudesCompraPage() {
             <div className="h-16 bg-base-200/60 rounded-2xl" />
             <div className="flex-1 bg-base-200/60 rounded-[2.5rem]" />
           </div>
+        </div>
+      ) : view === 'crear' && modoRevision ? (
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 min-h-0 overflow-y-auto">
+          <div className="overflow-y-auto custom-scrollbar pr-1">
+            <RevisionView
+              recomendaciones={recomendaciones ?? []}
+              isLoading={isLoadingRecs}
+              itemsEnPedido={items}
+              descartados={descartados}
+              horizonteGlobal={horizonteGlobal}
+              onAceptar={handleAddFromRec}
+              onAceptarConCantidad={handleAddFromRecConCantidad}
+              onDescartar={handleDescartar}
+              onRestaurar={handleRestaurar}
+              onCambiarAAvanzado={() => setModo(false)}
+            />
+          </div>
+          {items.length > 0 && selectedProveedor && (
+            <div className="overflow-y-auto custom-scrollbar">
+              <PedidoPanel
+                proveedor={selectedProveedor}
+                items={items}
+                solicitudId={solicitudId}
+                isSaving={isSaving}
+                isGuardando={guardarMutation.isPending}
+                horizonteGlobal={horizonteGlobal}
+                popoverOpenId={popoverOpenId}
+                monedaCodigo={monedaCodigo}
+                onUpdateQty={handleUpdateQty}
+                onRemove={handleRemove}
+                onGlobalHorizonteChange={handleGlobalHorizonteChange}
+                onHorizonteChip={handleHorizonteChip}
+                onResetHorizonteToGlobal={handleResetHorizonteToGlobal}
+                onPopoverToggle={setPopoverOpenId}
+                onSaveBorrador={handleSaveBorrador}
+                onGuardar={() => guardarMutation.mutate()}
+              />
+            </div>
+          )}
         </div>
       ) : view === 'crear' ? (
         selectedProveedor === null ? (
@@ -638,6 +679,8 @@ export default function SolicitudesCompraPage() {
           search={historialSearch}
           onSearchChange={setHistorialSearch}
           onSelectSolicitud={setSelectedSolicitudId}
+          estado={historialEstado}
+          onEstadoChange={setHistorialEstado}
         />
       )}
 

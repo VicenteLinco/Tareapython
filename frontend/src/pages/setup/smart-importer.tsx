@@ -15,6 +15,9 @@ interface SmartImporterProps {
 }
 
 type Step = 'UPLOAD' | 'MAP' | 'PREVIEW'
+type ImportCellValue = string | number | boolean | null | undefined
+type ImportPreviewRow = Record<string, ImportCellValue>
+type ImportErrorRow = Record<string, ImportCellValue>
 
 export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
   const [step, setStep] = useState<Step>('UPLOAD')
@@ -26,8 +29,8 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
     unidad: '',
     stock_minimo: ''
   })
-  const [previewData, setPreviewData] = useState<any[]>([])
-  const [errors, setErrors] = useState<any[]>([])
+  const [previewData, setPreviewData] = useState<ImportPreviewRow[]>([])
+  const [errors, setErrors] = useState<ImportErrorRow[]>([])
   const [isValidating, setIsValidating] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
 
@@ -92,7 +95,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
       setPreviewData(res.data.preview || [])
       setErrors(res.data.errores || [])
       setStep('PREVIEW')
-    } catch (err) {
+    } catch {
       toast.error('Error al validar el archivo')
     } finally {
       setIsValidating(false)
@@ -117,7 +120,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
         toast.error('Hubo errores durante la importación real')
         setErrors(res.data.errores)
       }
-    } catch (err) {
+    } catch {
       toast.error('Error crítico en el servidor')
     } finally {
       setIsImporting(false)

@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import type { CellHookData } from 'jspdf-autotable'
 import type { StockItem, Area } from '@/types'
 import { daysUntil, formatDate, formatCantidad } from '@/lib/utils'
 import api from '@/lib/api'
@@ -268,8 +269,7 @@ function drawResumen(
   logo: { data: string; type: 'PNG' | 'JPEG' } | null,
   badgeTxt: string,
   usuarioNombre: string,
-  horaStr: string,
-  _fechaStr: string
+  horaStr: string
 ) {
   drawHeader(doc, W, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr)
 
@@ -578,7 +578,7 @@ function drawAreaPage(
       }
     },
 
-    didDrawCell: (data: any) => {
+    didDrawCell: (data: CellHookData) => {
       if (data.section !== 'body' || data.column.index !== 6) return
 
       const item    = items[data.row.index]
@@ -613,7 +613,7 @@ function drawAreaPage(
       }
     },
 
-    didDrawPage: (_data: any) => {
+    didDrawPage: () => {
       // Header siempre
       drawHeader(doc, W, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr)
 
@@ -707,14 +707,13 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
   const W    = doc.internal.pageSize.getWidth()   // 279.4
   const H    = doc.internal.pageSize.getHeight()  // 215.9
   const now  = new Date()
-  const fechaStr = now.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
   const horaStr  = now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
   const logo     = parseLogoBase64(logoBase64)
   const badgeTxt = badgeDate(now)
 
   // ── Página 1: Resumen Ejecutivo (datos globales) ──────────────────────────
   if (incluirResumen) {
-    drawResumen(doc, W, H, globalData, selectedAreas, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr, fechaStr)
+    drawResumen(doc, W, H, globalData, selectedAreas, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr)
     if (stockPorArea.length > 0) doc.addPage()
   }
 

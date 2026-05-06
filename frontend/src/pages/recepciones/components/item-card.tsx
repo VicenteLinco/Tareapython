@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { ProductoImage } from '@/components/ui/producto-image'
 import { formatCantidad } from '@/lib/utils'
 import type { Area, Presentacion } from '@/types'
+import { isCardComplete } from './item-card-utils'
 
 // ─── Interfaces públicas ──────────────────────────────────────────────────────
 
@@ -50,14 +51,6 @@ interface Props {
 }
 
 // ─── Helpers exportados ───────────────────────────────────────────────────────
-
-export function isLoteComplete(l: LoteLineUI): boolean {
-  return !!(l.codigo_lote && l.fecha_vencimiento)
-}
-
-export function isCardComplete(d: DetalleLineUI): boolean {
-  return !!(d.area_destino_id && d.lotes.length > 0 && d.lotes.every(isLoteComplete))
-}
 
 function formatPrecioDisplay(raw: string, simbolo: string): string {
   const digits = raw.replace(/\D/g, '')

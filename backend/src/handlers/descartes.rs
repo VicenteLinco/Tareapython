@@ -26,15 +26,18 @@ async fn crear(
     }
 
     // Procesar descartes vía servicio
-    let response = match descarte_service::procesar_descartes(&state.pool, req, claims.sub, &claims.rol).await {
-        Ok(res) => res,
-        Err(e) => {
-            idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
-            return Err(e);
-        }
-    };
+    let response =
+        match descarte_service::procesar_descartes(&state.pool, req, claims.sub, &claims.rol).await
+        {
+            Ok(res) => res,
+            Err(e) => {
+                idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
+                return Err(e);
+            }
+        };
 
-    let res_json = serde_json::to_value(&response).map_err(|e| AppError::Internal(e.to_string()))?;
+    let res_json =
+        serde_json::to_value(&response).map_err(|e| AppError::Internal(e.to_string()))?;
     idempotency::save_response(&state.pool, &idem_key, 201, &res_json).await?;
 
     Ok((StatusCode::CREATED, Json(res_json)))

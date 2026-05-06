@@ -1,9 +1,9 @@
-use axum::extract::{Path, State, Query};
-use axum::{Json, Router, Extension};
+use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
+use axum::{Extension, Json, Router};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 #[derive(Debug, Deserialize)]
 struct SolicitudListParams {
@@ -17,11 +17,13 @@ struct SolicitudListParams {
 use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::dto::solicitud::{
-    CreateSolicitudItem, SolicitudDetalle, SolicitudDetalleItem,
-    SolicitudResumen, UpdateSolicitudRequest,
+    CreateSolicitudItem, SolicitudDetalle, SolicitudDetalleItem, SolicitudResumen,
+    UpdateSolicitudRequest,
 };
 use crate::errors::AppError;
-use crate::services::forecast::{self, compute_forecast, ForecastConfig};
+use crate::services::forecast::{
+    self, ForecastConfig, compute_forecast, estimate_short_history_demand,
+};
 
 #[derive(Debug, Deserialize)]
 struct HorizonteParams {
@@ -43,6 +45,9 @@ struct HorizonteResponse {
     horizonte_sugerido: i32,
     razon: String,
     consumo_diario: f64,
+    consumo_diario_forecast: f64,
+    consumo_diario_planificacion: f64,
+    tipo_estimacion_demanda: String,
     stock_actual: f64,
     stock_minimo: f64,
     factores: HorizonteFactores,
@@ -56,6 +61,10 @@ struct SolicitudDetalleRow {
     pub estado: String,
     pub nota: Option<String>,
     pub usuario_nombre: String,
+    pub fecha_envio: Option<DateTime<Utc>>,
+    pub fecha_cierre: Option<DateTime<Utc>>,
+    pub motivo_cierre: Option<String>,
+    pub metodo_envio: Option<String>,
 }
 
 async fn obtener_solicitud_por_id(
@@ -64,10 +73,11 @@ async fn obtener_solicitud_por_id(
 ) -> Result<SolicitudDetalle, AppError> {
     let solicitud = sqlx::query_as::<_, SolicitudDetalleRow>(
         r#"SELECT s.id, s.numero_documento, s.fecha_creacion, s.estado, s.nota,
-                  u.nombre as usuario_nombre
+                  u.nombre as usuario_nombre,
+                  s.fecha_envio, s.fecha_cierre, s.motivo_cierre, s.metodo_envio
            FROM solicitudes_compra s
            JOIN usuarios u ON u.id = s.usuario_id
-           WHERE s.id = $1"#
+           WHERE s.id = $1"#,
     )
     .bind(id)
     .fetch_optional(pool)
@@ -113,6 +123,10 @@ async fn obtener_solicitud_por_id(
         estado: solicitud.estado,
         usuario_nombre: solicitud.usuario_nombre,
         nota: solicitud.nota,
+        fecha_envio: solicitud.fecha_envio,
+        fecha_cierre: solicitud.fecha_cierre,
+        motivo_cierre: solicitud.motivo_cierre,
+        metodo_envio: solicitud.metodo_envio,
         items,
     })
 }
@@ -127,7 +141,7 @@ async fn insertar_item(
          (solicitud_id, producto_id, cantidad_sugerida, unidad,
           precio_unitario, presentacion_id, cantidad_presentaciones,
           horizonte_dias, horizonte_sugerido, horizonte_razon)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind(solicitud_id)
     .bind(item.producto_id)
@@ -153,7 +167,7 @@ async fn crear(
     let borrador_existente: Option<Uuid> = sqlx::query_scalar(
         "SELECT id FROM solicitudes_compra
          WHERE usuario_id = $1 AND estado = 'borrador'
-         LIMIT 1"
+         LIMIT 1",
     )
     .bind(claims.sub)
     .fetch_optional(&state.pool)
@@ -181,7 +195,7 @@ async fn crear(
 
     let insert_result = sqlx::query_as::<_, (Uuid, String)>(
         "INSERT INTO solicitudes_compra (usuario_id, nota, estado)
-         VALUES ($1, $2, 'borrador') RETURNING id, numero_documento"
+         VALUES ($1, $2, 'borrador') RETURNING id, numero_documento",
     )
     .bind(claims.sub)
     .bind(&payload.nota)
@@ -225,7 +239,7 @@ async fn listar(
 
     // ── COUNT ────────────────────────────────────────────────────────────────
     let mut count_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(
-        "SELECT COUNT(*) FROM solicitudes_compra s JOIN usuarios u ON u.id = s.usuario_id WHERE 1=1"
+        "SELECT COUNT(*) FROM solicitudes_compra s JOIN usuarios u ON u.id = s.usuario_id WHERE 1=1",
     );
     if let Some(ref pat) = q_pattern {
         count_builder.push(" AND (s.numero_documento ILIKE ");
@@ -242,7 +256,7 @@ async fn listar(
         count_builder.push(
             " AND EXISTS (SELECT 1 FROM solicitud_compra_detalle scd \
              JOIN productos p ON p.id = scd.producto_id \
-             WHERE scd.solicitud_id = s.id AND p.proveedor_id = "
+             WHERE scd.solicitud_id = s.id AND p.proveedor_id = ",
         );
         count_builder.push_bind(proveedor_id);
         count_builder.push(")");
@@ -256,10 +270,11 @@ async fn listar(
     let mut list_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(
         r#"SELECT s.id, s.numero_documento, s.fecha_creacion, s.estado,
                   u.nombre as usuario_nombre,
-                  (SELECT COUNT(*)::integer FROM solicitud_compra_detalle WHERE solicitud_id = s.id) as items_count
+                  (SELECT COUNT(*)::integer FROM solicitud_compra_detalle WHERE solicitud_id = s.id) as items_count,
+                  s.fecha_envio, s.fecha_cierre
            FROM solicitudes_compra s
            JOIN usuarios u ON u.id = s.usuario_id
-           WHERE 1=1"#
+           WHERE 1=1"#,
     );
     if let Some(ref pat) = q_pattern {
         list_builder.push(" AND (s.numero_documento ILIKE ");
@@ -276,7 +291,7 @@ async fn listar(
         list_builder.push(
             " AND EXISTS (SELECT 1 FROM solicitud_compra_detalle scd \
              JOIN productos p ON p.id = scd.producto_id \
-             WHERE scd.solicitud_id = s.id AND p.proveedor_id = "
+             WHERE scd.solicitud_id = s.id AND p.proveedor_id = ",
         );
         list_builder.push_bind(proveedor_id);
         list_builder.push(")");
@@ -364,7 +379,7 @@ pub async fn recomendaciones(
             JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
             JOIN productos p2 ON p2.id = scd.producto_id
             LEFT JOIN proveedores prov2 ON prov2.id = p2.proveedor_id
-            WHERE sc.estado = 'guardada'
+            WHERE sc.estado IN ('guardada', 'enviada')
               AND sc.fecha_creacion >= NOW() - (
                   COALESCE(p2.lead_time_propio,
                            prov2.dias_despacho_tierra,
@@ -444,18 +459,25 @@ pub async fn recomendaciones(
         );
 
         // Solo aparecen en la lista los que tienen alguna urgencia
-        let Some(urgencia) = res.urgencia else { continue };
+        let Some(urgencia) = res.urgencia else {
+            continue;
+        };
 
         // Productos con confianza baja sólo se muestran si stock_actual < stock_minimo
         if res.confianza == forecast::Confianza::Baja && res.cantidad_sugerida == 0.0 {
             continue;
         }
 
-        let cantidad_pres: Option<f64> = r.factor_conversion
+        let cantidad_pres: Option<f64> = r
+            .factor_conversion
             .filter(|f| *f > 0.0)
             .map(|f: f64| (res.cantidad_sugerida / f).ceil());
 
-        let autonomia = if res.mu > 0.0 { Some(r.stock_actual / res.mu) } else { None };
+        let autonomia = if res.mu > 0.0 {
+            Some(r.stock_actual / res.mu)
+        } else {
+            None
+        };
 
         items.push(serde_json::json!({
             "producto_id": r.producto_id,
@@ -495,7 +517,9 @@ pub async fn recomendaciones(
     // 4. Ordenar: críticas primero, luego por menor autonomía
     items.sort_by(|a, b| {
         let rank = |s: &str| match s {
-            "critica" => 1, "alta" => 2, _ => 3
+            "critica" => 1,
+            "alta" => 2,
+            _ => 3,
         };
         let ra = rank(a["nivel_urgencia"].as_str().unwrap_or(""));
         let rb = rank(b["nivel_urgencia"].as_str().unwrap_or(""));
@@ -521,20 +545,21 @@ async fn actualizar(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateSolicitudRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let exists: Option<String> = sqlx::query_scalar(
-        "SELECT estado FROM solicitudes_compra WHERE id = $1"
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let exists: Option<String> =
+        sqlx::query_scalar("SELECT estado FROM solicitudes_compra WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     match exists.as_deref() {
         None => return Err(AppError::NotFound("Solicitud no encontrada".into())),
         Some("borrador") => {}
-        Some(_) => return Err(AppError::BusinessLogic(
-            "Solo se puede editar una solicitud en borrador".into(),
-            "ESTADO_INVALIDO".into(),
-        )),
+        Some(_) => {
+            return Err(AppError::BusinessLogic(
+                "Solo se puede editar una solicitud en borrador".into(),
+                "ESTADO_INVALIDO".into(),
+            ));
+        }
     }
 
     let mut tx = state.pool.begin().await?;
@@ -563,7 +588,7 @@ async fn guardar(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let rows = sqlx::query(
-        "UPDATE solicitudes_compra SET estado = 'guardada' WHERE id = $1 AND estado = 'borrador'"
+        "UPDATE solicitudes_compra SET estado = 'guardada' WHERE id = $1 AND estado = 'borrador'",
     )
     .bind(id)
     .execute(&state.pool)
@@ -579,12 +604,99 @@ async fn guardar(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
+#[derive(Debug, Deserialize)]
+struct EnviarRequest {
+    metodo_envio: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CancelarRequest {
+    motivo: String,
+}
+
+async fn enviar(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<EnviarRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let rows = sqlx::query(
+        "UPDATE solicitudes_compra
+         SET estado = 'enviada', fecha_envio = NOW(), metodo_envio = $2
+         WHERE id = $1 AND estado = 'guardada'",
+    )
+    .bind(id)
+    .bind(req.metodo_envio.as_deref())
+    .execute(&state.pool)
+    .await?;
+
+    if rows.rows_affected() == 0 {
+        return Err(AppError::BusinessLogic(
+            "Solo se puede marcar como enviada una solicitud guardada".into(),
+            "ESTADO_INVALIDO".into(),
+        ));
+    }
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn completar(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let rows = sqlx::query(
+        "UPDATE solicitudes_compra
+         SET estado = 'completada', fecha_cierre = NOW()
+         WHERE id = $1 AND estado IN ('guardada', 'enviada')",
+    )
+    .bind(id)
+    .execute(&state.pool)
+    .await?;
+
+    if rows.rows_affected() == 0 {
+        return Err(AppError::BusinessLogic(
+            "Solo se puede completar una solicitud guardada o enviada".into(),
+            "ESTADO_INVALIDO".into(),
+        ));
+    }
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn cancelar(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<CancelarRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let motivo = req.motivo.trim();
+    if motivo.is_empty() {
+        return Err(AppError::BusinessLogic(
+            "Debe indicar un motivo de cancelación".into(),
+            "MOTIVO_REQUERIDO".into(),
+        ));
+    }
+    let rows = sqlx::query(
+        "UPDATE solicitudes_compra
+         SET estado = 'cancelada', fecha_cierre = NOW(), motivo_cierre = $2
+         WHERE id = $1 AND estado IN ('guardada', 'enviada')",
+    )
+    .bind(id)
+    .bind(motivo)
+    .execute(&state.pool)
+    .await?;
+
+    if rows.rows_affected() == 0 {
+        return Err(AppError::BusinessLogic(
+            "Solo se puede cancelar una solicitud guardada o enviada".into(),
+            "ESTADO_INVALIDO".into(),
+        ));
+    }
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
 async fn get_borrador(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let borrador_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM solicitudes_compra WHERE usuario_id = $1 AND estado = 'borrador' LIMIT 1"
+        "SELECT id FROM solicitudes_compra WHERE usuario_id = $1 AND estado = 'borrador' LIMIT 1",
     )
     .bind(claims.sub)
     .fetch_optional(&state.pool)
@@ -664,19 +776,61 @@ async fn horizonte_sugerido(
         ((row.lead_time as f64 * 3.0) as i32).max(30)
     } else {
         let base = row.lead_time + cfg.periodo_revision_dias;
-        let cv = if res.mu > 0.0 { res.sigma / res.mu } else { 0.0 };
-        let mult = if cv < 0.3 { 1.0 } else if cv < 0.7 { 1.3 } else { 1.5 };
+        let cv = if res.mu > 0.0 {
+            res.sigma / res.mu
+        } else {
+            0.0
+        };
+        let mult = if cv < 0.3 {
+            1.0
+        } else if cv < 0.7 {
+            1.3
+        } else {
+            1.5
+        };
         let ajustado = (base as f64 * mult) as i32;
         let piso = ((row.lead_time as f64 * 1.5) as i32).max(7);
         ajustado.max(piso)
     };
 
-    let cv = if res.mu > 0.0 { res.sigma / res.mu } else { 0.0 };
+    let cv = if res.mu > 0.0 {
+        res.sigma / res.mu
+    } else {
+        0.0
+    };
+    let short_est = estimate_short_history_demand(
+        &row.serie,
+        cfg.dias_minimos_historia,
+        cfg.factor_historial_corto,
+    );
+    let consumo_diario = short_est.map(|est| est.consumo_diario).unwrap_or(res.mu);
+    let tipo_estimacion_demanda = if short_est.is_some() {
+        "historial_corto"
+    } else if res.mu > 0.0 {
+        "forecast"
+    } else {
+        "sin_historial"
+    };
+    let razon = match short_est {
+        Some(est) => format!(
+            "{} Estimacion provisional para horizonte: {:.2} u/dia; max(promedio ventana {:.2}, promedio reciente descontado {:.2}, {} dias desde primer consumo, factor {:.2}).",
+            res.razon,
+            est.consumo_diario,
+            est.promedio_ventana,
+            est.promedio_reciente_desc,
+            est.dias_desde_primer_consumo,
+            est.factor_descuento
+        ),
+        None => res.razon.clone(),
+    };
 
     Ok(Json(HorizonteResponse {
         horizonte_sugerido,
-        razon: res.razon.clone(),
-        consumo_diario: res.mu,
+        razon,
+        consumo_diario,
+        consumo_diario_forecast: res.mu,
+        consumo_diario_planificacion: consumo_diario,
+        tipo_estimacion_demanda: tipo_estimacion_demanda.to_string(),
         stock_actual: row.stock_actual,
         stock_minimo: row.stock_minimo,
         factores: HorizonteFactores {
@@ -691,23 +845,25 @@ async fn horizonte_sugerido(
 
 /// Carga la configuración del forecast desde la tabla `configuracion`.
 async fn load_forecast_config(pool: &sqlx::PgPool) -> Result<ForecastConfig, AppError> {
-    let row = sqlx::query!(
+    let row: (i32, i32, i32, f64, f64) = sqlx::query_as(
         r#"
         SELECT
-            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'ventana_demanda_dias'), 60)   AS "ventana!: i32",
-            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'periodo_revision_dias'), 30)  AS "revision!: i32",
-            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'dias_minimos_historia'), 14)  AS "minimos!: i32",
-            COALESCE((SELECT valor_texto::float8 FROM configuracion WHERE clave = 'nivel_servicio_z'), 1.65)  AS "z!: f64"
+            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'ventana_demanda_dias'), 60),
+            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'periodo_revision_dias'), 30),
+            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'dias_minimos_historia'), 14),
+            COALESCE((SELECT valor_texto::float8 FROM configuracion WHERE clave = 'nivel_servicio_z'), 1.65),
+            COALESCE((SELECT valor_texto::float8 FROM configuracion WHERE clave = 'factor_historial_corto'), 0.35)
         "#
     )
     .fetch_one(pool)
     .await?;
 
     Ok(ForecastConfig {
-        ventana_demanda_dias: row.ventana,
-        periodo_revision_dias: row.revision,
-        dias_minimos_historia: row.minimos,
-        nivel_servicio_z: row.z,
+        ventana_demanda_dias: row.0,
+        periodo_revision_dias: row.1,
+        dias_minimos_historia: row.2,
+        nivel_servicio_z: row.3,
+        factor_historial_corto: row.4.clamp(0.0, 1.0),
     })
 }
 
@@ -719,4 +875,7 @@ pub fn routes() -> Router<AppState> {
         .route("/horizonte", get(horizonte_sugerido))
         .route("/{id}", get(obtener).put(actualizar))
         .route("/{id}/guardar", post(guardar))
+        .route("/{id}/enviar", post(enviar))
+        .route("/{id}/completar", post(completar))
+        .route("/{id}/cancelar", post(cancelar))
 }

@@ -1,13 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, PackageOpen, MoreHorizontal } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, PackageOpen, MoreHorizontal, FileText, Files, CheckCircle2, TrendingDown, TrendingUp, Minus } from 'lucide-react'
 import { ProductoImage } from '@/components/ui/producto-image'
+import { EmptyState, InlineError, PageLoading } from '@/components/ui/page-state'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { useConteoSession } from '@/features/conteo/hooks/use-conteo-session'
 import { useQuery } from '@tanstack/react-query'
 import api from '@/lib/api'
-import type { ConteoItem } from '@/types'
+import type { ConteoItem, Presentacion } from '@/types'
 import { cn, formatDate, formatCantidad, formatStockHumano } from '@/lib/utils'
+import { exportarConteoGlobalDiaPDF, exportarConteoSesionPDF } from '@/lib/conteo-pdf'
+import { toast } from 'sonner'
 
 interface Configuracion {
   nombre_laboratorio: string
@@ -65,10 +68,11 @@ export default function ConteoDetallePage() {
       const timer = setTimeout(() => actions.save(), 2000)
       return () => clearTimeout(timer)
     }
-  }, [hasChanges, isSaving, editable])
+  }, [hasChanges, isSaving, editable, actions])
 
   const [showConfirmar, setShowConfirmar] = useState(false)
   const [colapsados, setColapsados] = useState<Record<string, boolean>>({})
+  const [pdfLoading, setPdfLoading] = useState<'area' | 'global' | null>(null)
 
   const toggleColapsar = (productoId: string) =>
     setColapsados((prev) => ({ ...prev, [productoId]: !prev[productoId] }))
@@ -77,15 +81,67 @@ export default function ConteoDetallePage() {
     ? Math.floor((Date.now() - new Date(sesion.created_at).getTime()) / 3600000)
     : 0
 
+  const ajustes = useMemo(() => items
+    .filter((item) => item.estado_item === 'contado' && item.cantidad_contada !== null)
+    .map((item) => ({
+      item,
+      diferencia: Number(item.cantidad_contada) - Number(item.stock_sistema),
+    }))
+    .filter(({ diferencia }) => Math.abs(diferencia) > 0.0001)
+    .sort((a, b) => Math.abs(b.diferencia) - Math.abs(a.diferencia)), [items])
+
+  const totalAjustePositivo = ajustes
+    .filter(({ diferencia }) => diferencia > 0)
+    .reduce((acc, { diferencia }) => acc + diferencia, 0)
+  const totalAjusteNegativo = ajustes
+    .filter(({ diferencia }) => diferencia < 0)
+    .reduce((acc, { diferencia }) => acc + Math.abs(diferencia), 0)
+  const ajustesGrandes = ajustes.filter(({ item, diferencia }) =>
+    Math.abs(diferencia) >= Math.max(10, Number(item.stock_sistema) * 0.5)
+  )
+
+  const exportarPdfArea = async () => {
+    if (!sesion) return
+    setPdfLoading('area')
+    try {
+      await exportarConteoSesionPDF({
+        detalle: { sesion, items, presentaciones, nota },
+        nombreLaboratorio: config?.nombre_laboratorio || 'Laboratorio',
+        logoBase64: config?.logo_base64,
+        usuarioNombre: usuario?.nombre || 'Usuario',
+      })
+    } catch {
+      toast.error('No se pudo generar el PDF del conteo')
+    } finally {
+      setPdfLoading(null)
+    }
+  }
+
+  const exportarPdfGlobal = async () => {
+    if (!sesion?.confirmed_at) return
+    setPdfLoading('global')
+    try {
+      await exportarConteoGlobalDiaPDF({
+        detalle: { sesion, items, presentaciones, nota },
+        fecha: sesion.confirmed_at,
+        nombreLaboratorio: config?.nombre_laboratorio || 'Laboratorio',
+        logoBase64: config?.logo_base64,
+        usuarioNombre: usuario?.nombre || 'Usuario',
+      })
+    } catch {
+      toast.error('No se pudo generar el PDF global del dia')
+    } finally {
+      setPdfLoading(null)
+    }
+  }
+
   if (isLoading) return (
-    <div className="flex justify-center items-center min-h-screen">
-      <span className="loading loading-spinner loading-lg" />
-    </div>
+    <PageLoading label="Cargando sesión de conteo..." className="min-h-screen" />
   )
 
   if (isError) return (
     <div className="flex justify-center items-center min-h-screen">
-      <div className="alert alert-error max-w-sm">Error al cargar la sesión</div>
+      <InlineError message="Error al cargar la sesión de conteo." className="max-w-sm" />
     </div>
   )
 
@@ -105,6 +161,28 @@ export default function ConteoDetallePage() {
             <p className="font-semibold truncate">{sesion.area_nombre}</p>
             <p className="text-xs opacity-50">Conteo · {formatDate(sesion.created_at)}</p>
           </div>
+          {sesion.estado === 'confirmado' && (
+            <div className="flex items-center gap-1.5">
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={exportarPdfArea}
+                disabled={pdfLoading !== null}
+                title="PDF del conteo de esta area"
+              >
+                {pdfLoading === 'area' ? <span className="loading loading-spinner loading-xs" /> : <FileText className="h-4 w-4" />}
+                <span className="hidden sm:inline">Area</span>
+              </button>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={exportarPdfGlobal}
+                disabled={pdfLoading !== null || !sesion.confirmed_at}
+                title="PDF global de conteos confirmados ese dia"
+              >
+                {pdfLoading === 'global' ? <span className="loading loading-spinner loading-xs" /> : <Files className="h-4 w-4" />}
+                <span className="hidden sm:inline">Global</span>
+              </button>
+            </div>
+          )}
           {editable && hasChanges && (
             <button
               className="btn btn-primary btn-sm"
@@ -133,14 +211,11 @@ export default function ConteoDetallePage() {
       {/* Lista de ítems */}
       <div className="flex-1 px-3 py-3 space-y-2 pb-32">
         {grupos.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 text-center opacity-50">
-            <PackageOpen className="h-14 w-14 mb-4" />
-            <p className="font-semibold text-base">Área sin insumos en stock</p>
-            <p className="text-sm mt-1 max-w-xs">
-              No hay lotes con cantidad mayor a cero registrados en esta área.
-              {editable && isAdmin && ' Puedes confirmar el conteo como área vacía.'}
-            </p>
-          </div>
+          <EmptyState
+            icon={<PackageOpen className="h-6 w-6" />}
+            title="Área sin insumos en stock"
+            description={`No hay lotes con cantidad mayor a cero registrados en esta área.${editable && isAdmin ? ' Puedes confirmar el conteo como área vacía.' : ''}`}
+          />
         )}
         {grupos.map(([productoId, grupo]) => (
           <div key={productoId} className="bg-base-100 rounded-xl overflow-hidden border border-base-200">
@@ -165,7 +240,7 @@ export default function ConteoDetallePage() {
                     key={item.id}
                     item={item}
                     editable={editable}
-                    conteoCiego={config?.conteo_ciego}
+                    conteoCiego={config?.conteo_ciego ?? false}
                     presentaciones={presentaciones.filter(p => p.producto_id === item.producto_id)}
                     onCantidadChange={(v: string) => actions.updateItem(item, v)}
                     onNoContado={() => actions.toggleNoContado(item)}
@@ -192,11 +267,44 @@ export default function ConteoDetallePage() {
           <div className="modal-box rounded-t-2xl rounded-b-none">
             <h3 className="font-bold text-lg mb-4">Resumen de ajustes</h3>
             <div className="space-y-2 mb-4">
-              <ResumenRow label="Sin diferencia" value={stats.sinDiff} className="text-success" icon="✅" />
-              <ResumenRow label="Ajuste negativo" value={stats.negativo} className="text-error" icon="🔴" />
-              <ResumenRow label="Ajuste positivo" value={stats.positivo} className="text-info" icon="🔵" />
-              <ResumenRow label="No contados" value={stats.noContados} className="opacity-50" icon="⬜" />
+              <ResumenRow label="Sin diferencia" value={stats.sinDiff} className="text-success" icon={<CheckCircle2 className="size-4" />} />
+              <ResumenRow label="Ajuste negativo" value={stats.negativo} className="text-error" icon={<TrendingDown className="size-4" />} />
+              <ResumenRow label="Ajuste positivo" value={stats.positivo} className="text-info" icon={<TrendingUp className="size-4" />} />
+              <ResumenRow label="No contados" value={stats.noContados} className="opacity-50" icon={<Minus className="size-4" />} />
             </div>
+
+            {ajustes.length > 0 && (
+              <div className="rounded-lg border border-base-300 bg-base-200/50 p-3 mb-4 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold uppercase opacity-60">
+                  <span>Total a ajustar</span>
+                  <span>
+                    +{formatCantidad(totalAjustePositivo, 'reaccion', 'reacciones')}
+                    {' / '}
+                    -{formatCantidad(totalAjusteNegativo, 'reaccion', 'reacciones')}
+                  </span>
+                </div>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {ajustes.slice(0, 6).map(({ item, diferencia }) => (
+                    <div key={item.id} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="truncate">
+                        {item.producto_nombre} - {item.numero_lote}
+                      </span>
+                      <span className={cn('font-mono font-bold shrink-0', diferencia > 0 ? 'text-info' : 'text-error')}>
+                        {diferencia > 0 ? '+' : ''}
+                        {formatCantidad(diferencia, item.unidad_base_nombre, item.unidad_base_nombre_plural)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {ajustesGrandes.length > 0 && (
+              <div className="alert alert-error mb-4 text-sm py-2">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>Hay ajustes grandes. Revisa cantidades y presentaciones antes de confirmar.</span>
+              </div>
+            )}
 
             {horasDesde >= 2 && (
               <div className="alert alert-warning mb-4 text-sm py-2">
@@ -233,7 +341,16 @@ export default function ConteoDetallePage() {
   )
 }
 
-function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange, onNoContado }: any) {
+interface LoteRowProps {
+  item: ConteoItem
+  editable: boolean
+  conteoCiego: boolean
+  presentaciones: Presentacion[]
+  onCantidadChange: (cantidad: string) => void
+  onNoContado: () => void
+}
+
+function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange, onNoContado }: LoteRowProps) {
   const esNoContado = item.estado_item === 'no_contado'
   const contado = item.estado_item === 'contado'
   const diferencia = contado && item.cantidad_contada !== null
@@ -246,21 +363,22 @@ function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange
 
   useEffect(() => {
     if (contado && item.cantidad_contada !== null && presentaciones.length > 0) {
-      let total = Number(item.cantidad_contada)
+      const total = Number(item.cantidad_contada)
       const newPres: Record<number, string> = {}
       const p = presentaciones[0]
-      const cantPres = Math.floor(total / p.factor_conversion)
-      const resto = total % p.factor_conversion
+      const factorConversion = Number(p.factor_conversion)
+      const cantPres = Math.floor(total / factorConversion)
+      const resto = total % factorConversion
       if (cantPres > 0) newPres[p.id] = String(cantPres)
       setPresCounts(newPres)
       setUnidadesSueltas(resto > 0 ? String(resto) : '')
     }
-  }, [])
+  }, [contado, item.cantidad_contada, presentaciones])
 
   const updateTotal = (newPresCounts: Record<number, string>, newSueltas: string) => {
     let total = parseFloat(newSueltas) || 0
-    presentaciones.forEach((p: any) => {
-      total += (parseFloat(newPresCounts[p.id]) || 0) * p.factor_conversion
+    presentaciones.forEach((p) => {
+      total += (parseFloat(newPresCounts[p.id]) || 0) * Number(p.factor_conversion)
     })
     onCantidadChange(String(total))
   }
@@ -277,7 +395,7 @@ function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange
   const stockSisHumano = presentaciones.length > 0 
     ? formatStockHumano(
         Number(item.stock_sistema), 
-        presentaciones[0].factor_conversion,
+        Number(presentaciones[0].factor_conversion),
         item.unidad_base_nombre, item.unidad_base_nombre_plural,
         presentaciones[0].nombre, presentaciones[0].nombre_plural
       )
@@ -305,7 +423,7 @@ function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange
           {!conteoCiego && diferencia !== null && <DifBadge diferencia={diferencia} />}
           <div className="dropdown dropdown-end">
             <label tabIndex={0} className="btn btn-ghost btn-xs btn-circle opacity-20 hover:opacity-100"><MoreHorizontal className="h-3.5 w-3.5" /></label>
-            <ul tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-48 text-xs">
+            <ul tabIndex={0} className="dropdown-content menu p-2 rounded-box w-48 text-xs">
               <li><button onClick={onNoContado} className={esNoContado ? 'text-primary' : 'text-warning'}>{esNoContado ? 'Reactivar' : 'No encontrado'}</button></li>
             </ul>
           </div>
@@ -317,7 +435,7 @@ function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange
         <div className="flex items-center gap-2">
           {presentaciones.length > 0 ? (
             <div className="flex-1 flex items-center gap-2 bg-base-200/40 p-1.5 rounded-xl border border-base-200/50">
-              {presentaciones.map((p: any) => (
+              {presentaciones.map((p) => (
                 <div key={p.id} className="flex items-center gap-1.5">
                   <input
                     type="number" inputMode="numeric"
@@ -391,11 +509,11 @@ function DifBadge({ diferencia }: { diferencia: number }) {
   return <span className="badge badge-error badge-sm">{label}</span>
 }
 
-function ResumenRow({ label, value, className, icon }: { label: string; value: number; className?: string; icon: string }) {
+function ResumenRow({ label, value, className, icon }: { label: string; value: number; className?: string; icon: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between">
       <span className="flex items-center gap-2 text-sm">
-        <span>{icon}</span>
+        <span className={className}>{icon}</span>
         <span className={className}>{label}</span>
       </span>
       <span className="font-semibold">{value} ítems</span>

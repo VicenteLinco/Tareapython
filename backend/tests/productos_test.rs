@@ -51,12 +51,8 @@ async fn listar_productos_paginado(pool: PgPool) {
     let app = common::test_app(pool);
 
     // Página 1
-    let (status, json) = common::get_json(
-        &app,
-        "/api/v1/productos?page=1&per_page=2",
-        &token,
-    )
-    .await;
+    let (status, json) =
+        common::get_json(&app, "/api/v1/productos?page=1&per_page=2", &token).await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["data"].as_array().unwrap().len(), 2);
@@ -85,12 +81,7 @@ async fn buscar_productos_por_nombre(pool: PgPool) {
 
     let app = common::test_app(pool);
 
-    let (status, json) = common::get_json(
-        &app,
-        "/api/v1/productos?q=hemoglobina",
-        &token,
-    )
-    .await;
+    let (status, json) = common::get_json(&app, "/api/v1/productos?q=hemoglobina", &token).await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["data"].as_array().unwrap().len(), 1);
@@ -119,12 +110,7 @@ async fn obtener_detalle_producto(pool: PgPool) {
 
     let id = json["id"].as_str().unwrap();
 
-    let (status, json) = common::get_json(
-        &app,
-        &format!("/api/v1/productos/{}", id),
-        &token,
-    )
-    .await;
+    let (status, json) = common::get_json(&app, &format!("/api/v1/productos/{}", id), &token).await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["nombre"], "Test Detalle");

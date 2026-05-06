@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import type { CellHookData } from 'jspdf-autotable'
 import { formatDate, autoPlural } from '@/lib/utils'
 
 interface SolicitudPdfOptions {
@@ -29,6 +30,12 @@ interface SolicitudPdfOptions {
   logoBase64?: string | null
   monedaSimbolo?: string
   firma_solicitante_label?: string | null
+}
+
+interface JsPdfWithAutoTable extends jsPDF {
+  lastAutoTable: {
+    finalY: number
+  }
 }
 
 const C = {
@@ -64,7 +71,7 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
   if (hasLogo) {
     try {
       doc.addImage(options.logoBase64!, 'AUTO', 10, 6, 22, 22)
-    } catch (_) { /* ignore */ }
+    } catch { /* ignore */ }
   }
 
   doc.setTextColor(...C.white)
@@ -220,7 +227,7 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
       4: { halign: 'right', cellWidth: 38 },
     },
     alternateRowStyles: { fillColor: C.bgLight },
-    didParseCell: (data: any) => {
+    didParseCell: (data: CellHookData) => {
       if (data.section !== 'body' || data.column.index !== 1) return
       const item = items[data.row.index]
       if (!item) return
@@ -229,7 +236,7 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
         data.cell.styles.cellPadding = { top: 3, right: 2, bottom: 11, left: 3 }
       }
     },
-    didDrawCell: (data: any) => {
+    didDrawCell: (data: CellHookData) => {
       if (data.section !== 'body' || data.column.index !== 1) return
       const item = items[data.row.index]
       if (!item) return
@@ -251,8 +258,8 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
   })
 
   // --- CAJA DE TOTALES ---
-  const tableEndY = (doc as any).lastAutoTable.finalY + 6
-  let ty = tableEndY
+  const tableEndY = (doc as JsPdfWithAutoTable).lastAutoTable.finalY + 6
+  const ty = tableEndY
 
   const boxX = W - 90
   doc.setFillColor(...C.bgLight)
@@ -314,7 +321,7 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
   )
 
   // --- FOOTER ---
-  const pageCount = (doc.internal as any).getNumberOfPages()
+  const pageCount = doc.getNumberOfPages()
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i)
     doc.setDrawColor(...C.accent)

@@ -36,7 +36,9 @@ export function getPresFormatos(): PresFormato[] {
       }
       return parsed
     }
-  } catch {}
+  } catch {
+    return [...PRES_FORMATOS_DEFAULT]
+  }
   return [...PRES_FORMATOS_DEFAULT]
 }
 

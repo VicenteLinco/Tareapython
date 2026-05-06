@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { 
-  FileText, 
-  Calendar, 
-  User, 
+import {
+  FileText,
+  Calendar,
+  User,
   Database,
   History,
   Info,
@@ -15,23 +15,28 @@ import type { PaginatedResponse } from '@/types'
 import { formatDateTime } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/pagination'
+import { useFilterStorage } from '@/hooks/use-filter-storage'
 
 interface AuditLogItem {
   id: number
   tabla: string
   registro_id: string
   accion: 'CREATE' | 'UPDATE' | 'DELETE'
-  datos_anteriores: any
-  datos_nuevos: any
+  datos_anteriores: unknown
+  datos_nuevos: unknown
   usuario_nombre: string
   created_at: string
 }
 
 export default function AuditLogPage() {
   const [page, setPage] = useState(1)
-  const [tabla, setTabla] = useState('')
-  const [accion, setAccion] = useState('')
   const [expandedId, setExpandedId] = useState<number | null>(null)
+  const AL_DEFAULTS = { tabla: '', accion: '' }
+  const { filters: alf, setFilters: setAlf } = useFilterStorage('audit-log', AL_DEFAULTS)
+  const tabla = alf.tabla
+  const accion = alf.accion
+  const setTabla = (v: string) => setAlf(f => ({ ...f, tabla: v }))
+  const setAccion = (v: string) => setAlf(f => ({ ...f, accion: v }))
 
   const { data, isLoading } = useQuery({
     queryKey: ['audit-log', { page, tabla, accion }],

@@ -1,9 +1,9 @@
-use sqlx::PgPool;
-use serde_json::json;
-use uuid::Uuid;
-use crate::models::unidad_basica::UnidadBasica;
 use crate::dto::unidad_basica::{CreateUnidadBasica, UpdateUnidadBasica};
 use crate::errors::AppError;
+use crate::models::unidad_basica::UnidadBasica;
+use serde_json::json;
+use sqlx::PgPool;
+use uuid::Uuid;
 use validator::Validate;
 
 pub async fn listar(pool: &PgPool) -> Result<Vec<UnidadBasica>, AppError> {
@@ -25,12 +25,11 @@ pub async fn crear(
     let nombre_plural = req.nombre_plural.trim().to_string();
 
     // ── Verificar si ya existe un registro con ese nombre ────────────────────
-    let existente: Option<(i32, bool)> = sqlx::query_as(
-        "SELECT id, activo FROM unidades_basicas WHERE nombre = $1 LIMIT 1"
-    )
-    .bind(&nombre)
-    .fetch_optional(pool)
-    .await?;
+    let existente: Option<(i32, bool)> =
+        sqlx::query_as("SELECT id, activo FROM unidades_basicas WHERE nombre = $1 LIMIT 1")
+            .bind(&nombre)
+            .fetch_optional(pool)
+            .await?;
 
     match existente {
         Some((_, true)) => {
@@ -80,11 +79,15 @@ pub async fn crear(
     })?;
 
     crate::services::audit::registrar(
-        pool, "unidades_basicas", &unidad.id.to_string(), "CREATE",
+        pool,
+        "unidades_basicas",
+        &unidad.id.to_string(),
+        "CREATE",
         None,
         Some(json!({"nombre": &unidad.nombre, "nombre_plural": &unidad.nombre_plural})),
         usuario_id,
-    ).await?;
+    )
+    .await?;
 
     Ok(unidad)
 }
@@ -97,14 +100,24 @@ pub async fn actualizar(
 ) -> Result<UnidadBasica, AppError> {
     req.validate()?;
 
-    let anterior = sqlx::query_as::<_, UnidadBasica>("SELECT id, nombre, nombre_plural, version FROM unidades_basicas WHERE id = $1")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?
-        .ok_or(AppError::NotFound("Unidad básica no encontrada".into()))?;
+    let anterior = sqlx::query_as::<_, UnidadBasica>(
+        "SELECT id, nombre, nombre_plural, version FROM unidades_basicas WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::NotFound("Unidad básica no encontrada".into()))?;
 
-    let nombre = req.nombre.as_deref().map(str::trim).unwrap_or(&anterior.nombre);
-    let nombre_plural = req.nombre_plural.as_deref().map(str::trim).unwrap_or(&anterior.nombre_plural);
+    let nombre = req
+        .nombre
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or(&anterior.nombre);
+    let nombre_plural = req
+        .nombre_plural
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or(&anterior.nombre_plural);
 
     let unidad = sqlx::query_as::<_, UnidadBasica>(
         "UPDATE unidades_basicas SET nombre = $1, nombre_plural = $2, version = version + 1 \
@@ -117,29 +130,64 @@ pub async fn actualizar(
     .bind(req.version)
     .fetch_optional(pool)
     .await?
-    .ok_or(AppError::Conflict("La unidad ha sido modificada por otro usuario".into()))?;
+    .ok_or(AppError::Conflict(
+        "La unidad ha sido modificada por otro usuario".into(),
+    ))?;
 
     crate::services::audit::registrar(
-        pool, "unidades_basicas", &id.to_string(), "UPDATE",
+        pool,
+        "unidades_basicas",
+        &id.to_string(),
+        "UPDATE",
         Some(json!({"nombre": &anterior.nombre, "nombre_plural": &anterior.nombre_plural})),
         Some(json!({"nombre": &unidad.nombre, "nombre_plural": &unidad.nombre_plural})),
         usuario_id,
-    ).await?;
+    )
+    .await?;
 
     Ok(unidad)
 }
 
 pub async fn eliminar(pool: &PgPool, id: i32, usuario_id: Uuid) -> Result<(), AppError> {
-    let result = sqlx::query("UPDATE unidades_basicas SET activo = false WHERE id = $1 AND activo = true")
-        .bind(id)
-        .execute(pool)
-        .await?;
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM productos WHERE unidad_base_id = $1 AND activo = true",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await?;
 
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Unidad básica no encontrada o ya inactiva".into()));
+    if count > 0 {
+        return Err(AppError::BusinessLogic(
+            format!(
+                "No se puede eliminar: {} producto(s) usan esta unidad",
+                count
+            ),
+            "EN_USO".into(),
+        ));
     }
 
-    crate::services::audit::registrar(pool, "unidades_basicas", &id.to_string(), "DELETE", None, None, usuario_id).await?;
+    let result =
+        sqlx::query("UPDATE unidades_basicas SET activo = false WHERE id = $1 AND activo = true")
+            .bind(id)
+            .execute(pool)
+            .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(
+            "Unidad básica no encontrada o ya inactiva".into(),
+        ));
+    }
+
+    crate::services::audit::registrar(
+        pool,
+        "unidades_basicas",
+        &id.to_string(),
+        "DELETE",
+        None,
+        None,
+        usuario_id,
+    )
+    .await?;
 
     Ok(())
 }

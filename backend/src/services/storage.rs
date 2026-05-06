@@ -1,7 +1,7 @@
+use base64::Engine;
 use std::path::PathBuf;
 use tokio::fs;
 use uuid::Uuid;
-use base64::Engine;
 
 use crate::errors::AppError;
 
@@ -21,18 +21,20 @@ pub async fn save_base64_image(
     prefix: &str,
 ) -> Result<String, AppError> {
     // 1. Validar y limpiar el data URL
-    let base64_part = data_url.split(',').nth(1).ok_or_else(|| {
-        AppError::Validation("Formato de imagen inválido".into())
-    })?;
+    let base64_part = data_url
+        .split(',')
+        .nth(1)
+        .ok_or_else(|| AppError::Validation("Formato de imagen inválido".into()))?;
 
     // Determinar la extensión (basada en el mime type del data_url)
-    let extension = if data_url.starts_with("data:image/jpeg") || data_url.starts_with("data:image/jpg") {
-        "jpg"
-    } else if data_url.starts_with("data:image/png") {
-        "png"
-    } else {
-        return Err(AppError::Validation("Solo se aceptan JPEG o PNG".into()));
-    };
+    let extension =
+        if data_url.starts_with("data:image/jpeg") || data_url.starts_with("data:image/jpg") {
+            "jpg"
+        } else if data_url.starts_with("data:image/png") {
+            "png"
+        } else {
+            return Err(AppError::Validation("Solo se aceptan JPEG o PNG".into()));
+        };
 
     // 2. Decodificar base64
     let bytes = base64::engine::general_purpose::STANDARD
@@ -41,17 +43,21 @@ pub async fn save_base64_image(
 
     // 3. Límite de tamaño (5 MB)
     if bytes.len() > MAX_IMAGE_BYTES {
-        return Err(AppError::Validation("La imagen no puede superar 5 MB".into()));
+        return Err(AppError::Validation(
+            "La imagen no puede superar 5 MB".into(),
+        ));
     }
 
     // 4. Validar magic bytes (evitar spoofing de extensión)
     if !validar_magic_bytes(&bytes, extension) {
-        return Err(AppError::Validation("El contenido del archivo no corresponde al tipo declarado".into()));
+        return Err(AppError::Validation(
+            "El contenido del archivo no corresponde al tipo declarado".into(),
+        ));
     }
 
     // 5. Crear el nombre del archivo único
     let filename = format!("{}_{}.{}", prefix, Uuid::new_v4(), extension);
-    
+
     // 6. Asegurar que el directorio existe
     let upload_dir = PathBuf::from("uploads").join(directory);
     if !upload_dir.exists() {
@@ -63,9 +69,9 @@ pub async fn save_base64_image(
     let file_path = upload_dir.join(&filename);
 
     // 7. Escribir el archivo en disco
-    fs::write(&file_path, bytes).await.map_err(|e| {
-        AppError::Internal(format!("Error guardando archivo en disco: {}", e))
-    })?;
+    fs::write(&file_path, bytes)
+        .await
+        .map_err(|e| AppError::Internal(format!("Error guardando archivo en disco: {}", e)))?;
 
     // Retornamos la ruta relativa para guardar en la base de datos
     Ok(format!("{}/{}", directory, filename))
@@ -74,9 +80,9 @@ pub async fn save_base64_image(
 pub async fn delete_image(path: &str) -> Result<(), AppError> {
     let full_path = PathBuf::from("uploads").join(path);
     if full_path.exists() {
-        fs::remove_file(full_path).await.map_err(|e| {
-            AppError::Internal(format!("Error eliminando archivo: {}", e))
-        })?;
+        fs::remove_file(full_path)
+            .await
+            .map_err(|e| AppError::Internal(format!("Error eliminando archivo: {}", e)))?;
     }
     Ok(())
 }

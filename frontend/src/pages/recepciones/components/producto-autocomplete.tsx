@@ -22,12 +22,14 @@ export function ProductoAutocomplete({ productos, excluidos, proveedorId, onSele
   const itemRefs = useRef<(HTMLDivElement | null)[]>([])
 
   const q = value.trim().toLowerCase()
-  const suggestions: Producto[] = q.length >= 2
+  const canShowInitialList = open && q.length === 0
+  const canSearch = q.length >= 2
+  const suggestions: Producto[] = canShowInitialList || canSearch
     ? productos
         .filter(p => !excluidos.includes(String(p.id)))
-        // incluir productos sin proveedor asignado + los del proveedor seleccionado
-        .filter(p => proveedorId == null || p.proveedor_id == null || p.proveedor_id === proveedorId)
+        .filter(p => proveedorId == null || p.proveedor_id === proveedorId)
         .filter(p =>
+          canShowInitialList ||
           p.nombre.toLowerCase().includes(q) ||
           p.codigo_interno.toLowerCase().includes(q)
         )
@@ -87,13 +89,13 @@ export function ProductoAutocomplete({ productos, excluidos, proveedorId, onSele
     }
   }
 
-  const showDropdown = open && q.length >= 2
+  const showDropdown = open && (q.length === 0 || q.length >= 2)
 
   return (
     <div ref={containerRef} className="relative">
       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-40 pointer-events-none z-10" />
       <input
-        className="input input-bordered w-full pl-10 pr-10"
+        className="input w-full border-base-300 bg-base-100 pl-10 pr-10 focus:border-primary focus:outline-primary/25"
         placeholder="Escanear QR · Código interno · Nombre del producto…"
         value={value}
         onChange={e => { setValue(e.target.value); setOpen(true) }}
@@ -113,7 +115,7 @@ export function ProductoAutocomplete({ productos, excluidos, proveedorId, onSele
         <div
           ref={listRef}
           role="listbox"
-          className="absolute top-full left-0 right-0 mt-1 bg-base-100 border border-base-300 rounded-box shadow-lg z-50 overflow-y-auto max-h-72"
+          className="app-floating-menu absolute top-full left-0 right-0 mt-1 rounded-box overflow-y-auto max-h-72"
         >
           {suggestions.length === 0 ? (
             <div className="px-3 py-2 text-sm opacity-50">Sin resultados</div>

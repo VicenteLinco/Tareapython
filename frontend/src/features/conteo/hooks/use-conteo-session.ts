@@ -6,6 +6,25 @@ import api from '@/lib/api'
 import type { ConteoDetalle, ConteoItem } from '@/types'
 import { v4 as uuidv4 } from 'uuid'
 
+interface GuardarConteoItemPayload {
+  item_id: string
+  cantidad_contada: number | null
+  estado_item: string
+  version: number
+}
+
+interface ConfirmarConteoResponse {
+  ajustes_generados: number
+}
+
+interface ApiError {
+  response?: {
+    data?: {
+      code?: string
+    }
+  }
+}
+
 export function useConteoSession(id: string | undefined) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -21,12 +40,11 @@ export function useConteoSession(id: string | undefined) {
   })
 
   const sesion = data?.sesion
-  const items = data?.items ?? []
   const editable = sesion?.estado === 'borrador' || sesion?.estado === 'en_progreso'
 
   // Combina items del servidor con ediciones locales
   const itemsConEdicion = useMemo(() =>
-    items.map((item) => {
+    (data?.items ?? []).map((item) => {
       const local = localItems[item.id]
       if (!local) return item
       return {
@@ -37,7 +55,7 @@ export function useConteoSession(id: string | undefined) {
         estado_item: local.estado as ConteoItem['estado_item'],
       }
     }),
-    [items, localItems]
+    [data?.items, localItems]
   )
 
   // Cálculos de progreso y resumen
@@ -56,13 +74,13 @@ export function useConteoSession(id: string | undefined) {
 
   // Mutation: Guardar cambios parciales
   const guardarMutation = useMutation({
-    mutationFn: (payload: any) => api.patch(`/conteo/${id}/items`, { items: payload }).then((r) => r.data),
+    mutationFn: (payload: GuardarConteoItemPayload[]) => api.patch(`/conteo/${id}/items`, { items: payload }).then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conteo-detalle', id] })
       setLocalItems({})
       toast.success('Cambios guardados')
     },
-    onError: (err: any) => {
+    onError: (err: ApiError) => {
       if (err?.response?.data?.code === 'VERSION_CONFLICT') {
         toast.error('Conflicto de versión. Recargando datos...')
         queryClient.invalidateQueries({ queryKey: ['conteo-detalle', id] })
@@ -78,8 +96,8 @@ export function useConteoSession(id: string | undefined) {
     mutationFn: () =>
       api.post(`/conteo/${id}/confirmar`, { nota: nota || undefined }, {
         headers: { 'x-idempotency-key': uuidv4() }
-      }).then((r) => r.data),
-    onSuccess: (res: any) => {
+      }).then((r) => r.data as ConfirmarConteoResponse),
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['conteo'] })
       queryClient.invalidateQueries({ queryKey: ['conteo-pendientes'] })
       toast.success(`Conteo confirmado: ${res.ajustes_generados} ajustes generados`)
@@ -88,7 +106,7 @@ export function useConteoSession(id: string | undefined) {
     onError: () => toast.error('Error al confirmar el conteo'),
   })
 
-  const actions = {
+  const actions = useMemo(() => ({
     updateItem: (item: ConteoItem, valor: string) => {
       setLocalItems((prev) => ({
         ...prev,
@@ -113,7 +131,7 @@ export function useConteoSession(id: string | undefined) {
     },
     confirm: () => confirmarMutation.mutate(),
     setNota,
-  }
+  }), [confirmarMutation, guardarMutation, localItems])
 
   return {
     sesion,

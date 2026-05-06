@@ -1,7 +1,7 @@
 #![allow(dead_code)]
+use axum::Router;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
-use axum::Router;
 use http_body_util::BodyExt;
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -26,6 +26,10 @@ pub fn test_config() -> AppConfig {
 
 /// Crea el router de prueba con el pool de test
 pub fn test_app(pool: PgPool) -> Router {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter("error")
+        .with_test_writer()
+        .try_init();
     let config = test_config();
     let state = AppState {
         pool: pool.clone(),
@@ -151,11 +155,7 @@ pub async fn put_json(
 }
 
 /// Helper: envía un request DELETE
-pub async fn delete_req(
-    app: &Router,
-    path: &str,
-    token: &str,
-) -> (StatusCode, serde_json::Value) {
+pub async fn delete_req(app: &Router, path: &str, token: &str) -> (StatusCode, serde_json::Value) {
     let req = Request::builder()
         .method(Method::DELETE)
         .uri(path)

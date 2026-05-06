@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Trash2, Search, Plane, Truck, RotateCcw } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
+import { PageLoading } from '@/components/ui/page-state'
 import { Dialog } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
@@ -127,14 +128,14 @@ export default function ProveedoresTab() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.nombre.trim()) return
-    const clean: any = {
+    const clean: CreateProveedor = {
       nombre: form.nombre.trim(),
-      contacto: form.contacto.trim() || undefined,
-      telefono: form.telefono.trim() || undefined,
-      email: form.email.trim() || undefined,
-      icono: form.icono || undefined,
-      dias_despacho_aereo: form.dias_despacho_aereo ? Number(form.dias_despacho_aereo) : undefined,
-      dias_despacho_tierra: form.dias_despacho_tierra ? Number(form.dias_despacho_tierra) : undefined,
+      contacto: form.contacto.trim() || null,
+      telefono: form.telefono.trim() || null,
+      email: form.email.trim() || null,
+      icono: form.icono || null,
+      dias_despacho_aereo: form.dias_despacho_aereo ? Number(form.dias_despacho_aereo) : null,
+      dias_despacho_tierra: form.dias_despacho_tierra ? Number(form.dias_despacho_tierra) : null,
     }
     if (editing) {
       updateMut.mutate({ id: editing.id, data: { ...clean, version: editing.version } })
@@ -241,11 +242,11 @@ export default function ProveedoresTab() {
       </div>
 
       {isLoading ? (
-        <div className="skeleton h-64 w-full rounded-xl" />
+        <PageLoading label="Cargando proveedores..." />
       ) : (
         <DataTable
-          columns={columns as any}
-          data={proveedores as any}
+          columns={columns}
+          data={proveedores}
           emptyMessage="No hay proveedores"
         />
       )}

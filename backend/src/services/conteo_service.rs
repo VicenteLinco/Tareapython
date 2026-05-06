@@ -20,11 +20,12 @@ impl ConteoService {
         area_id: i32,
         usuario_id: Uuid,
     ) -> Result<SesionIniciada, AppError> {
-        let area_existe: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM areas WHERE id = $1 AND activa = true)")
-                .bind(area_id)
-                .fetch_one(pool)
-                .await?;
+        let area_existe: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM areas WHERE id = $1 AND activa = true)",
+        )
+        .bind(area_id)
+        .fetch_one(pool)
+        .await?;
 
         if !area_existe {
             return Err(AppError::NotFound("Área no encontrada o inactiva".into()));
@@ -131,11 +132,15 @@ impl ConteoService {
             // Validaciones básicas de negocio
             if item.estado_item == "contado" {
                 if item.cantidad_contada.is_none() {
-                    return Err(AppError::Validation("Cantidad requerida para ítems contados".into()));
+                    return Err(AppError::Validation(
+                        "Cantidad requerida para ítems contados".into(),
+                    ));
                 }
                 if let Some(c) = item.cantidad_contada {
                     if c < Decimal::ZERO {
-                        return Err(AppError::Validation("Cantidad no puede ser negativa".into()));
+                        return Err(AppError::Validation(
+                            "Cantidad no puede ser negativa".into(),
+                        ));
                     }
                 }
             }
@@ -226,30 +231,29 @@ impl ConteoService {
 
         let grupo_movimiento = Uuid::new_v4();
         let mut ajustes_cont = 0i32;
+        let mut movimientos_durante_sesion = 0i64;
 
         for (lote_id, stock_sis, cant_fisica) in items_discrepancia {
-            let diferencia = cant_fisica - stock_sis;
-            let tipo = if diferencia > Decimal::ZERO { "AJUSTE_POSITIVO" } else { "AJUSTE_NEGATIVO" };
+            let stock_actual = Self::stock_actual_bloqueado(&mut tx, lote_id, area_id).await?;
+            let diferencia = cant_fisica - stock_actual;
+            if diferencia == Decimal::ZERO {
+                continue;
+            }
+
+            if stock_actual != stock_sis {
+                movimientos_durante_sesion += 1;
+            }
+            let tipo = if diferencia > Decimal::ZERO {
+                "AJUSTE_POSITIVO"
+            } else {
+                "AJUSTE_NEGATIVO"
+            };
             let cant_mov = diferencia.abs();
 
-            // El conteo físico es la fuente de verdad: se establece directamente, no como delta
-            sqlx::query(
-                r#"INSERT INTO stock (lote_id, area_id, cantidad)
-                   VALUES ($1, $2, GREATEST(0, $3))
-                   ON CONFLICT (lote_id, area_id)
-                   DO UPDATE SET cantidad = GREATEST(0, $3), updated_at = NOW()"#,
-            )
-            .bind(lote_id)
-            .bind(area_id)
-            .bind(cant_fisica)
-            .execute(&mut *tx)
-            .await?;
-
-            // Registrar el movimiento de ajuste
+            // El trigger de movimientos actualiza stock y calcula cantidad_resultante.
             sqlx::query(
                 r#"INSERT INTO movimientos (grupo_movimiento, lote_id, area_id, tipo, cantidad, cantidad_resultante, usuario_id, origen, nota)
-                   SELECT $1, $2, $3, $4, $5, s.cantidad, $6, 'conteo', $7
-                   FROM stock s WHERE s.lote_id = $2 AND s.area_id = $3"#,
+                   VALUES ($1, $2, $3, $4, $5, 0, $6, 'conteo', $7)"#,
             )
             .bind(grupo_movimiento)
             .bind(lote_id)
@@ -287,6 +291,26 @@ impl ConteoService {
             "estado": "confirmado",
             "ajustes_generados": ajustes_cont,
             "grupo_movimiento": grupo_movimiento,
+            "movimientos_durante_sesion": movimientos_durante_sesion,
         }))
+    }
+
+    async fn stock_actual_bloqueado(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        lote_id: Uuid,
+        area_id: i32,
+    ) -> Result<Decimal, AppError> {
+        let cantidad = sqlx::query_scalar::<_, Decimal>(
+            r#"SELECT cantidad
+               FROM stock
+               WHERE lote_id = $1 AND area_id = $2
+               FOR UPDATE"#,
+        )
+        .bind(lote_id)
+        .bind(area_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+
+        Ok(cantidad.unwrap_or(Decimal::ZERO))
     }
 }

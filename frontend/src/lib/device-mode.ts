@@ -9,7 +9,9 @@ export function getDeviceMode(): DeviceMode {
   return 'normal'
 }
 
-export function setDeviceMode(_mode: DeviceMode, _persistent: boolean): void {
+export function setDeviceMode(mode: DeviceMode, persistent: boolean): void {
+  void mode
+  void persistent
   clearDeviceMode()
 }
 

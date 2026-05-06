@@ -22,7 +22,7 @@ pub struct ImportConfig {
 pub struct ImportResult {
     pub total_filas: usize,
     pub importados: usize,
-    pub omitidos: usize,   // filas que ya existían (codigo_interno duplicado)
+    pub omitidos: usize, // filas que ya existían (codigo_interno duplicado)
     pub errores: Vec<ImportError>,
     pub preview: Vec<serde_json::Value>,
     pub valido: bool,
@@ -57,16 +57,36 @@ async fn require_setup_mode(pool: &sqlx::PgPool) -> Result<(), AppError> {
 }
 
 /// Extrae el archivo y la configuración del Multipart
-async fn extract_import_data(mut multipart: Multipart) -> Result<(Vec<u8>, ImportConfig), AppError> {
+async fn extract_import_data(
+    mut multipart: Multipart,
+) -> Result<(Vec<u8>, ImportConfig), AppError> {
     let mut file_bytes = None;
     let mut config = None;
 
-    while let Some(field) = multipart.next_field().await.map_err(|e| AppError::Validation(e.to_string()))? {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::Validation(e.to_string()))?
+    {
         match field.name() {
-            Some("file") => file_bytes = Some(field.bytes().await.map_err(|e| AppError::Validation(e.to_string()))?.to_vec()),
+            Some("file") => {
+                file_bytes = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|e| AppError::Validation(e.to_string()))?
+                        .to_vec(),
+                )
+            }
             Some("config") => {
-                let text = field.text().await.map_err(|e| AppError::Validation(e.to_string()))?;
-                config = Some(serde_json::from_str::<ImportConfig>(&text).map_err(|e| AppError::Validation(format!("Configuración inválida: {}", e)))?);
+                let text = field
+                    .text()
+                    .await
+                    .map_err(|e| AppError::Validation(e.to_string()))?;
+                config =
+                    Some(serde_json::from_str::<ImportConfig>(&text).map_err(|e| {
+                        AppError::Validation(format!("Configuración inválida: {}", e))
+                    })?);
             }
             _ => {}
         }
@@ -80,11 +100,18 @@ async fn extract_import_data(mut multipart: Multipart) -> Result<(Vec<u8>, Impor
 // === Handlers ===
 
 /// GET /api/v1/setup/estado
-async fn estado(State(state): State<AppState>, Extension(claims): Extension<Claims>) -> Result<Json<serde_json::Value>, AppError> {
+async fn estado(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
     let finalizado = is_setup_finalizado(&state.pool).await?;
-    let productos: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM productos").fetch_one(&state.pool).await?;
-    Ok(Json(serde_json::json!({ "carga_inicial_completada": finalizado, "productos_cargados": productos.0 })))
+    let productos: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM productos")
+        .fetch_one(&state.pool)
+        .await?;
+    Ok(Json(
+        serde_json::json!({ "carga_inicial_completada": finalizado, "productos_cargados": productos.0 }),
+    ))
 }
 
 /// POST /api/v1/setup/importar-productos (Mapeador Inteligente)
@@ -97,10 +124,15 @@ async fn importar_productos(
     require_setup_mode(&state.pool).await?;
 
     let (bytes, config) = extract_import_data(multipart).await?;
-    let mut reader = csv::ReaderBuilder::new().trim(csv::Trim::All).from_reader(&bytes[..]);
-    
+    let mut reader = csv::ReaderBuilder::new()
+        .trim(csv::Trim::All)
+        .from_reader(&bytes[..]);
+
     // Obtener cabeceras y mapear índices
-    let headers = reader.headers().map_err(|e| AppError::Validation(format!("Error en cabeceras CSV: {}", e)))?.clone();
+    let headers = reader
+        .headers()
+        .map_err(|e| AppError::Validation(format!("Error en cabeceras CSV: {}", e)))?
+        .clone();
     let mut col_map = HashMap::new();
     for (name, target) in &config.mapping {
         if let Some(idx) = headers.iter().position(|h| h == target) {
@@ -121,12 +153,21 @@ async fn importar_productos(
         let record = match result {
             Ok(r) => r,
             Err(e) => {
-                errores.push(ImportError { fila: fila_num, mensaje: format!("Error de formato: {}", e) });
+                errores.push(ImportError {
+                    fila: fila_num,
+                    mensaje: format!("Error de formato: {}", e),
+                });
                 continue;
             }
         };
 
-        let get_val = |key: &str| col_map.get(key).and_then(|&i| record.get(i)).unwrap_or("").trim();
+        let get_val = |key: &str| {
+            col_map
+                .get(key)
+                .and_then(|&i| record.get(i))
+                .unwrap_or("")
+                .trim()
+        };
 
         let nombre = get_val("nombre");
         let codigo_interno = get_val("codigo_interno");
@@ -140,11 +181,17 @@ async fn importar_productos(
 
         // Validaciones
         if nombre.is_empty() {
-            errores.push(ImportError { fila: fila_num, mensaje: "nombre es obligatorio".into() });
+            errores.push(ImportError {
+                fila: fila_num,
+                mensaje: "nombre es obligatorio".into(),
+            });
             continue;
         }
         if codigo_interno.is_empty() {
-            errores.push(ImportError { fila: fila_num, mensaje: "codigo_interno es obligatorio".into() });
+            errores.push(ImportError {
+                fila: fila_num,
+                mensaje: "codigo_interno es obligatorio".into(),
+            });
             continue;
         }
 
@@ -160,15 +207,16 @@ async fn importar_productos(
             }));
         }
 
-        if config.dry_run { continue; }
+        if config.dry_run {
+            continue;
+        }
 
         // Verificar duplicado por codigo_interno
-        let existe: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM productos WHERE codigo_interno = $1)"
-        )
-        .bind(codigo_interno)
-        .fetch_one(&state.pool)
-        .await?;
+        let existe: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE codigo_interno = $1)")
+                .bind(codigo_interno)
+                .fetch_one(&state.pool)
+                .await?;
 
         if existe {
             omitidos += 1;
@@ -177,7 +225,7 @@ async fn importar_productos(
 
         // Buscar/crear unidad
         let unidad_id: Option<i32> = sqlx::query_scalar(
-            "SELECT id FROM unidades_basicas WHERE nombre = $1 OR nombre_plural = $1"
+            "SELECT id FROM unidades_basicas WHERE nombre = $1 OR nombre_plural = $1",
         )
         .bind(unidad_nombre)
         .fetch_optional(&state.pool)
@@ -185,58 +233,64 @@ async fn importar_productos(
 
         let u_id = match unidad_id {
             Some(id) => id,
-            None if !unidad_nombre.is_empty() => {
-                sqlx::query_scalar(
-                    "INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ($1, $2) RETURNING id"
-                )
-                .bind(unidad_nombre)
-                .bind(if unidad_plural.is_empty() { None } else { Some(unidad_plural) })
-                .fetch_one(&state.pool)
-                .await?
-            }
+            None if !unidad_nombre.is_empty() => sqlx::query_scalar(
+                "INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ($1, $2) RETURNING id",
+            )
+            .bind(unidad_nombre)
+            .bind(if unidad_plural.is_empty() {
+                None
+            } else {
+                Some(unidad_plural)
+            })
+            .fetch_one(&state.pool)
+            .await?,
             None => {
-                errores.push(ImportError { fila: fila_num, mensaje: "unidad_base es obligatoria".into() });
+                errores.push(ImportError {
+                    fila: fila_num,
+                    mensaje: "unidad_base es obligatoria".into(),
+                });
                 continue;
             }
         };
 
         // Buscar/crear categoría
         let cat_id: Option<i32> = if !categoria_nombre.is_empty() {
-            let id: Option<i32> = sqlx::query_scalar(
-                "SELECT id FROM categorias WHERE nombre = $1"
-            )
-            .bind(categoria_nombre)
-            .fetch_optional(&state.pool)
-            .await?;
+            let id: Option<i32> = sqlx::query_scalar("SELECT id FROM categorias WHERE nombre = $1")
+                .bind(categoria_nombre)
+                .fetch_optional(&state.pool)
+                .await?;
             match id {
                 Some(id) => Some(id),
-                None => Some(sqlx::query_scalar(
-                    "INSERT INTO categorias (nombre) VALUES ($1) RETURNING id"
-                )
-                .bind(categoria_nombre)
-                .fetch_one(&state.pool)
-                .await?),
+                None => Some(
+                    sqlx::query_scalar("INSERT INTO categorias (nombre) VALUES ($1) RETURNING id")
+                        .bind(categoria_nombre)
+                        .fetch_one(&state.pool)
+                        .await?,
+                ),
             }
-        } else { None };
+        } else {
+            None
+        };
 
         // Buscar/crear proveedor
         let prov_id: Option<i32> = if !proveedor_nombre.is_empty() {
-            let id: Option<i32> = sqlx::query_scalar(
-                "SELECT id FROM proveedores WHERE nombre = $1"
-            )
-            .bind(proveedor_nombre)
-            .fetch_optional(&state.pool)
-            .await?;
+            let id: Option<i32> =
+                sqlx::query_scalar("SELECT id FROM proveedores WHERE nombre = $1")
+                    .bind(proveedor_nombre)
+                    .fetch_optional(&state.pool)
+                    .await?;
             match id {
                 Some(id) => Some(id),
-                None => Some(sqlx::query_scalar(
-                    "INSERT INTO proveedores (nombre) VALUES ($1) RETURNING id"
-                )
-                .bind(proveedor_nombre)
-                .fetch_one(&state.pool)
-                .await?),
+                None => Some(
+                    sqlx::query_scalar("INSERT INTO proveedores (nombre) VALUES ($1) RETURNING id")
+                        .bind(proveedor_nombre)
+                        .fetch_one(&state.pool)
+                        .await?,
+                ),
             }
-        } else { None };
+        } else {
+            None
+        };
 
         let stock_min = Decimal::from_str(stock_minimo_str).unwrap_or(Decimal::ZERO);
         let precio = Decimal::from_str(precio_str).ok();
@@ -245,7 +299,7 @@ async fn importar_productos(
             "INSERT INTO productos
              (codigo_interno, nombre, unidad_base_id, categoria_id, proveedor_id,
               stock_minimo, precio_unidad, codigo_proveedor)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(codigo_interno)
         .bind(nombre)
@@ -254,7 +308,11 @@ async fn importar_productos(
         .bind(prov_id)
         .bind(stock_min)
         .bind(precio)
-        .bind(if cod_proveedor.is_empty() { None } else { Some(cod_proveedor) })
+        .bind(if cod_proveedor.is_empty() {
+            None
+        } else {
+            Some(cod_proveedor)
+        })
         .execute(&state.pool)
         .await?;
 
@@ -281,14 +339,26 @@ async fn importar_stock(
     require_setup_mode(&state.pool).await?;
 
     let mut file_bytes = None;
-    while let Some(field) = multipart.next_field().await.map_err(|e| AppError::Validation(e.to_string()))? {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::Validation(e.to_string()))?
+    {
         if field.name() == Some("file") {
-            file_bytes = Some(field.bytes().await.map_err(|e| AppError::Validation(e.to_string()))?.to_vec());
+            file_bytes = Some(
+                field
+                    .bytes()
+                    .await
+                    .map_err(|e| AppError::Validation(e.to_string()))?
+                    .to_vec(),
+            );
         }
     }
 
     let bytes = file_bytes.ok_or(AppError::Validation("Archivo no encontrado".into()))?;
-    let mut reader = csv::ReaderBuilder::new().trim(csv::Trim::All).from_reader(&bytes[..]);
+    let mut reader = csv::ReaderBuilder::new()
+        .trim(csv::Trim::All)
+        .from_reader(&bytes[..]);
 
     let mut importados = 0;
     let mut errores = Vec::new();
@@ -321,9 +391,11 @@ async fn importar_stock(
         }
 
         // 1. Buscar producto
-        let producto_id: Option<uuid::Uuid> = sqlx::query_scalar(
-            "SELECT id FROM productos WHERE nombre = $1 OR codigo_interno = $1"
-        ).bind(prod_ref).fetch_optional(&mut *tx).await?;
+        let producto_id: Option<uuid::Uuid> =
+            sqlx::query_scalar("SELECT id FROM productos WHERE nombre = $1 OR codigo_interno = $1")
+                .bind(prod_ref)
+                .fetch_optional(&mut *tx)
+                .await?;
 
         let p_id = match producto_id {
             Some(id) => id,
@@ -334,33 +406,48 @@ async fn importar_stock(
         };
 
         // 2. Buscar/Crear área
-        let area_id: i32 = match sqlx::query_scalar("SELECT id FROM areas WHERE nombre = $1").bind(area_nombre).fetch_optional(&mut *tx).await? {
+        let area_id: i32 = match sqlx::query_scalar("SELECT id FROM areas WHERE nombre = $1")
+            .bind(area_nombre)
+            .fetch_optional(&mut *tx)
+            .await?
+        {
             Some(id) => id,
             None => {
-                sqlx::query_scalar("INSERT INTO areas (nombre) VALUES ($1) RETURNING id").bind(area_nombre).fetch_one(&mut *tx).await?
+                sqlx::query_scalar("INSERT INTO areas (nombre) VALUES ($1) RETURNING id")
+                    .bind(area_nombre)
+                    .fetch_one(&mut *tx)
+                    .await?
             }
         };
 
         // 3. Validar fecha
         let fecha_venc = match chrono::NaiveDate::parse_from_str(fecha_venc_str, "%Y-%m-%d")
-            .or_else(|_| chrono::NaiveDate::parse_from_str(fecha_venc_str, "%d/%m/%Y")) {
-                Ok(d) => d,
-                Err(_) => {
-                    errores.push(serde_json::json!({ "fila": fila_num, "error": format!("Fecha '{}' inválida (usar YYYY-MM-DD o DD/MM/YYYY)", fecha_venc_str) }));
-                    continue;
-                }
-            };
+            .or_else(|_| chrono::NaiveDate::parse_from_str(fecha_venc_str, "%d/%m/%Y"))
+        {
+            Ok(d) => d,
+            Err(_) => {
+                errores.push(serde_json::json!({ "fila": fila_num, "error": format!("Fecha '{}' inválida (usar YYYY-MM-DD o DD/MM/YYYY)", fecha_venc_str) }));
+                continue;
+            }
+        };
 
         let cantidad = Decimal::from_str(cantidad_str).unwrap_or(Decimal::ZERO);
         let costo = Decimal::from_str(costo_str).ok();
 
         // 4. Buscar/Crear Lote
         let lote_id: uuid::Uuid = match sqlx::query_scalar(
-            "SELECT id FROM lotes WHERE producto_id = $1 AND numero_lote = $2"
-        ).bind(p_id).bind(num_lote).fetch_optional(&mut *tx).await? {
+            "SELECT id FROM lotes WHERE producto_id = $1 AND numero_lote = $2",
+        )
+        .bind(p_id)
+        .bind(num_lote)
+        .fetch_optional(&mut *tx)
+        .await?
+        {
             Some(id) => id,
             None => {
-                let cod_lote: String = sqlx::query_scalar("SELECT generar_codigo_lote()").fetch_one(&mut *tx).await?;
+                let cod_lote: String = sqlx::query_scalar("SELECT generar_codigo_lote()")
+                    .fetch_one(&mut *tx)
+                    .await?;
                 sqlx::query_scalar(
                     "INSERT INTO lotes (producto_id, numero_lote, fecha_vencimiento, codigo_interno, costo_unitario) VALUES ($1, $2, $3, $4, $5) RETURNING id"
                 ).bind(p_id).bind(num_lote).bind(fecha_venc).bind(&cod_lote).bind(costo).fetch_one(&mut *tx).await?
@@ -391,15 +478,31 @@ async fn importar_stock(
 }
 
 /// GET /api/v1/setup/resumen
-async fn resumen(State(state): State<AppState>, Extension(claims): Extension<Claims>) -> Result<Json<serde_json::Value>, AppError> {
+async fn resumen(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
-    
-    let productos: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM productos").fetch_one(&state.pool).await?;
-    let presentaciones: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM presentaciones").fetch_one(&state.pool).await?;
-    let lotes: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM lotes").fetch_one(&state.pool).await?;
-    let stock_registros: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM stock WHERE cantidad > 0").fetch_one(&state.pool).await?;
-    let categorias: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM categorias").fetch_one(&state.pool).await?;
-    let areas: (i64,) = sqlx::query_as("SELECT COUNT(DISTINCT area_id) FROM stock WHERE cantidad > 0").fetch_one(&state.pool).await?;
+
+    let productos: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM productos")
+        .fetch_one(&state.pool)
+        .await?;
+    let presentaciones: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM presentaciones")
+        .fetch_one(&state.pool)
+        .await?;
+    let lotes: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM lotes")
+        .fetch_one(&state.pool)
+        .await?;
+    let stock_registros: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM stock WHERE cantidad > 0")
+        .fetch_one(&state.pool)
+        .await?;
+    let categorias: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM categorias")
+        .fetch_one(&state.pool)
+        .await?;
+    let areas: (i64,) =
+        sqlx::query_as("SELECT COUNT(DISTINCT area_id) FROM stock WHERE cantidad > 0")
+            .fetch_one(&state.pool)
+            .await?;
 
     Ok(Json(serde_json::json!({
         "productos": productos.0,
@@ -425,7 +528,9 @@ async fn finalizar(
     .execute(&state.pool)
     .await?;
 
-    Ok(Json(serde_json::json!({ "mensaje": "Configuración finalizada" })))
+    Ok(Json(
+        serde_json::json!({ "mensaje": "Configuración finalizada" }),
+    ))
 }
 
 pub fn routes() -> Router<AppState> {

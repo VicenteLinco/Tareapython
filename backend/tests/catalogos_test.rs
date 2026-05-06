@@ -235,12 +235,8 @@ async fn crud_proveedor(pool: PgPool) {
     assert_eq!(status, StatusCode::CONFLICT);
 
     // Soft delete
-    let (status, _) = common::delete_req(
-        &app,
-        &format!("/api/v1/proveedores/{}", id),
-        &token,
-    )
-    .await;
+    let (status, _) =
+        common::delete_req(&app, &format!("/api/v1/proveedores/{}", id), &token).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     // Ya no aparece en listado

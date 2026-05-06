@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { QrScannerSession } from './qr-scanner-session'
 import { Badge } from '@/components/ui/badge'
+import { PageLoading } from '@/components/ui/page-state'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
 import { formatDate, daysUntil, cn, formatCantidad, getImageUrl } from '@/lib/utils'
@@ -189,7 +190,7 @@ export default function RecepcionDetallePage() {
   <script>
     window.onload = () => { setTimeout(() => window.print(), 250); };
     window.onafterprint = () => window.close();
-  <\/script>
+  </script>
 </body>
 </html>`
 
@@ -201,11 +202,7 @@ export default function RecepcionDetallePage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-4 max-w-5xl">
-        <div className="skeleton h-8 w-64" />
-        <div className="skeleton h-24 w-full rounded-xl" />
-        <div className="skeleton h-64 w-full rounded-xl" />
-      </div>
+      <PageLoading label="Cargando recepción..." />
     )
   }
 

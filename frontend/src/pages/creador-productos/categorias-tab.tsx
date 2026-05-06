@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
+import { PageLoading } from '@/components/ui/page-state'
 import { Dialog } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import api from '@/lib/api'
@@ -133,9 +134,7 @@ export default function CategoriasTab() {
       </div>
 
       {isLoading ? (
-        <div className="space-y-1.5">
-          {[1, 2, 3].map((i) => <div key={i} className="skeleton h-12 w-full rounded-lg" />)}
-        </div>
+        <PageLoading label="Cargando categorías..." />
       ) : (
         <DataTable
           columns={columns}

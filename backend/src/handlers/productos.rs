@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::dto::pagination::{PaginatedResponse, PaginationParams};
-use crate::errors::{validate_text_length, AppError};
+use crate::errors::{AppError, validate_text_length};
 use crate::models::producto::Producto;
 
 // === DTOs ===
@@ -32,6 +32,7 @@ struct ProductoListItem {
     nombre: String,
     codigo_proveedor: Option<String>,
     codigo_maestro: Option<String>,
+    proveedor_id: Option<i32>,
     categoria: Option<CategoriaRef>,
     unidad_base: UnidadRef,
     proveedor: Option<ProveedorRef>,
@@ -155,7 +156,10 @@ async fn listar(
     // ... (listar se mantendrá aquí por ahora ya que es muy específico de la UI,
     // pero en una fase 2 se podría mover a un QueryService)
     let activo = params.activo.unwrap_or(true);
-    let pagination = PaginationParams { page: params.page, per_page: params.per_page };
+    let pagination = PaginationParams {
+        page: params.page,
+        per_page: params.per_page,
+    };
     let limit = pagination.per_page();
     let offset = pagination.offset();
 
@@ -187,10 +191,7 @@ async fn listar(
 
     let where_clause = conditions.join(" AND ");
 
-    let count_sql = format!(
-        "SELECT COUNT(*) FROM productos p WHERE {}",
-        where_clause
-    );
+    let count_sql = format!("SELECT COUNT(*) FROM productos p WHERE {}", where_clause);
     let data_sql = format!(
         r#"SELECT p.id, p.codigo_interno, p.nombre, p.codigo_proveedor, p.codigo_maestro,
                   p.stock_minimo, p.precio_unidad, p.lead_time_propio, p.activo, p.imagen_url,
@@ -210,7 +211,9 @@ async fn listar(
            WHERE {}
            ORDER BY p.nombre
            LIMIT ${} OFFSET ${}"#,
-        where_clause, param_idx, param_idx + 1
+        where_clause,
+        param_idx,
+        param_idx + 1
     );
 
     let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql).bind(activo);
@@ -247,6 +250,7 @@ async fn listar(
             nombre: r.nombre,
             codigo_proveedor: r.codigo_proveedor,
             codigo_maestro: r.codigo_maestro,
+            proveedor_id: r.prov_id,
             categoria: r.cat_id.map(|id| CategoriaRef {
                 id,
                 nombre: r.cat_nombre.unwrap_or_default(),
@@ -327,7 +331,8 @@ async fn crear(
             area_ids: req.area_ids,
             usuario_id: claims.sub,
         },
-    ).await?;
+    )
+    .await?;
 
     Ok((
         axum::http::StatusCode::CREATED,
@@ -349,7 +354,9 @@ async fn actualizar(
 
     let nombre = req.nombre.as_deref().map(str::trim).unwrap_or("");
     if req.nombre.is_some() && nombre.is_empty() {
-        return Err(AppError::Validation("El nombre no puede estar vacío".into()));
+        return Err(AppError::Validation(
+            "El nombre no puede estar vacío".into(),
+        ));
     }
 
     let producto = ProductoService::actualizar_producto(
@@ -370,7 +377,8 @@ async fn actualizar(
             version_esperada: req.version,
             usuario_id: claims.sub,
         },
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(producto))
 }
@@ -426,20 +434,20 @@ async fn subir_imagen(
     Json(req): Json<SubirImagenInput>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     // Verificar que el producto existe y obtener imagen actual
-    let imagen_actual: Option<String> = sqlx::query_scalar(
-        "SELECT imagen_url FROM productos WHERE id = $1 AND activo = true",
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?
-    .flatten();
+    let imagen_actual: Option<String> =
+        sqlx::query_scalar("SELECT imagen_url FROM productos WHERE id = $1 AND activo = true")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .flatten();
 
     if imagen_actual.is_none() {
         // Check product exists at all
-        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1)")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1)")
+                .bind(id)
+                .fetch_one(&state.pool)
+                .await?;
         if !exists {
             return Err(AppError::NotFound("Producto no encontrado".into()));
         }
@@ -451,7 +459,9 @@ async fn subir_imagen(
     }
 
     // Guardar nueva imagen
-    let path = crate::services::storage::save_base64_image(&req.data_url, "productos", &id.to_string()).await?;
+    let path =
+        crate::services::storage::save_base64_image(&req.data_url, "productos", &id.to_string())
+            .await?;
 
     // Actualizar base de datos
     sqlx::query("UPDATE productos SET imagen_url = $1 WHERE id = $2")
@@ -469,13 +479,12 @@ async fn quitar_imagen(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let imagen_actual: Option<String> = sqlx::query_scalar(
-        "SELECT imagen_url FROM productos WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?
-    .flatten();
+    let imagen_actual: Option<String> =
+        sqlx::query_scalar("SELECT imagen_url FROM productos WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .flatten();
 
     if let Some(ref path) = imagen_actual {
         crate::services::storage::delete_image(path).await?;
@@ -494,5 +503,8 @@ pub fn routes() -> Router<AppState> {
         .route("/scan", get(scan_barcode))
         .route("/{id}", get(obtener).put(actualizar).delete(eliminar))
         .route("/{id}/reactivar", axum::routing::post(reactivar))
-        .route("/{id}/imagen", axum::routing::put(subir_imagen).delete(quitar_imagen))
+        .route(
+            "/{id}/imagen",
+            axum::routing::put(subir_imagen).delete(quitar_imagen),
+        )
 }

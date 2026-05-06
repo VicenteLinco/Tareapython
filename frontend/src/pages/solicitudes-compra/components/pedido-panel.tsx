@@ -1,5 +1,6 @@
 // frontend/src/pages/solicitudes-compra/components/pedido-panel.tsx
-import { ShoppingCart, Plus, Minus, Trash2, CheckCircle2 } from 'lucide-react'
+import { ShoppingCart, Plus, Minus, Trash2, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { MetricTooltip } from '@/components/ui/metric-tooltip'
 import { cn, formatCantidad } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -90,6 +91,11 @@ export function PedidoPanel({
         {/* Chips de horizonte global */}
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[9px] font-bold opacity-35 uppercase tracking-wider shrink-0">Cubrir:</span>
+          <MetricTooltip
+            size="sm"
+            position="right"
+            text="Horizonte de cobertura: período que se quiere cubrir con la compra. La cantidad sugerida = consumo diario × horizonte + stock seguridad − stock actual."
+          />
           {HORIZONTE_CHIPS.map(d => (
             <button
               key={d}
@@ -139,6 +145,16 @@ export function PedidoPanel({
                   {item.producto_nombre}
                 </span>
 
+                {item.tipo_estimacion_demanda === 'historial_corto' && (
+                  <span
+                    className="inline-flex items-center gap-1 shrink-0 text-[9px] font-bold px-2 py-0.5 rounded-full bg-warning/10 text-warning border border-warning/20"
+                    title={item.horizonte_razon ?? 'Estimacion provisional por historial corto'}
+                  >
+                    <AlertTriangle className="h-2.5 w-2.5" />
+                    Historial corto
+                  </span>
+                )}
+
                 {/* Pill de cobertura */}
                 <div className="relative shrink-0" data-popover-item>
                   <button
@@ -151,7 +167,7 @@ export function PedidoPanel({
                     {pillText(diasCubiertos, esPersonalizado)}
                   </button>
                   {popoverAbierto && (
-                    <div className="absolute top-full right-0 mt-1.5 z-50 bg-base-100 border border-base-300 rounded-2xl shadow-2xl p-3 min-w-[220px]">
+                    <div className="app-floating-menu absolute top-full right-0 mt-1.5 rounded-box p-3 min-w-[220px]">
                       <p className="text-[10px] font-bold opacity-60 uppercase tracking-wider mb-2">
                         Ajustar horizonte
                       </p>
@@ -222,7 +238,7 @@ export function PedidoPanel({
                         }
                       </p>
                       <p className="text-[9px] opacity-35 truncate">
-                        {formatCantidad(item.factor_conversion!, item.unidad_base, item.unidad_base_plural ?? undefined)}
+                        {formatCantidad(item.cantidad * item.factor_conversion!, item.unidad_base, item.unidad_base_plural ?? undefined)}
                       </p>
                     </>
                   ) : (

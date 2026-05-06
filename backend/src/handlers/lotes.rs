@@ -129,11 +129,10 @@ async fn obtener(
         .await?
         .ok_or(AppError::NotFound("Lote no encontrado".into()))?;
 
-    let producto_nombre: String =
-        sqlx::query_scalar("SELECT nombre FROM productos WHERE id = $1")
-            .bind(lote.producto_id)
-            .fetch_one(&state.pool)
-            .await?;
+    let producto_nombre: String = sqlx::query_scalar("SELECT nombre FROM productos WHERE id = $1")
+        .bind(lote.producto_id)
+        .fetch_one(&state.pool)
+        .await?;
 
     let stock_por_area = sqlx::query_as::<_, StockPorArea>(
         r#"SELECT s.area_id, a.nombre as area_nombre, s.cantidad

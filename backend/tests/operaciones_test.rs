@@ -138,13 +138,12 @@ async fn recepcion_borrador_no_genera_stock(pool: PgPool) {
     )
     .await;
     let prod_id = prod["id"].as_str().unwrap();
-    let pres_id: i32 = sqlx::query_scalar(
-        "SELECT id FROM presentaciones WHERE producto_id = $1 LIMIT 1",
-    )
-    .bind(prod_id.parse::<Uuid>().unwrap())
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let pres_id: i32 =
+        sqlx::query_scalar("SELECT id FROM presentaciones WHERE producto_id = $1 LIMIT 1")
+            .bind(prod_id.parse::<Uuid>().unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
 
     // Crear recepción como borrador (no necesita idempotency)
     let (status, json) = common::post_json(
@@ -257,25 +256,14 @@ async fn consumo_idempotente(pool: PgPool) {
     });
 
     // Primera vez
-    let (s1, j1) = common::post_json_idempotent(
-        &app,
-        "/api/v1/consumos",
-        &token,
-        body.clone(),
-        &idem_key,
-    )
-    .await;
+    let (s1, j1) =
+        common::post_json_idempotent(&app, "/api/v1/consumos", &token, body.clone(), &idem_key)
+            .await;
     assert_eq!(s1, StatusCode::CREATED);
 
     // Segunda vez con misma key → misma respuesta, no se descuenta más
-    let (s2, j2) = common::post_json_idempotent(
-        &app,
-        "/api/v1/consumos",
-        &token,
-        body,
-        &idem_key,
-    )
-    .await;
+    let (s2, j2) =
+        common::post_json_idempotent(&app, "/api/v1/consumos", &token, body, &idem_key).await;
     assert_eq!(s2, StatusCode::CREATED);
     assert_eq!(j1["grupo_movimiento"], j2["grupo_movimiento"]);
 
@@ -375,13 +363,12 @@ async fn descarte_vencido(pool: PgPool) {
     let (producto_uuid, _) = setup_stock(&pool, &token, &app, 1, 100.0).await;
 
     // Obtener lote_id
-    let lote_id: Uuid = sqlx::query_scalar(
-        "SELECT l.id FROM lotes l WHERE l.producto_id = $1 LIMIT 1",
-    )
-    .bind(producto_uuid)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let lote_id: Uuid =
+        sqlx::query_scalar("SELECT l.id FROM lotes l WHERE l.producto_id = $1 LIMIT 1")
+            .bind(producto_uuid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
 
     let idem_key = Uuid::new_v4().to_string();
     let (status, json) = common::post_json_idempotent(
@@ -429,7 +416,12 @@ async fn consultar_stock(pool: PgPool) {
 
     assert_eq!(status, StatusCode::OK);
     assert!(!json["data"].as_array().unwrap().is_empty());
-    assert!(json["resumen"]["total_productos_con_stock"].as_i64().unwrap() >= 1);
+    assert!(
+        json["resumen"]["total_productos_con_stock"]
+            .as_i64()
+            .unwrap()
+            >= 1
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -490,12 +482,7 @@ async fn listar_movimientos(pool: PgPool) {
     )
     .await;
 
-    let (status, json) = common::get_json(
-        &app,
-        "/api/v1/movimientos?tipo=salida",
-        &token,
-    )
-    .await;
+    let (status, json) = common::get_json(&app, "/api/v1/movimientos?tipo=salida", &token).await;
 
     assert_eq!(status, StatusCode::OK);
     assert!(!json["data"].as_array().unwrap().is_empty());

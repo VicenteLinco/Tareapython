@@ -65,7 +65,8 @@ async fn asignar_productos_area(
     Json(req): Json<AsignarProductosRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
-    let count = area_service::asignar_productos(&state.pool, id, req.producto_ids, claims.sub).await?;
+    let count =
+        area_service::asignar_productos(&state.pool, id, req.producto_ids, claims.sub).await?;
     Ok(Json(json!({"asignados": count})))
 }
 
@@ -73,5 +74,8 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
         .route("/{id}", put(actualizar).delete(eliminar))
-        .route("/{id}/productos", get(listar_productos_area).put(asignar_productos_area))
+        .route(
+            "/{id}/productos",
+            get(listar_productos_area).put(asignar_productos_area),
+        )
 }

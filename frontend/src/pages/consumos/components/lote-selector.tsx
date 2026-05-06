@@ -63,7 +63,7 @@ export function LoteSelector({ lotes, cargandoLotes, loteElegidoId, unidad, unid
 
       {/* Dropdown */}
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 z-30 bg-base-100 border border-base-200 rounded-xl shadow-xl min-w-[220px] max-h-56 overflow-y-auto">
+        <div className="app-floating-menu absolute top-full left-0 mt-1.5 rounded-box min-w-[220px] max-h-56 overflow-y-auto">
           {/* FEFO automático */}
           <button
             type="button"

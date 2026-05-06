@@ -40,7 +40,10 @@ async fn listar(
 ) -> Result<Json<PaginatedResponse<AuditLogItem>>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
-    let pagination = PaginationParams { page: params.page, per_page: params.per_page };
+    let pagination = PaginationParams {
+        page: params.page,
+        per_page: params.per_page,
+    };
     let limit = pagination.per_page();
     let offset = pagination.offset();
 
@@ -65,7 +68,10 @@ async fn listar(
     }
     if params.hasta.is_some() {
         param_idx += 1;
-        conditions.push(format!("al.created_at < ${}::date + INTERVAL '1 day'", param_idx));
+        conditions.push(format!(
+            "al.created_at < ${}::date + INTERVAL '1 day'",
+            param_idx
+        ));
     }
 
     let where_clause = conditions.join(" AND ");

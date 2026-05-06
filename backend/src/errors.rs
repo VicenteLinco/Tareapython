@@ -61,26 +61,55 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_code, message, id) = match &self {
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone(), None),
-            AppError::Validation(msg) => (StatusCode::BAD_REQUEST, "VALIDATION_ERROR", msg.clone(), None),
+            AppError::Validation(msg) => (
+                StatusCode::BAD_REQUEST,
+                "VALIDATION_ERROR",
+                msg.clone(),
+                None,
+            ),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, "CONFLICT", msg.clone(), None),
-            AppError::ConflictWithId(msg, code, uuid) => (StatusCode::CONFLICT, code.as_str(), msg.clone(), Some(*uuid)),
-            AppError::BusinessLogic(msg, code) => {
-                (StatusCode::UNPROCESSABLE_ENTITY, code.as_str(), msg.clone(), None)
-            }
+            AppError::ConflictWithId(msg, code, uuid) => (
+                StatusCode::CONFLICT,
+                code.as_str(),
+                msg.clone(),
+                Some(*uuid),
+            ),
+            AppError::BusinessLogic(msg, code) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                code.as_str(),
+                msg.clone(),
+                None,
+            ),
             AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, "FORBIDDEN", msg.clone(), None),
-            AppError::Unauthorized => {
-                (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", "No autenticado".to_string(), None)
-            }
-            AppError::TooManyRequests => {
-                (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", "Demasiadas solicitudes. Intente más tarde.".to_string(), None)
-            }
+            AppError::Unauthorized => (
+                StatusCode::UNAUTHORIZED,
+                "UNAUTHORIZED",
+                "No autenticado".to_string(),
+                None,
+            ),
+            AppError::TooManyRequests => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "RATE_LIMITED",
+                "Demasiadas solicitudes. Intente más tarde.".to_string(),
+                None,
+            ),
             AppError::Internal(msg) => {
                 tracing::error!("Error interno: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Error interno del servidor".to_string(), None)
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "INTERNAL_ERROR",
+                    "Error interno del servidor".to_string(),
+                    None,
+                )
             }
             AppError::Sqlx(err) => {
                 tracing::error!("Error de base de datos: {}", err);
-                (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Error interno del servidor".to_string(), None)
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "INTERNAL_ERROR",
+                    "Error interno del servidor".to_string(),
+                    None,
+                )
             }
         };
 

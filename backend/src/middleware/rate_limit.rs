@@ -1,7 +1,3 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
 use axum::{
     body::Body,
     extract::State,
@@ -9,9 +5,13 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 
-use crate::db::AppState;
 use crate::auth::jwt::verify_access_token;
+use crate::db::AppState;
 
 /// Rate limiter de ventana deslizante en memoria.
 #[derive(Clone)]
@@ -66,7 +66,7 @@ pub async fn rate_limit_middleware(
 ) -> Result<Response, StatusCode> {
     let method = req.method();
     let path = req.uri().path();
-    
+
     // 1. Auth Limiter (Login/Refresh)
     if path.contains("/api/v1/auth/login") || path.contains("/api/v1/auth/refresh") {
         let ip = extract_ip(&req);
@@ -85,10 +85,10 @@ pub async fn rate_limit_middleware(
                 tracing::warn!("Rate limit exceeded for reads: {}", key);
                 return Err(StatusCode::TOO_MANY_REQUESTS);
             }
-        } else if method == axum::http::Method::POST || 
-                  method == axum::http::Method::PUT || 
-                  method == axum::http::Method::DELETE || 
-                  method == axum::http::Method::PATCH 
+        } else if method == axum::http::Method::POST
+            || method == axum::http::Method::PUT
+            || method == axum::http::Method::DELETE
+            || method == axum::http::Method::PATCH
         {
             // Mutaciones: 60 req/min
             if !state.mutation_limiter.check(&key).await {

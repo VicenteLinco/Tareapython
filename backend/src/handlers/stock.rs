@@ -598,7 +598,7 @@ async fn alertas(
                    SUM(cantidad_sugerida) as total_en_camino
                FROM solicitud_compra_detalle scd
                JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
-               WHERE sc.estado = 'guardada'
+               WHERE sc.estado IN ('guardada', 'enviada')
                GROUP BY producto_id
            ),"#;
 
@@ -637,6 +637,7 @@ async fn alertas(
                    p.nombre,
                    p.stock_minimo,
                    p.lead_time_propio,
+                   p.created_at,
                    p.proveedor_id,
                    pv.nombre AS proveedor_nombre,
                    COALESCE(p.lead_time_propio, pv.dias_despacho_tierra, pv.dias_despacho_aereo, 7) AS dias_despacho,
@@ -670,6 +671,7 @@ async fn alertas(
                    proxima_fecha_venc,
                    stock_minimo,
                    lead_time_propio,
+                   created_at,
                    total_en_camino,
                    (total_en_camino > 0) AS tiene_pedido_pendiente,
                    proveedor_id,
@@ -688,7 +690,9 @@ async fn alertas(
                CROSS JOIN LATERAL (
                    SELECT 'vencido' as tipo WHERE proxima_fecha_venc < CURRENT_DATE
                    UNION ALL
-                   SELECT 'sin_stock' WHERE total <= 0 AND stock_minimo > 0
+                   SELECT 'sin_stock' WHERE total <= 0 AND stock_minimo > 0 AND NOT (
+                       ultimo_movimiento IS NULL AND created_at >= NOW() - INTERVAL '7 days'
+                   )
                    UNION ALL
                    SELECT 'agotamiento_proximo' WHERE consumo_diario_ajustado > 0.0001 AND dias_con_consumo >= 3 AND (total / consumo_diario_ajustado) <= COALESCE(dias_despacho, 7) AND total > 0
                    UNION ALL

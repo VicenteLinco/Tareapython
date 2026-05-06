@@ -3,6 +3,7 @@ import { Search, ArrowRight, User } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { EmptyState, PageLoading } from '@/components/ui/page-state'
 import type { SolicitudResumen } from '@/types'
 
 interface HistorialViewProps {
@@ -11,7 +12,28 @@ interface HistorialViewProps {
   search: string
   onSearchChange: (v: string) => void
   onSelectSolicitud: (id: string) => void
+  estado: string | null
+  onEstadoChange: (v: string | null) => void
 }
+
+const ESTADO_FILTROS: { value: string | null; label: string }[] = [
+  { value: null, label: 'Todas' },
+  { value: 'guardada', label: 'Pendientes' },
+  { value: 'enviada', label: 'Enviadas' },
+  { value: 'completada', label: 'Completadas' },
+  { value: 'cancelada', label: 'Canceladas' },
+]
+
+const estadoBadgeClass = (estado: string) =>
+  estado === 'completada' ? 'bg-success/10 text-success border-success/30' :
+  estado === 'guardada'   ? 'bg-warning/10 text-warning border-warning/30' :
+  estado === 'cancelada'  ? 'bg-error/10 text-error border-error/30' :
+  estado === 'enviada'    ? 'bg-info/10 text-info border-info/30' :
+  estado === 'borrador'   ? 'bg-base-200 text-base-content/50 border-base-300' :
+  'bg-base-200 text-base-content/50 border-base-300'
+
+const estadoLabel = (estado: string) =>
+  estado === 'guardada' ? 'pendiente' : estado
 
 export function HistorialView({
   solicitudes,
@@ -19,26 +41,50 @@ export function HistorialView({
   search,
   onSearchChange,
   onSelectSolicitud,
+  estado,
+  onEstadoChange,
 }: HistorialViewProps) {
   return (
     <div className="flex-1 bg-base-100 rounded-[2rem] border border-base-300 shadow-sm overflow-hidden flex flex-col">
-      <div className="p-6 border-b border-base-200 bg-base-200/20 flex items-center gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 opacity-30" />
-          <Input
-            placeholder="Buscar por N° documento o usuario..."
-            className="pl-10 h-10 rounded-xl"
-            value={search}
-            onChange={e => onSearchChange(e.target.value)}
-          />
+      <div className="p-6 border-b border-base-200 bg-base-200/20 flex flex-col gap-3">
+        <div className="flex items-center gap-4">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 opacity-30" />
+            <Input
+              placeholder="Buscar por N° documento o usuario..."
+              className="pl-10 h-10 rounded-xl"
+              value={search}
+              onChange={e => onSearchChange(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {ESTADO_FILTROS.map(f => (
+            <button
+              key={f.label}
+              onClick={() => onEstadoChange(f.value)}
+              className={cn(
+                'px-3 h-7 rounded-full text-xs font-bold transition-colors border',
+                estado === f.value
+                  ? 'bg-primary text-primary-content border-primary shadow-sm'
+                  : 'bg-base-100 border-base-300 hover:bg-base-200 opacity-70 hover:opacity-100'
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         {isLoading ? (
-          <div className="p-10 text-center">
-            <span className="loading loading-spinner loading-lg text-primary opacity-20" />
-          </div>
+          <PageLoading label="Cargando historial..." />
+        ) : (solicitudes?.length ?? 0) === 0 ? (
+          <EmptyState
+            title="No hay solicitudes"
+            description="No se encontraron solicitudes para el filtro actual."
+            className="m-6"
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="table table-md table-zebra w-full">
@@ -70,13 +116,9 @@ export function HistorialView({
                     <td>
                       <Badge variant="outline" className={cn(
                         "capitalize font-bold px-3 py-1",
-                        s.estado === 'aprobada'  ? 'bg-success/10 text-success border-success/30' :
-                        s.estado === 'pendiente' ? 'bg-warning/10 text-warning border-warning/30' :
-                        s.estado === 'rechazada' ? 'bg-error/10 text-error border-error/30' :
-                        s.estado === 'enviada'   ? 'bg-info/10 text-info border-info/30' :
-                        'bg-base-200 text-base-content/50 border-base-300'
+                        estadoBadgeClass(s.estado)
                       )}>
-                        {s.estado}
+                        {estadoLabel(s.estado)}
                       </Badge>
                     </td>
                     <td className="text-right">

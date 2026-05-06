@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Dialog } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -34,7 +34,7 @@ export function DiscardLoteDialog({ open, loteId, numeroLote, productoNombre, de
     enabled: !!loteId && open
   })
 
-  const stockPorArea: StockPorArea[] = data?.stock_por_area || []
+  const stockPorArea: StockPorArea[] = useMemo(() => data?.stock_por_area || [], [data?.stock_por_area])
   const fechaVencimiento = data?.fecha_vencimiento
   const isExpired = fechaVencimiento ? (daysUntil(fechaVencimiento) ?? 1) <= 0 : false
 
@@ -51,7 +51,7 @@ export function DiscardLoteDialog({ open, loteId, numeroLote, productoNombre, de
     if (fechaVencimiento) {
       setTipo(isExpired ? 'DESCARTE_VENCIDO' : 'DESCARTE_DAÑADO')
     }
-  }, [stockPorArea, defaultAreaId, open, fechaVencimiento, isExpired])
+  }, [stockPorArea, defaultAreaId, open, fechaVencimiento, isExpired, areaId])
 
   // Update max quantity when area changes
   useEffect(() => {
@@ -87,7 +87,7 @@ export function DiscardLoteDialog({ open, loteId, numeroLote, productoNombre, de
       queryClient.invalidateQueries({ queryKey: ['alertas'] })
       onClose()
     },
-    onError: (err: any) => {
+    onError: (err: unknown) => {
       setError(parseApiError(err))
     }
   })

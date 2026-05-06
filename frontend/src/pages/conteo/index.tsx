@@ -3,6 +3,7 @@ import { Plus, ClipboardCheck, ChevronRight, CheckCircle2, Clock, XCircle, Alert
 import { useNavigate } from 'react-router-dom'
 import { useConteoList } from '@/features/conteo/hooks/use-conteo-list'
 import { formatDate, cn } from '@/lib/utils'
+import { EmptyState, PageLoading } from '@/components/ui/page-state'
 import type { SesionConteo } from '@/types'
 
 const ESTADO_CONFIG = {
@@ -153,9 +154,7 @@ export default function ConteoPage() {
 
       {/* Lista */}
       {isLoading ? (
-        <div className="flex justify-center py-12">
-          <span className="loading loading-spinner loading-md" />
-        </div>
+        <PageLoading label="Cargando sesiones de conteo..." />
       ) : (
         <div className="space-y-3">
           {(sesiones?.data ?? []).map((sesion) => (
@@ -166,10 +165,11 @@ export default function ConteoPage() {
             />
           ))}
           {sesiones?.data.length === 0 && (
-            <div className="text-center py-12 opacity-40">
-              <ClipboardCheck className="h-10 w-10 mx-auto mb-3" />
-              <p>No hay sesiones</p>
-            </div>
+            <EmptyState
+              icon={<ClipboardCheck className="h-6 w-6" />}
+              title="No hay sesiones"
+              description="Crea una sesión para iniciar el conteo de inventario por área."
+            />
           )}
         </div>
       )}

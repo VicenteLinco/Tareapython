@@ -1,7 +1,13 @@
 import { useParams } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
+import { Html5QrcodeScanner } from 'html5-qrcode'
 import api from '@/lib/api'
 import { toast } from 'sonner'
+
+interface Html5ScannerInstance {
+  render: (onSuccess: (decodedText: string) => void, onError: () => void) => void
+  clear: () => Promise<void>
+}
 
 export default function ScanPage() {
   const { token } = useParams<{ token: string }>()
@@ -10,25 +16,23 @@ export default function ScanPage() {
 
   useEffect(() => {
     if (!token) return
-    let scanner: any = null
-    import('html5-qrcode').then(({ Html5QrcodeScanner }) => {
-      scanner = new Html5QrcodeScanner('reader', { fps: 10, qrbox: 250 }, false)
-      scanner.render(
-        async (code: string) => {
-          if (scannedRef.current.includes(code)) return
-          scannedRef.current = [...scannedRef.current, code]
-          try {
-            await api.post(`/recepciones/scanner-session/${token}/scan`, { codigo: code })
-            setScanned([...scannedRef.current])
-            toast.success(`Escaneado: ${code}`)
-          } catch {
-            scannedRef.current = scannedRef.current.filter(c => c !== code)
-            toast.error('Error al enviar escaneo')
-          }
-        },
-        () => {}
-      )
-    })
+    let scanner: Html5ScannerInstance | null = null
+    scanner = new Html5QrcodeScanner('reader', { fps: 10, qrbox: 250 }, false)
+    scanner.render(
+      async (code: string) => {
+        if (scannedRef.current.includes(code)) return
+        scannedRef.current = [...scannedRef.current, code]
+        try {
+          await api.post(`/recepciones/scanner-session/${token}/scan`, { codigo: code })
+          setScanned([...scannedRef.current])
+          toast.success(`Escaneado: ${code}`)
+        } catch {
+          scannedRef.current = scannedRef.current.filter(c => c !== code)
+          toast.error('Error al enviar escaneo')
+        }
+      },
+      () => undefined
+    )
     return () => { if (scanner) scanner.clear().catch(() => {}) }
   }, [token])
 

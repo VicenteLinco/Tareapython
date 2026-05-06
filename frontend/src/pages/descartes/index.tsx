@@ -84,13 +84,14 @@ export default function DescartesPage() {
       queryClient.invalidateQueries({ queryKey: ['stock-area-lotes'] })
       setItems({})
     },
-    onError: (err: any) => toast.error(parseApiError(err))
+    onError: (err: unknown) => toast.error(parseApiError(err))
   })
 
   const toggleItem = (loteId: string) => {
     setItems(prev => {
       if (prev[loteId]) {
-        const { [loteId]: _, ...rest } = prev
+        const rest = { ...prev }
+        delete rest[loteId]
         return rest
       }
       const stockItem = stock?.find(s => s.lote_id === loteId)
@@ -107,7 +108,7 @@ export default function DescartesPage() {
     })
   }
 
-  const updateItem = (loteId: string, field: keyof DescarteItemLocal, value: any) => {
+  const updateItem = (loteId: string, field: keyof DescarteItemLocal, value: DescarteItemLocal[keyof DescarteItemLocal]) => {
     setItems(prev => ({
       ...prev,
       [loteId]: { ...prev[loteId], [field]: value }
@@ -139,7 +140,7 @@ export default function DescartesPage() {
           area_id: areaId,
           cantidad: String(i.cantidad_descartar),
           tipo,
-          ...(justificacion && isHealthy && { nota: justificacion })
+          nota: justificacion && isHealthy ? justificacion : null,
         }
       })
     }
@@ -253,7 +254,7 @@ export default function DescartesPage() {
                       Ver detalle
                     </button>
                     {showSanosPopover && (
-                      <div className="absolute bottom-full left-0 mb-2 z-50 bg-base-100 border border-base-200 rounded-2xl shadow-2xl p-3 min-w-[240px] max-h-48 overflow-y-auto">
+                      <div className="app-floating-menu absolute bottom-full left-0 mb-2 rounded-box p-3 min-w-[240px] max-h-48 overflow-y-auto">
                         <p className="text-[10px] font-bold opacity-50 uppercase tracking-wider mb-2">Items sanos seleccionados</p>
                         <ul className="space-y-1">
                           {healthyItems.map(i => (

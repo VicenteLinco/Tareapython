@@ -117,10 +117,7 @@ async fn listar(
         format!("WHERE {}", conditions.join(" AND "))
     };
 
-    let count_sql = format!(
-        "SELECT COUNT(*) FROM sesiones_conteo sc {}",
-        where_clause
-    );
+    let count_sql = format!("SELECT COUNT(*) FROM sesiones_conteo sc {}", where_clause);
 
     let data_sql = format!(
         r#"SELECT sc.id, sc.area_id, a.nombre as area_nombre, sc.estado,
@@ -142,8 +139,12 @@ async fn listar(
     macro_rules! bind_params {
         ($q:expr) => {{
             let mut q = $q;
-            if let Some(v) = params.area_id { q = q.bind(v); }
-            if let Some(ref v) = params.estado { q = q.bind(v.clone()); }
+            if let Some(v) = params.area_id {
+                q = q.bind(v);
+            }
+            if let Some(ref v) = params.estado {
+                q = q.bind(v.clone());
+            }
             q
         }};
     }
@@ -158,7 +159,13 @@ async fn listar(
 
     let total_pages = ((total as f64) / (per_page as f64)).ceil() as i64;
 
-    Ok(Json(PaginatedSesiones { data, total, page, per_page, total_pages }))
+    Ok(Json(PaginatedSesiones {
+        data,
+        total,
+        page,
+        per_page,
+        total_pages,
+    }))
 }
 
 /// GET /api/v1/conteo/:id
@@ -184,11 +191,10 @@ async fn obtener(
     .await?
     .ok_or(AppError::NotFound("Sesión de conteo no encontrada".into()))?;
 
-    let nota: Option<String> =
-        sqlx::query_scalar("SELECT nota FROM sesiones_conteo WHERE id = $1")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
+    let nota: Option<String> = sqlx::query_scalar("SELECT nota FROM sesiones_conteo WHERE id = $1")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
 
     let items = sqlx::query_as::<_, ConteoItemRow>(
         r#"SELECT ci.id, ci.lote_id, l.numero_lote, l.fecha_vencimiento,
@@ -211,7 +217,7 @@ async fn obtener(
     // Obtener presentaciones para todos los productos en la sesión
     let producto_ids: Vec<Uuid> = items.iter().map(|i| i.producto_id).collect();
     let presentaciones = sqlx::query_as::<_, crate::models::presentacion::Presentacion>(
-        "SELECT * FROM presentaciones WHERE producto_id = ANY($1) AND activa = true"
+        "SELECT * FROM presentaciones WHERE producto_id = ANY($1) AND activa = true",
     )
     .bind(&producto_ids)
     .fetch_all(&state.pool)
@@ -278,8 +284,7 @@ async fn confirmar(
 
     let idem_key = idempotency::extract_idempotency_key(&headers)?;
     if let Some((_status, body)) =
-        idempotency::try_claim(&state.pool, &idem_key, "POST /conteo/confirmar", claims.sub)
-            .await?
+        idempotency::try_claim(&state.pool, &idem_key, "POST /conteo/confirmar", claims.sub).await?
     {
         return Ok(Json(body));
     }
@@ -327,7 +332,9 @@ async fn cancelar(
     let es_admin = claims.rol == "admin";
     let es_creador = claims.sub == sesion.usuario_creador_id;
     if !es_admin && !es_creador {
-        return Err(AppError::Forbidden("No tiene permiso para cancelar esta sesión".into()));
+        return Err(AppError::Forbidden(
+            "No tiene permiso para cancelar esta sesión".into(),
+        ));
     }
 
     sqlx::query(
@@ -342,9 +349,7 @@ async fn cancelar(
 
 /// GET /api/v1/conteo/pendientes
 /// Retorna las áreas que tienen frecuencia de conteo configurada y están vencidas o próximas
-async fn pendientes(
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, AppError> {
+async fn pendientes(State(state): State<AppState>) -> Result<Json<serde_json::Value>, AppError> {
     #[derive(Debug, serde::Serialize, sqlx::FromRow)]
     struct AreaPendiente {
         area_id: i32,

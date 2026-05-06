@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { PageLoading } from '@/components/ui/page-state'
 import type { Area } from '@/types'
 import type {
   UsuarioResponse,
@@ -106,8 +107,9 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
       toast.success('Usuario actualizado')
       onClose()
     },
-    onError: (err: any) => {
-      if (err.response?.status === 409) {
+    onError: (err: unknown) => {
+      const apiErr = err as { response?: { status?: number } }
+      if (apiErr.response?.status === 409) {
         toast.error('Conflicto: El usuario fue modificado por otro administrador. Recarga la lista.')
       } else {
         toast.error(parseApiError(err))
@@ -135,8 +137,13 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
     e.preventDefault()
     if (!form.nombre.trim() || !form.email.trim()) return
     if (isEdit) {
-      const { password: _, ...rest } = form
-      updateMut.mutate(rest)
+      updateMut.mutate({
+        nombre: form.nombre,
+        email: form.email,
+        rol: form.rol,
+        area_ids: form.area_ids,
+        version: form.version,
+      })
     } else {
       if (!form.password) { toast.error('La contraseña es obligatoria'); return }
       createMut.mutate(form)
@@ -431,9 +438,7 @@ export default function UsuariosPage() {
 
       {/* Grid de tarjetas */}
       {isLoading ? (
-        <div className="flex justify-center py-16">
-          <span className="loading loading-spinner loading-lg text-primary" />
-        </div>
+        <PageLoading label="Cargando usuarios..." />
       ) : filtrados.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
           <div className="p-4 bg-base-200 rounded-full">

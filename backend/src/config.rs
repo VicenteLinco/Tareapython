@@ -40,8 +40,8 @@ impl AppConfig {
             .parse::<u16>()
             .map_err(|_| "PORT debe ser un número entre 1 y 65535".to_string())?;
 
-        let cors_origin = env::var("CORS_ORIGIN")
-            .unwrap_or_else(|_| "http://localhost:5173".to_string());
+        let cors_origin =
+            env::var("CORS_ORIGIN").unwrap_or_else(|_| "http://localhost:5173".to_string());
 
         Ok(Self {
             database_url,

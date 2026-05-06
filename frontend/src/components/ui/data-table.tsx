@@ -1,11 +1,12 @@
 import { cn } from '@/lib/utils'
+import type { ReactNode } from 'react'
 
 interface Column<T> {
   key: string
   header: string
   className?: string
-  render?: (item: T) => React.ReactNode
-  filter?: React.ReactNode
+  render?: (item: T) => ReactNode
+  filter?: ReactNode
   width?: string
 }
 
@@ -15,8 +16,12 @@ interface DataTableProps<T> {
   onRowClick?: (item: T) => void
   selectedId?: number | null | string
   keyField?: string
-  emptyMessage?: React.ReactNode
+  emptyMessage?: ReactNode
   className?: string
+}
+
+function getCellValue<T>(item: T, key: string): unknown {
+  return (item as Record<string, unknown>)[key]
 }
 
 export function DataTable<T>({
@@ -65,13 +70,13 @@ export function DataTable<T>({
           ) : (
             data.map((item) => (
               <tr
-                key={String((item as any)[keyField])}
+                key={String(getCellValue(item, keyField))}
                 onClick={() => onRowClick?.(item)}
                 className={cn(
                   'hover:bg-base-200/40 transition-colors',
                   onRowClick && 'cursor-pointer',
                   selectedId !== undefined &&
-                    String((item as any)[keyField]) === String(selectedId) &&
+                    String(getCellValue(item, keyField)) === String(selectedId) &&
                     'bg-primary/5 !border-l-4 !border-l-primary'
                 )}
               >
@@ -82,7 +87,7 @@ export function DataTable<T>({
                     style={{ maxWidth: col.width }}
                   >
                     {col.render ? col.render(item) : (() => {
-                      const val = String((item as any)[col.key] ?? '');
+                      const val = String(getCellValue(item, col.key) ?? '');
                       if (val.startsWith('data:image') || val.length > 500) {
                         return <span className="text-[10px] opacity-20 italic">Dato largo / Imagen</span>;
                       }

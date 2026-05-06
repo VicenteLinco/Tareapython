@@ -4,11 +4,7 @@ use axum::http::StatusCode;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-async fn setup_producto(
-    _pool: &PgPool,
-    token: &str,
-    app: &axum::Router,
-) -> Uuid {
+async fn setup_producto(_pool: &PgPool, token: &str, app: &axum::Router) -> Uuid {
     let (_, prod_json) = common::post_json(
         app,
         "/api/v1/productos",
@@ -55,7 +51,11 @@ async fn flujo_completo_solicitud(pool: PgPool) {
     let (status, res) = common::get_json(&app, "/api/v1/solicitudes-compra", &admin_token).await;
     assert_eq!(status, StatusCode::OK);
     let solicitudes = res["data"].as_array().unwrap();
-    assert!(solicitudes.iter().any(|s| s["id"] == solicitud_id && s["estado"] == "pendiente"));
+    assert!(
+        solicitudes
+            .iter()
+            .any(|s| s["id"] == solicitud_id && s["estado"] == "pendiente")
+    );
 
     // 3. Admin aprueba
     let (status, _) = common::post_json(
@@ -68,7 +68,12 @@ async fn flujo_completo_solicitud(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
 
     // 4. Verificar estado final
-    let (status, res) = common::get_json(&app, &format!("/api/v1/solicitudes-compra/{}", solicitud_id), &admin_token).await;
+    let (status, res) = common::get_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}", solicitud_id),
+        &admin_token,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(res["estado"], "aprobada");
 }
@@ -121,7 +126,13 @@ async fn no_se_puede_revisar_dos_veces(pool: PgPool) {
     let solicitud_id = res["id"].as_str().unwrap();
 
     // Aprobar primera vez
-    common::post_json(&app, &format!("/api/v1/solicitudes-compra/{}/revisar", solicitud_id), &admin_token, serde_json::json!({"estado": "aprobada"})).await;
+    common::post_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}/revisar", solicitud_id),
+        &admin_token,
+        serde_json::json!({"estado": "aprobada"}),
+    )
+    .await;
 
     // Intentar revisar de nuevo -> 422
     let (status, _) = common::post_json(
@@ -160,7 +171,12 @@ async fn rechazo_con_nota(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    let (_, res) = common::get_json(&app, &format!("/api/v1/solicitudes-compra/{}", solicitud_id), &admin_token).await;
+    let (_, res) = common::get_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}", solicitud_id),
+        &admin_token,
+    )
+    .await;
     assert_eq!(res["estado"], "rechazada");
     assert_eq!(res["nota_revision"], "Stock suficiente");
 }
@@ -179,12 +195,17 @@ async fn solicitud_vacia_creada_correctamente(pool: PgPool) {
         }),
     )
     .await;
-    
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(res["status"], "success");
-    
+
     let solicitud_id = res["id"].as_str().unwrap();
-    let (_, res_get) = common::get_json(&app, &format!("/api/v1/solicitudes-compra/{}", solicitud_id), &admin_token).await;
+    let (_, res_get) = common::get_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}", solicitud_id),
+        &admin_token,
+    )
+    .await;
     assert_eq!(res_get["items"].as_array().unwrap().len(), 0);
 }
 
@@ -195,13 +216,11 @@ async fn recomendaciones_baja_confianza_no_extrapola(pool: PgPool) {
 
     // 1. Crear producto con stock_minimo y lead_time_propio
     let prod_id = setup_producto(&pool, &admin_token, &app).await;
-    sqlx::query(
-        "UPDATE productos SET stock_minimo = 50, lead_time_propio = 10 WHERE id = $1",
-    )
-    .bind(prod_id)
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("UPDATE productos SET stock_minimo = 50, lead_time_propio = 10 WHERE id = $1")
+        .bind(prod_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     // 2. Insertar lote
     let lote_id: Uuid = sqlx::query_scalar(
@@ -217,12 +236,11 @@ async fn recomendaciones_baja_confianza_no_extrapola(pool: PgPool) {
     .unwrap();
 
     // Obtener usuario admin para los movimientos
-    let usuario_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM usuarios WHERE rol = 'admin' LIMIT 1",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let usuario_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM usuarios WHERE rol = 'admin' LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
 
     // 3. INGRESO 300u hace 5 días (establece stock inicial)
     sqlx::query(
@@ -284,9 +302,9 @@ async fn recomendaciones_baja_confianza_no_extrapola(pool: PgPool) {
     // 8. El producto con sólo 3 días de consumo (confianza baja) y stock 169 > mínimo 50
     //    NO debe aparecer en recomendaciones, o si aparece, debe tener cantidad < 100
     let items = body["data"].as_array().expect("data debe ser array");
-    let nuestro = items.iter().find(|i| {
-        i["producto_id"].as_str() == Some(&prod_id.to_string())
-    });
+    let nuestro = items
+        .iter()
+        .find(|i| i["producto_id"].as_str() == Some(&prod_id.to_string()));
 
     if let Some(item) = nuestro {
         let cant = item["cantidad_sugerida_base"].as_f64().unwrap_or(-1.0);

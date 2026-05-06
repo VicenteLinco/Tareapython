@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::auth::models::Claims;
 use crate::db::AppState;
-use crate::errors::{validate_text_length, AppError};
+use crate::errors::{AppError, validate_text_length};
 use crate::services::idempotency;
 use crate::services::stock_ops;
 
@@ -17,7 +17,7 @@ struct ConsumoRequest {
     producto_id: Uuid,
     area_id: i32,
     cantidad: Decimal,
-    unidad: String,              // "base" o "presentacion"
+    unidad: String, // "base" o "presentacion"
     presentacion_id: Option<i32>,
     nota: Option<String>,
 }
@@ -35,8 +35,8 @@ struct ConsumoBatchItem {
     cantidad: Decimal,
     unidad: String,
     presentacion_id: Option<i32>,
-    area_id: Option<i32>,   // NEW: per-item area override
-    lote_id: Option<Uuid>,  // NEW: specific lote override (bypasses FEFO)
+    area_id: Option<i32>,  // NEW: per-item area override
+    lote_id: Option<Uuid>, // NEW: specific lote override (bypasses FEFO)
 }
 
 /// Convierte cantidad a unidades base si se especificó presentación
@@ -78,7 +78,9 @@ async fn consumo(
     Json(req): Json<ConsumoRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     // Validar longitud de campos de texto
-    if let Some(ref nota) = req.nota { validate_text_length(nota, "nota", 1000)?; }
+    if let Some(ref nota) = req.nota {
+        validate_text_length(nota, "nota", 1000)?;
+    }
     validate_text_length(&req.unidad, "unidad", 50)?;
 
     // Validar acceso al área
@@ -86,15 +88,26 @@ async fn consumo(
 
     // Idempotency
     let idem_key = idempotency::extract_idempotency_key(&headers)?;
-    if let Some((_status, body)) = idempotency::try_claim(&state.pool, &idem_key, "POST /consumos", claims.sub).await? {
+    if let Some((_status, body)) =
+        idempotency::try_claim(&state.pool, &idem_key, "POST /consumos", claims.sub).await?
+    {
         return Ok((StatusCode::CREATED, Json(body)));
     }
 
     // Convertir a unidades base
-    let cantidad_base = convertir_a_base(&state.pool, req.producto_id, req.cantidad, &req.unidad, req.presentacion_id).await?;
+    let cantidad_base = convertir_a_base(
+        &state.pool,
+        req.producto_id,
+        req.cantidad,
+        &req.unidad,
+        req.presentacion_id,
+    )
+    .await?;
     if cantidad_base <= Decimal::ZERO {
         idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
-        return Err(AppError::Validation("La cantidad debe ser mayor a 0".into()));
+        return Err(AppError::Validation(
+            "La cantidad debe ser mayor a 0".into(),
+        ));
     }
 
     let mut tx = state.pool.begin().await?;
@@ -168,17 +181,28 @@ async fn consumo_batch(
 
     // Idempotency
     let idem_key = idempotency::extract_idempotency_key(&headers)?;
-    if let Some((_status, body)) = idempotency::try_claim(&state.pool, &idem_key, "POST /consumos/batch", claims.sub).await? {
+    if let Some((_status, body)) =
+        idempotency::try_claim(&state.pool, &idem_key, "POST /consumos/batch", claims.sub).await?
+    {
         return Ok((StatusCode::CREATED, Json(body)));
     }
 
     // Convertir todas las cantidades a base
     let mut item_pairs: Vec<(&ConsumoBatchItem, Decimal)> = Vec::with_capacity(req.items.len());
     for item in &req.items {
-        let cantidad = convertir_a_base(&state.pool, item.producto_id, item.cantidad, &item.unidad, item.presentacion_id).await?;
+        let cantidad = convertir_a_base(
+            &state.pool,
+            item.producto_id,
+            item.cantidad,
+            &item.unidad,
+            item.presentacion_id,
+        )
+        .await?;
         if cantidad <= Decimal::ZERO {
             idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
-            return Err(AppError::Validation("Todas las cantidades deben ser mayor a 0".into()));
+            return Err(AppError::Validation(
+                "Todas las cantidades deben ser mayor a 0".into(),
+            ));
         }
         item_pairs.push((item, cantidad));
     }
@@ -276,23 +300,27 @@ async fn consumo_batch(
         total_movimientos += movs.len() as u32;
 
         let stock_restante: Option<Decimal> = match effective_area_id {
-            Some(area_id) => sqlx::query_scalar(
-                r#"SELECT SUM(s.cantidad) FROM stock s
+            Some(area_id) => {
+                sqlx::query_scalar(
+                    r#"SELECT SUM(s.cantidad) FROM stock s
                    JOIN lotes l ON l.id = s.lote_id
                    WHERE l.producto_id = $1 AND s.area_id = $2 AND s.cantidad > 0"#,
-            )
-            .bind(item.producto_id)
-            .bind(area_id)
-            .fetch_optional(&mut *tx)
-            .await?,
-            None => sqlx::query_scalar(
-                r#"SELECT SUM(s.cantidad) FROM stock s
+                )
+                .bind(item.producto_id)
+                .bind(area_id)
+                .fetch_optional(&mut *tx)
+                .await?
+            }
+            None => {
+                sqlx::query_scalar(
+                    r#"SELECT SUM(s.cantidad) FROM stock s
                    JOIN lotes l ON l.id = s.lote_id
                    WHERE l.producto_id = $1 AND s.cantidad > 0"#,
-            )
-            .bind(item.producto_id)
-            .fetch_optional(&mut *tx)
-            .await?,
+                )
+                .bind(item.producto_id)
+                .fetch_optional(&mut *tx)
+                .await?
+            }
         };
 
         resumen.push(serde_json::json!({

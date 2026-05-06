@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
 use rust_decimal::Decimal;
-use uuid::Uuid;
+use serde::{Deserialize, Serialize};
 use specta::Type;
+use uuid::Uuid;
 use validator::Validate;
 
 #[derive(Debug, Deserialize, Serialize, Validate, Type)]

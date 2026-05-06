@@ -11,8 +11,8 @@ use crate::auth::models::{
 use crate::db::AppState;
 use crate::errors::AppError;
 
-use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
+use argon2::password_hash::rand_core::OsRng;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use uuid::Uuid;
 
@@ -59,16 +59,14 @@ async fn login(
     let email_normalizado = req.email.trim().to_lowercase();
     tracing::info!("Intento de login para: {}", email_normalizado);
 
-    let user = sqlx::query(
-        "SELECT id, password_hash, rol, activo FROM usuarios WHERE email = $1",
-    )
-    .bind(&email_normalizado)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| {
-        tracing::warn!("Usuario no encontrado: {}", email_normalizado);
-        AppError::Unauthorized
-    })?;
+    let user = sqlx::query("SELECT id, password_hash, rol, activo FROM usuarios WHERE email = $1")
+        .bind(&email_normalizado)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| {
+            tracing::warn!("Usuario no encontrado: {}", email_normalizado);
+            AppError::Unauthorized
+        })?;
 
     let activo: bool = user.get("activo");
     if !activo {
@@ -77,11 +75,14 @@ async fn login(
     }
 
     let password_hash: String = user.get("password_hash");
-    let parsed_hash = PasswordHash::new(&password_hash)
-        .map_err(|e| {
-            tracing::error!("Error al parsear hash de DB para {}: {}", email_normalizado, e);
-            AppError::Internal("Hash inválido en DB".to_string())
-        })?;
+    let parsed_hash = PasswordHash::new(&password_hash).map_err(|e| {
+        tracing::error!(
+            "Error al parsear hash de DB para {}: {}",
+            email_normalizado,
+            e
+        );
+        AppError::Internal("Hash inválido en DB".to_string())
+    })?;
 
     if let Err(e) = Argon2::default().verify_password(req.password.as_bytes(), &parsed_hash) {
         tracing::warn!("Contraseña incorrecta para {}: {}", email_normalizado, e);
@@ -216,7 +217,9 @@ async fn cambiar_password(
         .execute(&state.pool)
         .await?;
 
-    Ok(Json(serde_json::json!({ "message": "Contraseña actualizada" })))
+    Ok(Json(
+        serde_json::json!({ "message": "Contraseña actualizada" }),
+    ))
 }
 
 /// Rutas públicas (no requieren JWT)

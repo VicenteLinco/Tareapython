@@ -1,15 +1,26 @@
 use serde::{Deserialize, Serialize};
+use specta::Type;
 use uuid::Uuid;
 use validator::Validate;
-use specta::Type;
 
 #[derive(Debug, Deserialize, Serialize, Validate, Type)]
 pub struct CreateUsuario {
-    #[validate(length(min = 1, max = 100, message = "El nombre debe tener entre 1 y 100 caracteres"))]
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "El nombre debe tener entre 1 y 100 caracteres"
+    ))]
     pub nombre: String,
-    #[validate(email(message = "Formato de email inválido"), length(max = 254, message = "Email demasiado largo"))]
+    #[validate(
+        email(message = "Formato de email inválido"),
+        length(max = 254, message = "Email demasiado largo")
+    )]
     pub email: String,
-    #[validate(length(min = 8, max = 128, message = "La contraseña debe tener entre 8 y 128 caracteres"))]
+    #[validate(length(
+        min = 8,
+        max = 128,
+        message = "La contraseña debe tener entre 8 y 128 caracteres"
+    ))]
     pub password: String,
     #[validate(custom(function = "validate_rol"))]
     pub rol: String,
@@ -18,9 +29,16 @@ pub struct CreateUsuario {
 
 #[derive(Debug, Deserialize, Serialize, Validate, Type)]
 pub struct UpdateUsuario {
-    #[validate(length(min = 1, max = 100, message = "El nombre debe tener entre 1 y 100 caracteres"))]
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "El nombre debe tener entre 1 y 100 caracteres"
+    ))]
     pub nombre: Option<String>,
-    #[validate(email(message = "Formato de email inválido"), length(max = 254, message = "Email demasiado largo"))]
+    #[validate(
+        email(message = "Formato de email inválido"),
+        length(max = 254, message = "Email demasiado largo")
+    )]
     pub email: Option<String>,
     // Validación de rol movida al servicio para evitar problemas con la macro en campos opcionales
     pub rol: Option<String>,

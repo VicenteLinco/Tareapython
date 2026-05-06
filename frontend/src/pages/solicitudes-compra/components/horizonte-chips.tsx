@@ -3,16 +3,6 @@ import { cn } from '@/lib/utils'
 
 const CHIPS = [7, 15, 30, 90, 180, 365]
 
-function chipMasCercano(horizonte: number): number {
-  return CHIPS.reduce((prev, curr) => {
-    const diffCurr = Math.abs(curr - horizonte)
-    const diffPrev = Math.abs(prev - horizonte)
-    return diffCurr < diffPrev ? curr : diffCurr === diffPrev ? Math.max(curr, prev) : prev
-  })
-}
-
-export { chipMasCercano }
-
 interface HorizonteChipsProps {
   horizonteDias: number | null        // chip activo actual (null = modo manual)
   horizonteSugerido: number | null    // valor sugerido por el sistema

@@ -5,7 +5,9 @@ use uuid::Uuid;
 
 use crate::auth::models::Claims;
 use crate::db::AppState;
-use crate::dto::usuario::{CreateUsuario, UpdateUsuario, UsuarioResponse, UsuarioQuery, ResetPasswordRequest};
+use crate::dto::usuario::{
+    CreateUsuario, ResetPasswordRequest, UpdateUsuario, UsuarioQuery, UsuarioResponse,
+};
 use crate::errors::AppError;
 use crate::services::usuario_service;
 

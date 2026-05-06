@@ -1,9 +1,9 @@
-use sqlx::PgPool;
-use serde_json::json;
-use uuid::Uuid;
-use crate::models::area::Area;
-use crate::dto::area::{CreateArea, UpdateArea, ProductoAreaRow};
+use crate::dto::area::{CreateArea, ProductoAreaRow, UpdateArea};
 use crate::errors::AppError;
+use crate::models::area::Area;
+use serde_json::json;
+use sqlx::PgPool;
+use uuid::Uuid;
 use validator::Validate;
 
 #[derive(Debug)]
@@ -25,11 +25,7 @@ pub async fn listar(pool: &PgPool) -> Result<Vec<Area>, AppError> {
     .map_err(Into::into)
 }
 
-pub async fn crear(
-    pool: &PgPool,
-    req: CreateArea,
-    usuario_id: Uuid,
-) -> Result<Area, AppError> {
+pub async fn crear(pool: &PgPool, req: CreateArea, usuario_id: Uuid) -> Result<Area, AppError> {
     req.validate()?;
     let nombre = req.nombre.trim().to_string();
 
@@ -49,11 +45,15 @@ pub async fn crear(
     })?;
 
     crate::services::audit::registrar(
-        pool, "areas", &area.id.to_string(), "CREATE",
+        pool,
+        "areas",
+        &area.id.to_string(),
+        "CREATE",
         None,
         Some(json!({"nombre": &area.nombre, "es_bodega": area.es_bodega})),
         usuario_id,
-    ).await?;
+    )
+    .await?;
 
     Ok(area)
 }
@@ -76,9 +76,15 @@ pub async fn actualizar(
         .await?
         .ok_or(AppError::NotFound("Área no encontrada".into()))?;
 
-    let nombre = req.nombre.as_deref().map(str::trim).unwrap_or(&anterior.nombre);
+    let nombre = req
+        .nombre
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or(&anterior.nombre);
     let es_bodega = req.es_bodega.unwrap_or(anterior.es_bodega);
-    let frecuencia = req.conteo_frecuencia_dias.unwrap_or(anterior.conteo_frecuencia_dias);
+    let frecuencia = req
+        .conteo_frecuencia_dias
+        .unwrap_or(anterior.conteo_frecuencia_dias);
 
     let area = sqlx::query_as::<_, Area>(
         "UPDATE areas SET nombre = $1, es_bodega = $2, conteo_frecuencia_dias = $3, version = version + 1 \
@@ -144,14 +150,23 @@ pub async fn eliminar(
     };
 
     crate::services::audit::registrar(
-        pool, "areas", &id.to_string(), accion,
-        None, None, usuario_id,
-    ).await?;
+        pool,
+        "areas",
+        &id.to_string(),
+        accion,
+        None,
+        None,
+        usuario_id,
+    )
+    .await?;
 
     Ok(resultado)
 }
 
-pub async fn listar_productos(pool: &PgPool, area_id: i32) -> Result<Vec<ProductoAreaRow>, AppError> {
+pub async fn listar_productos(
+    pool: &PgPool,
+    area_id: i32,
+) -> Result<Vec<ProductoAreaRow>, AppError> {
     let exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM areas WHERE id = $1)")
         .bind(area_id)
         .fetch_one(pool)
@@ -204,9 +219,15 @@ pub async fn asignar_productos(
     tx.commit().await?;
 
     crate::services::audit::registrar(
-        pool, "areas", &area_id.to_string(), "ASSIGN_PRODUCTS",
-        None, Some(json!({"count": producto_ids.len()})), usuario_id,
-    ).await?;
+        pool,
+        "areas",
+        &area_id.to_string(),
+        "ASSIGN_PRODUCTS",
+        None,
+        Some(json!({"count": producto_ids.len()})),
+        usuario_id,
+    )
+    .await?;
 
     Ok(producto_ids.len())
 }

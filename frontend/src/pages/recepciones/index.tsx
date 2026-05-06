@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
-import { Plus, Search, FileText, FileX, ChevronLeft, ChevronRight, Trash2, CheckCircle2 } from 'lucide-react'
+import { Plus, Search, FileText, FileX, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
+import { EmptyState, PageLoading } from '@/components/ui/page-state'
 import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
 import type { Proveedor, RecepcionListItem } from '@/types'
 import { formatDate } from '@/lib/utils'
 import { toast } from 'sonner'
+import { useFilterStorage } from '@/hooks/use-filter-storage'
 
 const PAGE_SIZE = 15
 
@@ -22,10 +24,15 @@ interface PaginatedRecepciones {
 type TabActivo = 'borradores' | 'confirmadas' | 'todas'
 
 export default function RecepcionesPage() {
-  const [tabActivo, setTabActivo] = useState<TabActivo>('borradores')
+  const REC_FILTER_DEFAULTS = { tabActivo: 'borradores' as TabActivo, proveedorFiltro: null as number | null }
+  const { filters: rf, setFilters: setRf, clearFilters: clearRf, hasActiveFilters: hasRfActive } = useFilterStorage('recepciones', REC_FILTER_DEFAULTS)
+  const tabActivo = rf.tabActivo
+  const proveedorFiltro = rf.proveedorFiltro
+  const setTabActivo = (v: TabActivo) => setRf(f => ({ ...f, tabActivo: v }))
+  const setProveedorFiltro = (v: number | null) => setRf(f => ({ ...f, proveedorFiltro: v }))
+
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
-  const [proveedorFiltro, setProveedorFiltro] = useState<number | null>(null)
   const [page, setPage] = useState(1)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -149,12 +156,20 @@ export default function RecepcionesPage() {
             size="md"
           />
         </fieldset>
+
+        {(hasRfActive || search) && (
+          <button
+            onClick={() => { clearRf(); setSearchInput(''); setSearch(''); setPage(1) }}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-base-300 text-[11px] font-bold text-base-content/60 hover:text-error hover:border-error/40 transition-all self-end mb-0.5"
+          >
+            <X className="w-3 h-3" />
+            Limpiar filtros
+          </button>
+        )}
       </div>
 
       {isLoading ? (
-        <div className="space-y-2">
-          {[1, 2, 3].map((i) => <div key={i} className="skeleton h-14 w-full" />)}
-        </div>
+        <PageLoading label="Cargando recepciones..." />
       ) : (
         <>
           <div className="rounded-xl border border-base-200 overflow-hidden">
@@ -175,8 +190,13 @@ export default function RecepcionesPage() {
               <tbody>
                 {pageRows.length === 0 ? (
                   <tr>
-                    <td colSpan={tabActivo === 'borradores' ? 7 : 6} className="text-center py-8 text-sm opacity-40">
-                      No hay recepciones
+                    <td colSpan={tabActivo === 'borradores' ? 7 : 6} className="py-6">
+                      <EmptyState
+                        icon={<FileText className="h-6 w-6" />}
+                        title="No hay recepciones"
+                        description="Ajusta los filtros o crea una nueva recepción."
+                        className="border-none bg-transparent p-6"
+                      />
                     </td>
                   </tr>
                 ) : (

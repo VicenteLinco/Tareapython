@@ -33,18 +33,10 @@ interface ProductoCardProps {
   onDecrement?: () => void
 }
 
-function diasHastaVencer(fecha: string | null | undefined): number | null {
-  if (!fecha) return null
-  const hoy = new Date()
-  hoy.setHours(0, 0, 0, 0)
-  const venc = new Date(fecha + 'T00:00:00')
-  return Math.round((venc.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24))
-}
-
 function DaysChip({ days }: { days: number }) {
-  if (days < 0) return (
+  if (days <= 0) return (
     <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-error/10 text-error whitespace-nowrap">
-      Vencido
+      Sin stock
     </span>
   )
   const cls = days <= 7
@@ -56,7 +48,7 @@ function DaysChip({ days }: { days: number }) {
         : 'bg-success/10 text-success/80'
   return (
     <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap', cls)}>
-      ~{days} días
+      ~{days} días stock
     </span>
   )
 }
@@ -68,7 +60,7 @@ export function ProductoCard({
   const [flash, setFlash] = useState(false)
   const didMountRef = useRef(false)
   const sinStock = (producto.stock_total ?? 0) <= 0
-  const dias = diasHastaVencer(producto.proximo_vencimiento)
+  const dias = producto.dias_autonomia
   const subtitulo = [producto.area_nombre, producto.categoria].filter(Boolean).join(' · ')
 
   useEffect(() => {
@@ -137,8 +129,8 @@ export function ProductoCard({
           </div>
         )}
 
-        {/* Días hasta vencimiento */}
-        {!sinStock && dias !== null && <DaysChip days={dias} />}
+        {/* Días de stock */}
+        {!sinStock && dias != null && <DaysChip days={dias} />}
 
         {sinStock ? (
           <span className="badge badge-xs badge-error badge-outline">Sin stock</span>

@@ -119,10 +119,7 @@ impl ProductoService {
     }
 
     /// Obtiene un producto por ID con todos sus detalles (Categoría, Unidad, Áreas, etc)
-    pub async fn obtener_detalle(
-        pool: &PgPool,
-        id: Uuid,
-    ) -> Result<serde_json::Value, AppError> {
+    pub async fn obtener_detalle(pool: &PgPool, id: Uuid) -> Result<serde_json::Value, AppError> {
         let result: Option<serde_json::Value> = sqlx::query_scalar(
             r#"SELECT json_build_object(
                 'id',              p.id,
@@ -204,7 +201,9 @@ impl ProductoService {
             .ok_or(AppError::NotFound("Producto no encontrado".into()))?;
 
         if params.version_esperada != anterior.version {
-            return Err(AppError::Conflict("El registro fue modificado por otro usuario".into()));
+            return Err(AppError::Conflict(
+                "El registro fue modificado por otro usuario".into(),
+            ));
         }
 
         let mut tx = pool.begin().await?;
@@ -289,7 +288,9 @@ impl ProductoService {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("Producto no encontrado o ya inactivo".into()));
+            return Err(AppError::NotFound(
+                "Producto no encontrado o ya inactivo".into(),
+            ));
         }
 
         sqlx::query(
@@ -335,13 +336,16 @@ impl ProductoService {
     ) -> Result<serde_json::Value, AppError> {
         let codigo = codigo.trim();
         if codigo.is_empty() {
-            return Err(AppError::Validation("El código no puede estar vacío".into()));
+            return Err(AppError::Validation(
+                "El código no puede estar vacío".into(),
+            ));
         }
 
         #[derive(sqlx::FromRow)]
         struct Row1 {
             producto_id: Uuid,
             producto_nombre: String,
+            proveedor_id: Option<i32>,
             unidad_base_nombre: String,
             unidad_base_nombre_plural: String,
             presentacion_id: Uuid,
@@ -354,7 +358,7 @@ impl ProductoService {
         // 1. Buscar por código de barras de presentación
         let row = sqlx::query_as::<_, Row1>(
             r#"SELECT
-                 p.id as producto_id, p.nombre as producto_nombre,
+                 p.id as producto_id, p.nombre as producto_nombre, p.proveedor_id,
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
                  pr.id as presentacion_id, pr.nombre as presentacion_nombre, pr.factor_conversion,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
@@ -375,6 +379,7 @@ impl ProductoService {
                 "tipo": "presentacion",
                 "producto_id": r.producto_id,
                 "producto_nombre": r.producto_nombre,
+                "proveedor_id": r.proveedor_id,
                 "unidad_base_nombre": r.unidad_base_nombre,
                 "unidad_base_nombre_plural": r.unidad_base_nombre_plural,
                 "presentacion_id": r.presentacion_id,
@@ -389,6 +394,7 @@ impl ProductoService {
         struct Row2 {
             producto_id: Uuid,
             producto_nombre: String,
+            proveedor_id: Option<i32>,
             unidad_base_nombre: String,
             unidad_base_nombre_plural: String,
             stock_total: Option<Decimal>,
@@ -398,7 +404,7 @@ impl ProductoService {
         // 2. Buscar por código interno del producto
         let row2 = sqlx::query_as::<_, Row2>(
             r#"SELECT
-                 p.id as producto_id, p.nombre as producto_nombre,
+                 p.id as producto_id, p.nombre as producto_nombre, p.proveedor_id,
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
                  p.imagen_url
@@ -417,6 +423,7 @@ impl ProductoService {
                 "tipo": "producto",
                 "producto_id": r.producto_id,
                 "producto_nombre": r.producto_nombre,
+                "proveedor_id": r.proveedor_id,
                 "unidad_base_nombre": r.unidad_base_nombre,
                 "unidad_base_nombre_plural": r.unidad_base_nombre_plural,
                 "presentacion_id": null,
@@ -436,6 +443,7 @@ impl ProductoService {
             fecha_vencimiento: chrono::NaiveDate,
             producto_id: Uuid,
             producto_nombre: String,
+            proveedor_id: Option<i32>,
             unidad_base_nombre: String,
             unidad_base_nombre_plural: String,
             presentacion_id: Option<i32>,
@@ -453,6 +461,7 @@ impl ProductoService {
                  l.fecha_vencimiento,
                  p.id as producto_id,
                  p.nombre as producto_nombre,
+                 p.proveedor_id,
                  ub.nombre as unidad_base_nombre,
                  ub.nombre_plural as unidad_base_nombre_plural,
                  (SELECT pr.id FROM presentaciones pr
@@ -487,6 +496,7 @@ impl ProductoService {
                 "fecha_vencimiento": r.fecha_vencimiento,
                 "producto_id": r.producto_id,
                 "producto_nombre": r.producto_nombre,
+                "proveedor_id": r.proveedor_id,
                 "unidad_base_nombre": r.unidad_base_nombre,
                 "unidad_base_nombre_plural": r.unidad_base_nombre_plural,
                 "presentacion_id": r.presentacion_id,

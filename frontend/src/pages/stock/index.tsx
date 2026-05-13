@@ -484,10 +484,10 @@ function StockBadge({ item }: { item: StockItem }) {
     const tooltip = `En tu mayor pico reciente agotarías el stock en ~${diasPico} días.\nConsumo normal: ~${dias} días.`
     return (
       <div className="flex flex-col items-end gap-1" title={tooltip}>
-        <Badge variant="warning" className="gap-1 text-[10px] font-bold uppercase px-2 border-amber-400/40 bg-amber-50 text-amber-700">
+        <Badge variant="warning" className="gap-1 text-[10px] font-bold uppercase px-2 border-warning/30 bg-warning/10 text-warning">
           <TrendingUp className="h-3 w-3" /> Pico posible
         </Badge>
-        <span className="text-[9px] font-bold text-amber-600 opacity-80 uppercase tracking-tighter">
+        <span className="text-[9px] font-bold text-warning opacity-80 uppercase tracking-tighter">
           Normal ~{Math.round(dias)} · Pico ~{Math.round(diasPico)} d
         </span>
       </div>

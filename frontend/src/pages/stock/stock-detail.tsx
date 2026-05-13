@@ -156,14 +156,14 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
           {item.dias_autonomia_pico != null && (
             <div className="flex items-center justify-between px-4 py-3 bg-warning/5">
               <div className="flex items-center gap-2">
-                <TrendingUp className="w-3.5 h-3.5 text-amber-500" />
-                <span className="text-xs font-medium text-amber-700">En pico máximo reciente</span>
+                <TrendingUp className="w-3.5 h-3.5 text-warning" />
+                <span className="text-xs font-medium text-warning">En pico máximo reciente</span>
                 <MetricTooltip
                   size="sm"
                   text={`Si el consumo alcanzara el pico más alto registrado recientemente, el stock duraría ~${item.dias_autonomia_pico} días. Útil para anticipar temporadas de alta demanda (influenza, VRS, etc.).`}
                 />
               </div>
-              <span className="text-sm font-bold text-amber-700 tabular-nums">
+              <span className="text-sm font-bold text-warning tabular-nums">
                 ~{Math.round(item.dias_autonomia_pico)} días
               </span>
             </div>

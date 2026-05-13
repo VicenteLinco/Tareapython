@@ -1,5 +1,7 @@
 // frontend/src/pages/recepciones/nueva.tsx
 import { useState, useCallback, useRef } from 'react'
+import { useLocalStorageBoolean } from '@/hooks/useLocalStorage'
+import { useDialogState } from '@/hooks/useDialogState'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
@@ -80,17 +82,19 @@ export default function NuevaRecepcionPage() {
 
   // Wizard
   const [pasoActual, setPasoActual] = useState<1 | 2 | 3>(1)
-  const [modoExperto, setModoExperto] = useState(() => localStorage.getItem('rec-modo-experto') === 'true')
-  const setModoExpertoAndSave = (v: boolean) => { setModoExperto(v); localStorage.setItem('rec-modo-experto', String(v)) }
+  const [modoExperto, setModoExpertoAndSave] = useLocalStorageBoolean('rec-modo-experto', true)
 
   // Estado cabecera
   const [proveedorId, setProveedorId] = useState<number | null>(null)
   const [proveedorError, setProveedorError] = useState(false)
   const proveedorRef = useRef<HTMLDivElement>(null)
   const [guiaDespacho, setGuiaDespacho] = useState('')
+  const [guiaProvisoria, setGuiaProvisoria] = useState(false)
   const [fechaRecepcion, setFechaRecepcion] = useState(() => new Date().toISOString().slice(0, 16))
   const [solicitudId, setSolicitudId] = useState<string | null>(null)
-  const [solicitudModalOpen, setSolicitudModalOpen] = useState(false)
+  const [solicitudNumero, setSolicitudNumero] = useState<string | null>(null)
+  const solicitudModal = useDialogState()
+  const [fechaExpanded, setFechaExpanded] = useState(false)
 
   // Estado ítems
   const [detalles, setDetalles] = useState<DetalleLineUI[]>([])
@@ -101,6 +105,7 @@ export default function NuevaRecepcionPage() {
       if (!confirm('Cambiar el proveedor limpiará los ítems y la solicitud vinculada. ¿Continuar?')) return
       setDetalles([])
       setSolicitudId(null)
+      setSolicitudNumero(null)
     }
     setProveedorId(id)
   }, [proveedorId, detalles.length, solicitudId])
@@ -116,12 +121,12 @@ export default function NuevaRecepcionPage() {
 
   // Estado post-confirmación (para imprimir etiquetas)
   const [lotesConfirmados, setLotesConfirmados] = useState<LoteParaEtiqueta[] | null>(null)
-  const [showPrintModal, setShowPrintModal] = useState(false)
+  const printModal = useDialogState()
 
   // Reconciliación post-recepción
   interface SolicitudItemSimple { producto_id: string; producto_nombre: string; cantidad_base: number; unidad: string }
   const [solicitudItemsRef, setSolicitudItemsRef] = useState<SolicitudItemSimple[]>([])
-  const [reconciliacionOpen, setReconciliacionOpen] = useState(false)
+  const reconciliacionModal = useDialogState()
   const [pendingConfirmarPayload, setPendingConfirmarPayload] = useState<Record<string, unknown> | null>(null)
 
   // ─── Queries ───────────────────────────────────────────────────────────────
@@ -562,7 +567,7 @@ export default function NuevaRecepcionPage() {
 
       if (paraImprimir.length > 0) {
         setLotesConfirmados(paraImprimir)
-        setShowPrintModal(true)
+        printModal.onOpen()
       } else {
         toast.success('Recepción confirmada')
         navigate('/recepciones')
@@ -583,6 +588,7 @@ export default function NuevaRecepcionPage() {
 
   const handleConfirmar = () => {
     if (!proveedorId) { toast.error('Selecciona un proveedor'); return }
+    if (!guiaDespacho.trim() && !guiaProvisoria) { toast.error('Ingresa el número de guía de despacho o marca como provisoria'); return }
 
     if (decision === 'rechazada') {
       if (motivosSeleccionados.length === 0 && !motivoOtro.trim()) {
@@ -594,9 +600,10 @@ export default function NuevaRecepcionPage() {
         ...(motivoOtro.trim() ? [`Otro: ${motivoOtro.trim()}`] : []),
       ].join(' | ')
 
+      const guiaFinal = guiaProvisoria ? `PROV-${Date.now()}` : guiaDespacho
       mutation.mutate({
         proveedor_id: proveedorId,
-        guia_despacho: guiaDespacho || undefined,
+        guia_despacho: guiaFinal || undefined,
         fecha_recepcion: new Date(fechaRecepcion).toISOString(),
         estado: 'rechazada',
         motivo_rechazo: motivos,
@@ -616,9 +623,10 @@ export default function NuevaRecepcionPage() {
       return
     }
 
+    const guiaFinal = guiaProvisoria ? `PROV-${Date.now()}` : guiaDespacho
     const payload = {
       proveedor_id: proveedorId,
-      guia_despacho: guiaDespacho || undefined,
+      guia_despacho: guiaFinal || undefined,
       fecha_recepcion: new Date(fechaRecepcion).toISOString(),
       estado: decision,
       nota: nota || undefined,
@@ -641,7 +649,7 @@ export default function NuevaRecepcionPage() {
     // Si hay solicitud vinculada, mostrar diff de reconciliación
     if (solicitudId && solicitudItemsRef.length > 0) {
       setPendingConfirmarPayload(payload as unknown as Record<string, unknown>)
-      setReconciliacionOpen(true)
+      reconciliacionModal.onOpen()
       return
     }
 
@@ -689,6 +697,7 @@ export default function NuevaRecepcionPage() {
               'flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all',
               modoExperto ? 'bg-primary/10 text-primary border-primary/30' : 'border-base-300 opacity-60 hover:opacity-90'
             )}
+            title="Modo experto: todos los paneles visibles a la vez, sin asistente paso a paso"
             onClick={() => setModoExpertoAndSave(!modoExperto)}
           >
             <Layers className="h-3.5 w-3.5" />
@@ -753,39 +762,65 @@ export default function NuevaRecepcionPage() {
                   value={proveedorId || ''}
                   onChange={v => { handleSetProveedor(v ? Number(v) : null); setProveedorError(false) }}
                   proveedores={proveedores || []}
+                  searchable
                 />
               </div>
             </div>
 
             <div>
-              <label className="label py-0.5"><span className="label-text text-xs">Nº Guía de Despacho</span></label>
-              <input
-                className="input input-sm input-bordered w-full"
-                placeholder="GD-00000"
-                value={guiaDespacho}
-                onChange={e => setGuiaDespacho(e.target.value)}
-              />
+              <label className="label py-0.5">
+                <span className="label-text text-xs">Nº Guía de Despacho *</span>
+              </label>
+              <label className="flex items-center gap-2 mb-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-xs"
+                  checked={guiaProvisoria}
+                  onChange={e => {
+                    setGuiaProvisoria(e.target.checked)
+                    if (e.target.checked) setGuiaDespacho('')
+                  }}
+                />
+                <span className="text-xs opacity-60">Sin guía — usar número provisorio</span>
+              </label>
+              {!guiaProvisoria && (
+                <input
+                  className="input input-sm input-bordered w-full"
+                  placeholder="GD-00000"
+                  value={guiaDespacho}
+                  onChange={e => setGuiaDespacho(e.target.value)}
+                />
+              )}
             </div>
 
             <div>
-              <label className="text-xs opacity-50 block mb-1">Fecha y hora</label>
-              <input
-                type="datetime-local"
-                className="input input-bordered input-sm w-full"
-                value={fechaRecepcion}
-                onChange={e => setFechaRecepcion(e.target.value)}
-              />
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-xs opacity-50 hover:opacity-70 transition-opacity mb-1 w-full text-left"
+                onClick={() => setFechaExpanded(v => !v)}
+              >
+                <span>{new Date(fechaRecepcion).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                <span className="underline underline-offset-2 text-[10px]">{fechaExpanded ? 'Cerrar' : 'Cambiar'}</span>
+              </button>
+              {fechaExpanded && (
+                <input
+                  type="datetime-local"
+                  className="input input-bordered input-sm w-full"
+                  value={fechaRecepcion}
+                  onChange={e => setFechaRecepcion(e.target.value)}
+                />
+              )}
             </div>
 
             {solicitudId ? (
               <div className="flex items-center gap-2">
                 <span className="flex-1 text-xs text-success font-medium flex items-center gap-1">
-                  <ShoppingCart className="h-3 w-3" /> Solicitud vinculada ✓
+                  <ShoppingCart className="h-3 w-3" /> {solicitudNumero ?? 'Solicitud'} vinculada ✓
                 </span>
                 <button
                   className="btn btn-xs btn-ghost btn-circle text-error"
                   title="Desvincular solicitud"
-                  onClick={() => setSolicitudId(null)}
+                  onClick={() => { setSolicitudId(null); setSolicitudNumero(null) }}
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -800,7 +835,7 @@ export default function NuevaRecepcionPage() {
                     proveedorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
                     return
                   }
-                  setSolicitudModalOpen(true)
+                  solicitudModal.onOpen()
                 }}
               >
                 <ShoppingCart className="h-4 w-4 mr-1" />
@@ -1003,7 +1038,7 @@ export default function NuevaRecepcionPage() {
       />
 
       {/* Modal vincular solicitud */}
-      <Dialog open={solicitudModalOpen} onClose={() => setSolicitudModalOpen(false)} title="Vincular Solicitud">
+      <Dialog open={solicitudModal.open} onClose={solicitudModal.onClose} title="Vincular Solicitud">
         <div className="space-y-2">
           {solicitudesPendientes?.map(s => (
             <button
@@ -1013,7 +1048,8 @@ export default function NuevaRecepcionPage() {
                 try {
                   const res = await api.get(`/solicitudes-compra/${s.id}`)
                   setSolicitudId(s.id)
-                  setSolicitudModalOpen(false)
+                  setSolicitudNumero(s.numero_documento)
+                  solicitudModal.onClose()
                   toast.success('Solicitud vinculada')
                   setSolicitudItemsRef((res.data.items ?? []).map((it: { producto_id: string; producto_nombre: string; cantidad_sugerida: string; unidad: string }) => ({
                     producto_id: it.producto_id,
@@ -1058,7 +1094,7 @@ export default function NuevaRecepcionPage() {
       </Dialog>
 
       {/* Modal reconciliación post-recepción */}
-      {reconciliacionOpen && pendingConfirmarPayload && (() => {
+      {reconciliacionModal.open && pendingConfirmarPayload && (() => {
         // Calcular recibido por producto_id
         const recibidoMap: Record<string, number> = {}
         detalles.forEach(d => {
@@ -1114,14 +1150,14 @@ export default function NuevaRecepcionPage() {
                 </div>
               )}
               <div className="px-6 py-4 border-t border-base-200 flex gap-2">
-                <button className="btn btn-ghost btn-sm flex-1 rounded-xl" onClick={() => { setReconciliacionOpen(false); setPendingConfirmarPayload(null) }}>
+                <button className="btn btn-ghost btn-sm flex-1 rounded-xl" onClick={() => { reconciliacionModal.onClose(); setPendingConfirmarPayload(null) }}>
                   Cancelar
                 </button>
                 <button
                   className="btn btn-primary btn-sm flex-1 rounded-xl"
                   disabled={hayCriticos && !nota.trim()}
                   onClick={() => {
-                    setReconciliacionOpen(false)
+                    reconciliacionModal.onClose()
                     mutation.mutate({ ...pendingConfirmarPayload, nota: nota || undefined })
                     setPendingConfirmarPayload(null)
                   }}
@@ -1136,8 +1172,8 @@ export default function NuevaRecepcionPage() {
 
       {/* Modal imprimir etiquetas post-confirmación */}
       <Dialog
-        open={showPrintModal}
-        onClose={() => { setShowPrintModal(false); navigate('/recepciones') }}
+        open={printModal.open}
+        onClose={() => { printModal.onClose(); navigate('/recepciones') }}
         title="¿Imprimir etiquetas?"
       >
         {lotesConfirmados && (
@@ -1147,7 +1183,7 @@ export default function NuevaRecepcionPage() {
           <Button
             variant="outline"
             className="flex-1"
-            onClick={() => { setShowPrintModal(false); navigate('/recepciones') }}
+            onClick={() => { printModal.onClose(); navigate('/recepciones') }}
           >
             Saltar
           </Button>
@@ -1155,7 +1191,7 @@ export default function NuevaRecepcionPage() {
             className="flex-1"
             onClick={async () => {
               if (lotesConfirmados) await imprimirEtiquetas(lotesConfirmados)
-              setShowPrintModal(false)
+              printModal.onClose()
               navigate('/recepciones')
             }}
           >

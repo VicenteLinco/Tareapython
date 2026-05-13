@@ -41,11 +41,11 @@ export function useRecepcionWizard() {
   })
 
   const setProveedorId = (id: number | null) => {
-    setProveedorIdRaw(id)
     if (id !== proveedorId) {
       setSolicitudId(null)
       setSolicitudNumero(null)
     }
+    setProveedorIdRaw(id)
   }
 
   return {

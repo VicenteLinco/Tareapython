@@ -2,7 +2,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { v4 as uuidv4 } from 'uuid'
-import { Search, Camera, Package } from 'lucide-react'
+import { Search, Camera, Package, CheckCircle2 } from 'lucide-react'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import type { ConsumoBatchRequest, StockItem, PaginatedResponse } from '@/types'
@@ -16,6 +16,8 @@ import type { CartItem } from './components/producto-card'
 import type { LoteDisponible } from './components/lote-selector'
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut'
 import { KeyboardLegend } from '@/components/ui/keyboard-legend'
+import { cn, formatCantidad } from '@/lib/utils'
+import { ProductoImage } from '@/components/ui/producto-image'
 
 // ─── Helpers localStorage para productos recientes ───────────────────────────
 
@@ -43,13 +45,35 @@ export default function ConsumosPage() {
   const [isDrawerExpanded, setIsDrawerExpanded] = useState(false)
   const [isScannerOpen, setIsScannerOpen] = useState(false)
   const [notas, setNotas] = useState('')
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [activeIndex, setActiveIndex] = useState(-1)
 
   const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([])
   const hidStartTime = useRef<number>(0)
   const queryClient = useQueryClient()
 
   // Enfocar input al montar (listo para HID)
   useEffect(() => { inputRef.current?.focus() }, [])
+
+  // Cerrar dropdown al hacer click fuera
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node))
+        setDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  // Scroll automático al ítem activo
+  useEffect(() => {
+    if (activeIndex >= 0) itemRefs.current[activeIndex]?.scrollIntoView({ block: 'nearest' })
+  }, [activeIndex])
+
+  // Resetear índice al cambiar la búsqueda
+  useEffect(() => { setActiveIndex(-1) }, [searchQuery])
 
   // ── Queries ────────────────────────────────────────────────────────────────
 
@@ -71,19 +95,24 @@ export default function ConsumosPage() {
     }).then(r => r.data),
   })
 
-  // Productos a mostrar: si hay búsqueda → resultados; si no → recientes (si hay) o vacío
   const [recentIds, setRecentIds] = useState(() => getRecentIds(userId))
   const allProducts = stockResponse?.data ?? []
-  const productsToShow: StockItem[] = (() => {
+
+  // Items mostrados en el dropdown
+  const dropdownItems: StockItem[] = (() => {
     if (searchQuery.length >= 2) return allProducts
     if (recentIds.length === 0) return []
-    // Ordenar: recientes primero, luego el resto
-    const recentSet = new Set(recentIds)
-    const recents = recentIds
+    return recentIds
       .map(id => allProducts.find(p => p.producto_id === id))
       .filter((p): p is StockItem => !!p)
-    const others = allProducts.filter(p => !recentSet.has(p.producto_id))
-    return [...recents, ...others].slice(0, 50)
+  })()
+
+  // Items mostrados en la lista principal (solo recientes, sin búsqueda activa)
+  const recentProducts: StockItem[] = (() => {
+    if (recentIds.length === 0) return []
+    return recentIds
+      .map(id => allProducts.find(p => p.producto_id === id))
+      .filter((p): p is StockItem => !!p)
   })()
 
   // ── Agregar al carrito ─────────────────────────────────────────────────────
@@ -113,7 +142,6 @@ export default function ConsumosPage() {
         }
       }
     })
-    // Fetch lotes con indicador de carga
     api.get<{ id: string; numero_lote: string; stock_total: string | null; fecha_vencimiento: string }[]>('/lotes', {
       params: { producto_id: p.producto_id, con_stock: true, vencido: false }
     }).then(res => {
@@ -131,23 +159,63 @@ export default function ConsumosPage() {
     })
   }, [areaFiltro])
 
+  const addFromDropdown = useCallback((item: StockItem) => {
+    addToCart(item)
+    setDropdownOpen(false)
+    setSearchQuery('')
+    setActiveIndex(-1)
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }, [addToCart])
+
   // ── Detección HID ──────────────────────────────────────────────────────────
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     if (value.length === 1) hidStartTime.current = Date.now()
     setSearchQuery(value)
+    if (value.length >= 2) setDropdownOpen(true)
   }
 
   const handleInputKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter') return
-    const elapsed = Date.now() - hidStartTime.current
-    const isHid = searchQuery.length >= 4 && elapsed < 200
-    if (!isHid) return
-    e.preventDefault()
-    await handleScanCode(searchQuery)
-    setSearchQuery('')
-    setTimeout(() => inputRef.current?.focus(), 50)
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (!dropdownOpen) setDropdownOpen(true)
+      if (dropdownItems.length === 0) return
+      setActiveIndex(i => i < dropdownItems.length - 1 ? i + 1 : 0)
+      return
+    }
+
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (dropdownItems.length === 0) return
+      setActiveIndex(i => i > 0 ? i - 1 : dropdownItems.length - 1)
+      return
+    }
+
+    if (e.key === 'Escape') {
+      setDropdownOpen(false)
+      setActiveIndex(-1)
+      setSearchQuery('')
+      inputRef.current?.blur()
+      return
+    }
+
+    if (e.key === 'Enter') {
+      if (activeIndex >= 0 && dropdownItems[activeIndex]) {
+        e.preventDefault()
+        addFromDropdown(dropdownItems[activeIndex])
+        return
+      }
+      // HID scan (escritura muy rápida)
+      const elapsed = Date.now() - hidStartTime.current
+      const isHid = searchQuery.length >= 4 && elapsed < 200
+      if (isHid) {
+        e.preventDefault()
+        await handleScanCode(searchQuery)
+        setSearchQuery('')
+        setTimeout(() => inputRef.current?.focus(), 50)
+      }
+    }
   }
 
   // ── Escaneo (QR + HID comparten esta función) ──────────────────────────────
@@ -217,9 +285,9 @@ export default function ConsumosPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  const hasNoSearch = searchQuery.length < 2
-  const emptyRecents = hasNoSearch && recentIds.length === 0
+  const emptyRecents = recentIds.length === 0
   const drawerCount = Object.keys(cart).length
+  const showDropdown = dropdownOpen && dropdownItems.length > 0
 
   return (
     <div
@@ -233,8 +301,10 @@ export default function ConsumosPage() {
           <h1 className="font-bold text-base">Registrar consumo</h1>
           <KeyboardLegend shortcuts={[
             { keys: ['/'], description: 'Enfocar búsqueda' },
-            { keys: ['Esc'], description: 'Limpiar búsqueda' },
-            { keys: ['?'], description: 'Ver atajos' },
+            { keys: ['↓'], description: 'Desplegar sugerencias' },
+            { keys: ['↑↓'], description: 'Navegar lista' },
+            { keys: ['Enter'], description: 'Agregar producto' },
+            { keys: ['Esc'], description: 'Cerrar / limpiar' },
           ]} />
         </div>
         <select
@@ -250,18 +320,83 @@ export default function ConsumosPage() {
       {/* ── Barra de búsqueda + QR ── */}
       <div className="px-4 pb-3 flex-shrink-0">
         <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-30 pointer-events-none" />
+          {/* Contenedor del autocomplete */}
+          <div ref={containerRef} className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-30 pointer-events-none z-10" />
             <input
               ref={inputRef}
               className="input input-bordered w-full pl-9 h-11 rounded-xl text-sm"
-              placeholder="Buscar o escanear código..."
+              placeholder="Buscar o escanear código…"
               value={searchQuery}
               onChange={handleInputChange}
               onKeyDown={handleInputKeyDown}
+              onFocus={() => { if (dropdownItems.length > 0) setDropdownOpen(true) }}
               autoComplete="off"
+              aria-autocomplete="list"
+              aria-expanded={showDropdown}
+              aria-activedescendant={activeIndex >= 0 ? `sugerencia-${activeIndex}` : undefined}
             />
+
+            {/* Dropdown de sugerencias */}
+            {showDropdown && (
+              <div
+                className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 bg-base-100 border border-base-300 rounded-xl shadow-lg overflow-y-auto max-h-72"
+                role="listbox"
+              >
+                {searchQuery.length < 2 && recentIds.length > 0 && (
+                  <p className="text-[11px] text-base-content/40 px-3 pt-2 pb-1 font-medium">Usados recientemente</p>
+                )}
+                {isLoading && searchQuery.length >= 2 ? (
+                  <div className="py-4 text-center text-sm text-base-content/40">Buscando…</div>
+                ) : dropdownItems.map((item, i) => {
+                  const sinStock = (item.stock_total ?? 0) <= 0
+                  const enCarrito = !!cart[item.producto_id]
+                  return (
+                    <div
+                      key={item.producto_id}
+                      id={`sugerencia-${i}`}
+                      ref={el => { itemRefs.current[i] = el }}
+                      role="option"
+                      aria-selected={i === activeIndex}
+                      className={cn(
+                        'flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors',
+                        i === activeIndex && 'bg-base-200',
+                        i !== activeIndex && !sinStock && 'hover:bg-base-200/60',
+                        sinStock && 'opacity-40 cursor-not-allowed',
+                      )}
+                      onClick={() => !sinStock && addFromDropdown(item)}
+                      onMouseEnter={() => setActiveIndex(i)}
+                    >
+                      <ProductoImage
+                        src={item.imagen_url}
+                        size="sm"
+                        className="w-8 h-8 rounded-lg flex-shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium leading-tight line-clamp-1">{item.producto_nombre}</p>
+                        {item.area_nombre && (
+                          <p className="text-[11px] text-base-content/40 leading-tight">{item.area_nombre}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {enCarrito && (
+                          <CheckCircle2 className="h-4 w-4 text-primary" />
+                        )}
+                        {sinStock ? (
+                          <span className="text-[10px] text-error font-semibold">Sin stock</span>
+                        ) : (
+                          <span className="text-[11px] text-base-content/50 font-medium tabular-nums">
+                            {formatCantidad(item.stock_total ?? 0, item.unidad, item.unidad_plural ?? undefined)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
+
           <button
             className="btn btn-outline h-11 w-11 rounded-xl p-0 flex-shrink-0"
             onClick={() => setIsScannerOpen(true)}
@@ -275,31 +410,24 @@ export default function ConsumosPage() {
         )}
       </div>
 
-      {/* ── Lista de productos ── */}
+      {/* ── Lista de recientes ── */}
       <div
         className="flex-1 overflow-y-auto px-4"
         style={{ paddingBottom: drawerCount > 0 ? '80px' : '16px' }}
       >
-        {isLoading ? (
-          <PageLoading label="Cargando productos..." />
+        {isLoading && recentIds.length === 0 ? (
+          <PageLoading label="Cargando productos…" />
         ) : emptyRecents ? (
           <div className="py-20 text-center opacity-30">
             <Package className="h-10 w-10 mx-auto mb-2" />
-            <p className="text-sm font-medium">Escanea o busca un producto</p>
+            <p className="text-sm font-medium">Presiona ↓ o escribe para buscar</p>
             <p className="text-xs mt-1">Los productos que uses aparecerán aquí</p>
-          </div>
-        ) : productsToShow.length === 0 ? (
-          <div className="py-20 text-center opacity-30">
-            <Package className="h-10 w-10 mx-auto mb-2" />
-            <p className="text-sm">Sin resultados para "{searchQuery}"</p>
           </div>
         ) : (
           <>
-            {hasNoSearch && recentIds.length > 0 && (
-              <p className="text-xs text-base-content/40 mb-2 px-1">Usados recientemente</p>
-            )}
+            <p className="text-xs text-base-content/40 mb-2 px-1">Usados recientemente</p>
             <div className="flex flex-col gap-2">
-              {productsToShow.map(p => (
+              {recentProducts.map(p => (
                 <ProductoCard
                   key={p.producto_id}
                   producto={p}

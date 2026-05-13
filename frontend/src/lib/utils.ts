@@ -33,8 +33,8 @@ export function formatStockHumano(
   const cajas = Math.floor(t / factor)
   const sueltas = t % factor
 
-  const labelPres = cajas === 1 ? uPres : (uPresPlural || autoPlural(uPres))
-  const labelBase = sueltas === 1 ? uBase : (uBasePlural || autoPlural(uBase))
+  const labelPres = cajas === 1 ? uPres : (uPresPlural || uPres)
+  const labelBase = sueltas === 1 ? uBase : (uBasePlural || uBase)
 
   let result = ''
   if (cajas > 0) result += `${cajas} ${labelPres}`
@@ -78,53 +78,17 @@ export function daysUntil(date: string | Date | null | undefined): number | null
   return Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
 }
 
-const PLURAL_EXCEPTIONS: Record<string, string> = {
-  kit: 'kits',
-  test: 'tests',
-  set: 'sets',
-  film: 'films',
-  strip: 'strips',
-  scan: 'scans',
-  gel: 'geles',
-  vial: 'viales',
-  panel: 'paneles',
-}
-
-/**
- * Plural automático para español.
- * Reglas (en orden de prioridad):
- * 1. Lista explícita de excepciones para préstamos del inglés comunes en labs
- * 2. Vocal final → +s (tira → tiras)
- * 3. Terminada en 'z' → quitar z, +ces (lápiz → lápices)
- * 4. Terminada en 's' o 'x' → invariable (tórax → tórax)
- * 5. Vocal + consonante final → +s (kit→kits, gel no cabe aquí pero es excepción)
- * 6. Default → +es
- */
-export function autoPlural(s: string): string {
-  if (!s) return s
-  const lower = s.toLowerCase()
-  if (PLURAL_EXCEPTIONS[lower]) return PLURAL_EXCEPTIONS[lower]
-  const last = lower.slice(-1)
-  if ('aeiouáéíóú'.includes(last)) return s + 's'
-  if (last === 'z') return s.slice(0, -1) + 'ces'
-  if (last === 's' || last === 'x') return s
-  // Vocal + consonante final (loanwords tipo kit, test) → +s
-  const secondLast = lower.slice(-2, -1)
-  if ('aeiouáéíóú'.includes(secondLast)) return s + 's'
-  return s + 'es'
-}
-
 /**
  * Formatea una cantidad con su unidad usando singular o plural.
  * - Si qty === 1 → singular
- * - Si qty !== 1 → plural (usa autoPlural si no se provee)
+ * - Si qty !== 1 → plural (usa singular como fallback si no se provee)
  * - Enteros se muestran sin decimales (5 no 5.0)
  * - No-enteros con hasta 2 decimales significativos
  */
 export function formatCantidad(qty: number, singular: string, plural?: string | null): string {
   const isInt = Math.abs(qty - Math.round(qty)) < 0.0001
   const num = isInt ? Math.round(qty) : parseFloat(qty.toFixed(2))
-  const unit = (isInt && Math.round(qty) === 1) ? singular : (plural ?? autoPlural(singular))
+  const unit = (isInt && Math.round(qty) === 1) ? singular : (plural ?? singular)
   return `${num} ${unit}`
 }
 

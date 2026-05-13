@@ -92,7 +92,7 @@ export function useRecepcionItems({
   productos,
   monedaSimbolo: _monedaSimbolo,
   solicitudId,
-  setSolicitudId,
+  setSolicitudId: _setSolicitudId,
   guiaDespacho,
   guiaProvisoria,
   fechaRecepcion,

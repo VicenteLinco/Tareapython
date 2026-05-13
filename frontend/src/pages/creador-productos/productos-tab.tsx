@@ -16,7 +16,7 @@ import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import { toast } from 'sonner'
-import { autoPlural, cn } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { getPresFormatos, type PresFormato } from '@/lib/pres-formatos'
 import type {
   PaginatedResponse,
@@ -613,7 +613,7 @@ function CreateProductoDialog({
       form.pres_nombre && form.pres_factor
         ? [{
             nombre: form.pres_nombre,
-            nombre_plural: form.pres_nombre_plural || autoPlural(form.pres_nombre),
+            nombre_plural: form.pres_nombre_plural || form.pres_nombre,
             factor_conversion: Number(form.pres_factor),
             codigo_barras: form.pres_codigo_barras.trim() || undefined,
           }]
@@ -659,7 +659,7 @@ function CreateProductoDialog({
       return {
         ...f,
         pres_nombre: nombre,
-        pres_nombre_plural: found?.nombre_plural || (nombre ? autoPlural(nombre) : ''),
+        pres_nombre_plural: found?.nombre_plural || '',
         pres_factor: factorValue,
         precio_pres: f.precio_unidad ? (pu * factor).toFixed(2) : ''
       }
@@ -920,7 +920,7 @@ function CreateProductoDialog({
                   className="input input-bordered input-sm h-9"
                   value={form.pres_nombre_plural}
                   onChange={(e) => setForm((f) => ({ ...f, pres_nombre_plural: e.target.value }))}
-                  placeholder={form.pres_nombre ? autoPlural(form.pres_nombre) : 'Ej: Cajas'}
+                  placeholder="Ej: Cajas"
                   disabled={!form.pres_nombre}
                 />
               </div>
@@ -1167,7 +1167,7 @@ function EditProductoDialog({
       // Update existing presentation
       api.put(`/presentaciones/${form.pres_id}`, {
         nombre: form.pres_nombre,
-        nombre_plural: form.pres_nombre_plural || autoPlural(form.pres_nombre),
+        nombre_plural: form.pres_nombre_plural || form.pres_nombre,
         factor_conversion: Number(form.pres_factor),
         codigo_barras: form.pres_codigo_barras.trim() || undefined,
         version: form.pres_version,
@@ -1181,7 +1181,7 @@ function EditProductoDialog({
       // Create new presentation
       api.post(`/productos/${productoId}/presentaciones`, {
         nombre: form.pres_nombre,
-        nombre_plural: form.pres_nombre_plural || autoPlural(form.pres_nombre),
+        nombre_plural: form.pres_nombre_plural || form.pres_nombre,
         factor_conversion: Number(form.pres_factor),
         codigo_barras: form.pres_codigo_barras.trim() || undefined,
       }).then(() => {
@@ -1205,7 +1205,7 @@ function EditProductoDialog({
       return {
         ...f,
         pres_nombre: nombre,
-        pres_nombre_plural: found?.nombre_plural || (nombre ? autoPlural(nombre) : ''),
+        pres_nombre_plural: found?.nombre_plural || '',
         pres_factor: factorValue,
         precio_pres: f.precio_unidad ? (pu * factor).toFixed(2) : ''
       }
@@ -1546,7 +1546,7 @@ function EditProductoDialog({
                     className="input input-bordered input-sm h-9"
                     value={form.pres_nombre_plural}
                     onChange={(e) => setForm((f) => ({ ...f, pres_nombre_plural: e.target.value }))}
-                    placeholder={form.pres_nombre ? autoPlural(form.pres_nombre) : 'Ej: Cajas'}
+                    placeholder="Ej: Cajas"
                     disabled={!form.pres_nombre}
                   />
                 </div>

@@ -51,7 +51,7 @@ export default function NuevaRecepcionPage() {
 
   const { data: productos } = useQuery({
     queryKey: ['productos-recepcion', proveedorId],
-    queryFn: () => api.get<{ data: Produto[] }>('/productos', {
+    queryFn: () => api.get<{ data: Producto[] }>('/productos', {
       params: { per_page: 500, ...(proveedorId ? { proveedor_id: proveedorId } : {}) },
     }).then(r => r.data.data),
   })

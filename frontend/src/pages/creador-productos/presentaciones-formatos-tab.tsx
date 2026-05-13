@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
 import { getPresFormatos, savePresFormatos, type PresFormato } from '@/lib/pres-formatos'
-import { autoPlural } from '@/lib/utils'
 import { toast } from 'sonner'
 
 export default function PresentacionesFormatosTab() {
@@ -12,7 +11,7 @@ export default function PresentacionesFormatosTab() {
   function handleAdd(e: React.FormEvent) {
     e.preventDefault()
     const nombre = nuevo.nombre.trim()
-    const nombre_plural = nuevo.nombre_plural.trim() || autoPlural(nombre)
+    const nombre_plural = nuevo.nombre_plural.trim() || nombre
     if (!nombre) return
     if (formatos.some((f) => f.nombre.toLowerCase() === nombre.toLowerCase())) {
       toast.error('Ya existe ese formato')
@@ -85,7 +84,7 @@ export default function PresentacionesFormatosTab() {
             <input
               type="text"
               className="input input-bordered input-sm h-9"
-              placeholder={nuevo.nombre ? autoPlural(nuevo.nombre) : 'Ej: Botellas'}
+              placeholder="Ej: Botellas"
               value={nuevo.nombre_plural}
               onChange={(e) => setNuevo({ ...nuevo, nombre_plural: e.target.value })}
             />

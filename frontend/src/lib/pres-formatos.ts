@@ -1,5 +1,3 @@
-import { autoPlural } from './utils'
-
 const KEY = 'lab_pres_formatos'
 
 export interface PresFormato {
@@ -31,7 +29,7 @@ export function getPresFormatos(): PresFormato[] {
       if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
         return (parsed as string[]).map((s) => ({
           nombre: s,
-          nombre_plural: autoPlural(s),
+          nombre_plural: s,
         }))
       }
       return parsed

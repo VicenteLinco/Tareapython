@@ -265,12 +265,22 @@ export function PedidoPanel({
 
       {/* Footer */}
       <div className="px-4 py-3 bg-base-200/50 border-t border-base-300 space-y-2.5 shrink-0">
-        <div className="flex justify-between items-center">
-          <span className="opacity-40 uppercase tracking-widest text-[9px] font-bold">Costo Estimado</span>
-          <span className="text-base font-black flex items-center gap-1.5">
-            {fmt(totalEstimado)}
-            <span className="badge badge-ghost badge-xs font-mono">{monedaCodigo}</span>
-          </span>
+        <div className="space-y-1">
+          <div className="flex justify-between items-center text-[10px] opacity-50">
+            <span className="uppercase tracking-widest font-bold">Subtotal neto</span>
+            <span className="font-mono">{fmt(totalEstimado)}</span>
+          </div>
+          <div className="flex justify-between items-center text-[10px] opacity-50">
+            <span className="uppercase tracking-widest font-bold">IVA (19%)</span>
+            <span className="font-mono">{fmt(totalEstimado * 0.19)}</span>
+          </div>
+          <div className="flex justify-between items-center pt-1 border-t border-base-300">
+            <span className="opacity-40 uppercase tracking-widest text-[9px] font-bold">Total c/IVA</span>
+            <span className="text-base font-black flex items-center gap-1.5">
+              {fmt(totalEstimado * 1.19)}
+              <span className="badge badge-ghost badge-xs font-mono">{monedaCodigo}</span>
+            </span>
+          </div>
         </div>
         <div className="flex gap-2">
           <Button

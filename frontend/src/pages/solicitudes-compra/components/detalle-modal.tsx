@@ -278,10 +278,16 @@ export function DetalleModal({
             </div>
 
             <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 pt-2 border-t">
-              <div className="text-xl font-black flex items-center gap-2">
-                <span className="text-xs opacity-40 font-bold uppercase mr-1">Total Estimado:</span>
-                {fmt(calcTotal(detail.items))}
-                <span className="badge badge-ghost badge-xs font-mono">{monedaCodigo}</span>
+              <div className="space-y-1">
+                <div className="flex items-center gap-6 text-xs opacity-50">
+                  <span>Subtotal neto: <span className="font-mono font-bold">{fmt(calcTotal(detail.items))}</span></span>
+                  <span>IVA 19%: <span className="font-mono font-bold">{fmt(calcTotal(detail.items) * 0.19)}</span></span>
+                </div>
+                <div className="text-xl font-black flex items-center gap-2">
+                  <span className="text-xs opacity-40 font-bold uppercase mr-1">Total c/IVA:</span>
+                  {fmt(calcTotal(detail.items) * 1.19)}
+                  <span className="badge badge-ghost badge-xs font-mono">{monedaCodigo}</span>
+                </div>
               </div>
               <div className="flex flex-wrap gap-2 justify-end">
                 <Button variant="outline" className="rounded-xl h-10 gap-2" onClick={handleExportPDF}>

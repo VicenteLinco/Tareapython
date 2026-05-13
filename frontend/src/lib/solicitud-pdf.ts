@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { CellHookData } from 'jspdf-autotable'
-import { formatDate, autoPlural } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
 
 interface SolicitudPdfOptions {
   numero_documento: string
@@ -182,9 +182,9 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
       const baseQty = Math.round(item.cantidad_sugerida)
       const baseUnitLabel = baseQty === 1
         ? item.unidad
-        : (item.unidad_plural ?? autoPlural(item.unidad))
+        : (item.unidad_plural ?? item.unidad)
       const cantDisplay = usaPresentacion
-        ? `${item.cantidad_presentaciones} ${presLabel}\n= ${baseEquiv} ${baseEquiv === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}`
+        ? `${item.cantidad_presentaciones} ${presLabel}\n= ${baseEquiv} ${baseEquiv === 1 ? item.unidad : (item.unidad_plural ?? item.unidad)}`
         : `${baseQty} ${baseUnitLabel}`
 
       const precioBase = item.precio_unitario ?? 0

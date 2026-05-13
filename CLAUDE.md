@@ -151,15 +151,32 @@ formatCantidad(qty, pres.nombre, pres.nombre_plural)
 `${qty} ${item.unidad_base_nombre}`
 
 // ❌ Incorrecto — no respeta el caso singular
-`${qty} ${qty === 1 ? nombre : autoPlural(nombre)}`
+`${qty} ${qty === 1 ? nombre : nombre + 's'}`
 ```
 
 **Comportamiento de `formatCantidad(qty, singular, plural?)`:**
 - `qty === 1` exacto → usa `singular`
-- `qty !== 1` → usa `plural` si existe, si no `autoPlural(singular)`
+- `qty !== 1` → usa `plural` si existe, si no repite `singular` como fallback
 - Cantidades enteras (ej: `5.0`) → se muestran como enteros (`5`), nunca con decimales superfluos
 - Cantidades no enteras → máximo 2 decimales significativos
 
-**Fuente de plural:** Siempre preferir `nombre_plural` del backend (campo de DB) sobre `autoPlural()`. El `autoPlural` es solo fallback cuando el campo no existe.
+**Fuente de plural:** Siempre usar `nombre_plural` del backend (campo de DB). No existe función de plural automático — el plural se ingresa explícitamente en los formularios.
 
-**No usar `autoPlural` directamente en componentes.** Solo en helpers internos de `utils.ts`.
+**`autoPlural` ha sido eliminado.** No usar ni reimplementar.
+
+### Regla de buscadores con dropdown (Frontend)
+
+**Regla obligatoria:** Todo input de búsqueda debe comportarse como autocomplete con dropdown navegable por teclado.
+
+Comportamiento requerido:
+- `↓` desde el input → abre el dropdown y mueve foco al primer ítem (circular)
+- `↑` → sube en la lista (circular)
+- `Enter` con ítem activo → selecciona ese ítem
+- `Escape` → cierra dropdown, limpia búsqueda
+- Click fuera → cierra dropdown
+- Scroll automático al ítem activo en listas largas
+- El dropdown respeta cualquier filtro de área u otro filtro activo en la página
+
+El input nunca se deshabilita por una precondición externa; la validación va en `onSelect`.
+
+El skill `autocomplete-buscador` detalla la implementación completa (estados, refs, ARIA, filtro inclusivo).

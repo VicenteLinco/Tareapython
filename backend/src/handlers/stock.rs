@@ -778,6 +778,7 @@ async fn lotes_vencidos(
     let mut conditions = vec![
         "s.cantidad > 0".to_string(),
         "l.fecha_vencimiento <= CURRENT_DATE + ($1 * INTERVAL '1 day')".to_string(),
+        "p.activo = true".to_string(),
     ];
     let mut param_idx = 1u32;
 

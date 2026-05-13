@@ -1,6 +1,6 @@
 // frontend/src/pages/recepciones/components/item-card.tsx
 import { useState } from 'react'
-import { Trash2, ChevronDown, ChevronUp, Plus } from 'lucide-react'
+import { Trash2, ChevronDown, ChevronUp, Plus, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ProductoImage } from '@/components/ui/producto-image'
 import { formatCantidad } from '@/lib/utils'
@@ -50,7 +50,7 @@ interface Props {
   monedaSimbolo?: string
 }
 
-// ─── Helpers exportados ───────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatPrecioDisplay(raw: string, simbolo: string): string {
   const digits = raw.replace(/\D/g, '')
@@ -70,6 +70,7 @@ interface LoteRowProps {
   canDelete: boolean
   onChange: (patch: Partial<LoteLineUI>) => void
   onDelete: () => void
+  onAddLote?: () => void
 }
 
 function LoteRow({
@@ -82,10 +83,29 @@ function LoteRow({
   canDelete,
   onChange,
   onDelete,
+  onAddLote,
 }: LoteRowProps) {
+  const [modoMes, setModoMes] = useState(false)
+
   const unitLabel = lote.cantidad_presentacion === 1
     ? (presentacion_nombre || unidad_base_nombre)
     : (presentacion_nombre_plural || unidad_base_nombre_plural || presentacion_nombre || unidad_base_nombre)
+
+  const handleFechaChange = (value: string) => {
+    if (modoMes) {
+      // value es YYYY-MM; almacenar como último día del mes
+      const [y, m] = value.split('-').map(Number)
+      if (!y || !m) return
+      const lastDay = new Date(y, m, 0).getDate()
+      onChange({ fecha_vencimiento: `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}` })
+    } else {
+      onChange({ fecha_vencimiento: value })
+    }
+  }
+
+  const fechaDisplayValue = modoMes
+    ? (lote.fecha_vencimiento ? lote.fecha_vencimiento.slice(0, 7) : '')
+    : lote.fecha_vencimiento
 
   return (
     <div className="flex items-center gap-2">
@@ -96,12 +116,32 @@ function LoteRow({
         value={lote.codigo_lote}
         onChange={e => onChange({ codigo_lote: e.target.value })}
       />
-      <input
-        type="date"
-        className={`input input-sm input-bordered flex-1 ${!lote.fecha_vencimiento ? 'input-warning' : ''}`}
-        value={lote.fecha_vencimiento}
-        onChange={e => onChange({ fecha_vencimiento: e.target.value })}
-      />
+      <div className="flex items-center gap-1 flex-1 min-w-0">
+        {modoMes ? (
+          <input
+            type="month"
+            className={`input input-sm input-bordered flex-1 min-w-0 ${!lote.fecha_vencimiento ? 'input-warning' : ''}`}
+            value={fechaDisplayValue}
+            onChange={e => handleFechaChange(e.target.value)}
+          />
+        ) : (
+          <input
+            type="date"
+            className={`input input-sm input-bordered flex-1 min-w-0 ${!lote.fecha_vencimiento ? 'input-warning' : ''}`}
+            value={fechaDisplayValue}
+            onChange={e => handleFechaChange(e.target.value)}
+          />
+        )}
+        <button
+          type="button"
+          className={`btn btn-xs btn-ghost px-1.5 shrink-0 gap-0.5 ${modoMes ? 'text-primary' : 'opacity-35 hover:opacity-70'}`}
+          title={modoMes ? 'Cambiar a fecha exacta (D/M/A)' : 'Ingresar solo mes/año'}
+          onClick={() => setModoMes(v => !v)}
+        >
+          <Calendar className="h-3 w-3" />
+          <span className="text-[9px] font-bold leading-none">{modoMes ? 'M/A' : 'D'}</span>
+        </button>
+      </div>
       <div className="flex items-center gap-1 shrink-0">
         <input
           type="number"
@@ -109,6 +149,12 @@ function LoteRow({
           className="input input-sm input-bordered w-16"
           value={lote.cantidad_presentacion}
           onChange={e => onChange({ cantidad_presentacion: Number(e.target.value) || 1 })}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              onAddLote?.()
+            }
+          }}
         />
         <span className="text-xs opacity-50 w-14 truncate">{unitLabel}</span>
       </div>
@@ -147,13 +193,29 @@ export function ReceptionItemCard({
     d.presentacion_nombre_plural || d.unidad_base_nombre_plural
   )
 
+  // Tooltip de advertencia con campos faltantes
+  const missingFields: string[] = []
+  if (!d.area_destino_id) missingFields.push('área')
+  if (d.lotes.some(l => !l.codigo_lote)) missingFields.push('nº lote')
+  if (d.lotes.some(l => !l.fecha_vencimiento)) missingFields.push('vencimiento')
+  const badgeTooltip = missingFields.length ? `Falta: ${missingFields.join(', ')}` : 'Completo'
+
+  // Resumen colapsado: mostrar número de lote cuando hay uno solo
+  const resumenLotes = d.lotes.length === 1
+    ? (d.lotes[0].codigo_lote ? `Lote ${d.lotes[0].codigo_lote}` : '1 lote')
+    : `${d.lotes.length} lotes`
+
+  // Progreso vs cantidad solicitada
+  const hasSolicitud = d.cantidad_solicitada != null && d.cantidad_solicitada > 0
+  const progresoOk = hasSolicitud && totalCantidad >= d.cantidad_solicitada!
+
   return (
     <div className={`card bg-base-100 border transition-colors ${
       complete ? 'border-success/40' : 'border-warning/40'
     }`}>
 
       {/* ── Header (siempre visible) ── */}
-      <div className="flex items-center gap-3 p-4">
+      <div className="flex items-center gap-3 p-4 group">
         <ProductoImage src={d.imagen_url} size="md" className="shrink-0" />
 
         <div className="flex-1 min-w-0">
@@ -165,25 +227,18 @@ export function ReceptionItemCard({
             {d.area_destino_id ? (
               <span className="badge badge-sm badge-ghost">{d.area_destino_nombre}</span>
             ) : (
-              <select
-                className="select select-bordered select-xs select-warning"
-                value=""
-                onChange={e => {
-                  const aid = Number(e.target.value)
-                  if (!aid) return
-                  const nombre = areas.find(a => a.id === aid)?.nombre ?? ''
-                  onChange(d.id, { area_destino_id: aid, area_destino_nombre: nombre })
-                }}
-              >
-                <option value="">⚠ Asignar área…</option>
-                {areas.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-              </select>
+              <span className="badge badge-sm badge-warning">⚠ Sin área</span>
+            )}
+            {hasSolicitud && (
+              <span className={`text-xs font-mono tabular-nums ${progresoOk ? 'text-success' : 'text-info'}`}>
+                {totalCantidad}/{d.cantidad_solicitada} {d.presentacion_nombre || d.unidad_base_nombre}
+              </span>
             )}
           </div>
           {/* Resumen colapsado */}
           {d.collapsed && (
             <p className="text-xs opacity-50 mt-0.5">
-              {d.lotes.length === 1 ? '1 lote' : `${d.lotes.length} lotes`}
+              {resumenLotes}
               {' · '}{unidadResumen}
               {rawPrecio ? ` · ${formatPrecioDisplay(rawPrecio, monedaSimbolo)}` : ''}
             </p>
@@ -191,7 +246,10 @@ export function ReceptionItemCard({
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          <span className={`badge badge-xs ${complete ? 'badge-success' : 'badge-warning'}`}>
+          <span
+            className={`badge badge-xs ${complete ? 'badge-success' : 'badge-warning'}`}
+            title={badgeTooltip}
+          >
             {complete ? '✓ Listo' : '⚠'}
           </span>
           <button
@@ -204,7 +262,13 @@ export function ReceptionItemCard({
               : <ChevronUp className="h-4 w-4" />
             }
           </button>
-          <Button variant="ghost" size="sm" onClick={() => onRemove(d.id)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="opacity-0 group-hover:opacity-100 transition-opacity"
+            title="Quitar producto"
+            onClick={() => onRemove(d.id)}
+          >
             <Trash2 className="h-4 w-4 text-error" />
           </Button>
         </div>
@@ -212,14 +276,32 @@ export function ReceptionItemCard({
 
       {/* ── Contenido expandido ── */}
       {!d.collapsed && (
-        <div className="border-t border-base-200 px-4 py-3 space-y-3">
+        <div className="border-t border-base-200 px-4 py-3 space-y-3 animate-in fade-in-0 duration-150">
 
-          {/* Selector de presentación compartido (solo si hay más de una) */}
+          {/* Selector de área — siempre en el cuerpo expandido */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs opacity-60 shrink-0 w-20">Área destino:</label>
+            <select
+              className={`select select-bordered select-xs flex-1 ${!d.area_destino_id ? 'select-warning' : ''}`}
+              value={d.area_destino_id ?? ''}
+              onChange={e => {
+                const aid = Number(e.target.value)
+                if (!aid) return
+                const nombre = areas.find(a => a.id === aid)?.nombre ?? ''
+                onChange(d.id, { area_destino_id: aid, area_destino_nombre: nombre })
+              }}
+            >
+              <option value="">Seleccionar área…</option>
+              {areas.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+            </select>
+          </div>
+
+          {/* Selector de presentación (solo si hay más de una) */}
           {d.presentaciones.length > 1 && (
             <div className="flex items-center gap-2">
-              <label className="text-xs opacity-60 shrink-0">Presentación:</label>
+              <label className="text-xs opacity-60 shrink-0 w-20">Presentación:</label>
               <select
-                className="select select-bordered select-xs"
+                className="select select-bordered select-xs flex-1"
                 value={d.presentacion_id ?? ''}
                 onChange={e => {
                   const pid = Number(e.target.value)
@@ -240,7 +322,7 @@ export function ReceptionItemCard({
             </div>
           )}
 
-          {/* Hint de cantidad solicitada */}
+          {/* Hint cantidad solicitada */}
           {d.cantidad_solicitada != null && (
             <p className="text-xs text-info">
               Pedido: {formatCantidad(
@@ -274,6 +356,7 @@ export function ReceptionItemCard({
                 canDelete={d.lotes.length > 1}
                 onChange={patch => onChangeLote(d.id, l.id, patch)}
                 onDelete={() => onRemoveLote(d.id, l.id)}
+                onAddLote={() => onAddLote(d.id)}
               />
             ))}
           </div>
@@ -284,7 +367,7 @@ export function ReceptionItemCard({
             onClick={() => onAddLote(d.id)}
           >
             <Plus className="h-3 w-3" />
-            Agregar lote distinto
+            Agregar otro lote
           </button>
 
           {/* Precio unitario */}

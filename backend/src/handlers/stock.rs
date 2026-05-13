@@ -745,9 +745,94 @@ async fn alertas(
     })))
 }
 
+#[derive(Debug, Deserialize)]
+struct LotesVencidosQuery {
+    area_id: Option<i32>,
+    proveedor_id: Option<i32>,
+    dias_alerta: Option<i32>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+struct LoteVencidoItem {
+    lote_id: Uuid,
+    producto_id: Uuid,
+    producto_nombre: String,
+    codigo_lote: String,
+    fecha_vencimiento: NaiveDate,
+    area_id: i32,
+    area_nombre: String,
+    proveedor_id: Option<i32>,
+    proveedor_nombre: Option<String>,
+    cantidad: Decimal,
+    unidad_base_nombre: String,
+    unidad_base_nombre_plural: String,
+}
+
+async fn lotes_vencidos(
+    State(state): State<AppState>,
+    Extension(_claims): Extension<Claims>,
+    Query(params): Query<LotesVencidosQuery>,
+) -> Result<Json<Vec<LoteVencidoItem>>, AppError> {
+    let dias = params.dias_alerta.unwrap_or(0);
+
+    let mut conditions = vec![
+        "s.cantidad > 0".to_string(),
+        "l.fecha_vencimiento <= CURRENT_DATE + ($1 * INTERVAL '1 day')".to_string(),
+    ];
+    let mut param_idx = 1u32;
+
+    if params.area_id.is_some() {
+        param_idx += 1;
+        conditions.push(format!("s.area_id = ${}", param_idx));
+    }
+    if params.proveedor_id.is_some() {
+        param_idx += 1;
+        conditions.push(format!("l.proveedor_id = ${}", param_idx));
+    }
+
+    let where_clause = conditions.join(" AND ");
+
+    let sql = format!(
+        r#"SELECT
+               s.lote_id,
+               l.producto_id,
+               p.nombre AS producto_nombre,
+               l.numero_lote AS codigo_lote,
+               l.fecha_vencimiento,
+               s.area_id,
+               a.nombre AS area_nombre,
+               l.proveedor_id,
+               pv.nombre AS proveedor_nombre,
+               s.cantidad,
+               um.nombre AS unidad_base_nombre,
+               um.nombre_plural AS unidad_base_nombre_plural
+           FROM stock s
+           JOIN lotes l ON l.id = s.lote_id
+           JOIN productos p ON p.id = l.producto_id
+           JOIN areas a ON a.id = s.area_id
+           JOIN unidades_basicas um ON um.id = p.unidad_base_id
+           LEFT JOIN proveedores pv ON pv.id = l.proveedor_id
+           WHERE {}
+           ORDER BY l.fecha_vencimiento ASC, p.nombre ASC"#,
+        where_clause
+    );
+
+    let mut query = sqlx::query_as::<_, LoteVencidoItem>(&sql).bind(dias);
+    if let Some(v) = params.area_id {
+        query = query.bind(v);
+    }
+    if let Some(v) = params.proveedor_id {
+        query = query.bind(v);
+    }
+
+    let items = query.fetch_all(&state.pool).await?;
+    Ok(Json(items))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar))
         .route("/area/{area_id}", get(stock_por_area))
         .route("/alertas", get(alertas))
+        .route("/lotes-vencidos", get(lotes_vencidos))
 }

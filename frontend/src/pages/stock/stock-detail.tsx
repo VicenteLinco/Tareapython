@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
-import { formatDate, daysUntil, cn, autoPlural, formatCantidad } from '@/lib/utils'
+import { formatDate, daysUntil, cn, formatCantidad } from '@/lib/utils'
+import { LOTE_ROW_COLORS, STOCK_ALERT_COLORS, daysChipColor } from '@/lib/theme'
 import type { StockItem, Movimiento, PaginatedResponse } from '@/types'
 import { DiscardLoteDialog } from './discard-lote-dialog'
 import { Trash2, AlertCircle, Play, History, Box, ArrowUpRight, ArrowDownLeft, FileText, User, TrendingUp, Info } from 'lucide-react'
@@ -98,12 +99,12 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
       {/* Stock summary */}
       <div className={cn(
         'rounded-xl p-5 border',
-        isLow ? 'bg-error/5 border-error/20' : 'bg-base-200/50 border-base-200'
+        isLow ? STOCK_ALERT_COLORS.stockBajo : STOCK_ALERT_COLORS.normal
       )}>
         <p className="text-xs font-medium opacity-40 mb-1">Stock Total</p>
         <div className="flex items-baseline gap-2">
           <span className="text-4xl font-bold tabular-nums">{stockTotal}</span>
-          <span className="text-sm opacity-40">{stockTotal === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}</span>
+          <span className="text-sm opacity-40">{stockTotal === 1 ? item.unidad : (item.unidad_plural ?? item.unidad)}</span>
         </div>
         <div className="flex items-center gap-1.5 mt-2">
           <p className="text-xs opacity-35">
@@ -139,7 +140,7 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
                 />
                 {(item.dias_con_consumo ?? 0) > 0 && (item.dias_con_consumo ?? 0) < 14 && (
                   <span
-                    className="text-[9px] font-bold uppercase tracking-wider text-amber-600 border border-amber-300 bg-amber-50 px-1.5 py-0.5 rounded cursor-default"
+                    className="text-[9px] font-bold uppercase tracking-wider border px-1.5 py-0.5 rounded cursor-default bg-warning/10 text-warning border-warning/30"
                     title={`Estimado con solo ${item.dias_con_consumo} día(s) con consumo. El cálculo puede no ser preciso.`}
                   >
                     <Info className="w-2.5 h-2.5 inline mr-0.5" />
@@ -153,7 +154,7 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
             </div>
           )}
           {item.dias_autonomia_pico != null && (
-            <div className="flex items-center justify-between px-4 py-3 bg-amber-50/60">
+            <div className="flex items-center justify-between px-4 py-3 bg-warning/5">
               <div className="flex items-center gap-2">
                 <TrendingUp className="w-3.5 h-3.5 text-amber-500" />
                 <span className="text-xs font-medium text-amber-700">En pico máximo reciente</span>
@@ -214,9 +215,9 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
                     className={cn(
                       'rounded-xl border px-3 py-2.5 transition-all',
                       isExpired
-                        ? 'border-error/30 bg-error/5'
+                        ? LOTE_ROW_COLORS.vencido
                         : isSoon
-                        ? 'border-warning/30 bg-warning/5 ring-1 ring-warning/20 shadow-sm shadow-warning/10'
+                        ? LOTE_ROW_COLORS.proximo
                         : 'border-base-200 bg-base-100'
                     )}
                   >
@@ -239,7 +240,7 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
                       <div className="text-right flex-shrink-0">
                         <div className="flex items-baseline gap-1 justify-end">
                           <span className="font-mono font-bold text-sm">{qty}</span>
-                          <span className="text-xs opacity-40">{qty === 1 ? item.unidad : (item.unidad_plural ?? autoPlural(item.unidad))}</span>
+                          <span className="text-xs opacity-40">{qty === 1 ? item.unidad : (item.unidad_plural ?? item.unidad)}</span>
                         </div>
                         <div className="flex items-center gap-1 justify-end mt-0.5">
                           {isExpired && <Badge variant="destructive">Vencido</Badge>}

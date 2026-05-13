@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Plus, Clock } from 'lucide-react'
 import { cn, formatCantidad } from '@/lib/utils'
+import { daysChipColor } from '@/lib/theme'
 import { ProductoImage } from '@/components/ui/producto-image'
 import type { StockItem } from '@/types'
 import type { LoteDisponible } from './lote-selector'
@@ -39,13 +40,7 @@ function DaysChip({ days }: { days: number }) {
       Sin stock
     </span>
   )
-  const cls = days <= 7
-    ? 'bg-error/10 text-error'
-    : days <= 30
-      ? 'bg-warning/10 text-warning'
-      : days <= 90
-        ? 'bg-yellow-50 text-yellow-600'
-        : 'bg-success/10 text-success/80'
+  const cls = daysChipColor(days)
   return (
     <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap', cls)}>
       ~{days} días stock

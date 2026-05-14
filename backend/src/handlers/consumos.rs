@@ -174,9 +174,16 @@ async fn consumo_batch(
         return Err(AppError::Validation("items no puede estar vacío".into()));
     }
 
-    // Validar acceso al área (solo si se especificó área)
-    if let Some(area_id) = req.area_id {
-        stock_ops::validar_acceso_area(&state.pool, claims.sub, area_id, &claims.rol).await?;
+    // Validar acceso a TODOS los área_id mencionados (global + por ítem), deduplicados
+    {
+        let mut areas_a_validar: std::collections::HashSet<i32> = std::collections::HashSet::new();
+        if let Some(a) = req.area_id { areas_a_validar.insert(a); }
+        for item in &req.items {
+            if let Some(a) = item.area_id { areas_a_validar.insert(a); }
+        }
+        for area_id in areas_a_validar {
+            stock_ops::validar_acceso_area(&state.pool, claims.sub, area_id, &claims.rol).await?;
+        }
     }
 
     // Idempotency

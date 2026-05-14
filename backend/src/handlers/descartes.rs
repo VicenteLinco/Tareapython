@@ -81,6 +81,7 @@ async fn listar(
 
     let mut conditions = vec![
         "m.tipo IN ('DESCARTE_VENCIDO', 'DESCARTE_DAÑADO')".to_string(),
+        "m.grupo_movimiento IS NOT NULL".to_string(),
     ];
     let mut param_idx = 0u32;
 
@@ -174,11 +175,13 @@ async fn listar(
         })
         .collect();
 
+    let total_pages = if limit > 0 { (total + limit - 1) / limit } else { 1 };
     Ok(Json(serde_json::json!({
         "data": data,
         "total": total,
         "page": pagination.page(),
         "per_page": limit,
+        "total_pages": total_pages,
     })))
 }
 

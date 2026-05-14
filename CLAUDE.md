@@ -105,7 +105,7 @@ frontend/
 | `movimientos` | Listar paginado + detalle |
 | `descartes` | Masivo |
 | `conteo` | Sesiones de conteo ciego (migration 026) |
-| `solicitudes_compra` | CRUD + aprobación + link a recepción |
+| `solicitudes_compra` | CRUD + aprobación + envios granulares por proveedor (migration 049) + forecast/recomendaciones |
 | `configuracion` | Settings del sistema |
 | `audit_log` | Listar paginado |
 | `setup` | Importar CSV, finalizar carga inicial (pendiente) |
@@ -125,9 +125,9 @@ frontend/
 
 ## Estado actual del proyecto
 
-- Backend: ~95% implementado. Falta: módulo Setup (importar CSV, finalizar carga inicial). Tests: 0%.
-- Frontend: implementación activa. Branch `feat/solicitudes-compra-redesign` en curso.
-- Migraciones: 033 en total, aplicadas automáticamente.
+- Backend: ~97% implementado. Falta: módulo Setup (importar CSV, finalizar carga inicial). Tests: 0%.
+- Frontend: implementación activa. Módulos completos: descartes (tabs), solicitudes-compra (multi-proveedor con envios granulares).
+- Migraciones: 049 en total, aplicadas automáticamente.
 
 ## Convenciones
 

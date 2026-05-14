@@ -83,11 +83,12 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
   const hasHealthyItems = healthyItems.length > 0
 
   const descarteMutation = useMutation({
-    mutationFn: (data: DescarteRequest) =>
+    mutationFn: ({ request, snapshot }: { request: DescarteRequest; snapshot: DescarteItemLocal[] }) =>
       api
-        .post('/descartes', data, { headers: { 'X-Idempotency-Key': uuidv4() } })
+        .post('/descartes', request, { headers: { 'X-Idempotency-Key': uuidv4() } })
         .then((r) => r.data),
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
+      const { snapshot } = variables
       queryClient.invalidateQueries({ queryKey: ['stock'] })
       queryClient.invalidateQueries({ queryKey: ['descartes-stock'] })
       queryClient.invalidateQueries({ queryKey: ['descartes-historial'] })
@@ -95,9 +96,9 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
         grupo_movimiento: data.grupo_movimiento,
         fecha: new Date().toISOString(),
         usuario_nombre: '',
-        total_items: selectedItems.length,
-        areas: [...new Set(selectedItems.map((i) => i.area_nombre))],
-        items: selectedItems.map((i) => ({
+        total_items: snapshot.length,
+        areas: [...new Set(snapshot.map((i) => i.area_nombre))],
+        items: snapshot.map((i) => ({
           producto_nombre: i.producto_nombre,
           codigo_lote: i.codigo_lote,
           area_nombre: i.area_nombre,
@@ -148,8 +149,16 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
 
   const executeDescarte = (justificacion?: string) => {
     if (totalSelected === 0) return
-    const payload: DescarteRequest = {
-      items: selectedItems.map((i) => ({
+    const snapshot = [...selectedItems]
+
+    const invalidItem = snapshot.find((i) => i.cantidad_descartar <= 0)
+    if (invalidItem) {
+      toast.error(`La cantidad de "${invalidItem.producto_nombre}" debe ser mayor a 0`)
+      return
+    }
+
+    const request: DescarteRequest = {
+      items: snapshot.map((i) => ({
         lote_id: i.lote_id,
         area_id: i.area_id,
         cantidad: String(i.cantidad_descartar),
@@ -162,7 +171,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
             : null,
       })),
     }
-    descarteMutation.mutate(payload)
+    descarteMutation.mutate({ request, snapshot })
     setShowHealthyWarning(false)
     setHealthyJustification('')
   }

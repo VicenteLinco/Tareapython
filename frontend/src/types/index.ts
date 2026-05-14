@@ -287,3 +287,39 @@ export interface PaginatedSesiones {
   per_page: number
   total_pages: number
 }
+
+export interface DescarteVencidoItem {
+  lote_id: string
+  producto_id: string
+  producto_nombre: string
+  codigo_lote: string
+  fecha_vencimiento: string
+  area_id: number
+  area_nombre: string
+  proveedor_id: number | null
+  proveedor_nombre: string | null
+  cantidad: number
+  unidad_base_nombre: string
+  unidad_base_nombre_plural: string
+}
+
+export interface DescarteSessionItem {
+  producto_nombre: string
+  codigo_lote: string
+  area_nombre: string
+  tipo: 'DESCARTE_VENCIDO' | 'DESCARTE_DAÑADO'
+  cantidad: number
+  unidad_base_nombre: string
+  unidad_base_nombre_plural: string
+  fecha_vencimiento: string
+  nota: string | null
+}
+
+export interface DescarteSession {
+  grupo_movimiento: string
+  fecha: string
+  usuario_nombre: string
+  total_items: number
+  areas: string[]
+  items: DescarteSessionItem[]
+}

@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useDescartesStock } from './use-descartes-stock'
 import { exportarDescartePDF } from '@/lib/descarte-pdf'
+import { useAuthStore } from '@/hooks/use-auth-store'
 
 interface DescarteItemLocal extends DescarteVencidoItem {
   cantidad_descartar: number
@@ -42,6 +43,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
   const [successSession, setSuccessSession] = useState<DescarteSession | null>(null)
 
   const queryClient = useQueryClient()
+  const usuario = useAuthStore((s) => s.usuario)
 
   const { data: areas } = useQuery({
     queryKey: ['areas'],
@@ -95,7 +97,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
       const session: DescarteSession = {
         grupo_movimiento: data.grupo_movimiento,
         fecha: new Date().toISOString(),
-        usuario_nombre: '',
+        usuario_nombre: usuario?.nombre ?? '',
         total_items: snapshot.length,
         areas: [...new Set(snapshot.map((i) => i.area_nombre))],
         items: snapshot.map((i) => ({

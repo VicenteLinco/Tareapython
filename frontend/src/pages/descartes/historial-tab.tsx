@@ -54,7 +54,7 @@ export function HistorialTab() {
 
   const sessions = data?.data ?? []
   const total = data?.total ?? 0
-  const totalPages = Math.ceil(total / 20)
+  const totalPages = data?.total_pages ?? 0
 
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">

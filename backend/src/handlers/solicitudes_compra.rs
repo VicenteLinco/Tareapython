@@ -1079,7 +1079,14 @@ async fn horizonte_sugerido(
             COALESCE(p.lead_time_propio,
                      prov.dias_despacho_tierra,
                      prov.dias_despacho_aereo, 7)::INT                        AS "lead_time!: i32",
-            (SELECT serie FROM serie)                                         AS "serie!: Vec<f64>"
+            (SELECT serie FROM serie)                                         AS "serie!: Vec<f64>",
+            COALESCE((
+                SELECT SUM(scd.cantidad_sugerida)::FLOAT8
+                FROM solicitud_compra_detalle scd
+                JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
+                WHERE scd.producto_id = p.id
+                  AND sc.estado IN ('guardada', 'parcialmente_enviada', 'enviada')
+            ), 0.0)                                                           AS "ya_pedido!: f64"
         FROM productos p
         LEFT JOIN proveedores prov ON prov.id = $3
         WHERE p.id = $1
@@ -1098,7 +1105,7 @@ async fn horizonte_sugerido(
         &row.serie,
         row.stock_actual,
         row.stock_minimo,
-        0.0, // no descuento ya_pedido aquí — el cliente ajusta horizonte sobre el item
+        row.ya_pedido,
         row.lead_time,
         cfg,
     );

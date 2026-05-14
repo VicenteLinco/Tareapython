@@ -1,5 +1,5 @@
 use axum::extract::{Path, Query, State};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,8 @@ struct SolicitudListParams {
 use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::dto::solicitud::{
-    CreateSolicitudItem, SolicitudDetalle, SolicitudDetalleItem, SolicitudResumen,
+    CancelarEnvioInput, CreateSolicitudItem, EnvioProveedorView, ProveedorResumen,
+    RegistrarEnvioInput, SolicitudDetalle, SolicitudDetalleItem, SolicitudResumen,
     UpdateSolicitudRequest,
 };
 use crate::errors::AppError;
@@ -87,6 +88,7 @@ async fn obtener_solicitud_por_id(
     let items = sqlx::query_as::<_, SolicitudDetalleItem>(
         r#"SELECT
             d.producto_id,
+            p.proveedor_id,
             p.nombre as producto_nombre,
             d.cantidad_sugerida,
             d.unidad,
@@ -116,6 +118,77 @@ async fn obtener_solicitud_por_id(
     .fetch_all(pool)
     .await?;
 
+    let envios = sqlx::query_as::<_, EnvioProveedorView>(
+        r#"WITH proveedores_solicitud AS (
+               SELECT
+                   p.proveedor_id,
+                   COALESCE(prov.nombre, '[Proveedor eliminado]') AS proveedor_nombre,
+                   COUNT(d.id)::integer AS total_items,
+                   COALESCE(SUM(
+                       COALESCE(d.cantidad_presentaciones, d.cantidad_sugerida)
+                       * COALESCE(
+                           CASE
+                               WHEN d.presentacion_id IS NOT NULL AND pres.factor_conversion IS NOT NULL
+                               THEN d.precio_unitario * pres.factor_conversion
+                               ELSE d.precio_unitario
+                           END,
+                           0
+                       )
+                   ), 0) AS monto_total
+               FROM solicitud_compra_detalle d
+               JOIN productos p ON p.id = d.producto_id
+               LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
+               LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
+               WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
+               GROUP BY p.proveedor_id, prov.nombre
+           )
+           SELECT
+               ps.proveedor_id,
+               ps.proveedor_nombre,
+               COALESCE(se.estado, 'pendiente') AS estado,
+               se.metodo_envio,
+               se.fecha_envio,
+               se.nota,
+               ps.total_items,
+               ps.monto_total,
+               COALESCE(se.version, 0)::int AS version
+           FROM proveedores_solicitud ps
+           LEFT JOIN solicitud_envios se
+             ON se.solicitud_id = $1 AND se.proveedor_id = ps.proveedor_id
+           ORDER BY ps.proveedor_nombre"#,
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await?;
+
+    let proveedores_resumen = sqlx::query_as::<_, ProveedorResumen>(
+        r#"SELECT
+               p.proveedor_id,
+               COALESCE(prov.nombre, '[Proveedor eliminado]') AS proveedor_nombre,
+               COUNT(d.id)::integer AS total_items,
+               COALESCE(SUM(
+                   COALESCE(d.cantidad_presentaciones, d.cantidad_sugerida)
+                   * COALESCE(
+                       CASE
+                           WHEN d.presentacion_id IS NOT NULL AND pres.factor_conversion IS NOT NULL
+                           THEN d.precio_unitario * pres.factor_conversion
+                           ELSE d.precio_unitario
+                       END,
+                       0
+                   )
+               ), 0) AS monto_total
+           FROM solicitud_compra_detalle d
+           JOIN productos p ON p.id = d.producto_id
+           LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
+           LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
+           WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
+           GROUP BY p.proveedor_id, prov.nombre
+           ORDER BY proveedor_nombre"#,
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await?;
+
     Ok(SolicitudDetalle {
         id: solicitud.id,
         numero_documento: solicitud.numero_documento,
@@ -128,6 +201,8 @@ async fn obtener_solicitud_por_id(
         motivo_cierre: solicitud.motivo_cierre,
         metodo_envio: solicitud.metodo_envio,
         items,
+        envios,
+        proveedores_resumen,
     })
 }
 
@@ -271,7 +346,20 @@ async fn listar(
         r#"SELECT s.id, s.numero_documento, s.fecha_creacion, s.estado,
                   u.nombre as usuario_nombre,
                   (SELECT COUNT(*)::integer FROM solicitud_compra_detalle WHERE solicitud_id = s.id) as items_count,
-                  s.fecha_envio, s.fecha_cierre
+                  s.fecha_envio, s.fecha_cierre,
+                  COALESCE((
+                      SELECT COUNT(DISTINCT p.proveedor_id)::integer
+                      FROM solicitud_compra_detalle scd
+                      JOIN productos p ON p.id = scd.producto_id
+                      WHERE scd.solicitud_id = s.id AND p.proveedor_id IS NOT NULL
+                  ), 0) as proveedores_count,
+                  (
+                      SELECT string_agg(DISTINCT prov.nombre, ', ' ORDER BY prov.nombre)
+                      FROM solicitud_compra_detalle scd
+                      JOIN productos p ON p.id = scd.producto_id
+                      JOIN proveedores prov ON prov.id = p.proveedor_id
+                      WHERE scd.solicitud_id = s.id
+                  ) as proveedores_nombres
            FROM solicitudes_compra s
            JOIN usuarios u ON u.id = s.usuario_id
            WHERE 1=1"#,
@@ -379,7 +467,7 @@ pub async fn recomendaciones(
             JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
             JOIN productos p2 ON p2.id = scd.producto_id
             LEFT JOIN proveedores prov2 ON prov2.id = p2.proveedor_id
-            WHERE sc.estado IN ('guardada', 'enviada')
+            WHERE sc.estado IN ('guardada', 'parcialmente_enviada', 'enviada')
               AND sc.fecha_creacion >= NOW() - (
                   COALESCE(p2.lead_time_propio,
                            prov2.dias_despacho_tierra,
@@ -587,11 +675,28 @@ async fn guardar(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let mut tx = state.pool.begin().await?;
+
+    let sin_proveedor: i64 = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM solicitud_compra_detalle d
+         JOIN productos p ON p.id = d.producto_id
+         WHERE d.solicitud_id = $1 AND p.proveedor_id IS NULL",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if sin_proveedor > 0 {
+        return Err(AppError::Validation(
+            "Todos los items deben tener proveedor asignado".into(),
+        ));
+    }
+
     let rows = sqlx::query(
         "UPDATE solicitudes_compra SET estado = 'guardada' WHERE id = $1 AND estado = 'borrador'",
     )
     .bind(id)
-    .execute(&state.pool)
+    .execute(&mut *tx)
     .await?;
 
     if rows.rows_affected() == 0 {
@@ -601,7 +706,68 @@ async fn guardar(
         ));
     }
 
+    sqlx::query(
+        "INSERT INTO solicitud_envios (solicitud_id, proveedor_id, estado)
+         SELECT DISTINCT $1, p.proveedor_id, 'pendiente'
+         FROM solicitud_compra_detalle d
+         JOIN productos p ON p.id = d.producto_id
+         WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
+         ON CONFLICT (solicitud_id, proveedor_id) DO NOTHING",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn recalcular_estado_solicitud(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    solicitud_id: Uuid,
+) -> Result<(), AppError> {
+    let (total_provs, provs_enviados, fecha_max): (i64, i64, Option<DateTime<Utc>>) =
+        sqlx::query_as(
+            r#"WITH proveedores_items AS (
+                   SELECT DISTINCT p.proveedor_id
+                   FROM solicitud_compra_detalle d
+                   JOIN productos p ON p.id = d.producto_id
+                   WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
+               ),
+               envios_ok AS (
+                   SELECT proveedor_id
+                   FROM solicitud_envios
+                   WHERE solicitud_id = $1 AND estado = 'enviado'
+               )
+               SELECT
+                   (SELECT COUNT(*) FROM proveedores_items)::bigint AS total_provs,
+                   (SELECT COUNT(*) FROM envios_ok)::bigint AS provs_enviados,
+                   (SELECT MAX(fecha_envio) FROM solicitud_envios
+                    WHERE solicitud_id = $1 AND estado = 'enviado') AS fecha_max"#,
+        )
+        .bind(solicitud_id)
+        .fetch_one(&mut **tx)
+        .await?;
+
+    let nuevo_estado = match (total_provs, provs_enviados) {
+        (_, 0) => "guardada",
+        (t, e) if e < t => "parcialmente_enviada",
+        (t, e) if e >= t && t > 0 => "enviada",
+        _ => "guardada",
+    };
+
+    sqlx::query(
+        "UPDATE solicitudes_compra
+         SET estado = $1, fecha_envio = $2
+         WHERE id = $3 AND estado NOT IN ('cancelada','completada')",
+    )
+    .bind(nuevo_estado)
+    .bind(fecha_max)
+    .bind(solicitud_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -616,9 +782,11 @@ struct CancelarRequest {
 
 async fn enviar(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Path(id): Path<Uuid>,
     Json(req): Json<EnviarRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let mut tx = state.pool.begin().await?;
     let rows = sqlx::query(
         "UPDATE solicitudes_compra
          SET estado = 'enviada', fecha_envio = NOW(), metodo_envio = $2
@@ -626,7 +794,7 @@ async fn enviar(
     )
     .bind(id)
     .bind(req.metodo_envio.as_deref())
-    .execute(&state.pool)
+    .execute(&mut *tx)
     .await?;
 
     if rows.rows_affected() == 0 {
@@ -635,7 +803,172 @@ async fn enviar(
             "ESTADO_INVALIDO".into(),
         ));
     }
+
+    sqlx::query(
+        "INSERT INTO solicitud_envios (solicitud_id, proveedor_id, estado, metodo_envio, fecha_envio, usuario_envio_id)
+         SELECT DISTINCT $1, p.proveedor_id, 'enviado', COALESCE($2, 'otro'), NOW(), $3
+         FROM solicitud_compra_detalle d
+         JOIN productos p ON p.id = d.producto_id
+         WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
+         ON CONFLICT (solicitud_id, proveedor_id) DO UPDATE
+         SET estado = 'enviado',
+             metodo_envio = EXCLUDED.metodo_envio,
+             fecha_envio = EXCLUDED.fecha_envio,
+             usuario_envio_id = EXCLUDED.usuario_envio_id",
+    )
+    .bind(id)
+    .bind(req.metodo_envio.as_deref())
+    .bind(claims.sub)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn registrar_envio(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<RegistrarEnvioInput>,
+) -> Result<Json<SolicitudDetalle>, AppError> {
+    if !matches!(
+        req.metodo_envio.as_str(),
+        "email" | "telefono" | "whatsapp" | "presencial" | "otro"
+    ) {
+        return Err(AppError::Validation("Metodo de envio invalido".into()));
+    }
+
+    let mut tx = state.pool.begin().await?;
+    let estado: Option<String> =
+        sqlx::query_scalar("SELECT estado FROM solicitudes_compra WHERE id = $1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+    match estado.as_deref() {
+        None => return Err(AppError::NotFound("Solicitud no encontrada".into())),
+        Some("borrador") => {
+            return Err(AppError::Validation(
+                "La solicitud debe estar guardada para registrar envios".into(),
+            ));
+        }
+        Some("cancelada") | Some("completada") => {
+            return Err(AppError::Validation("Solicitud no admite cambios".into()));
+        }
+        _ => {}
+    }
+
+    let proveedor_presente: i64 = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)
+         FROM solicitud_compra_detalle d
+         JOIN productos p ON p.id = d.producto_id
+         WHERE d.solicitud_id = $1 AND p.proveedor_id = $2",
+    )
+    .bind(id)
+    .bind(req.proveedor_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if proveedor_presente == 0 {
+        return Err(AppError::Validation(
+            "El proveedor no tiene items en esta solicitud".into(),
+        ));
+    }
+
+    // Guard: version=0 solo es válido para registros nuevos (INSERT path).
+    // Si ya existe un envio para este proveedor y el cliente manda version=0,
+    // significa que tiene datos stale — rechazamos para forzar recarga.
+    if req.version == 0 {
+        let ya_existe: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM solicitud_envios WHERE solicitud_id = $1 AND proveedor_id = $2)",
+        )
+        .bind(id)
+        .bind(req.proveedor_id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        if ya_existe {
+            return Err(AppError::Conflict(
+                "Version del envio desactualizada, recarga la pagina".into(),
+            ));
+        }
+    }
+
+    let updated = sqlx::query(
+        "INSERT INTO solicitud_envios
+            (solicitud_id, proveedor_id, estado, metodo_envio, fecha_envio, usuario_envio_id, nota)
+         VALUES ($1, $2, 'enviado', $3, COALESCE($4, NOW()), $5, $6)
+         ON CONFLICT (solicitud_id, proveedor_id) DO UPDATE
+         SET estado = 'enviado',
+             metodo_envio = EXCLUDED.metodo_envio,
+             fecha_envio = EXCLUDED.fecha_envio,
+             usuario_envio_id = EXCLUDED.usuario_envio_id,
+             nota = EXCLUDED.nota
+         WHERE solicitud_envios.version = $7 OR $7 = 0",
+    )
+    .bind(id)
+    .bind(req.proveedor_id)
+    .bind(&req.metodo_envio)
+    .bind(req.fecha_envio)
+    .bind(claims.sub)
+    .bind(&req.nota)
+    .bind(req.version)
+    .execute(&mut *tx)
+    .await?;
+
+    if updated.rows_affected() == 0 {
+        return Err(AppError::Conflict(
+            "Version del envio desactualizada, recarga la pagina".into(),
+        ));
+    }
+
+    recalcular_estado_solicitud(&mut tx, id).await?;
+    tx.commit().await?;
+
+    Ok(Json(obtener_solicitud_por_id(id, &state.pool).await?))
+}
+
+async fn cancelar_envio(
+    State(state): State<AppState>,
+    Path((id, proveedor_id)): Path<(Uuid, i32)>,
+    Json(req): Json<CancelarEnvioInput>,
+) -> Result<Json<SolicitudDetalle>, AppError> {
+    let mut tx = state.pool.begin().await?;
+    let estado: Option<String> =
+        sqlx::query_scalar("SELECT estado FROM solicitudes_compra WHERE id = $1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+    match estado.as_deref() {
+        None => return Err(AppError::NotFound("Solicitud no encontrada".into())),
+        Some("cancelada") | Some("completada") | Some("borrador") => {
+            return Err(AppError::Validation("Solicitud no admite cambios".into()));
+        }
+        _ => {}
+    }
+
+    let updated = sqlx::query(
+        "UPDATE solicitud_envios
+         SET estado = 'pendiente', metodo_envio = NULL, fecha_envio = NULL, usuario_envio_id = NULL, nota = NULL
+         WHERE solicitud_id = $1 AND proveedor_id = $2 AND version = $3",
+    )
+    .bind(id)
+    .bind(proveedor_id)
+    .bind(req.version)
+    .execute(&mut *tx)
+    .await?;
+
+    if updated.rows_affected() == 0 {
+        return Err(AppError::Conflict(
+            "Version del envio desactualizada, recarga la pagina".into(),
+        ));
+    }
+
+    recalcular_estado_solicitud(&mut tx, id).await?;
+    tx.commit().await?;
+
+    Ok(Json(obtener_solicitud_por_id(id, &state.pool).await?))
 }
 
 async fn completar(
@@ -645,7 +978,7 @@ async fn completar(
     let rows = sqlx::query(
         "UPDATE solicitudes_compra
          SET estado = 'completada', fecha_cierre = NOW()
-         WHERE id = $1 AND estado IN ('guardada', 'enviada')",
+         WHERE id = $1 AND estado IN ('guardada', 'parcialmente_enviada', 'enviada')",
     )
     .bind(id)
     .execute(&state.pool)
@@ -675,7 +1008,7 @@ async fn cancelar(
     let rows = sqlx::query(
         "UPDATE solicitudes_compra
          SET estado = 'cancelada', fecha_cierre = NOW(), motivo_cierre = $2
-         WHERE id = $1 AND estado IN ('guardada', 'enviada')",
+         WHERE id = $1 AND estado IN ('guardada', 'parcialmente_enviada', 'enviada')",
     )
     .bind(id)
     .bind(motivo)
@@ -876,6 +1209,8 @@ pub fn routes() -> Router<AppState> {
         .route("/{id}", get(obtener).put(actualizar))
         .route("/{id}/guardar", post(guardar))
         .route("/{id}/enviar", post(enviar))
+        .route("/{id}/envios", post(registrar_envio))
+        .route("/{id}/envios/{proveedor_id}", delete(cancelar_envio))
         .route("/{id}/completar", post(completar))
         .route("/{id}/cancelar", post(cancelar))
 }

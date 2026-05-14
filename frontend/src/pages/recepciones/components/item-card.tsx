@@ -231,7 +231,10 @@ export function ReceptionItemCard({
             )}
             {hasSolicitud && (
               <span className={`text-xs font-mono tabular-nums ${progresoOk ? 'text-success' : 'text-info'}`}>
-                {totalCantidad}/{d.cantidad_solicitada} {d.presentacion_nombre || d.unidad_base_nombre}
+                {totalCantidad}/{d.cantidad_solicitada}{' '}
+                {totalCantidad === 1
+                  ? (d.presentacion_nombre || d.unidad_base_nombre)
+                  : (d.presentacion_nombre_plural || d.unidad_base_nombre_plural)}
               </span>
             )}
           </div>

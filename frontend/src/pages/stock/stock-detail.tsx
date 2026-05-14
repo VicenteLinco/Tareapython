@@ -468,7 +468,7 @@ function ProductTimeline({ productoId, areaId, unidad }: { productoId: string; a
                       'px-1.5 py-0.5 rounded text-[10px] font-bold',
                       isEntrada ? 'bg-success/10 text-success' : 'bg-base-200 opacity-60'
                     )}>
-                      {isEntrada ? '+' : '-'}{Math.round(ev.cantidad)} {ev.unidad_base_nombre}
+                      {isEntrada ? '+' : '-'}{formatCantidad(Math.round(ev.cantidad), ev.unidad_base_nombre ?? '', ev.unidad_base_nombre_plural ?? undefined)}
                     </div>
                   </div>
                   {ev.notas && (

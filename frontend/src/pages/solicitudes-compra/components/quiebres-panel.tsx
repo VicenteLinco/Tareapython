@@ -1,7 +1,7 @@
 // frontend/src/pages/solicitudes-compra/components/quiebres-panel.tsx
 import { Search, CheckCircle2, Plus } from 'lucide-react'
 import { MetricTooltip } from '@/components/ui/metric-tooltip'
-import { cn } from '@/lib/utils'
+import { cn, formatCantidad } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SolicitudBuscador } from './solicitud-buscador'
 import type { ItemRecomendado, Proveedor, Producto, SolicitudItem } from '@/types'
@@ -125,8 +125,12 @@ export function QuiebresPanelIzquierdo({
               const yaPedido = parseFloat(r.ya_pedido_unidades)
               const sugBase = parseFloat(r.cantidad_sugerida_base)
               const sugLabel = r.cantidad_sugerida_presentacion
-                ? `${Math.ceil(parseFloat(r.cantidad_sugerida_presentacion))} ${r.presentacion_nombre_plural || r.presentacion_nombre}`
-                : `${Math.ceil(sugBase)} ${r.unidad_base_plural || r.unidad_base}`
+                ? formatCantidad(
+                    Math.ceil(parseFloat(r.cantidad_sugerida_presentacion)),
+                    r.presentacion_nombre,
+                    r.presentacion_nombre_plural ?? undefined
+                  )
+                : formatCantidad(Math.ceil(sugBase), r.unidad_base, r.unidad_base_plural ?? undefined)
               const unidadEnCamino = r.unidad_base_plural || r.unidad_base
               const cubierto = yaPedido > 0 && sugBase === 0
 

@@ -82,7 +82,11 @@ export function RevisionView({
     const autonomia = r.autonomia_dias
     const sugBase = parseFloat(r.cantidad_sugerida_base)
     const sugLabel = r.cantidad_sugerida_presentacion && r.presentacion_nombre
-      ? `${Math.ceil(parseFloat(r.cantidad_sugerida_presentacion))} ${r.presentacion_nombre_plural || r.presentacion_nombre}`
+      ? formatCantidad(
+          Math.ceil(parseFloat(r.cantidad_sugerida_presentacion)),
+          r.presentacion_nombre,
+          r.presentacion_nombre_plural ?? undefined
+        )
       : formatCantidad(Math.ceil(sugBase), r.unidad_base, r.unidad_base_plural ?? undefined)
     const cf = confianzaInfo(r.confianza ?? 'baja')
     const estaAjustando = ajustandoId === r.producto_id

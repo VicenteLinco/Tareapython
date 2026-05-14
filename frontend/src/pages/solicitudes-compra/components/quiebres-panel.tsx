@@ -127,7 +127,7 @@ export function QuiebresPanelIzquierdo({
               const sugLabel = r.cantidad_sugerida_presentacion
                 ? formatCantidad(
                     Math.ceil(parseFloat(r.cantidad_sugerida_presentacion)),
-                    r.presentacion_nombre,
+                    r.presentacion_nombre ?? r.unidad_base,
                     r.presentacion_nombre_plural ?? undefined
                   )
                 : formatCantidad(Math.ceil(sugBase), r.unidad_base, r.unidad_base_plural ?? undefined)

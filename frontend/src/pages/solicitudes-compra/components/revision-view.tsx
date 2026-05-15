@@ -122,7 +122,7 @@ export function RevisionView({
       <div
         key={r.producto_id}
         className={cn(
-          'relative flex items-start gap-3 p-3 pl-4 rounded-2xl border transition-all',
+          'relative flex items-center gap-3 p-3 pl-4 rounded-2xl border transition-all',
           estado === 'aceptado' && 'opacity-60 bg-success/5 border-success/20',
           estado === 'descartado' && 'opacity-40 bg-base-200/30 border-transparent',
           estado === 'pendiente' && isCritica && 'bg-error/5 border-error/20',
@@ -180,7 +180,7 @@ export function RevisionView({
           </div>
         </div>
 
-        <div className="flex flex-col items-end gap-1.5 shrink-0">
+        <div className="flex flex-col items-end gap-2 shrink-0 self-start pt-0.5">
           <div className="flex items-center gap-1">
             {r.confianza !== 'baja' && (
               <span className="text-[10px] font-bold text-base-content/40">sugerido</span>
@@ -190,58 +190,70 @@ export function RevisionView({
           </div>
 
           {estado === 'pendiente' && (
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <div className="flex items-center gap-1 bg-base-200/60 rounded-xl px-1.5 py-0.5">
+            <div className="flex flex-col items-end gap-1 mt-0.5">
+              <div className="flex items-center gap-1.5">
+                <div className={cn(
+                  'flex items-center gap-1 rounded-xl px-1.5 py-0.5 transition-all',
+                  r.confianza === 'baja' && !cantidadInputValida
+                    ? 'bg-warning/8 border border-dashed border-warning/50'
+                    : 'bg-base-200/60'
+                )}>
+                  <button
+                    className="btn btn-ghost btn-xs p-0 h-5 w-5 min-h-0 rounded-lg"
+                    onClick={() => {
+                      const v = parseFloat(cantidadInput) || 0
+                      if (v > 1) setCantidad(r.producto_id, String(v - 1))
+                    }}
+                  >
+                    <Minus className="h-3 w-3" />
+                  </button>
+                  <input
+                    type="number"
+                    className="input input-ghost w-14 h-6 text-center text-sm font-bold p-0 border-0 focus:outline-none bg-transparent"
+                    placeholder={r.confianza === 'baja' ? '?' : '—'}
+                    value={cantidadInput}
+                    min={1}
+                    onChange={e => setCantidad(r.producto_id, e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && cantidadInputValida) handleAgregarAlPedido(r)
+                    }}
+                  />
+                  <button
+                    className="btn btn-ghost btn-xs p-0 h-5 w-5 min-h-0 rounded-lg"
+                    onClick={() => {
+                      const v = parseFloat(cantidadInput) || 0
+                      setCantidad(r.producto_id, String(v + 1))
+                    }}
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                  <span className="text-[9px] text-base-content/40 ml-0.5">{r.unidad_base}</span>
+                </div>
                 <button
-                  className="btn btn-ghost btn-xs p-0 h-5 w-5 min-h-0 rounded-lg"
-                  onClick={() => {
-                    const v = parseFloat(cantidadInput) || 0
-                    if (v > 1) setCantidad(r.producto_id, String(v - 1))
-                  }}
+                  className={cn(
+                    'btn btn-xs rounded-xl gap-1 text-[10px] font-bold',
+                    !cantidadInputValida && 'btn-disabled opacity-40',
+                    cantidadInputValida && isCritica && 'bg-error/10 text-error border border-error/30 hover:bg-error hover:text-white hover:border-error',
+                    cantidadInputValida && !isCritica && 'btn-primary',
+                  )}
+                  disabled={!cantidadInputValida}
+                  onClick={() => handleAgregarAlPedido(r)}
                 >
-                  <Minus className="h-3 w-3" />
+                  <CheckCircle2 className="h-3 w-3" /> Agregar
                 </button>
-                <input
-                  type="number"
-                  className="input input-ghost w-14 h-6 text-center text-sm font-bold p-0 border-0 focus:outline-none bg-transparent"
-                  placeholder="—"
-                  value={cantidadInput}
-                  min={1}
-                  onChange={e => setCantidad(r.producto_id, e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && cantidadInputValida) handleAgregarAlPedido(r)
-                  }}
-                />
                 <button
-                  className="btn btn-ghost btn-xs p-0 h-5 w-5 min-h-0 rounded-lg"
-                  onClick={() => {
-                    const v = parseFloat(cantidadInput) || 0
-                    setCantidad(r.producto_id, String(v + 1))
-                  }}
+                  className="btn btn-xs btn-ghost rounded-xl text-base-content/40 hover:text-error"
+                  title="Descartar recomendación"
+                  onClick={() => onDescartar(r.producto_id)}
                 >
-                  <Plus className="h-3 w-3" />
+                  <X className="h-3 w-3" />
                 </button>
-                <span className="text-[9px] text-base-content/40 ml-0.5">{r.unidad_base}</span>
               </div>
-              <button
-                className={cn(
-                  'btn btn-xs rounded-xl gap-1 text-[10px] font-bold',
-                  !cantidadInputValida && 'btn-disabled opacity-40',
-                  cantidadInputValida && isCritica && 'bg-error/10 text-error border border-error/30 hover:bg-error hover:text-white hover:border-error',
-                  cantidadInputValida && !isCritica && 'btn-primary',
-                )}
-                disabled={!cantidadInputValida}
-                onClick={() => handleAgregarAlPedido(r)}
-              >
-                <CheckCircle2 className="h-3 w-3" /> Agregar
-              </button>
-              <button
-                className="btn btn-xs btn-ghost rounded-xl text-base-content/40 hover:text-error"
-                title="Descartar recomendación"
-                onClick={() => onDescartar(r.producto_id)}
-              >
-                <X className="h-3 w-3" />
-              </button>
+              {r.confianza === 'baja' && !cantidadInputValida && (
+                <p className="text-[9px] text-warning/80 font-medium">
+                  Sin historial — ingresa la cantidad manualmente
+                </p>
+              )}
             </div>
           )}
 

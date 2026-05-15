@@ -11,8 +11,6 @@ interface RevisionViewProps {
   isLoading: boolean
   itemsEnPedido: SolicitudItem[]
   descartados: Set<string>
-  horizonteGlobal: number
-  onAceptar: (r: ItemRecomendado) => void
   onAceptarConCantidad: (r: ItemRecomendado, cantidad: number) => void
   onUpdateQty: (productoId: string, cantidad: number) => void
   onRemove: (productoId: string) => void

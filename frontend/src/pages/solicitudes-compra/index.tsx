@@ -92,8 +92,6 @@ export default function SolicitudesCompraPage() {
               isLoading={s.isLoadingRecs}
               itemsEnPedido={s.items}
               descartados={s.descartados}
-              horizonteGlobal={s.horizonteGlobal}
-              onAceptar={s.handleAddFromRec}
               onAceptarConCantidad={s.handleAddFromRecConCantidad}
               onUpdateQty={s.handleUpdateQty}
               onRemove={s.handleRemove}

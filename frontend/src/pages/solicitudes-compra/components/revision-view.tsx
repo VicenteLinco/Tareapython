@@ -1,8 +1,8 @@
 // frontend/src/pages/solicitudes-compra/components/revision-view.tsx
 import { useState } from 'react'
-import { CheckCircle2, X, Pencil, RotateCcw, ShoppingCart, Eye, EyeOff } from 'lucide-react'
+import { CheckCircle2, X, RotateCcw, ShoppingCart, Eye, EyeOff, Minus, Plus } from 'lucide-react'
 import { MetricTooltip } from '@/components/ui/metric-tooltip'
-import { cn, formatCantidad } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ItemRecomendado, SolicitudItem } from '@/types'
 
@@ -14,45 +14,77 @@ interface RevisionViewProps {
   horizonteGlobal: number
   onAceptar: (r: ItemRecomendado) => void
   onAceptarConCantidad: (r: ItemRecomendado, cantidad: number) => void
+  onUpdateQty: (productoId: string, cantidad: number) => void
+  onRemove: (productoId: string) => void
   onDescartar: (productoId: string) => void
   onRestaurar: (productoId: string) => void
   onCambiarAAvanzado: () => void
 }
+
+const URGENCIA_ORDER: Record<string, number> = { critica: 0, critico: 0, alta: 1, media: 2, baja: 3, normal: 4 }
 
 export function RevisionView({
   recomendaciones,
   isLoading,
   itemsEnPedido,
   descartados,
-  onAceptar,
   onAceptarConCantidad,
+  onUpdateQty,
+  onRemove,
   onDescartar,
   onRestaurar,
   onCambiarAAvanzado,
 }: RevisionViewProps) {
   const [mostrarDescartados, setMostrarDescartados] = useState(false)
-  const [ajustandoId, setAjustandoId] = useState<string | null>(null)
-  const [ajusteValor, setAjusteValor] = useState('')
+  const [cantidadesPendientes, setCantidadesPendientes] = useState<Record<string, string>>({})
 
   const aceptadosIds = new Set(itemsEnPedido.map(i => i.producto_id))
 
-  const pendientes = recomendaciones.filter(r => !aceptadosIds.has(r.producto_id) && !descartados.has(r.producto_id))
+  const pendientesRaw = recomendaciones.filter(r => !aceptadosIds.has(r.producto_id) && !descartados.has(r.producto_id))
   const descartadosList = recomendaciones.filter(r => descartados.has(r.producto_id))
   const aceptados = recomendaciones.filter(r => aceptadosIds.has(r.producto_id))
 
-  const handleAjusteConfirmar = (r: ItemRecomendado) => {
-    const val = parseFloat(ajusteValor)
+  const pendientes = [...pendientesRaw].sort((a, b) => {
+    const ua = URGENCIA_ORDER[a.nivel_urgencia] ?? 4
+    const ub = URGENCIA_ORDER[b.nivel_urgencia] ?? 4
+    if (ua !== ub) return ua - ub
+    return (a.autonomia_dias ?? 999) - (b.autonomia_dias ?? 999)
+  })
+
+  const criticosPendientes = pendientes.filter(r =>
+    (r.nivel_urgencia === 'critica' || r.nivel_urgencia === 'critico') && r.confianza !== 'baja'
+  )
+
+  const getCantidadInput = (r: ItemRecomendado): string => {
+    if (r.producto_id in cantidadesPendientes) return cantidadesPendientes[r.producto_id]
+    return r.confianza !== 'baja' ? String(Math.ceil(parseFloat(r.cantidad_sugerida_base))) : ''
+  }
+
+  const setCantidad = (productoId: string, val: string) =>
+    setCantidadesPendientes(prev => ({ ...prev, [productoId]: val }))
+
+  const handleAgregarAlPedido = (r: ItemRecomendado) => {
+    const raw = getCantidadInput(r)
+    const val = parseFloat(raw)
     if (!isNaN(val) && val > 0) {
       onAceptarConCantidad(r, val)
+      setCantidadesPendientes(prev => { const next = { ...prev }; delete next[r.producto_id]; return next })
     }
-    setAjustandoId(null)
-    setAjusteValor('')
+  }
+
+  const handleAceptarCriticos = () => {
+    for (const r of criticosPendientes) {
+      const sugBase = Math.ceil(parseFloat(r.cantidad_sugerida_base))
+      const cantInput = getCantidadInput(r)
+      const val = parseFloat(cantInput)
+      onAceptarConCantidad(r, !isNaN(val) && val > 0 ? val : sugBase)
+    }
   }
 
   const confianzaInfo = (c: string) => {
     if (c === 'alta') return { label: 'Alta', color: 'text-success bg-success/10', tooltip: 'Predicción basada en historial sólido (≥30 días). La cantidad sugerida es confiable.' }
     if (c === 'media') return { label: 'Media', color: 'text-warning bg-warning/10', tooltip: 'Historial parcial (14–29 días). Cantidad orientativa, se recomienda revisar.' }
-    return { label: 'Baja', color: 'text-base-content/50 bg-base-200', tooltip: 'Historial insuficiente (<14 días). No se genera cantidad automática.' }
+    return { label: 'Baja', color: 'text-base-content/50 bg-base-200', tooltip: 'Historial insuficiente (<14 días). No se genera cantidad automática — debes ingresar la cantidad.' }
   }
 
   if (isLoading) {
@@ -74,36 +106,32 @@ export function RevisionView({
   }
 
   const renderFila = (r: ItemRecomendado, estado: 'pendiente' | 'aceptado' | 'descartado') => {
-    const isCritica = r.nivel_urgencia === 'critica'
+    const isCritica = r.nivel_urgencia === 'critica' || r.nivel_urgencia === 'critico'
     const isAlta = r.nivel_urgencia === 'alta'
     const stockActual = parseFloat(r.stock_actual)
     const stockMin = parseFloat(r.stock_seguridad)
     const consumoDiario = parseFloat(r.consumo_diario)
     const autonomia = r.autonomia_dias
-    const sugBase = parseFloat(r.cantidad_sugerida_base)
-    const sugLabel = r.cantidad_sugerida_presentacion && r.presentacion_nombre
-      ? formatCantidad(
-          Math.ceil(parseFloat(r.cantidad_sugerida_presentacion)),
-          r.presentacion_nombre,
-          r.presentacion_nombre_plural ?? undefined
-        )
-      : formatCantidad(Math.ceil(sugBase), r.unidad_base, r.unidad_base_plural ?? undefined)
     const cf = confianzaInfo(r.confianza ?? 'baja')
-    const estaAjustando = ajustandoId === r.producto_id
+
+    const itemEnPedido = itemsEnPedido.find(i => i.producto_id === r.producto_id)
+    const cantidadAceptada = itemEnPedido?.cantidad ?? 0
+
+    const cantidadInput = getCantidadInput(r)
+    const cantidadInputValida = !isNaN(parseFloat(cantidadInput)) && parseFloat(cantidadInput) > 0
 
     return (
       <div
         key={r.producto_id}
         className={cn(
           'relative flex items-start gap-3 p-3 pl-4 rounded-2xl border transition-all',
-          estado === 'aceptado' && 'opacity-50 bg-success/5 border-success/20',
+          estado === 'aceptado' && 'opacity-60 bg-success/5 border-success/20',
           estado === 'descartado' && 'opacity-40 bg-base-200/30 border-transparent',
           estado === 'pendiente' && isCritica && 'bg-error/5 border-error/20',
           estado === 'pendiente' && isAlta && 'bg-warning/5 border-warning/20',
           estado === 'pendiente' && !isCritica && !isAlta && 'bg-base-100 border-base-200',
         )}
       >
-        {/* Barra de urgencia */}
         <div className={cn(
           'absolute left-0 inset-y-0 w-[3px] rounded-l-2xl',
           estado === 'aceptado' ? 'bg-success' :
@@ -111,7 +139,6 @@ export function RevisionView({
           isCritica ? 'bg-error' : isAlta ? 'bg-warning' : 'bg-primary/40'
         )} />
 
-        {/* Nombre + datos */}
         <div className="flex-1 min-w-0 space-y-1.5">
           <div className="flex items-start gap-2 flex-wrap">
             <span className="font-bold text-sm leading-tight">{r.producto_nombre}</span>
@@ -125,7 +152,7 @@ export function RevisionView({
             )}
             {estado === 'aceptado' && (
               <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full bg-success/15 text-success shrink-0">
-                aceptado
+                en pedido
               </span>
             )}
             {estado === 'descartado' && (
@@ -153,78 +180,62 @@ export function RevisionView({
               <span className="text-primary/60">{r.proveedor_nombre}</span>
             )}
           </div>
-
-          {/* Ajuste inline */}
-          {estaAjustando && (
-            <div className="flex items-center gap-2 mt-1.5">
-              <input
-                type="number"
-                className="input input-xs input-bordered w-24 rounded-xl text-sm"
-                placeholder={String(Math.ceil(sugBase))}
-                value={ajusteValor}
-                onChange={e => setAjusteValor(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleAjusteConfirmar(r)
-                  if (e.key === 'Escape') { setAjustandoId(null); setAjusteValor('') }
-                }}
-                autoFocus
-              />
-              <span className="text-[10px] text-base-content/40">{r.unidad_base}</span>
-              <button
-                className="btn btn-xs btn-success rounded-xl"
-                onClick={() => handleAjusteConfirmar(r)}
-              >
-                Confirmar
-              </button>
-              <button
-                className="btn btn-xs btn-ghost rounded-xl"
-                onClick={() => { setAjustandoId(null); setAjusteValor('') }}
-              >
-                Cancelar
-              </button>
-            </div>
-          )}
         </div>
 
-        {/* Columna derecha: sugerido + confianza + acciones */}
         <div className="flex flex-col items-end gap-1.5 shrink-0">
-          {!estaAjustando && r.confianza !== 'baja' && (
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] font-bold text-base-content/60">{sugLabel}</span>
-              <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full', cf.color)}>{cf.label}</span>
-              <MetricTooltip size="sm" position="left" text={cf.tooltip} />
-            </div>
-          )}
-          {!estaAjustando && r.confianza === 'baja' && (
-            <div className="flex items-center gap-1">
-              <span className="text-[9px] opacity-40">cantidad manual</span>
-              <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full', cf.color)}>{cf.label}</span>
-              <MetricTooltip size="sm" position="left" text={cf.tooltip} />
-            </div>
-          )}
+          <div className="flex items-center gap-1">
+            {r.confianza !== 'baja' && (
+              <span className="text-[10px] font-bold text-base-content/40">sugerido</span>
+            )}
+            <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full', cf.color)}>{cf.label}</span>
+            <MetricTooltip size="sm" position="left" text={cf.tooltip} />
+          </div>
 
-          {estado === 'pendiente' && !estaAjustando && (
-            <div className="flex items-center gap-1 mt-0.5">
+          {estado === 'pendiente' && (
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <div className="flex items-center gap-1 bg-base-200/60 rounded-xl px-1.5 py-0.5">
+                <button
+                  className="btn btn-ghost btn-xs p-0 h-5 w-5 min-h-0 rounded-lg"
+                  onClick={() => {
+                    const v = parseFloat(cantidadInput) || 0
+                    if (v > 1) setCantidad(r.producto_id, String(v - 1))
+                  }}
+                >
+                  <Minus className="h-3 w-3" />
+                </button>
+                <input
+                  type="number"
+                  className="input input-ghost w-14 h-6 text-center text-sm font-bold p-0 border-0 focus:outline-none bg-transparent"
+                  placeholder="—"
+                  value={cantidadInput}
+                  min={1}
+                  onChange={e => setCantidad(r.producto_id, e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && cantidadInputValida) handleAgregarAlPedido(r)
+                  }}
+                />
+                <button
+                  className="btn btn-ghost btn-xs p-0 h-5 w-5 min-h-0 rounded-lg"
+                  onClick={() => {
+                    const v = parseFloat(cantidadInput) || 0
+                    setCantidad(r.producto_id, String(v + 1))
+                  }}
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
+                <span className="text-[9px] text-base-content/40 ml-0.5">{r.unidad_base}</span>
+              </div>
               <button
                 className={cn(
                   'btn btn-xs rounded-xl gap-1 text-[10px] font-bold',
-                  isCritica
-                    ? 'bg-error/10 text-error border border-error/30 hover:bg-error hover:text-white hover:border-error'
-                    : 'btn-primary'
+                  !cantidadInputValida && 'btn-disabled opacity-40',
+                  cantidadInputValida && isCritica && 'bg-error/10 text-error border border-error/30 hover:bg-error hover:text-white hover:border-error',
+                  cantidadInputValida && !isCritica && 'btn-primary',
                 )}
-                onClick={() => onAceptar(r)}
+                disabled={!cantidadInputValida}
+                onClick={() => handleAgregarAlPedido(r)}
               >
-                <CheckCircle2 className="h-3 w-3" /> Aceptar
-              </button>
-              <button
-                className="btn btn-xs btn-ghost rounded-xl gap-1 text-[10px]"
-                title="Ajustar cantidad"
-                onClick={() => {
-                  setAjustandoId(r.producto_id)
-                  setAjusteValor(r.confianza !== 'baja' ? String(Math.ceil(sugBase)) : '')
-                }}
-              >
-                <Pencil className="h-3 w-3" /> Ajustar
+                <CheckCircle2 className="h-3 w-3" /> Agregar
               </button>
               <button
                 className="btn btn-xs btn-ghost rounded-xl text-base-content/40 hover:text-error"
@@ -232,6 +243,44 @@ export function RevisionView({
                 onClick={() => onDescartar(r.producto_id)}
               >
                 <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+
+          {estado === 'aceptado' && itemEnPedido && (
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <div className="flex items-center gap-1 bg-success/10 rounded-xl px-1.5 py-0.5">
+                <button
+                  className="btn btn-ghost btn-xs p-0 h-5 w-5 min-h-0 rounded-lg"
+                  onClick={() => {
+                    if (cantidadAceptada > 1) onUpdateQty(r.producto_id, cantidadAceptada - 1)
+                  }}
+                >
+                  <Minus className="h-3 w-3" />
+                </button>
+                <input
+                  type="number"
+                  className="input input-ghost w-14 h-6 text-center text-sm font-bold p-0 border-0 focus:outline-none bg-transparent"
+                  value={cantidadAceptada}
+                  min={1}
+                  onChange={e => {
+                    const v = parseFloat(e.target.value)
+                    if (!isNaN(v) && v > 0) onUpdateQty(r.producto_id, v)
+                  }}
+                />
+                <button
+                  className="btn btn-ghost btn-xs p-0 h-5 w-5 min-h-0 rounded-lg"
+                  onClick={() => onUpdateQty(r.producto_id, cantidadAceptada + 1)}
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
+                <span className="text-[9px] text-base-content/40 ml-0.5">{r.unidad_base}</span>
+              </div>
+              <button
+                className="btn btn-xs btn-ghost rounded-xl text-base-content/40 hover:text-error text-[10px] gap-1"
+                onClick={() => onRemove(r.producto_id)}
+              >
+                <X className="h-3 w-3" /> Quitar
               </button>
             </div>
           )}
@@ -251,15 +300,14 @@ export function RevisionView({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Header de revisión */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-bold">
             {pendientes.length > 0
-              ? `${pendientes.length} recomendación${pendientes.length !== 1 ? 'es' : ''} pendiente${pendientes.length !== 1 ? 's' : ''}`
+              ? `${pendientes.length} sugerencia${pendientes.length !== 1 ? 's' : ''} pendiente${pendientes.length !== 1 ? 's' : ''}`
               : aceptados.length > 0
-                ? '¡Revisión completa!'
-                : 'Sin pendientes'}
+                ? '¡Todo en pedido!'
+                : 'Sin sugerencias'}
           </span>
           {aceptados.length > 0 && (
             <span className="flex items-center gap-1 text-[11px] font-bold text-success bg-success/10 px-2 py-0.5 rounded-full">
@@ -267,7 +315,16 @@ export function RevisionView({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {criticosPendientes.length > 0 && (
+            <button
+              className="btn btn-xs rounded-xl gap-1 text-[10px] bg-error/10 text-error border border-error/30 hover:bg-error hover:text-white hover:border-error font-bold"
+              onClick={handleAceptarCriticos}
+            >
+              <CheckCircle2 className="h-3 w-3" />
+              Agregar {criticosPendientes.length} crítico{criticosPendientes.length !== 1 ? 's' : ''}
+            </button>
+          )}
           {descartadosList.length > 0 && (
             <button
               className="btn btn-xs btn-ghost rounded-xl gap-1 text-[10px] opacity-60"
@@ -281,34 +338,31 @@ export function RevisionView({
             className="btn btn-xs btn-ghost rounded-xl gap-1 text-[10px] text-primary"
             onClick={onCambiarAAvanzado}
           >
-            Vista avanzada →
+            Armar por proveedor →
           </button>
         </div>
       </div>
 
-      {/* Lista pendientes */}
       <div className="space-y-2">
         {pendientes.length === 0 && aceptados.length > 0 && (
           <div className="flex flex-col items-center justify-center py-10 gap-2 opacity-50">
             <CheckCircle2 className="h-8 w-8 stroke-[1.5px] text-success" />
-            <p className="text-sm font-bold text-success">Revisión completa</p>
-            <p className="text-xs">Todos los ítems fueron aceptados o descartados.</p>
+            <p className="text-sm font-bold text-success">¡Todo en pedido!</p>
+            <p className="text-xs">Revisaste todas las sugerencias.</p>
           </div>
         )}
         {pendientes.map(r => renderFila(r, 'pendiente'))}
       </div>
 
-      {/* Aceptados */}
       {aceptados.length > 0 && (
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider opacity-30 mb-2">Aceptados</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider opacity-30 mb-2">En pedido</p>
           <div className="space-y-1.5">
             {aceptados.map(r => renderFila(r, 'aceptado'))}
           </div>
         </div>
       )}
 
-      {/* Descartados */}
       {mostrarDescartados && descartadosList.length > 0 && (
         <div>
           <p className="text-[10px] font-bold uppercase tracking-wider opacity-30 mb-2">Descartados</p>

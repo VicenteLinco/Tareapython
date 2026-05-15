@@ -95,6 +95,8 @@ export default function SolicitudesCompraPage() {
               horizonteGlobal={s.horizonteGlobal}
               onAceptar={s.handleAddFromRec}
               onAceptarConCantidad={s.handleAddFromRecConCantidad}
+              onUpdateQty={s.handleUpdateQty}
+              onRemove={s.handleRemove}
               onDescartar={s.handleDescartar}
               onRestaurar={s.handleRestaurar}
               onCambiarAAvanzado={() => s.setModo(false)}

@@ -3,9 +3,10 @@ import { useState } from 'react'
 import { FileDown, Send, CheckCircle2, XCircle } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { formatDate, cn } from '@/lib/utils'
+import { formatDate, cn, formatCantidad } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
 import { Dialog } from '@/components/ui/dialog'
 import { PageLoading } from '@/components/ui/page-state'
 import api from '@/lib/api'
@@ -29,11 +30,15 @@ interface DetalleModalProps {
 const estadoBadgeClass = (estado: string) =>
   estado === 'completada' ? 'bg-success/10 text-success border-success/30' :
   estado === 'guardada'   ? 'bg-warning/10 text-warning border-warning/30' :
+  estado === 'parcialmente_enviada' ? 'bg-info/10 text-info border-info/30' :
   estado === 'cancelada'  ? 'bg-error/10 text-error border-error/30' :
   estado === 'enviada'    ? 'bg-info/10 text-info border-info/30' :
   'bg-base-200 text-base-content/50 border-base-300'
 
-const estadoLabel = (estado: string) => estado === 'guardada' ? 'pendiente' : estado
+const estadoLabel = (estado: string) =>
+  estado === 'guardada' ? 'pendiente' :
+  estado === 'parcialmente_enviada' ? 'env. parcial' :
+  estado
 
 export function DetalleModal({
   solicitudId,
@@ -53,6 +58,9 @@ export function DetalleModal({
   const [cancelOpen, setCancelOpen] = useState(false)
   const [cancelMotivo, setCancelMotivo] = useState('')
   const [metodoEnvio, setMetodoEnvio] = useState('email')
+  const [envioDialogo, setEnvioDialogo] = useState<SolicitudDetalle['envios'][number] | null>(null)
+  const [fechaEnvio, setFechaEnvio] = useState(() => new Date().toISOString().slice(0, 10))
+  const [notaEnvio, setNotaEnvio] = useState('')
 
   const fmt = (v: number | string | null) => formatPesos(v, monedaCodigo)
 
@@ -113,6 +121,51 @@ export function DetalleModal({
     },
   })
 
+  const registrarEnvioMut = useMutation({
+    mutationFn: () => {
+      if (!envioDialogo) throw new Error('Proveedor no seleccionado')
+      return api.post(`/solicitudes-compra/${solicitudId}/envios`, {
+        proveedor_id: envioDialogo.proveedor_id,
+        metodo_envio: metodoEnvio,
+        fecha_envio: fechaEnvio ? new Date(`${fechaEnvio}T12:00:00`).toISOString() : null,
+        nota: notaEnvio.trim() || null,
+        version: envioDialogo.version,
+      })
+    },
+    onSuccess: () => {
+      toast.success('Envio registrado')
+      invalidate()
+      setEnvioDialogo(null)
+      setNotaEnvio('')
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { status?: number; data?: { error?: { message?: string }; message?: string } } }
+      if (e.response?.status === 409) {
+        toast.error('Version desactualizada, recarga la pagina')
+        invalidate()
+      } else {
+        toast.error(e.response?.data?.error?.message ?? e.response?.data?.message ?? 'Error registrando envio')
+      }
+    },
+  })
+
+  const cancelarEnvioMut = useMutation({
+    mutationFn: (envio: SolicitudDetalle['envios'][number]) =>
+      api.delete(`/solicitudes-compra/${solicitudId}/envios/${envio.proveedor_id}`, {
+        data: { version: envio.version },
+      }),
+    onSuccess: () => {
+      toast.success('Envio cancelado')
+      invalidate()
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { status?: number; data?: { error?: { message?: string }; message?: string } } }
+      if (e.response?.status === 409) toast.error('Version desactualizada, recarga la pagina')
+      else toast.error(e.response?.data?.error?.message ?? e.response?.data?.message ?? 'Error cancelando envio')
+      invalidate()
+    },
+  })
+
   const handleExportPDF = () => {
     if (!detail) return
     const subtotal = calcTotal(detail.items)
@@ -150,8 +203,8 @@ export function DetalleModal({
 
   const estado = detail?.estado
   const puedeEnviar = estado === 'guardada'
-  const puedeCompletar = estado === 'guardada' || estado === 'enviada'
-  const puedeCancelar = estado === 'guardada' || estado === 'enviada'
+  const puedeCompletar = estado === 'guardada' || estado === 'parcialmente_enviada' || estado === 'enviada'
+  const puedeCancelar = estado === 'guardada' || estado === 'parcialmente_enviada' || estado === 'enviada'
 
   return (
     <>
@@ -235,7 +288,11 @@ export function DetalleModal({
                         <td className="text-[10px] opacity-60">{item.proveedor_nombre}</td>
                         <td className="text-center font-bold">{cant}</td>
                         <td className="text-[10px] uppercase font-bold opacity-50">
-                          {item.presentacion_nombre || item.unidad}
+                          {formatCantidad(
+                            cant,
+                            hasPres ? (item.presentacion_nombre ?? item.unidad) : item.unidad,
+                            hasPres ? (item.presentacion_nombre_plural ?? undefined) : (item.unidad_plural ?? undefined)
+                          ).replace(/^[\d.,\s]+/, '').trim()}
                         </td>
                         <td className="text-right">
                           <p className="font-mono text-[11px] font-bold">
@@ -259,6 +316,64 @@ export function DetalleModal({
               <div className="p-4 bg-primary/5 rounded-2xl border border-primary/10">
                 <p className="text-[10px] font-black uppercase opacity-40 mb-1">Nota</p>
                 <p className="text-sm italic">"{detail.nota}"</p>
+              </div>
+            )}
+
+            {detail.envios.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="font-semibold text-sm opacity-60 uppercase tracking-wide">Estado de envios</h3>
+                <div className="space-y-2">
+                  {detail.envios.map(env => (
+                    <div key={env.proveedor_id} className="flex items-center justify-between gap-3 p-3 border border-base-300 rounded-2xl">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm truncate">{env.proveedor_nombre}</p>
+                        <p className="text-xs opacity-50">
+                          {env.total_items} {env.total_items === 1 ? 'item' : 'items'} · {fmt(env.monto_total)}
+                        </p>
+                        {env.estado === 'enviado' && env.fecha_envio && (
+                          <p className="text-xs text-success">
+                            Enviado por {env.metodo_envio} el {formatDate(env.fecha_envio)}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge variant="outline" className={cn(
+                          'font-bold',
+                          env.estado === 'enviado' ? 'bg-success/10 text-success border-success/30' : 'bg-warning/10 text-warning border-warning/30'
+                        )}>
+                          {env.estado === 'enviado' ? 'Enviado' : 'Pendiente'}
+                        </Badge>
+                        {env.estado === 'enviado' ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="rounded-xl text-error"
+                            onClick={() => {
+                              if (window.confirm(`Cancelar envio de ${env.proveedor_nombre}?`)) cancelarEnvioMut.mutate(env)
+                            }}
+                            disabled={cancelarEnvioMut.isPending || detail.estado === 'cancelada' || detail.estado === 'completada'}
+                          >
+                            Cancelar
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            className="rounded-xl"
+                            onClick={() => {
+                              setEnvioDialogo(env)
+                              setMetodoEnvio(env.metodo_envio ?? 'email')
+                              setFechaEnvio(new Date().toISOString().slice(0, 10))
+                              setNotaEnvio(env.nota ?? '')
+                            }}
+                            disabled={detail.estado === 'cancelada' || detail.estado === 'completada'}
+                          >
+                            Registrar envio
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -323,6 +438,53 @@ export function DetalleModal({
             </div>
           </div>
         )}
+      </Dialog>
+
+      <Dialog
+        open={!!envioDialogo}
+        onClose={() => setEnvioDialogo(null)}
+        title={`Registrar envio${envioDialogo ? ` - ${envioDialogo.proveedor_nombre}` : ''}`}
+        closeOnBackdrop={false}
+      >
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold opacity-60 uppercase">Metodo de envio</label>
+            <select
+              value={metodoEnvio}
+              onChange={e => setMetodoEnvio(e.target.value)}
+              className="select select-bordered select-sm rounded-xl w-full"
+            >
+              <option value="email">Email</option>
+              <option value="telefono">Telefono</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="presencial">Presencial</option>
+              <option value="otro">Otro</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold opacity-60 uppercase">Fecha</label>
+            <Input type="date" value={fechaEnvio} onChange={e => setFechaEnvio(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold opacity-60 uppercase">Nota</label>
+            <textarea
+              className="textarea textarea-bordered rounded-xl w-full text-sm"
+              rows={3}
+              value={notaEnvio}
+              onChange={e => setNotaEnvio(e.target.value)}
+              placeholder="Opcional"
+            />
+          </div>
+          <div className="modal-action">
+            <Button variant="ghost" onClick={() => setEnvioDialogo(null)} disabled={registrarEnvioMut.isPending}>
+              Cancelar
+            </Button>
+            <Button onClick={() => registrarEnvioMut.mutate()} disabled={!metodoEnvio || registrarEnvioMut.isPending}>
+              {registrarEnvioMut.isPending && <span className="loading loading-spinner loading-xs mr-2" />}
+              Confirmar envio
+            </Button>
+          </div>
+        </div>
       </Dialog>
 
       <Dialog

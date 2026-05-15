@@ -164,6 +164,18 @@ formatCantidad(qty, pres.nombre, pres.nombre_plural)
 
 **`autoPlural` ha sido eliminado.** No usar ni reimplementar.
 
+**Controles de cantidad con input numérico (steppers):** El label de unidad junto a un input `<input type="number">` también debe respetar singular/plural según el valor actual del input. Usar `unitLabel` (helper local) o el patrón:
+
+```ts
+// ✅ Correcto — label junto a stepper
+formatCantidad(qty, singular, plural ?? undefined).replace(/^[\d.,\s]+/, '').trim()
+
+// ❌ Incorrecto — siempre singular aunque qty sea 40
+<span>{r.unidad_base}</span>
+```
+
+`solicitud-utils.ts` exporta `unidadLabel(item: SolicitudItem, qty)` que implementa este patrón para `SolicitudItem`. Para otros tipos, inlinear el patrón anterior.
+
 ### Regla de buscadores con dropdown (Frontend)
 
 **Regla obligatoria:** Todo input de búsqueda debe comportarse como autocomplete con dropdown navegable por teclado.

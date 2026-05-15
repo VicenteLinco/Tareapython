@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { CheckCircle2, X, RotateCcw, ShoppingCart, Eye, EyeOff, Minus, Plus } from 'lucide-react'
 import { MetricTooltip } from '@/components/ui/metric-tooltip'
-import { cn } from '@/lib/utils'
+import { cn, formatCantidad } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ItemRecomendado, SolicitudItem } from '@/types'
 
@@ -20,6 +20,9 @@ interface RevisionViewProps {
 }
 
 const URGENCIA_ORDER: Record<string, number> = { critica: 0, critico: 0, alta: 1, media: 2, baja: 3, normal: 4 }
+
+const unitLabel = (qty: number, singular: string, plural?: string | null) =>
+  formatCantidad(qty, singular, plural ?? undefined).replace(/^[\d.,\s]+/, '').trim()
 
 export function RevisionView({
   recomendaciones,
@@ -164,7 +167,7 @@ export function RevisionView({
             <span title="Stock actual / mínimo">
               Stock: <span className={cn('font-bold', stockActual <= 0 ? 'text-error' : stockActual < stockMin ? 'text-warning' : 'text-base-content/70')}>
                 {stockActual}
-              </span> / {stockMin} {r.unidad_base}
+              </span> / {stockMin} {unitLabel(stockMin, r.unidad_base, r.unidad_base_plural)}
             </span>
             {consumoDiario > 0 && (
               <span>Cons/día: <span className="font-bold text-base-content/70">{consumoDiario.toFixed(2)}</span></span>
@@ -227,7 +230,7 @@ export function RevisionView({
                   >
                     <Plus className="h-3 w-3" />
                   </button>
-                  <span className="text-[9px] text-base-content/40 ml-0.5">{r.unidad_base}</span>
+                  <span className="text-[9px] text-base-content/40 ml-0.5">{unitLabel(parseFloat(cantidadInput) || 0, r.unidad_base, r.unidad_base_plural)}</span>
                 </div>
                 <button
                   className={cn(
@@ -284,7 +287,7 @@ export function RevisionView({
                 >
                   <Plus className="h-3 w-3" />
                 </button>
-                <span className="text-[9px] text-base-content/40 ml-0.5">{r.unidad_base}</span>
+                <span className="text-[9px] text-base-content/40 ml-0.5">{unitLabel(cantidadAceptada, r.unidad_base, r.unidad_base_plural)}</span>
               </div>
               <button
                 className="btn btn-xs btn-ghost rounded-xl text-base-content/40 hover:text-error text-[10px] gap-1"

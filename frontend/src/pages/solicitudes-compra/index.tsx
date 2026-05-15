@@ -1,4 +1,5 @@
 // frontend/src/pages/solicitudes-compra/index.tsx
+import { useState } from 'react'
 import { ShoppingCart, Plus, History } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSolicitudState } from './hooks/useSolicitudState'
@@ -12,6 +13,21 @@ import { ProveedorBanner } from './components/proveedor-banner'
 
 export default function SolicitudesCompraPage() {
   const s = useSolicitudState()
+  const [proveedoresPreseleccionados, setProveedoresPreseleccionados] = useState<number[]>([])
+
+  const toggleProveedorPreseleccionado = (id: number) => {
+    setProveedoresPreseleccionados(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    )
+  }
+
+  const continuarConProveedores = () => {
+    for (const id of proveedoresPreseleccionados) {
+      const proveedor = s.proveedores?.find(p => p.id === id)
+      if (proveedor) s.handleAgregarProveedorFiltro(proveedor)
+    }
+    setProveedoresPreseleccionados([])
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-100px)] gap-6 p-2">
@@ -32,13 +48,13 @@ export default function SolicitudesCompraPage() {
                 className={cn("tab gap-1.5 rounded-lg transition-all px-4 h-8 text-xs font-bold", s.modoRevision ? "tab-active bg-base-100 shadow-sm" : "opacity-50 hover:opacity-80")}
                 onClick={() => s.setModo(true)}
               >
-                Revisión
+                Sugeridos
               </button>
               <button
                 className={cn("tab gap-1.5 rounded-lg transition-all px-4 h-8 text-xs font-bold", !s.modoRevision ? "tab-active bg-base-100 shadow-sm" : "opacity-50 hover:opacity-80")}
                 onClick={() => s.setModo(false)}
               >
-                Avanzado
+                Por proveedor
               </button>
             </div>
           )}
@@ -84,7 +100,7 @@ export default function SolicitudesCompraPage() {
               onCambiarAAvanzado={() => s.setModo(false)}
             />
           </div>
-          {s.items.length > 0 && s.selectedProveedor && (
+          {s.items.length > 0 && (
             <div className="overflow-y-auto custom-scrollbar">
               <PedidoPanel
                 proveedor={s.selectedProveedor}
@@ -113,15 +129,23 @@ export default function SolicitudesCompraPage() {
             proveedores={s.proveedores}
             isLoading={s.isLoadingProveedores}
             urgenciasByProveedor={s.urgenciasByProveedor}
+            vencimientoByProveedor={s.vencimientoByProveedor}
+            diasVencimiento={s.diasVencimiento}
+            onDiasVencimientoChange={s.setDiasVencimiento}
             logoBase64={s.configuracion?.logo_base64}
-            onSelect={s.handleSelectProveedor}
+            selectedIds={proveedoresPreseleccionados}
+            onSelect={p => toggleProveedorPreseleccionado(p.id)}
+            onContinue={continuarConProveedores}
           />
         ) : (
           <div className="flex-1 flex flex-col gap-4 min-h-0">
             <ProveedorBanner
-              proveedor={s.selectedProveedor}
+              proveedores={s.proveedoresFiltro}
+              disponibles={s.proveedores ?? []}
               quiebresCount={s.recsFiltered.length}
-              onCambiar={s.handleCambiarProveedor}
+              onQuitar={s.handleQuitarProveedorFiltro}
+              onAgregar={s.handleAgregarProveedorFiltro}
+              onLimpiar={s.handleLimpiarFiltros}
             />
             <div className="flex-1 grid grid-cols-1 lg:grid-cols-[30%_1fr] gap-4 min-h-0">
               <QuiebresPanelIzquierdo

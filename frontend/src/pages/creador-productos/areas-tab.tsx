@@ -104,7 +104,7 @@ export default function AreasTab() {
         },
       })
     } else {
-      createMut.mutate({ nombre: nombre.trim(), es_bodega: esBodega })
+      createMut.mutate({ nombre: nombre.trim(), es_bodega: esBodega, conteo_frecuencia_dias: frecuenciaDias })
     }
   }
 
@@ -138,7 +138,7 @@ export default function AreasTab() {
           </div>
         </label>
       </div>
-      {selectedItem && (
+      {formMode !== 'idle' && (
         <div className="form-control">
           <label className="label"><span className="label-text text-sm font-medium">Frecuencia de conteo</span></label>
           <select

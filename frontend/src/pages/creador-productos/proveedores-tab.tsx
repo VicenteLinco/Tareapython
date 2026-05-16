@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Search, Plane, Truck, RotateCcw } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Plane, Truck, RotateCcw, X } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
 import { PageLoading } from '@/components/ui/page-state'
 import { Dialog } from '@/components/ui/dialog'
@@ -9,6 +9,7 @@ import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import type { Proveedor, CreateProveedor, UpdateProveedor } from '@/types'
 
 function fileToBase64(file: File): Promise<string> {
@@ -30,13 +31,25 @@ const EMPTY_FORM = {
   dias_despacho_tierra: '',
 }
 
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(false)
+  useEffect(() => {
+    const check = () => setIsDesktop(window.innerWidth >= 1024)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+  return isDesktop
+}
+
 export default function ProveedoresTab() {
   const queryClient = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
+  const isDesktop = useIsDesktop()
   const [search, setSearch] = useState('')
   const [verInactivos, setVerInactivos] = useState(false)
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editing, setEditing] = useState<Proveedor | null>(null)
+  const [formMode, setFormMode] = useState<'idle' | 'crear' | 'editar'>('idle')
+  const [selectedItem, setSelectedItem] = useState<Proveedor | null>(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [deleteTarget, setDeleteTarget] = useState<Proveedor | null>(null)
   const [reactivateTarget, setReactivateTarget] = useState<Proveedor | null>(null)
@@ -44,11 +57,11 @@ export default function ProveedoresTab() {
   const { data: proveedores = [], isLoading } = useQuery({
     queryKey: ['proveedores', { search, activo: !verInactivos }],
     queryFn: () =>
-      api.get<Proveedor[]>('/proveedores', { 
-        params: { 
+      api.get<Proveedor[]>('/proveedores', {
+        params: {
           q: search || undefined,
           activo: !verInactivos
-        } 
+        }
       }).then((r) => r.data),
   })
 
@@ -57,7 +70,7 @@ export default function ProveedoresTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proveedores'] })
       toast.success('Proveedor creado')
-      closeDialog()
+      closeForm()
     },
     onError: (err) => toast.error(parseApiError(err)),
   })
@@ -68,7 +81,7 @@ export default function ProveedoresTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proveedores'] })
       toast.success('Proveedor actualizado')
-      closeDialog()
+      closeForm()
     },
     onError: (err) => toast.error(parseApiError(err)),
   })
@@ -94,13 +107,13 @@ export default function ProveedoresTab() {
   })
 
   function openCreate() {
-    setEditing(null)
+    setSelectedItem(null)
     setForm(EMPTY_FORM)
-    setDialogOpen(true)
+    setFormMode('crear')
   }
 
   function openEdit(p: Proveedor) {
-    setEditing(p)
+    setSelectedItem(p)
     setForm({
       nombre: p.nombre,
       contacto: p.contacto ?? '',
@@ -110,12 +123,12 @@ export default function ProveedoresTab() {
       dias_despacho_aereo: p.dias_despacho_aereo != null ? String(p.dias_despacho_aereo) : '',
       dias_despacho_tierra: p.dias_despacho_tierra != null ? String(p.dias_despacho_tierra) : '',
     })
-    setDialogOpen(true)
+    setFormMode('editar')
   }
 
-  function closeDialog() {
-    setDialogOpen(false)
-    setEditing(null)
+  function closeForm() {
+    setFormMode('idle')
+    setSelectedItem(null)
   }
 
   async function handleIconChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -137,12 +150,63 @@ export default function ProveedoresTab() {
       dias_despacho_aereo: form.dias_despacho_aereo ? Number(form.dias_despacho_aereo) : null,
       dias_despacho_tierra: form.dias_despacho_tierra ? Number(form.dias_despacho_tierra) : null,
     }
-    if (editing) {
-      updateMut.mutate({ id: editing.id, data: { ...clean, version: editing.version } })
+    if (selectedItem) {
+      updateMut.mutate({ id: selectedItem.id, data: { ...clean, version: selectedItem.version } })
     } else {
       createMut.mutate(clean)
     }
   }
+
+  const isSaving = createMut.isPending || updateMut.isPending
+
+  const formJsx = (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="flex gap-3">
+        <div className="shrink-0">
+          <div
+            className="h-16 w-16 rounded-xl border-2 border-dashed border-base-300 bg-base-100 flex items-center justify-center cursor-pointer overflow-hidden hover:border-primary/40 transition-colors"
+            onClick={() => fileRef.current?.click()}
+          >
+            {form.icono ? <img src={form.icono} alt="" className="h-full w-full object-contain" /> : <Truck className="h-6 w-6 opacity-20" />}
+          </div>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleIconChange} />
+        </div>
+        <div className="form-control flex-1">
+          <label className="label py-1"><span className="label-text text-xs font-semibold">Nombre *</span></label>
+          <input
+            type="text"
+            className="input input-bordered input-md w-full"
+            value={form.nombre}
+            onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+            required
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="form-control col-span-2">
+          <label className="label py-1"><span className="label-text text-xs font-semibold">Email</span></label>
+          <input type="email" className="input input-bordered input-sm" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        </div>
+        <div className="form-control">
+          <label className="label py-1"><span className="label-text text-xs font-semibold">Teléfono</span></label>
+          <input type="tel" className="input input-bordered input-sm" value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
+        </div>
+        <div className="form-control">
+          <label className="label py-1"><span className="label-text text-xs font-semibold">Ejecutivo</span></label>
+          <input type="text" className="input input-bordered input-sm" value={form.contacto} onChange={(e) => setForm({ ...form, contacto: e.target.value })} />
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-2 pt-2">
+        <button type="button" className="btn btn-ghost btn-sm" onClick={closeForm}>Cancelar</button>
+        <button type="submit" className="btn btn-primary btn-sm px-6" disabled={isSaving}>
+          {isSaving ? <span className="loading loading-spinner loading-xs mr-2" /> : null}
+          {isSaving ? 'Guardando...' : 'Guardar'}
+        </button>
+      </div>
+    </form>
+  )
 
   const columns = [
     {
@@ -210,8 +274,6 @@ export default function ProveedoresTab() {
     },
   ]
 
-  const isSaving = createMut.isPending || updateMut.isPending
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-4 justify-between items-center">
@@ -227,9 +289,9 @@ export default function ProveedoresTab() {
             />
           </label>
           <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input 
-              type="checkbox" 
-              className="checkbox checkbox-xs checkbox-primary" 
+            <input
+              type="checkbox"
+              className="checkbox checkbox-xs checkbox-primary"
               checked={verInactivos}
               onChange={(e) => setVerInactivos(e.target.checked)}
             />
@@ -241,63 +303,41 @@ export default function ProveedoresTab() {
         </button>
       </div>
 
-      {isLoading ? (
-        <PageLoading label="Cargando proveedores..." />
-      ) : (
-        <DataTable
-          columns={columns}
-          data={proveedores}
-          emptyMessage="No hay proveedores"
-        />
-      )}
+      <div className="flex gap-6 items-start">
+        <div className={cn('min-w-0', formMode !== 'idle' ? 'lg:flex-[3]' : 'w-full')}>
+          {isLoading ? (
+            <PageLoading label="Cargando proveedores..." />
+          ) : (
+            <DataTable
+              columns={columns}
+              data={proveedores}
+              emptyMessage="No hay proveedores"
+              onRowClick={(item) => item.activa ? openEdit(item) : undefined}
+              selectedId={formMode !== 'idle' ? selectedItem?.id : undefined}
+            />
+          )}
+        </div>
 
-      <Dialog open={dialogOpen} onClose={closeDialog} title={editing ? 'Editar Proveedor' : 'Nuevo Proveedor'} className="max-w-md">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex gap-3">
-            <div className="shrink-0">
-              <div 
-                className="h-16 w-16 rounded-xl border-2 border-dashed border-base-300 bg-base-100 flex items-center justify-center cursor-pointer overflow-hidden hover:border-primary/40 transition-colors"
-                onClick={() => fileRef.current?.click()}
-              >
-                {form.icono ? <img src={form.icono} alt="" className="h-full w-full object-contain" /> : <Truck className="h-6 w-6 opacity-20" />}
+        {formMode !== 'idle' && isDesktop && (
+          <div className="hidden lg:flex flex-col min-w-0 lg:flex-[2] lg:sticky lg:top-24">
+            <div className="rounded-xl border bg-card p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-sm">
+                  {formMode === 'crear' ? 'Nuevo Proveedor' : 'Editar Proveedor'}
+                </h3>
+                <button type="button" onClick={closeForm}
+                  className="text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleIconChange} />
-            </div>
-            <div className="form-control flex-1">
-              <label className="label py-1"><span className="label-text text-xs font-semibold">Nombre *</span></label>
-              <input
-                type="text"
-                className="input input-bordered input-md w-full"
-                value={form.nombre}
-                onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-                required
-              />
+              {formJsx}
             </div>
           </div>
+        )}
+      </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="form-control col-span-2">
-              <label className="label py-1"><span className="label-text text-xs font-semibold">Email</span></label>
-              <input type="email" className="input input-bordered input-sm" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-            </div>
-            <div className="form-control">
-              <label className="label py-1"><span className="label-text text-xs font-semibold">Teléfono</span></label>
-              <input type="tel" className="input input-bordered input-sm" value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
-            </div>
-            <div className="form-control">
-              <label className="label py-1"><span className="label-text text-xs font-semibold">Ejecutivo</span></label>
-              <input type="text" className="input input-bordered input-sm" value={form.contacto} onChange={(e) => setForm({ ...form, contacto: e.target.value })} />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={closeDialog}>Cancelar</button>
-            <button type="submit" className="btn btn-primary btn-sm px-6" disabled={isSaving}>
-              {isSaving ? <span className="loading loading-spinner loading-xs mr-2" /> : null}
-              {isSaving ? 'Guardando...' : 'Guardar'}
-            </button>
-          </div>
-        </form>
+      <Dialog open={formMode !== 'idle' && !isDesktop} onClose={closeForm} title={formMode === 'crear' ? 'Nuevo Proveedor' : 'Editar Proveedor'} className="max-w-md">
+        {formJsx}
       </Dialog>
 
       <ConfirmDialog

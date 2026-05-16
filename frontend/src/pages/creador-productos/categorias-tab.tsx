@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, X } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
 import { PageLoading } from '@/components/ui/page-state'
 import { Dialog } from '@/components/ui/dialog'
@@ -8,12 +8,25 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import type { Categoria, CreateCategoria, UpdateCategoria } from '@/types'
+
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(false)
+  useEffect(() => {
+    const check = () => setIsDesktop(window.innerWidth >= 1024)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+  return isDesktop
+}
 
 export default function CategoriasTab() {
   const queryClient = useQueryClient()
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editing, setEditing] = useState<Categoria | null>(null)
+  const isDesktop = useIsDesktop()
+  const [formMode, setFormMode] = useState<'idle' | 'crear' | 'editar'>('idle')
+  const [selectedItem, setSelectedItem] = useState<Categoria | null>(null)
   const [nombre, setNombre] = useState('')
   const [descripcion, setDescripcion] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<Categoria | null>(null)
@@ -28,7 +41,7 @@ export default function CategoriasTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categorias'] })
       toast.success('Categoría creada')
-      closeDialog()
+      closeForm()
     },
     onError: (err) => toast.error(parseApiError(err)),
   })
@@ -39,7 +52,7 @@ export default function CategoriasTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categorias'] })
       toast.success('Categoría actualizada')
-      closeDialog()
+      closeForm()
     },
     onError: (err) => toast.error(parseApiError(err)),
   })
@@ -55,43 +68,75 @@ export default function CategoriasTab() {
   })
 
   function openCreate() {
-    setEditing(null)
+    setSelectedItem(null)
     setNombre('')
     setDescripcion('')
-    setDialogOpen(true)
+    setFormMode('crear')
   }
 
   function openEdit(cat: Categoria) {
-    setEditing(cat)
+    setSelectedItem(cat)
     setNombre(cat.nombre)
     setDescripcion(cat.descripcion ?? '')
-    setDialogOpen(true)
+    setFormMode('editar')
   }
 
-  function closeDialog() {
-    setDialogOpen(false)
-    setEditing(null)
+  function closeForm() {
+    setFormMode('idle')
+    setSelectedItem(null)
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!nombre.trim()) return
-    if (editing) {
+    if (selectedItem) {
       updateMut.mutate({
-        id: editing.id,
+        id: selectedItem.id,
         data: {
           nombre: nombre.trim(),
           descripcion: descripcion.trim() || null,
-          version: editing.version,
+          version: selectedItem.version,
         },
       })
-      } else {
+    } else {
       createMut.mutate({ nombre: nombre.trim(), descripcion: descripcion.trim() || null })
-      }
-
+    }
   }
 
   const isSaving = createMut.isPending || updateMut.isPending
+
+  const formJsx = (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="form-control">
+        <label className="label"><span className="label-text text-sm font-medium">Nombre *</span></label>
+        <input
+          type="text"
+          className="input input-bordered input-sm h-9"
+          value={nombre}
+          onChange={(e) => setNombre(e.target.value)}
+          placeholder="Ej: Reactivos"
+          autoFocus
+          required
+        />
+      </div>
+      <div className="form-control">
+        <label className="label"><span className="label-text text-sm font-medium">Descripción</span></label>
+        <input
+          type="text"
+          className="input input-bordered input-sm h-9"
+          value={descripcion}
+          onChange={(e) => setDescripcion(e.target.value)}
+          placeholder="Opcional"
+        />
+      </div>
+      <div className="flex justify-end gap-2 pt-2">
+        <button type="button" className="btn btn-ghost btn-sm" onClick={closeForm}>Cancelar</button>
+        <button type="submit" className="btn btn-primary btn-sm" disabled={isSaving}>
+          {isSaving ? <span className="loading loading-spinner loading-xs" /> : selectedItem ? 'Guardar' : 'Crear'}
+        </button>
+      </div>
+    </form>
+  )
 
   const columns = [
     {
@@ -133,47 +178,41 @@ export default function CategoriasTab() {
         </button>
       </div>
 
-      {isLoading ? (
-        <PageLoading label="Cargando categorías..." />
-      ) : (
-        <DataTable
-          columns={columns}
-          data={categorias}
-          emptyMessage="No hay categorías registradas"
-        />
-      )}
+      <div className="flex gap-6 items-start">
+        <div className={cn('min-w-0', formMode !== 'idle' ? 'lg:flex-[3]' : 'w-full')}>
+          {isLoading ? (
+            <PageLoading label="Cargando categorías..." />
+          ) : (
+            <DataTable
+              columns={columns}
+              data={categorias}
+              emptyMessage="No hay categorías registradas"
+              onRowClick={(item) => openEdit(item)}
+              selectedId={formMode !== 'idle' ? selectedItem?.id : undefined}
+            />
+          )}
+        </div>
 
-      <Dialog open={dialogOpen} onClose={closeDialog} title={editing ? 'Editar categoría' : 'Nueva categoría'}>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="form-control">
-            <label className="label"><span className="label-text text-sm font-medium">Nombre *</span></label>
-            <input
-              type="text"
-              className="input input-bordered input-sm h-9"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              placeholder="Ej: Reactivos"
-              autoFocus
-              required
-            />
+        {formMode !== 'idle' && isDesktop && (
+          <div className="hidden lg:flex flex-col min-w-0 lg:flex-[2] lg:sticky lg:top-24">
+            <div className="rounded-xl border bg-card p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-sm">
+                  {formMode === 'crear' ? 'Nueva categoría' : 'Editar categoría'}
+                </h3>
+                <button type="button" onClick={closeForm}
+                  className="text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              {formJsx}
+            </div>
           </div>
-          <div className="form-control">
-            <label className="label"><span className="label-text text-sm font-medium">Descripción</span></label>
-            <input
-              type="text"
-              className="input input-bordered input-sm h-9"
-              value={descripcion}
-              onChange={(e) => setDescripcion(e.target.value)}
-              placeholder="Opcional"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={closeDialog}>Cancelar</button>
-            <button type="submit" className="btn btn-primary btn-sm" disabled={isSaving}>
-              {isSaving ? <span className="loading loading-spinner loading-xs" /> : editing ? 'Guardar' : 'Crear'}
-            </button>
-          </div>
-        </form>
+        )}
+      </div>
+
+      <Dialog open={formMode !== 'idle' && !isDesktop} onClose={closeForm} title={formMode === 'crear' ? 'Nueva categoría' : 'Editar categoría'}>
+        {formJsx}
       </Dialog>
 
       <ConfirmDialog

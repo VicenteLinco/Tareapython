@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, X } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
 import { PageLoading } from '@/components/ui/page-state'
 import { Badge } from '@/components/ui/badge'
@@ -9,12 +9,25 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import type { Area, CreateArea, UpdateArea } from '@/types'
+
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(false)
+  useEffect(() => {
+    const check = () => setIsDesktop(window.innerWidth >= 1024)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+  return isDesktop
+}
 
 export default function AreasTab() {
   const queryClient = useQueryClient()
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editing, setEditing] = useState<Area | null>(null)
+  const isDesktop = useIsDesktop()
+  const [formMode, setFormMode] = useState<'idle' | 'crear' | 'editar'>('idle')
+  const [selectedItem, setSelectedItem] = useState<Area | null>(null)
   const [nombre, setNombre] = useState('')
   const [esBodega, setEsBodega] = useState(false)
   const [frecuenciaDias, setFrecuenciaDias] = useState(0)
@@ -30,7 +43,7 @@ export default function AreasTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['areas'] })
       toast.success('Área creada')
-      closeDialog()
+      closeForm()
     },
     onError: (err) => toast.error(parseApiError(err)),
   })
@@ -41,7 +54,7 @@ export default function AreasTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['areas'] })
       toast.success('Área actualizada')
-      closeDialog()
+      closeForm()
     },
     onError: (err) => toast.error(parseApiError(err)),
   })
@@ -57,38 +70,38 @@ export default function AreasTab() {
   })
 
   function openCreate() {
-    setEditing(null)
+    setSelectedItem(null)
     setNombre('')
     setEsBodega(false)
     setFrecuenciaDias(0)
-    setDialogOpen(true)
+    setFormMode('crear')
   }
 
   function openEdit(area: Area) {
-    setEditing(area)
+    setSelectedItem(area)
     setNombre(area.nombre)
     setEsBodega(area.es_bodega)
     setFrecuenciaDias(area.conteo_frecuencia_dias ?? 0)
-    setDialogOpen(true)
+    setFormMode('editar')
   }
 
-  function closeDialog() {
-    setDialogOpen(false)
-    setEditing(null)
+  function closeForm() {
+    setFormMode('idle')
+    setSelectedItem(null)
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!nombre.trim()) return
-    if (editing) {
-      updateMut.mutate({ 
-        id: editing.id, 
-        data: { 
-          nombre: nombre.trim(), 
-          es_bodega: esBodega, 
+    if (selectedItem) {
+      updateMut.mutate({
+        id: selectedItem.id,
+        data: {
+          nombre: nombre.trim(),
+          es_bodega: esBodega,
           conteo_frecuencia_dias: frecuenciaDias,
-          version: editing.version
-        } 
+          version: selectedItem.version,
+        },
       })
     } else {
       createMut.mutate({ nombre: nombre.trim(), es_bodega: esBodega })
@@ -96,6 +109,59 @@ export default function AreasTab() {
   }
 
   const isSaving = createMut.isPending || updateMut.isPending
+
+  const formJsx = (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="form-control">
+        <label className="label"><span className="label-text text-sm font-medium">Nombre *</span></label>
+        <input
+          type="text"
+          className="input input-bordered input-sm h-9"
+          value={nombre}
+          onChange={(e) => setNombre(e.target.value)}
+          placeholder="Ej: Hematología"
+          autoFocus
+          required
+        />
+      </div>
+      <div className="form-control">
+        <label className="label cursor-pointer justify-start gap-3">
+          <input
+            type="checkbox"
+            className="checkbox checkbox-sm checkbox-primary"
+            checked={esBodega}
+            onChange={(e) => setEsBodega(e.target.checked)}
+          />
+          <div>
+            <span className="label-text text-sm font-medium">Es bodega</span>
+            <p className="text-xs opacity-40">Las bodegas son áreas de almacenamiento central</p>
+          </div>
+        </label>
+      </div>
+      {selectedItem && (
+        <div className="form-control">
+          <label className="label"><span className="label-text text-sm font-medium">Frecuencia de conteo</span></label>
+          <select
+            className="select select-bordered select-sm h-9"
+            value={frecuenciaDias}
+            onChange={(e) => setFrecuenciaDias(Number(e.target.value))}
+          >
+            <option value={0}>Sin programación</option>
+            <option value={7}>Semanal (7 días)</option>
+            <option value={14}>Quincenal (14 días)</option>
+            <option value={30}>Mensual (30 días)</option>
+            <option value={90}>Trimestral (90 días)</option>
+          </select>
+        </div>
+      )}
+      <div className="flex justify-end gap-2 pt-2">
+        <button type="button" className="btn btn-ghost btn-sm" onClick={closeForm}>Cancelar</button>
+        <button type="submit" className="btn btn-primary btn-sm" disabled={isSaving}>
+          {isSaving ? <span className="loading loading-spinner loading-xs" /> : selectedItem ? 'Guardar' : 'Crear'}
+        </button>
+      </div>
+    </form>
+  )
 
   const columns = [
     {
@@ -157,67 +223,41 @@ export default function AreasTab() {
         </button>
       </div>
 
-      {isLoading ? (
-        <PageLoading label="Cargando áreas..." />
-      ) : (
-        <DataTable
-          columns={columns}
-          data={areas}
-          emptyMessage="No hay áreas registradas"
-        />
-      )}
-
-      <Dialog open={dialogOpen} onClose={closeDialog} title={editing ? 'Editar área' : 'Nueva área'}>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="form-control">
-            <label className="label"><span className="label-text text-sm font-medium">Nombre *</span></label>
-            <input
-              type="text"
-              className="input input-bordered input-sm h-9"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              placeholder="Ej: Hematología"
-              autoFocus
-              required
+      <div className="flex gap-6 items-start">
+        <div className={cn('min-w-0', formMode !== 'idle' ? 'lg:flex-[3]' : 'w-full')}>
+          {isLoading ? (
+            <PageLoading label="Cargando áreas..." />
+          ) : (
+            <DataTable
+              columns={columns}
+              data={areas}
+              emptyMessage="No hay áreas registradas"
+              onRowClick={(item) => openEdit(item)}
+              selectedId={formMode !== 'idle' ? selectedItem?.id : undefined}
             />
-          </div>
-          <div className="form-control">
-            <label className="label cursor-pointer justify-start gap-3">
-              <input
-                type="checkbox"
-                className="checkbox checkbox-sm checkbox-primary"
-                checked={esBodega}
-                onChange={(e) => setEsBodega(e.target.checked)}
-              />
-              <div>
-                <span className="label-text text-sm font-medium">Es bodega</span>
-                <p className="text-xs opacity-40">Las bodegas son áreas de almacenamiento central</p>
-              </div>
-            </label>
-          </div>
-          {editing && (
-            <div className="form-control">
-              <label className="label"><span className="label-text text-sm font-medium">Frecuencia de conteo</span></label>
-              <select
-                className="select select-bordered select-sm h-9"
-                value={frecuenciaDias}
-                onChange={(e) => setFrecuenciaDias(Number(e.target.value))}
-              >
-                <option value={0}>Sin programación</option>
-                <option value={7}>Semanal (7 días)</option>
-                <option value={14}>Quincenal (14 días)</option>
-                <option value={30}>Mensual (30 días)</option>
-                <option value={90}>Trimestral (90 días)</option>
-              </select>
-            </div>
           )}
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={closeDialog}>Cancelar</button>
-            <button type="submit" className="btn btn-primary btn-sm" disabled={isSaving}>
-              {isSaving ? <span className="loading loading-spinner loading-xs" /> : editing ? 'Guardar' : 'Crear'}
-            </button>
+        </div>
+
+        {formMode !== 'idle' && isDesktop && (
+          <div className="hidden lg:flex flex-col min-w-0 lg:flex-[2] lg:sticky lg:top-24">
+            <div className="rounded-xl border bg-card p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-sm">
+                  {formMode === 'crear' ? 'Nueva área' : 'Editar área'}
+                </h3>
+                <button type="button" onClick={closeForm}
+                  className="text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              {formJsx}
+            </div>
           </div>
-        </form>
+        )}
+      </div>
+
+      <Dialog open={formMode !== 'idle' && !isDesktop} onClose={closeForm} title={formMode === 'crear' ? 'Nueva área' : 'Editar área'}>
+        {formJsx}
       </Dialog>
 
       <ConfirmDialog

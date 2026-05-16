@@ -357,7 +357,7 @@ export default function ConsumosPage() {
     queryKey: ['stock-list', searchQuery, areaFiltro],
     queryFn: () => api.get<PaginatedResponse<StockItem>>('/stock', {
       params: {
-        ...(searchQuery.length >= 2 && { q: searchQuery }),
+        ...(searchQuery && { q: searchQuery }),
         ...(areaFiltro && { area_id: areaFiltro }),
         per_page: 100,
       }
@@ -367,14 +367,8 @@ export default function ConsumosPage() {
   const [recentIds, setRecentIds] = useState(() => getRecentIds(userId))
   const allProducts = stockResponse?.data ?? []
 
-  // Items mostrados en el dropdown
-  const dropdownItems: StockItem[] = (() => {
-    if (searchQuery.length >= 2) return allProducts
-    if (recentIds.length === 0) return []
-    return recentIds
-      .map(id => allProducts.find(p => p.producto_id === id))
-      .filter((p): p is StockItem => !!p)
-  })()
+  // Items mostrados en el dropdown: con búsqueda → filtrado; sin búsqueda → primeros 16 alfabéticos
+  const dropdownItems: StockItem[] = searchQuery ? allProducts : allProducts.slice(0, 16)
 
   // Items mostrados en la lista principal (solo recientes, sin búsqueda activa)
   const recentProducts: StockItem[] = (() => {
@@ -442,7 +436,7 @@ export default function ConsumosPage() {
     const value = e.target.value
     if (value.length === 1) hidStartTime.current = Date.now()
     setSearchQuery(value)
-    if (value.length >= 2) setDropdownOpen(true)
+    setDropdownOpen(true)
   }
 
   const handleInputKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -556,7 +550,8 @@ export default function ConsumosPage() {
 
   const emptyRecents = recentIds.length === 0
   const drawerCount = Object.keys(cart).length
-  const showDropdown = dropdownOpen && dropdownItems.length > 0
+  const isSearching = !!searchQuery
+  const showDropdown = dropdownOpen && (isSearching || dropdownItems.length > 0)
 
   // Props compartidas entre CartPanel y ConsumoDrawer
   const cartProps = {

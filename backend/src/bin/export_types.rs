@@ -8,7 +8,8 @@ use inventario_lab_backend::dto::{
         PaginatedRecepciones, RecepcionListItem, RecepcionQuery, SubirFotoInput,
     },
     solicitud::{
-        CreateSolicitudItem, ItemRecomendado, SolicitudDetalle, SolicitudDetalleItem,
+        CancelarEnvioInput, CreateSolicitudItem, EnvioProveedorView, ItemRecomendado,
+        ProveedorResumen, RegistrarEnvioInput, SolicitudDetalle, SolicitudDetalleItem,
         SolicitudResumen, UpdateSolicitudRequest,
     },
     unidad_basica::{CreateUnidadBasica, UpdateUnidadBasica},
@@ -31,7 +32,8 @@ use std::path::Path;
 
 fn main() {
     let conf = Typescript::default();
-    let out_path = Path::new("../frontend/src/types/generated.ts");
+    let out_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../frontend/src/types/generated.ts");
 
     let mut output = String::new();
     writeln!(
@@ -99,6 +101,10 @@ fn main() {
     append!(ItemRecomendado);
     append!(UpdateSolicitudRequest);
     append!(CreateSolicitudItem);
+    append!(RegistrarEnvioInput);
+    append!(CancelarEnvioInput);
+    append!(EnvioProveedorView);
+    append!(ProveedorResumen);
     append!(SolicitudResumen);
     append!(SolicitudDetalle);
     append!(SolicitudDetalleItem);
@@ -119,7 +125,7 @@ fn main() {
     append!(DetalleRecepcionRow);
     append!(LoteCreado);
 
-    match fs::write(out_path, &output) {
+    match fs::write(&out_path, &output) {
         Ok(_) => println!("Tipos exportados a {:?}", out_path),
         Err(e) => eprintln!("Error escribiendo archivo: {}", e),
     }

@@ -71,6 +71,10 @@ export default function ProductosTab() {
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
+  const [searchActiveIndex, setSearchActiveIndex] = useState(-1)
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false)
+  const searchContainerRef = useRef<HTMLDivElement>(null)
+  const searchItemRefs = useRef<(HTMLDivElement | null)[]>([])
   const [categoriaId, setCategoriaId] = useState('')
   const [areaId, setAreaId] = useState('')
   const [proveedorId, setProveedorId] = useState('')
@@ -238,20 +242,116 @@ export default function ProductosTab() {
     },
   ]
 
+  const productos = data?.data ?? []
+
+  useEffect(() => { setSearchActiveIndex(-1) }, [search])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node))
+        setSearchDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  useEffect(() => {
+    if (searchActiveIndex >= 0)
+      searchItemRefs.current[searchActiveIndex]?.scrollIntoView({ block: 'nearest' })
+  }, [searchActiveIndex])
+
+  const searchSuggestions = productos.slice(0, 16)
+  const showSearchDropdown = searchDropdownOpen && searchSuggestions.length > 0
+
+  const groupedSearchItems = (() => {
+    const result: ({ type: 'header'; letter: string } | { type: 'item'; item: typeof productos[number]; idx: number })[] = []
+    let lastL = ''
+    searchSuggestions.forEach((item, idx) => {
+      const l = item.nombre[0]?.toUpperCase() ?? '#'
+      if (l !== lastL) { result.push({ type: 'header', letter: l }); lastL = l }
+      result.push({ type: 'item', item, idx })
+    })
+    return result
+  })()
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (!searchDropdownOpen) setSearchDropdownOpen(true)
+      if (searchSuggestions.length === 0) return
+      setSearchActiveIndex(i => i < searchSuggestions.length - 1 ? i + 1 : 0)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (searchSuggestions.length === 0) return
+      setSearchActiveIndex(i => i > 0 ? i - 1 : searchSuggestions.length - 1)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (searchActiveIndex >= 0 && searchSuggestions[searchActiveIndex]) {
+        setSearch(searchSuggestions[searchActiveIndex].nombre)
+        setPage(1)
+        setSearchDropdownOpen(false)
+        setSearchActiveIndex(-1)
+      }
+    } else if (e.key === 'Escape') {
+      setSearchDropdownOpen(false)
+      setSearchActiveIndex(-1)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2.5 justify-between">
         <div className="flex flex-wrap gap-2.5 flex-1">
-          <label className="input input-bordered input-sm flex items-center gap-2 flex-1 min-w-[200px] max-w-sm h-9">
-            <Search className="h-3.5 w-3.5 opacity-35" />
-            <input
-              type="text"
-              className="grow text-sm"
-              placeholder="Buscar producto..."
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-            />
-          </label>
+          <div ref={searchContainerRef} className="relative flex-1 min-w-[200px] max-w-sm">
+            <label className="input input-bordered input-sm flex items-center gap-2 h-9 w-full">
+              <Search className="h-3.5 w-3.5 opacity-35 shrink-0" />
+              <input
+                type="text"
+                className="grow text-sm"
+                placeholder="Buscar producto..."
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); setSearchDropdownOpen(true) }}
+                onKeyDown={handleSearchKeyDown}
+                onFocus={() => setSearchDropdownOpen(true)}
+                aria-autocomplete="list"
+                aria-expanded={showSearchDropdown}
+              />
+            </label>
+            {showSearchDropdown && (
+              <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-base-100 border border-base-200 rounded-xl shadow-lg overflow-y-auto max-h-72" role="listbox">
+                {groupedSearchItems.map(entry =>
+                  entry.type === 'header' ? (
+                    <div key={`h-${entry.letter}`} className="px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-base-content/30 bg-base-200/40 sticky top-0">
+                      {entry.letter}
+                    </div>
+                  ) : (
+                    <div
+                      key={entry.item.id}
+                      ref={el => { searchItemRefs.current[entry.idx] = el }}
+                      role="option"
+                      aria-selected={entry.idx === searchActiveIndex}
+                      className={cn(
+                        "flex items-center justify-between px-3 py-2 cursor-pointer text-sm transition-colors",
+                        entry.idx === searchActiveIndex ? "bg-primary/10 text-primary" : "hover:bg-base-200/60"
+                      )}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        setSearch(entry.item.nombre)
+                        setPage(1)
+                        setSearchDropdownOpen(false)
+                        setSearchActiveIndex(-1)
+                      }}
+                    >
+                      <span className="font-medium truncate">{entry.item.nombre}</span>
+                      {entry.item.codigo_interno && (
+                        <span className="text-[10px] font-mono opacity-40 shrink-0 ml-2">#{entry.item.codigo_interno}</span>
+                      )}
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+          </div>
           <select
             className="select select-bordered select-sm h-9 w-40 text-sm"
             value={categoriaId}

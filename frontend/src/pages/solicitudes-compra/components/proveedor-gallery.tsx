@@ -1,8 +1,10 @@
 // frontend/src/pages/solicitudes-compra/components/proveedor-gallery.tsx
-import { Clock, Mail, Phone } from 'lucide-react'
+import { CheckCircle2, Clock, Mail, Phone } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageLoading } from '@/components/ui/page-state'
 import type { Proveedor } from '@/types'
+
+const DIAS_OPTIONS = [7, 15, 30, 60, 90] as const
 
 interface UrgenciaCount { total: number; criticos: number }
 
@@ -10,18 +12,30 @@ interface ProveedorCardProps {
   proveedor: Proveedor
   urgencias: number
   criticos: number
+  lotesVenciendo: number
+  diasVencimiento: number
+  selected: boolean
   onClick: () => void
 }
 
-function ProveedorCard({ proveedor, urgencias, criticos, onClick }: ProveedorCardProps) {
+function ProveedorCard({ proveedor, urgencias, criticos, lotesVenciendo, diasVencimiento, selected, onClick }: ProveedorCardProps) {
   const hasCriticos = criticos > 0
   const hasUrgencias = urgencias > 0
 
   return (
     <button
       onClick={onClick}
-      className="group relative flex flex-col items-center gap-3 p-6 bg-base-100 border border-base-300 rounded-3xl hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 transition-all duration-200 text-center"
+      className={cn(
+        "group relative flex flex-col items-center gap-3 p-6 bg-base-100 border rounded-3xl hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 transition-all duration-200 text-center",
+        selected ? "border-primary ring-2 ring-primary/20 shadow-lg shadow-primary/10" : "border-base-300"
+      )}
     >
+      {selected && (
+        <span className="absolute top-3 left-3 badge badge-primary badge-sm gap-1 font-bold">
+          <CheckCircle2 className="h-3 w-3" /> Seleccionado
+        </span>
+      )}
+
       {hasCriticos ? (
         <span className="absolute top-3 right-3 badge badge-error badge-sm font-bold gap-1">
           <span className="text-[9px]">●</span> {criticos} crítico{criticos !== 1 ? 's' : ''}
@@ -76,8 +90,18 @@ function ProveedorCard({ proveedor, urgencias, criticos, onClick }: ProveedorCar
         </div>
       )}
 
+      {lotesVenciendo > 0 && (
+        <div className="w-full pt-2 border-t border-warning/30">
+          <span className="text-[10px] text-warning font-semibold flex items-center justify-center gap-1">
+            <span>⏳</span>
+            {lotesVenciendo} lote{lotesVenciendo !== 1 ? 's' : ''} vence{lotesVenciendo === 1 ? '' : 'n'} en ≤{diasVencimiento}d
+          </span>
+        </div>
+      )}
+
       <div className={cn(
         "absolute inset-0 rounded-3xl border-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none",
+        selected && "opacity-100",
         hasCriticos ? 'border-error/40' : hasUrgencias ? 'border-warning/40' : 'border-primary/30'
       )} />
     </button>
@@ -88,7 +112,12 @@ interface ProveedorGalleryProps {
   proveedores: Proveedor[] | undefined
   isLoading: boolean
   urgenciasByProveedor: Record<number, UrgenciaCount>
+  vencimientoByProveedor: Record<number, { lotes: number; productos: number }>
+  diasVencimiento: number
+  onDiasVencimientoChange: (dias: number) => void
   logoBase64?: string | null
+  selectedIds?: number[]
+  onContinue?: () => void
   onSelect: (p: Proveedor) => void
 }
 
@@ -96,18 +125,53 @@ export function ProveedorGallery({
   proveedores,
   isLoading,
   urgenciasByProveedor,
+  vencimientoByProveedor,
+  diasVencimiento,
+  onDiasVencimientoChange,
   logoBase64,
+  selectedIds = [],
+  onContinue,
   onSelect,
 }: ProveedorGalleryProps) {
   return (
     <div className="flex-1 flex flex-col gap-6 min-h-0">
-      <div className="flex items-center gap-4">
-        {logoBase64 && (
-          <img src={logoBase64} alt="Logo laboratorio" className="h-12 w-auto object-contain rounded-xl" />
-        )}
-        <div>
-          <p className="text-base font-bold">¿A qué proveedor vas a pedir?</p>
-          <p className="text-sm opacity-40">El pedido se generará exclusivamente con productos de ese proveedor.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="flex items-center gap-4 flex-1">
+          {logoBase64 && (
+            <img src={logoBase64} alt="Logo laboratorio" className="h-12 w-auto object-contain rounded-xl" />
+          )}
+          <div>
+            <p className="text-base font-bold">¿A qué proveedor vas a pedir?</p>
+            <p className="text-sm opacity-40">Puedes acumular proveedores; quitar un filtro no borra el pedido.</p>
+          </div>
+        </div>
+        <div className="flex flex-col sm:items-end gap-2 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs opacity-50 whitespace-nowrap">Alerta venc.:</span>
+            {DIAS_OPTIONS.map(d => (
+              <button
+                key={d}
+                onClick={() => onDiasVencimientoChange(d)}
+                className={cn(
+                  "px-2.5 py-1 rounded-lg text-xs font-semibold transition-all",
+                  diasVencimiento === d
+                    ? "bg-warning text-warning-content shadow-sm"
+                    : "bg-base-200 opacity-60 hover:opacity-100"
+                )}
+              >
+                {d}d
+              </button>
+            ))}
+          </div>
+          {onContinue && (
+            <button
+              className="btn btn-primary btn-sm rounded-xl min-w-44"
+              disabled={selectedIds.length === 0}
+              onClick={onContinue}
+            >
+              Continuar con {selectedIds.length} proveedor{selectedIds.length !== 1 ? 'es' : ''}
+            </button>
+          )}
         </div>
       </div>
 
@@ -121,6 +185,9 @@ export function ProveedorGallery({
               proveedor={p}
               urgencias={urgenciasByProveedor[p.id]?.total ?? 0}
               criticos={urgenciasByProveedor[p.id]?.criticos ?? 0}
+              lotesVenciendo={vencimientoByProveedor[p.id]?.lotes ?? 0}
+              diasVencimiento={diasVencimiento}
+              selected={selectedIds.includes(p.id)}
               onClick={() => onSelect(p)}
             />
           ))}

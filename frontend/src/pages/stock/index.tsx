@@ -38,6 +38,10 @@ export default function StockPage() {
   const [view, setView] = useState<'grid' | 'list'>('list')
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('select') || null)
   const [showPdfModal, setShowPdfModal] = useState(false)
+  const [searchActiveIndex, setSearchActiveIndex] = useState(-1)
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false)
+  const searchContainerRef = useRef<HTMLDivElement>(null)
+  const searchItemRefs = useRef<(HTMLDivElement | null)[]>([])
 
   const STOCK_FILTER_DEFAULTS = { categoriaId: null as number | null, proveedorId: null as number | null, areaId: null as number | null }
   const { filters: sf, setFilters: setSf, clearFilters: clearSf, hasActiveFilters: hasSfActive } = useFilterStorage('stock', STOCK_FILTER_DEFAULTS)
@@ -68,6 +72,22 @@ export default function StockPage() {
   }
 
   const usuario = useAuthStore(s => s.usuario)
+
+  useEffect(() => { setSearchActiveIndex(-1) }, [search])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node))
+        setSearchDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  useEffect(() => {
+    if (searchActiveIndex >= 0)
+      searchItemRefs.current[searchActiveIndex]?.scrollIntoView({ block: 'nearest' })
+  }, [searchActiveIndex])
 
   // Sincronizar URL con estado local
   useEffect(() => {
@@ -124,6 +144,43 @@ export default function StockPage() {
     estado !== 'todos',
   ].filter(Boolean).length
 
+  const searchSuggestions = items.slice(0, 16)
+  const showSearchDropdown = searchDropdownOpen && searchSuggestions.length > 0
+
+  const groupedSearchItems = (() => {
+    const result: ({ type: 'header'; letter: string } | { type: 'item'; item: StockItem; idx: number })[] = []
+    let lastL = ''
+    searchSuggestions.forEach((item, idx) => {
+      const l = item.producto_nombre[0]?.toUpperCase() ?? '#'
+      if (l !== lastL) { result.push({ type: 'header', letter: l }); lastL = l }
+      result.push({ type: 'item', item, idx })
+    })
+    return result
+  })()
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (!searchDropdownOpen) setSearchDropdownOpen(true)
+      if (searchSuggestions.length === 0) return
+      setSearchActiveIndex(i => i < searchSuggestions.length - 1 ? i + 1 : 0)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (searchSuggestions.length === 0) return
+      setSearchActiveIndex(i => i > 0 ? i - 1 : searchSuggestions.length - 1)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (searchActiveIndex >= 0 && searchSuggestions[searchActiveIndex]) {
+        setSearch(searchSuggestions[searchActiveIndex].producto_nombre)
+        setSearchDropdownOpen(false)
+        setSearchActiveIndex(-1)
+      }
+    } else if (e.key === 'Escape') {
+      setSearchDropdownOpen(false)
+      setSearchActiveIndex(-1)
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -164,14 +221,51 @@ export default function StockPage() {
       {/* Filters Bar */}
       <FilterBar
         search={
-          <div className="relative group w-full">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-30 group-focus-within:opacity-100 transition-opacity" />
+          <div ref={searchContainerRef} className="relative group w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-30 group-focus-within:opacity-100 transition-opacity z-10 pointer-events-none" />
             <Input
               placeholder="Buscar por nombre o código..."
               className="pl-9 h-10 bg-base-200/50 border-transparent focus:bg-base-100 transition-all rounded-xl text-xs"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setSearchDropdownOpen(true) }}
+              onKeyDown={handleSearchKeyDown}
+              onFocus={() => setSearchDropdownOpen(true)}
+              aria-autocomplete="list"
+              aria-expanded={showSearchDropdown}
             />
+            {showSearchDropdown && (
+              <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-base-100 border border-base-200 rounded-xl shadow-lg overflow-y-auto max-h-72" role="listbox">
+                {groupedSearchItems.map(entry =>
+                  entry.type === 'header' ? (
+                    <div key={`h-${entry.letter}`} className="px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-base-content/30 bg-base-200/40 sticky top-0">
+                      {entry.letter}
+                    </div>
+                  ) : (
+                    <div
+                      key={entry.item.producto_id}
+                      ref={el => { searchItemRefs.current[entry.idx] = el }}
+                      role="option"
+                      aria-selected={entry.idx === searchActiveIndex}
+                      className={cn(
+                        "flex items-center justify-between px-3 py-2 cursor-pointer text-sm transition-colors",
+                        entry.idx === searchActiveIndex ? "bg-primary/10 text-primary" : "hover:bg-base-200/60"
+                      )}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        setSearch(entry.item.producto_nombre)
+                        setSearchDropdownOpen(false)
+                        setSearchActiveIndex(-1)
+                      }}
+                    >
+                      <span className="font-medium truncate">{entry.item.producto_nombre}</span>
+                      {entry.item.codigo_interno && (
+                        <span className="text-[10px] font-mono opacity-40 shrink-0 ml-2">#{entry.item.codigo_interno}</span>
+                      )}
+                    </div>
+                  )
+                )}
+              </div>
+            )}
           </div>
         }
         primaryFilter={

@@ -19,6 +19,7 @@ interface HistorialViewProps {
 const ESTADO_FILTROS: { value: string | null; label: string }[] = [
   { value: null, label: 'Todas' },
   { value: 'guardada', label: 'Pendientes' },
+  { value: 'parcialmente_enviada', label: 'Env. parcial' },
   { value: 'enviada', label: 'Enviadas' },
   { value: 'completada', label: 'Completadas' },
   { value: 'cancelada', label: 'Canceladas' },
@@ -27,13 +28,16 @@ const ESTADO_FILTROS: { value: string | null; label: string }[] = [
 const estadoBadgeClass = (estado: string) =>
   estado === 'completada' ? 'bg-success/10 text-success border-success/30' :
   estado === 'guardada'   ? 'bg-warning/10 text-warning border-warning/30' :
+  estado === 'parcialmente_enviada' ? 'bg-info/10 text-info border-info/30' :
   estado === 'cancelada'  ? 'bg-error/10 text-error border-error/30' :
   estado === 'enviada'    ? 'bg-info/10 text-info border-info/30' :
   estado === 'borrador'   ? 'bg-base-200 text-base-content/50 border-base-300' :
   'bg-base-200 text-base-content/50 border-base-300'
 
 const estadoLabel = (estado: string) =>
-  estado === 'guardada' ? 'pendiente' : estado
+  estado === 'guardada' ? 'pendiente' :
+  estado === 'parcialmente_enviada' ? 'env. parcial' :
+  estado
 
 export function HistorialView({
   solicitudes,
@@ -93,6 +97,7 @@ export function HistorialView({
                   <th className="text-[10px] font-black uppercase tracking-widest opacity-40">Documento</th>
                   <th className="text-[10px] font-black uppercase tracking-widest opacity-40">Fecha</th>
                   <th className="text-[10px] font-black uppercase tracking-widest opacity-40">Usuario</th>
+                  <th className="text-[10px] font-black uppercase tracking-widest opacity-40">Proveedor</th>
                   <th className="text-[10px] font-black uppercase tracking-widest opacity-40 text-center">Items</th>
                   <th className="text-[10px] font-black uppercase tracking-widest opacity-40">Estado</th>
                   <th className="text-[10px] font-black uppercase tracking-widest opacity-40 text-right">Acciones</th>
@@ -111,6 +116,15 @@ export function HistorialView({
                       <div className="flex items-center gap-2">
                         <User className="h-3 w-3" /> {s.usuario_nombre}
                       </div>
+                    </td>
+                    <td className="text-xs font-medium max-w-[180px]">
+                      <span className="truncate block" title={s.proveedores_nombres ?? undefined}>
+                        {s.proveedores_count <= 0
+                          ? 'Sin proveedor'
+                          : s.proveedores_count === 1
+                            ? s.proveedores_nombres
+                            : `${s.proveedores_count} proveedores`}
+                      </span>
                     </td>
                     <td className="text-center font-mono text-sm">{s.items_count}</td>
                     <td>

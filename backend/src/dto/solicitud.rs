@@ -69,6 +69,8 @@ pub struct SolicitudResumen {
     pub items_count: i32, // Cambiado de i64 a i32
     pub fecha_envio: Option<DateTime<Utc>>,
     pub fecha_cierre: Option<DateTime<Utc>>,
+    pub proveedores_count: i32,
+    pub proveedores_nombres: Option<String>,
 }
 
 #[derive(Debug, Serialize, Type)]
@@ -84,11 +86,14 @@ pub struct SolicitudDetalle {
     pub motivo_cierre: Option<String>,
     pub metodo_envio: Option<String>,
     pub items: Vec<SolicitudDetalleItem>,
+    pub envios: Vec<EnvioProveedorView>,
+    pub proveedores_resumen: Vec<ProveedorResumen>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow, Type)]
 pub struct SolicitudDetalleItem {
     pub producto_id: Uuid,
+    pub proveedor_id: Option<i32>,
     pub producto_nombre: String,
     pub cantidad_sugerida: Decimal,
     pub unidad: String,
@@ -106,4 +111,39 @@ pub struct SolicitudDetalleItem {
     pub horizonte_dias: Option<i32>,
     pub horizonte_sugerido: Option<i32>,
     pub horizonte_razon: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Type)]
+pub struct RegistrarEnvioInput {
+    pub proveedor_id: i32,
+    pub metodo_envio: String,
+    pub fecha_envio: Option<DateTime<Utc>>,
+    pub nota: Option<String>,
+    pub version: i32,
+}
+
+#[derive(Debug, Deserialize, Type)]
+pub struct CancelarEnvioInput {
+    pub version: i32,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow, Type)]
+pub struct EnvioProveedorView {
+    pub proveedor_id: i32,
+    pub proveedor_nombre: String,
+    pub estado: String,
+    pub metodo_envio: Option<String>,
+    pub fecha_envio: Option<DateTime<Utc>>,
+    pub nota: Option<String>,
+    pub total_items: i32,
+    pub monto_total: Decimal,
+    pub version: i32,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow, Type)]
+pub struct ProveedorResumen {
+    pub proveedor_id: i32,
+    pub proveedor_nombre: String,
+    pub total_items: i32,
+    pub monto_total: Decimal,
 }

@@ -247,9 +247,47 @@ struct PresentacionBusqueda {
     codigo_interno: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct PorVencerQuery {
+    dias: Option<i32>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+struct VencimientoProveedor {
+    proveedor_id: Option<i32>,
+    lotes_por_vencer: i64,
+    productos_por_vencer: i64,
+}
+
+/// GET /api/v1/lotes/por-vencer-por-proveedor?dias=N
+async fn por_vencer_por_proveedor(
+    State(state): State<AppState>,
+    Query(params): Query<PorVencerQuery>,
+) -> Result<Json<Vec<VencimientoProveedor>>, AppError> {
+    let dias = params.dias.unwrap_or(30);
+    let rows = sqlx::query_as::<_, VencimientoProveedor>(
+        r#"SELECT
+            l.proveedor_id,
+            COUNT(DISTINCT l.id)::bigint AS lotes_por_vencer,
+            COUNT(DISTINCT l.producto_id)::bigint AS productos_por_vencer
+           FROM lotes l
+           WHERE l.fecha_vencimiento > CURRENT_DATE
+             AND l.fecha_vencimiento <= CURRENT_DATE + ($1 * INTERVAL '1 day')
+             AND EXISTS (
+               SELECT 1 FROM stock s WHERE s.lote_id = l.id AND s.cantidad > 0
+             )
+           GROUP BY l.proveedor_id"#,
+    )
+    .bind(dias)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(rows))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar))
+        .route("/por-vencer-por-proveedor", get(por_vencer_por_proveedor))
         .route("/buscar-codigo/{codigo}", get(buscar_por_codigo))
         .route("/{id}", get(obtener))
 }

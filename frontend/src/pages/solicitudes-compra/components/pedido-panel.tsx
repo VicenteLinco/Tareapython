@@ -17,7 +17,7 @@ import {
 } from '../solicitud-utils'
 
 interface PedidoPanelProps {
-  proveedor: Proveedor
+  proveedor?: Proveedor | null
   items: SolicitudItem[]
   solicitudId: string | null
   isSaving: boolean
@@ -72,7 +72,7 @@ export function PedidoPanel({
             </div>
             <div className="min-w-0">
               <h2 className="text-xs font-bold leading-tight truncate">
-                Pedido · {proveedor.nombre}
+                Pedido · {proveedor?.nombre ?? 'Multi-proveedor'}
               </h2>
               <p className="text-[9px] font-bold uppercase tracking-widest text-primary/50">
                 {items.length} {items.length === 1 ? 'producto' : 'productos'}

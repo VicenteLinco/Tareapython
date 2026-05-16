@@ -1,5 +1,5 @@
 // frontend/src/pages/solicitudes-compra/hooks/useSolicitudState.ts
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -12,6 +12,8 @@ import type {
   SolicitudItem,
   ItemRecomendado,
   UpdateSolicitudRequest,
+  RegistrarEnvioInput,
+  CancelarEnvioInput,
   Producto,
   Proveedor,
 } from '@/types'
@@ -33,7 +35,8 @@ export function useSolicitudState() {
   const location = useLocation()
 
   const [view, setView] = useState<'crear' | 'historial'>('crear')
-  const [selectedProveedor, setSelectedProveedor] = useState<Proveedor | null>(null)
+  const [proveedoresFiltro, setProveedoresFiltro] = useState<Proveedor[]>([])
+  const selectedProveedor = proveedoresFiltro[proveedoresFiltro.length - 1] ?? null
   const [items, setItems] = useState<SolicitudItem[]>([])
   const [solicitudId, setSolicitudId] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -46,6 +49,15 @@ export function useSolicitudState() {
   const [popoverOpenId, setPopoverOpenId] = useState<string | null>(null)
   const [restaurando, setRestaurando] = useState(true)
   const borradorCargado = useRef(false)
+
+  const [diasVencimiento, setDiasVencimientoState] = useState<number>(() => {
+    const v = localStorage.getItem('solicitud-dias-vencimiento')
+    return v ? parseInt(v) : 30
+  })
+  const setDiasVencimiento = (dias: number) => {
+    setDiasVencimientoState(dias)
+    localStorage.setItem('solicitud-dias-vencimiento', String(dias))
+  }
 
   const [modoRevision, setModoRevision] = useState(() => localStorage.getItem('solicitud-modo') !== 'avanzado')
   const [descartados, setDescartados] = useState<Set<string>>(() => {
@@ -121,6 +133,26 @@ export function useSolicitudState() {
     staleTime: 300_000,
   })
 
+  const { data: vencimientoData } = useQuery({
+    queryKey: ['lotes-por-vencer-por-proveedor', diasVencimiento],
+    queryFn: () =>
+      api.get<Array<{ proveedor_id: number | null; lotes_por_vencer: number; productos_por_vencer: number }>>(
+        '/lotes/por-vencer-por-proveedor', { params: { dias: diasVencimiento } }
+      ).then(r => r.data),
+    enabled: view === 'crear' && proveedoresFiltro.length === 0,
+    staleTime: 60_000,
+  })
+
+  const vencimientoByProveedor: Record<number, { lotes: number; productos: number }> = {}
+  for (const item of vencimientoData ?? []) {
+    if (item.proveedor_id != null) {
+      vencimientoByProveedor[item.proveedor_id] = {
+        lotes: Number(item.lotes_por_vencer),
+        productos: Number(item.productos_por_vencer),
+      }
+    }
+  }
+
   const monedaCodigo = configuracion?.moneda_codigo ?? 'CLP'
 
   // ── Restauración del borrador ────────────────────────────────────────────────
@@ -144,7 +176,7 @@ export function useSolicitudState() {
           producto_nombre: item.producto_nombre,
           codigo_proveedor: item.codigo_proveedor,
           codigo_maestro: item.codigo_maestro,
-          proveedor_id: null,
+          proveedor_id: item.proveedor_id,
           proveedor_nombre: item.proveedor_nombre || 'Desconocido',
           lead_time: 0,
           presentacion_id: item.presentacion_id,
@@ -167,11 +199,11 @@ export function useSolicitudState() {
         if (b) setSolicitudId(b.id)
 
         if (borradorItems.length > 0) {
-          const savedId = localStorage.getItem('solicitud_proveedor_id')
-          if (savedId) {
-            const prov = provs.find(p => p.id === parseInt(savedId))
-            if (prov) setSelectedProveedor(prov)
-          }
+          const savedIds = JSON.parse(localStorage.getItem('solicitud_proveedores_ids') ?? '[]') as number[]
+          const ids = savedIds.length > 0
+            ? savedIds
+            : [...new Set(borradorItems.map(i => i.proveedor_id).filter(Boolean))] as number[]
+          setProveedoresFiltro(ids.map(id => provs.find(p => p.id === id)).filter(Boolean) as Proveedor[])
         }
 
         setItems(borradorItems)
@@ -181,6 +213,10 @@ export function useSolicitudState() {
 
     restaurar()
   }, [view])
+
+  useEffect(() => {
+    localStorage.setItem('solicitud_proveedores_ids', JSON.stringify(proveedoresFiltro.map(p => p.id)))
+  }, [proveedoresFiltro])
 
   // ── Mutations ────────────────────────────────────────────────────────────────
 
@@ -202,6 +238,9 @@ export function useSolicitudState() {
 
   const guardarMutation = useMutation({
     mutationFn: async () => {
+      if (items.some(i => i.proveedor_id == null)) {
+        throw new Error('Todos los items deben tener proveedor asignado')
+      }
       const saveData: UpdateSolicitudRequest = {
         nota: null,
         items: items.map(i => ({
@@ -230,15 +269,46 @@ export function useSolicitudState() {
       toast.success('Solicitud guardada correctamente')
       setItems([])
       setSolicitudId(null)
-      setSelectedProveedor(null)
+      setProveedoresFiltro([])
       borradorCargado.current = false
-      localStorage.removeItem('solicitud_proveedor_id')
+      localStorage.removeItem('solicitud_proveedores_ids')
       setView('historial')
       queryClient.invalidateQueries({ queryKey: ['solicitudes-historial'] })
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      const msg = (err as { response?: { data?: { error?: { message?: string }; message?: string } }; message?: string })?.response?.data?.error?.message
+        ?? (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
+        ?? (err as { message?: string })?.message
       toast.error(msg ?? 'Error al guardar solicitud')
+    },
+  })
+
+  const registrarEnvioMutation = useMutation({
+    mutationFn: ({ solicitudId, body }: { solicitudId: string; body: RegistrarEnvioInput }) =>
+      api.post<SolicitudDetalle>(`/solicitudes-compra/${solicitudId}/envios`, body).then(r => r.data),
+    onSuccess: (data, { solicitudId }) => {
+      queryClient.setQueryData(['solicitud-detail', solicitudId], data)
+      queryClient.invalidateQueries({ queryKey: ['solicitudes-historial'] })
+      toast.success(data.estado === 'enviada' ? 'Solicitud completamente enviada' : 'Envio registrado')
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { status?: number; data?: { error?: { message?: string }; message?: string } } }
+      if (e.response?.status === 409) {
+        if (selectedSolicitudId) queryClient.invalidateQueries({ queryKey: ['solicitud-detail', selectedSolicitudId] })
+        toast.error('Version desactualizada, recarga la pagina')
+      } else {
+        toast.error(e.response?.data?.error?.message ?? e.response?.data?.message ?? 'Error registrando envio')
+      }
+    },
+  })
+
+  const cancelarEnvioMutation = useMutation({
+    mutationFn: ({ solicitudId, proveedorId, body }: { solicitudId: string; proveedorId: number; body: CancelarEnvioInput }) =>
+      api.delete<SolicitudDetalle>(`/solicitudes-compra/${solicitudId}/envios/${proveedorId}`, { data: body }).then(r => r.data),
+    onSuccess: (data, { solicitudId }) => {
+      queryClient.setQueryData(['solicitud-detail', solicitudId], data)
+      queryClient.invalidateQueries({ queryKey: ['solicitudes-historial'] })
+      toast.success('Envio cancelado')
     },
   })
 
@@ -250,6 +320,10 @@ export function useSolicitudState() {
       return
     }
     const proveedorId = r.proveedor_id ?? selectedProveedor?.id ?? null
+    if (proveedorId == null) {
+      toast.error('Todos los items deben tener proveedor asignado')
+      return
+    }
     const horizData = await fetchHorizonte(r.producto_id, proveedorId)
     const consumoDiario = parseFloat(r.consumo_diario.toString())
     const stockActual = parseFloat(r.stock_actual.toString())
@@ -292,6 +366,10 @@ export function useSolicitudState() {
       return
     }
     const proveedorId = r.proveedor_id ?? selectedProveedor?.id ?? null
+    if (proveedorId == null) {
+      toast.error('Todos los items deben tener proveedor asignado')
+      return
+    }
     const horizData = await fetchHorizonte(r.producto_id, proveedorId)
     const factorConv = r.factor_conversion ? parseFloat(r.factor_conversion.toString()) : null
     setItems(prev => [...prev, {
@@ -341,7 +419,7 @@ export function useSolicitudState() {
       codigo_proveedor: p.codigo_proveedor,
       codigo_maestro: p.codigo_maestro,
       proveedor_id: proveedorId,
-      proveedor_nombre: selectedProveedor?.nombre ?? 'Manual',
+      proveedor_nombre: px.proveedor?.nombre ?? selectedProveedor?.nombre ?? 'Manual',
       lead_time: p.lead_time_propio || 0,
       presentacion_id: px.pres_id ?? null,
       presentacion_nombre: px.pres_nombre ?? null,
@@ -409,6 +487,10 @@ export function useSolicitudState() {
 
   const handleSaveBorrador = () => {
     if (items.length === 0) return
+    if (items.some(i => i.proveedor_id == null)) {
+      toast.error('Todos los items deben tener proveedor asignado')
+      return
+    }
     setIsSaving(true)
     saveMutation.mutate(
       {
@@ -430,23 +512,19 @@ export function useSolicitudState() {
   }
 
   const handleSelectProveedor = (p: Proveedor) => {
-    if (items.length > 0) {
-      setItems([])
-      setSolicitudId(null)
-      toast('Lista anterior limpiada', { icon: '↩' })
-    }
-    localStorage.setItem('solicitud_proveedor_id', String(p.id))
-    setSelectedProveedor(p)
+    setProveedoresFiltro(prev =>
+      prev.some(x => x.id === p.id) ? prev.filter(x => x.id !== p.id) : [...prev, p]
+    )
   }
 
-  const handleCambiarProveedor = () => {
-    if (items.length > 0) {
-      setItems([])
-      setSolicitudId(null)
-      toast('Lista limpiada al cambiar proveedor', { icon: '↩' })
-    }
-    localStorage.removeItem('solicitud_proveedor_id')
-    setSelectedProveedor(null)
+  const handleCambiarProveedor = () => setProveedoresFiltro([])
+  const handleAgregarProveedorFiltro = handleSelectProveedor
+  const handleQuitarProveedorFiltro = (proveedorId: number) =>
+    setProveedoresFiltro(prev => prev.filter(p => p.id !== proveedorId))
+  const handleLimpiarFiltros = () => setProveedoresFiltro([])
+  const handleQuitarProveedorCarrito = (proveedorId: number) => {
+    setItems(prev => prev.filter(i => i.proveedor_id !== proveedorId))
+    toast.success('Items del proveedor removidos del pedido')
   }
 
   // ── Detail query ─────────────────────────────────────────────────────────────
@@ -460,9 +538,35 @@ export function useSolicitudState() {
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
-  const recsFiltered = selectedProveedor
-    ? (recomendaciones ?? []).filter(r => r.proveedor_id === selectedProveedor.id)
-    : []
+  const recsFiltered = proveedoresFiltro.length > 0
+    ? (recomendaciones ?? []).filter(r => proveedoresFiltro.some(p => p.id === r.proveedor_id))
+    : (recomendaciones ?? [])
+
+  const itemsByProveedor = useMemo(() => {
+    const map = new Map<number, { proveedor_nombre: string; items: SolicitudItem[]; subtotal: number }>()
+    for (const item of items) {
+      const proveedorId = item.proveedor_id ?? -1
+      const current = map.get(proveedorId) ?? {
+        proveedor_nombre: item.proveedor_nombre || 'Sin proveedor',
+        items: [],
+        subtotal: 0,
+      }
+      const precio = item.presentacion_id && item.factor_conversion
+        ? item.precio_unitario * item.factor_conversion
+        : item.precio_unitario
+      current.items.push(item)
+      current.subtotal += item.cantidad * precio
+      map.set(proveedorId, current)
+    }
+    return Array.from(map.entries())
+      .map(([proveedor_id, value]) => ({ proveedor_id, ...value }))
+      .sort((a, b) => a.proveedor_nombre.localeCompare(b.proveedor_nombre))
+  }, [items])
+
+  const totalGeneral = useMemo(
+    () => itemsByProveedor.reduce((acc, grupo) => acc + grupo.subtotal, 0),
+    [itemsByProveedor]
+  )
 
   const urgenciasByProveedor = (recomendaciones ?? []).reduce<Record<number, { total: number; criticos: number }>>((acc, r) => {
     const pid = r.proveedor_id
@@ -477,7 +581,9 @@ export function useSolicitudState() {
     // Vista
     view, setView,
     // Proveedor
-    selectedProveedor, handleSelectProveedor, handleCambiarProveedor,
+    selectedProveedor, proveedoresFiltro, handleSelectProveedor, handleCambiarProveedor,
+    handleAgregarProveedorFiltro, handleQuitarProveedorFiltro, handleLimpiarFiltros,
+    handleQuitarProveedorCarrito,
     // Items
     items,
     handleAddFromRec, handleAddFromRecConCantidad, handleAddFromSearch,
@@ -493,7 +599,7 @@ export function useSolicitudState() {
     historial, isLoadingHistorial,
     // Detalle modal
     selectedSolicitudId, setSelectedSolicitudId,
-    detail, isLoadingDetail,
+    detail, isLoadingDetail, registrarEnvioMutation, cancelarEnvioMutation,
     pdfFirmaLabel, setPdfFirmaLabel,
     // Modo / tabs
     modoRevision, setModo,
@@ -505,7 +611,8 @@ export function useSolicitudState() {
     // Datos globales
     proveedores, isLoadingProveedores,
     recomendaciones, isLoadingRecs,
-    recsFiltered, urgenciasByProveedor,
+    recsFiltered, urgenciasByProveedor, itemsByProveedor, totalGeneral,
+    vencimientoByProveedor, diasVencimiento, setDiasVencimiento,
     configuracion, monedaCodigo,
   }
 }

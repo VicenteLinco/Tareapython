@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import api from '@/lib/api'
 import type { Area, DescarteSession } from '@/types'
-import { cn, formatCantidad, formatDate } from '@/lib/utils'
+import { formatCantidad, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useDescartesHistorial } from './use-descartes-historial'

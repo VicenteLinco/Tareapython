@@ -278,7 +278,7 @@ export default function RecepcionesPage() {
   }, [searchInput])
 
   // Reset page on tab/filter change
-  useEffect(() => { setPage(1) }, [tabActivo, proveedorFiltro])
+  useEffect(() => { setPage(1); setSelectedId(null) }, [tabActivo, proveedorFiltro])
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['recepciones', { tab: tabActivo, search, proveedorFiltro, page }],
@@ -310,9 +310,9 @@ export default function RecepcionesPage() {
 
   const confirmarMutation = useMutation({
     mutationFn: (id: string) => api.post(`/recepciones/${id}/confirmar`),
-    onSuccess: () => {
+    onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['recepciones'] })
-      queryClient.invalidateQueries({ queryKey: ['recepcion-detalle-inline', selectedId] })
+      queryClient.invalidateQueries({ queryKey: ['recepcion-detalle-inline', id] })
       toast.success('Recepción confirmada')
     },
     onError: () => toast.error('Error al confirmar recepción'),
@@ -320,8 +320,9 @@ export default function RecepcionesPage() {
 
   const eliminarMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/recepciones/${id}`),
-    onSuccess: () => {
+    onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['recepciones'] })
+      queryClient.invalidateQueries({ queryKey: ['recepcion-detalle-inline', id] })
       setSelectedId(null)
       toast.success('Borrador eliminado')
     },
@@ -580,7 +581,7 @@ export default function RecepcionesPage() {
 
       {/* ── Panel detalle: solo desktop, solo cuando hay selección ── */}
       {selectedId && (
-        <div className="hidden lg:flex lg:flex-[2] lg:sticky lg:top-24 flex-col min-w-0">
+        <div className="hidden lg:flex lg:flex-[2] lg:sticky lg:top-24 self-start flex-col min-w-0">
           <RecepcionDetailPanel
             recepcionData={selectedRecepcion}
             isLoading={loadingDetalle}

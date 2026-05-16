@@ -779,7 +779,7 @@ async fn lotes_vencidos(
         .q
         .as_ref()
         .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
+        .filter(|s| s.chars().count() >= 2)
         .map(|s| format!("%{}%", s.to_lowercase()));
 
     let mut conditions = vec![

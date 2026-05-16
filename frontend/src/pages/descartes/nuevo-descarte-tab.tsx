@@ -25,6 +25,22 @@ interface DescarteItemLocal extends DescarteVencidoItem {
 
 const stockKey = (item: Pick<DescarteVencidoItem, 'lote_id' | 'area_id'>) =>
   `${item.lote_id}:${item.area_id}`
+const MIN_SEARCH_CHARS = 2
+
+const normalizeSearch = (value: string) =>
+  value.trim().toLowerCase()
+
+const searchRank = (item: DescarteVencidoItem, query: string) => {
+  const product = normalizeSearch(item.producto_nombre)
+  const lote = normalizeSearch(item.codigo_lote)
+
+  if (lote === query) return 0
+  if (lote.startsWith(query)) return 1
+  if (product.startsWith(query)) return 2
+  if (lote.includes(query)) return 3
+  if (product.includes(query)) return 4
+  return 5
+}
 
 interface NuevoDescarteTabProps {
   onDescarteCreado: () => void
@@ -49,6 +65,13 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
 
   const queryClient = useQueryClient()
   const usuario = useAuthStore((s) => s.usuario)
+  const searchTerm = search.trim()
+  const canSearch = searchTerm.length >= MIN_SEARCH_CHARS
+  const querySearch = selectedSearchStockKey
+    ? selectedSearchQuery ?? searchTerm
+    : canSearch
+      ? searchTerm
+      : ''
 
   const { data: areas } = useQuery({
     queryKey: ['areas'],
@@ -69,19 +92,20 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
     diasAlerta: filterIncluirProximos ? 30 : 0,
     areaId: filterAreaId,
     proveedorId: filterProveedorId,
-    q: selectedSearchStockKey ? selectedSearchQuery ?? search : search,
+    q: querySearch,
   })
 
   const filteredStock = useMemo(() => {
     if (selectedSearchStockKey) return stock.filter((s) => stockKey(s) === selectedSearchStockKey)
-    if (!search) return stock
-    const q = search.toLowerCase()
+    if (!searchTerm) return stock
+    if (!canSearch) return []
+    const q = normalizeSearch(searchTerm)
     return stock.filter(
       (s) =>
-        s.producto_nombre.toLowerCase().includes(q) ||
-        s.codigo_lote.toLowerCase().includes(q)
+        normalizeSearch(s.producto_nombre).includes(q) ||
+        normalizeSearch(s.codigo_lote).includes(q)
     )
-  }, [stock, search, selectedSearchStockKey])
+  }, [stock, searchTerm, canSearch, selectedSearchStockKey])
 
   const selectedItems = Object.values(items)
   const totalSelected = selectedItems.length
@@ -209,7 +233,17 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
       searchItemRefs.current[searchActiveIndex]?.scrollIntoView({ block: 'nearest' })
   }, [searchActiveIndex])
 
-  const searchSuggestions = filteredStock.slice(0, 16)
+  const searchSuggestions = useMemo(() => {
+    if (!canSearch || selectedSearchStockKey) return []
+    const q = normalizeSearch(searchTerm)
+    return [...filteredStock]
+      .sort((a, b) => {
+        const rankDiff = searchRank(a, q) - searchRank(b, q)
+        if (rankDiff !== 0) return rankDiff
+        return a.producto_nombre.localeCompare(b.producto_nombre, 'es')
+      })
+      .slice(0, 12)
+  }, [canSearch, filteredStock, searchTerm, selectedSearchStockKey])
   const showSearchDropdown = searchDropdownOpen && searchSuggestions.length > 0
 
   const groupedSearchItems = (() => {
@@ -407,7 +441,9 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
               ) : filteredStock.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-20 text-center opacity-40 italic text-sm">
-                    {stock.length === 0 && !search
+                    {searchTerm && !canSearch
+                      ? `Escribe al menos ${MIN_SEARCH_CHARS} caracteres para buscar`
+                      : stock.length === 0 && !searchTerm
                       ? 'No hay ítems vencidos en este momento'
                       : 'No se encontraron ítems con ese filtro'}
                   </td>

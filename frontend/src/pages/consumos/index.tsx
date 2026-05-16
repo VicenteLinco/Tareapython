@@ -206,7 +206,9 @@ function CartPanel({
                         <Plus className="h-3 w-3" />
                       </button>
                       <span className="text-[11px] text-base-content/40 whitespace-nowrap">
-                        {item.unidad_plural && item.cantidad_descontar !== 1 ? item.unidad_plural : item.unidad}
+                        {formatCantidad(item.cantidad_descontar, item.unidad, item.unidad_plural ?? undefined)
+                          .replace(/^[\d.,\s]+/, '')
+                          .trim()}
                       </span>
                     </div>
                   </div>

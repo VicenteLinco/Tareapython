@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
@@ -29,6 +29,7 @@ import { useAuthStore } from '@/hooks/use-auth-store'
 import { exportarStockPDF } from '@/lib/stock-pdf'
 import { toast } from 'sonner'
 import { useFilterStorage } from '@/hooks/use-filter-storage'
+import { FilterBar } from '@/components/ui/filter-bar'
 
 export default function StockPage() {
   const navigate = useNavigate()
@@ -48,9 +49,9 @@ export default function StockPage() {
   const setAreaId = (v: number | null) => setSf(f => ({ ...f, areaId: v }))
 
   // Selector único de estado — lee ?estado= con compat ?filter=
-  type EstadoFiltro = 'todos' | 'normal' | 'bajo' | 'critico' | 'sin_stock'
+  type EstadoFiltro = 'todos' | 'normal' | 'bajo' | 'critico' | 'sin_stock' | 'vence_pronto'
   const estadoParam = (searchParams.get('estado') ?? searchParams.get('filter') ?? 'todos') as string
-  const estadoValido: EstadoFiltro = (['todos','normal','bajo','critico','sin_stock'] as string[]).includes(estadoParam)
+  const estadoValido: EstadoFiltro = (['todos','normal','bajo','critico','sin_stock','vence_pronto'] as string[]).includes(estadoParam)
     ? estadoParam as EstadoFiltro
     : estadoParam === 'sin-stock' ? 'sin_stock'  // compat legacy
     : 'todos'
@@ -76,7 +77,7 @@ export default function StockPage() {
     if (sel !== null && sel !== selectedId) setSelectedId(sel)
     // Sincronizar estado desde URL (navegación externa como Dashboard)
     const eParam = searchParams.get('estado') ?? searchParams.get('filter') ?? 'todos'
-    const eValido: EstadoFiltro = (['todos','normal','bajo','critico','sin_stock'] as string[]).includes(eParam)
+    const eValido: EstadoFiltro = (['todos','normal','bajo','critico','sin_stock','vence_pronto'] as string[]).includes(eParam)
       ? eParam as EstadoFiltro
       : eParam === 'sin-stock' ? 'sin_stock'
       : 'todos'
@@ -117,6 +118,12 @@ export default function StockPage() {
   const items = stockResponse?.data ?? []
   const selectedItem = items.find(i => i.producto_id === selectedId)
 
+  const activeSecondaryCount = [
+    categoriaId,
+    proveedorId,
+    estado && estado !== 'todos' ? estado : null,
+  ].filter(Boolean).length
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -155,19 +162,20 @@ export default function StockPage() {
       </div>
 
       {/* Filters Bar */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 bg-base-100 p-3 rounded-2xl border border-base-200 shadow-sm">
-        <div className="md:col-span-3 relative group">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-30 group-focus-within:opacity-100 transition-opacity" />
-          <Input 
-            placeholder="Buscar por nombre o código..." 
-            className="pl-9 h-10 bg-base-200/50 border-transparent focus:bg-base-100 transition-all rounded-xl text-xs"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        
-        <div className="md:col-span-2">
-          <select 
+      <FilterBar
+        search={
+          <div className="relative group w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-30 group-focus-within:opacity-100 transition-opacity" />
+            <Input
+              placeholder="Buscar por nombre o código..."
+              className="pl-9 h-10 bg-base-200/50 border-transparent focus:bg-base-100 transition-all rounded-xl text-xs"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        }
+        primaryFilter={
+          <select
             className="select select-sm h-10 w-full bg-base-200/50 border-none rounded-xl text-xs font-medium"
             value={areaId ?? ''}
             onChange={(e) => setAreaId(e.target.value ? Number(e.target.value) : null)}
@@ -175,34 +183,27 @@ export default function StockPage() {
             <option value="">Todas las Áreas</option>
             {areas?.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
           </select>
-        </div>
-
-        <div className="md:col-span-2">
-          <select 
-            className="select select-sm h-10 w-full bg-base-200/50 border-none rounded-xl text-xs font-medium"
-            value={categoriaId ?? ''}
-            onChange={(e) => setCategoriaId(e.target.value ? Number(e.target.value) : null)}
-          >
-            <option value="">Categorías</option>
-            {categorias?.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-          </select>
-        </div>
-
-        <div className="md:col-span-2">
-          <select 
-            className="select select-sm h-10 w-full bg-base-200/50 border-none rounded-xl text-xs font-medium"
-            value={proveedorId ?? ''}
-            onChange={(e) => setProveedorId(e.target.value ? Number(e.target.value) : null)}
-          >
-            <option value="">Proveedores</option>
-            {proveedores?.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-          </select>
-        </div>
-
-        <div className="md:col-span-3 flex items-center justify-between gap-2 pl-2">
-          <div className="flex items-center gap-2">
+        }
+        secondaryFilters={
+          <>
             <select
-              className="select select-sm h-10 bg-base-200/50 border-none rounded-xl text-xs font-medium"
+              className="select select-sm h-10 w-full bg-base-200/50 border-none rounded-xl text-xs font-medium"
+              value={categoriaId ?? ''}
+              onChange={(e) => setCategoriaId(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">Categorías</option>
+              {categorias?.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+            <select
+              className="select select-sm h-10 w-full bg-base-200/50 border-none rounded-xl text-xs font-medium"
+              value={proveedorId ?? ''}
+              onChange={(e) => setProveedorId(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">Proveedores</option>
+              {proveedores?.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+            </select>
+            <select
+              className="select select-sm h-10 w-full bg-base-200/50 border-none rounded-xl text-xs font-medium"
               value={estado}
               onChange={e => setEstado(e.target.value as EstadoFiltro)}
             >
@@ -211,56 +212,51 @@ export default function StockPage() {
               <option value="bajo">Stock bajo</option>
               <option value="critico">Crítico</option>
               <option value="sin_stock">Sin stock</option>
+              <option value="vence_pronto">Por vencer</option>
             </select>
-          </div>
-          <div className="flex bg-base-200 p-1 rounded-lg">
-            <button
-              className={cn("p-1 rounded-md transition-all", view === 'list' ? "bg-base-100 shadow-sm" : "opacity-40")}
-              onClick={() => setView('list')}
-            >
-              <ListIcon className="w-3.5 h-3.5" />
-            </button>
-            <button
-              className={cn("p-1 rounded-md transition-all", view === 'grid' ? "bg-base-100 shadow-sm" : "opacity-40")}
-              onClick={() => setView('grid')}
-            >
-              <LayoutGrid className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Chips de filtros rápidos + Limpiar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-wider opacity-40">Acceso rápido:</span>
-        {([
-          { label: 'Crítico', valor: 'critico' as EstadoFiltro, color: 'text-error border-error/30 bg-error/5' },
-          { label: 'Stock bajo', valor: 'bajo' as EstadoFiltro, color: 'text-warning border-warning/30 bg-warning/5' },
-          { label: 'Sin stock', valor: 'sin_stock' as EstadoFiltro, color: 'text-base-content/60 border-base-300 bg-base-200/60' },
-          { label: 'Normal', valor: 'normal' as EstadoFiltro, color: 'text-success border-success/30 bg-success/5' },
-        ] as const).map(chip => (
-          <button
-            key={chip.valor}
-            onClick={() => setEstado(estado === chip.valor ? 'todos' : chip.valor)}
-            className={cn(
-              'px-3 py-1 rounded-full border text-[11px] font-bold transition-all',
-              chip.color,
-              estado === chip.valor ? 'ring-2 ring-offset-1 ring-current opacity-100' : 'opacity-60 hover:opacity-90'
+          </>
+        }
+        activeSecondaryCount={activeSecondaryCount}
+        chips={[
+          { label: 'Crítico', value: 'critico', active: estado === 'critico',
+            onClick: () => setEstado(estado === 'critico' ? 'todos' : 'critico') },
+          { label: 'Stock bajo', value: 'bajo', active: estado === 'bajo',
+            onClick: () => setEstado(estado === 'bajo' ? 'todos' : 'bajo') },
+          { label: 'Sin stock', value: 'sin_stock', active: estado === 'sin_stock',
+            onClick: () => setEstado(estado === 'sin_stock' ? 'todos' : 'sin_stock') },
+          { label: 'Por vencer', value: 'vence_pronto', active: estado === 'vence_pronto',
+            onClick: () => setEstado(estado === 'vence_pronto' ? 'todos' : 'vence_pronto') },
+          { label: 'Normal', value: 'normal', active: estado === 'normal',
+            onClick: () => setEstado(estado === 'normal' ? 'todos' : 'normal') },
+        ]}
+        actions={
+          <div className="flex items-center gap-2">
+            {(hasSfActive || estado !== 'todos' || search) && (
+              <button
+                onClick={() => { clearSf(); setEstado('todos'); setSearch('') }}
+                className="flex items-center gap-1 px-3 py-1 rounded-full border border-base-300 text-[11px] font-bold text-base-content/60 hover:text-error hover:border-error/40 transition-all"
+              >
+                <X className="w-3 h-3" />
+                Limpiar
+              </button>
             )}
-          >
-            {chip.label}
-          </button>
-        ))}
-        {(hasSfActive || estado !== 'todos' || search) && (
-          <button
-            onClick={() => { clearSf(); setEstado('todos'); setSearch('') }}
-            className="ml-auto flex items-center gap-1 px-3 py-1 rounded-full border border-base-300 text-[11px] font-bold text-base-content/60 hover:text-error hover:border-error/40 transition-all"
-          >
-            <X className="w-3 h-3" />
-            Limpiar filtros
-          </button>
-        )}
-      </div>
+            <div className="flex bg-base-200 p-1 rounded-lg">
+              <button
+                className={cn("p-1 rounded-md transition-all", view === 'list' ? "bg-base-100 shadow-sm" : "opacity-40")}
+                onClick={() => setView('list')}
+              >
+                <ListIcon className="w-3.5 h-3.5" />
+              </button>
+              <button
+                className={cn("p-1 rounded-md transition-all", view === 'grid' ? "bg-base-100 shadow-sm" : "opacity-40")}
+                onClick={() => setView('grid')}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        }
+      />
 
       {/* Main Content */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">

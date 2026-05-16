@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DataTable } from '@/components/ui/data-table'
 import { Pagination } from '@/components/ui/pagination'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import api from '@/lib/api'
 import type { PaginatedResponse, Movimiento, Area } from '@/types'
 import { formatDateTime, formatCantidad } from '@/lib/utils'
@@ -169,7 +170,7 @@ export default function MovimientosPage() {
   const activeFilterCount = [
     desde && desde !== '',
     hasta && hasta !== '',
-    areaId && areaId !== '',
+    // areaId excluded — it mirrors the global area context filter, not a user-chosen extra filter
     tab === 'historial' && tipo && tipo !== '',
     tab === 'tendencias' && agruparPor !== 'global',
     tab === 'tendencias' && incluirDescartes,
@@ -571,7 +572,7 @@ export default function MovimientosPage() {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
-              {/* Botón toggle panel filtros — solo desktop */}
+              {/* Botón toggle panel filtros — desktop */}
               <button type="button"
                 onClick={() => setFilterPanelOpen(v => !v)}
                 className="hidden lg:inline-flex items-center gap-1.5 text-sm border rounded-md px-3 py-1.5 hover:bg-muted transition-colors">
@@ -583,6 +584,158 @@ export default function MovimientosPage() {
                   </span>
                 )}
               </button>
+
+              {/* Botón filtros mobile — Sheet drawer */}
+              <Sheet>
+                <SheetTrigger asChild>
+                  <button type="button"
+                    className="lg:hidden inline-flex items-center gap-1.5 text-sm border rounded-md px-3 py-1.5 hover:bg-muted transition-colors">
+                    <SlidersHorizontal className="h-4 w-4" />
+                    Filtros
+                    {activeFilterCount > 0 && (
+                      <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
+                        {activeFilterCount}
+                      </span>
+                    )}
+                  </button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-[280px] overflow-y-auto">
+                  <SheetHeader>
+                    <SheetTitle>Filtros</SheetTitle>
+                  </SheetHeader>
+                  <div className="space-y-3 mt-4">
+                    {/* Área */}
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">Área</label>
+                      <select
+                        className="select select-bordered select-sm h-9 w-full"
+                        value={areaId}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setAreaId(val)
+                          setSelectedArea(val ? Number(val) : null)
+                          setPage(1)
+                        }}
+                      >
+                        <option value="">Todas las areas</option>
+                        {(areas ?? []).map((a) => (
+                          <option key={a.id} value={a.id}>{a.nombre}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Tipo — solo historial */}
+                    {tab === 'historial' && (
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Tipo</label>
+                        <select className="select select-bordered select-sm h-9 w-full" value={tipo}
+                          onChange={(e) => { setTipo(e.target.value); setPage(1) }}>
+                          <option value="">Todos los tipos</option>
+                          {Object.entries(tipoConfig).map(([value, { label }]) => (
+                            <option key={value} value={value}>{label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Desde — solo historial */}
+                    {tab === 'historial' && (
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Desde</label>
+                        <input type="date" className="input input-bordered input-sm h-9 w-full" value={desde}
+                          onChange={(e) => { setDesde(e.target.value); setPage(1) }} />
+                      </div>
+                    )}
+
+                    {/* Hasta — solo historial */}
+                    {tab === 'historial' && (
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Hasta</label>
+                        <input type="date" className="input input-bordered input-sm h-9 w-full" value={hasta}
+                          onChange={(e) => { setHasta(e.target.value); setPage(1) }} />
+                      </div>
+                    )}
+
+                    {/* Periodo — solo tendencias */}
+                    {tab === 'tendencias' && (
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Periodo</label>
+                        <select className="select select-bordered select-sm h-9 w-full" value={periodoAnalisis} onChange={(e) => setPeriodoAnalisis(e.target.value as PeriodoAnalisis)}>
+                          <option value="mes">Mensual</option>
+                          <option value="trimestre">Trimestral</option>
+                          <option value="semestre">Semestral</option>
+                          <option value="anio">Anual</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Selector de fecha del periodo — solo tendencias */}
+                    {tab === 'tendencias' && (
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">
+                          {periodoAnalisis === 'mes' ? 'Mes' : 'Año'}
+                        </label>
+                        <div className="flex gap-2">
+                          {periodoAnalisis === 'mes' && (
+                            <input type="month" className="input input-bordered input-sm h-9 w-full" value={mesAnalisis} onChange={(e) => setMesAnalisis(e.target.value)} />
+                          )}
+                          {periodoAnalisis !== 'mes' && (
+                            <input type="number" className="input input-bordered input-sm h-9 w-full" value={anioAnalisis} min="2020" max="2100" onChange={(e) => setAnioAnalisis(e.target.value)} />
+                          )}
+                          {periodoAnalisis === 'trimestre' && (
+                            <select className="select select-bordered select-sm h-9 flex-1" value={trimestreAnalisis} onChange={(e) => setTrimestreAnalisis(e.target.value)}>
+                              <option value="1">T1</option>
+                              <option value="2">T2</option>
+                              <option value="3">T3</option>
+                              <option value="4">T4</option>
+                            </select>
+                          )}
+                          {periodoAnalisis === 'semestre' && (
+                            <select className="select select-bordered select-sm h-9 flex-1" value={semestreAnalisis} onChange={(e) => setSemestreAnalisis(e.target.value)}>
+                              <option value="1">S1</option>
+                              <option value="2">S2</option>
+                            </select>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Agrupar por — solo tendencias */}
+                    {tab === 'tendencias' && (
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Agrupar por</label>
+                        <select className="select select-bordered select-sm h-9 w-full" value={agruparPor} onChange={(e) => setAgruparPor(e.target.value as AgruparPor)}>
+                          <option value="global">Global</option>
+                          <option value="area">Por area</option>
+                          <option value="producto">Por producto</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Incluir descartes — solo tendencias */}
+                    {tab === 'tendencias' && (
+                      <label className="label cursor-pointer gap-2 py-0 justify-start">
+                        <input
+                          type="checkbox"
+                          className="checkbox checkbox-sm"
+                          checked={incluirDescartes}
+                          onChange={(e) => setIncluirDescartes(e.target.checked)}
+                        />
+                        <span className="label-text text-xs">Incluir descartes</span>
+                      </label>
+                    )}
+
+                    {/* Limpiar */}
+                    {activeFilterCount > 0 && (
+                      <button type="button"
+                        onClick={handleClearFilters}
+                        className="text-xs text-muted-foreground hover:text-foreground underline w-full text-left">
+                        Limpiar filtros
+                      </button>
+                    )}
+                  </div>
+                </SheetContent>
+              </Sheet>
 
               {/* Export CSV — solo tendencias */}
               {tab === 'tendencias' && (

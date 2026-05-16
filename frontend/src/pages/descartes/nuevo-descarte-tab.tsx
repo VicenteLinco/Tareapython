@@ -42,6 +42,25 @@ const searchRank = (item: DescarteVencidoItem, query: string) => {
   return 5
 }
 
+interface ProductSuggestion {
+  producto_nombre: string
+  lotes: DescarteVencidoItem[]
+  areas: string[]
+}
+
+const groupByProduct = (items: DescarteVencidoItem[]): ProductSuggestion[] => {
+  const byProduct = new Map<string, DescarteVencidoItem[]>()
+  items.forEach((item) => {
+    const existing = byProduct.get(item.producto_nombre) ?? []
+    byProduct.set(item.producto_nombre, [...existing, item])
+  })
+  return [...byProduct.entries()].map(([nombre, lotes]) => ({
+    producto_nombre: nombre,
+    lotes,
+    areas: [...new Set(lotes.map((l) => l.area_nombre))],
+  }))
+}
+
 interface NuevoDescarteTabProps {
   onDescarteCreado: () => void
 }
@@ -223,34 +242,62 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
       searchItemRefs.current[searchActiveIndex]?.scrollIntoView({ block: 'nearest' })
   }, [searchActiveIndex])
 
-  const searchSuggestions = useMemo(() => {
+  const searchSuggestions = useMemo((): ProductSuggestion[] => {
     if (!canSearch) return []
     const q = normalizeSearch(searchTerm)
-    return [...filteredStock]
+    const matching = stock.filter(
+      (s) =>
+        normalizeSearch(s.producto_nombre).includes(q) ||
+        normalizeSearch(s.codigo_lote).includes(q)
+    )
+    return groupByProduct(matching)
       .sort((a, b) => {
-        const rankDiff = searchRank(a, q) - searchRank(b, q)
-        if (rankDiff !== 0) return rankDiff
-        return a.producto_nombre.localeCompare(b.producto_nombre, 'es')
+        const rankA = Math.min(...a.lotes.map((l) => searchRank(l, q)))
+        const rankB = Math.min(...b.lotes.map((l) => searchRank(l, q)))
+        return rankA !== rankB
+          ? rankA - rankB
+          : a.producto_nombre.localeCompare(b.producto_nombre, 'es')
       })
       .slice(0, 12)
-  }, [canSearch, filteredStock, searchTerm])
-  const showSearchDropdown = searchDropdownOpen && searchSuggestions.length > 0
+  }, [canSearch, stock, searchTerm])
 
-  const groupedSearchItems = (() => {
-    const result: ({ type: 'header'; letter: string } | { type: 'item'; item: typeof filteredStock[number]; idx: number })[] = []
-    let lastL = ''
-    searchSuggestions.forEach((item, idx) => {
-      const l = item.producto_nombre[0]?.toUpperCase() ?? '#'
-      if (l !== lastL) { result.push({ type: 'header', letter: l }); lastL = l }
-      result.push({ type: 'item', item, idx })
+  const recommendedSuggestions = useMemo((): ProductSuggestion[] => {
+    if (canSearch) return []
+    const expired = stock.filter((s) => {
+      const days = daysUntil(s.fecha_vencimiento)
+      return days !== null && days < 0
     })
-    return result
-  })()
+    return groupByProduct(expired)
+      .sort((a, b) => {
+        const minDayA = Math.min(...a.lotes.map((l) => daysUntil(l.fecha_vencimiento) ?? 0))
+        const minDayB = Math.min(...b.lotes.map((l) => daysUntil(l.fecha_vencimiento) ?? 0))
+        return minDayA - minDayB
+      })
+      .slice(0, 6)
+  }, [canSearch, stock])
 
-  const selectSearchItem = (item: typeof stock[number]) => {
-    setSearch(`${item.producto_nombre} · ${item.codigo_lote}`)
-    setSelectedSearchStockKey(stockKey(item))
-    setSelectedSearchQuery(item.codigo_lote)
+  const activeSuggestions = canSearch ? searchSuggestions : recommendedSuggestions
+  const isRecommendMode = !canSearch
+  const showSearchDropdown = searchDropdownOpen && activeSuggestions.length > 0
+
+  const selectProduct = (suggestion: ProductSuggestion) => {
+    setItems((prev) => {
+      const next = { ...prev }
+      suggestion.lotes.forEach((stockItem) => {
+        const key = stockKey(stockItem)
+        if (!next[key]) {
+          const days = daysUntil(stockItem.fecha_vencimiento)
+          const isExpired = days !== null && days < 0
+          next[key] = {
+            ...stockItem,
+            cantidad_descartar: stockItem.cantidad,
+            motivo: isExpired ? 'vencido' : 'dañado',
+          }
+        }
+      })
+      return next
+    })
+    setSearch('')
     setSearchDropdownOpen(false)
     setSearchActiveIndex(-1)
   }

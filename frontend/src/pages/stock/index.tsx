@@ -119,9 +119,9 @@ export default function StockPage() {
   const selectedItem = items.find(i => i.producto_id === selectedId)
 
   const activeSecondaryCount = [
-    categoriaId,
-    proveedorId,
-    estado && estado !== 'todos' ? estado : null,
+    categoriaId !== null && categoriaId !== undefined,
+    proveedorId !== null && proveedorId !== undefined,
+    estado !== 'todos',
   ].filter(Boolean).length
 
   return (

@@ -306,22 +306,20 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       if (!searchDropdownOpen) setSearchDropdownOpen(true)
-      if (searchSuggestions.length === 0) return
-      setSearchActiveIndex((i) => (i < searchSuggestions.length - 1 ? i + 1 : 0))
+      if (activeSuggestions.length === 0) return
+      setSearchActiveIndex((i) => (i < activeSuggestions.length - 1 ? i + 1 : 0))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      if (searchSuggestions.length === 0) return
-      setSearchActiveIndex((i) => (i > 0 ? i - 1 : searchSuggestions.length - 1))
+      if (activeSuggestions.length === 0) return
+      setSearchActiveIndex((i) => (i > 0 ? i - 1 : activeSuggestions.length - 1))
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      if (searchActiveIndex >= 0 && searchSuggestions[searchActiveIndex]) {
-        selectSearchItem(searchSuggestions[searchActiveIndex])
+      if (searchActiveIndex >= 0 && activeSuggestions[searchActiveIndex]) {
+        selectProduct(activeSuggestions[searchActiveIndex])
       }
     } else if (e.key === 'Escape') {
       setSearchDropdownOpen(false)
       setSearch('')
-      setSelectedSearchStockKey(null)
-      setSelectedSearchQuery(null)
       setSearchActiveIndex(-1)
     }
   }
@@ -377,8 +375,6 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value)
-                setSelectedSearchStockKey(null)
-                setSelectedSearchQuery(null)
                 setSearchDropdownOpen(true)
               }}
               onKeyDown={handleSearchKeyDown}

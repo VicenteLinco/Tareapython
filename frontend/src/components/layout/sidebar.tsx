@@ -2,6 +2,12 @@ import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
   LayoutDashboard,
   Package,
   ClipboardList,
@@ -184,27 +190,38 @@ function SidebarLink({
   expanded: boolean
 }) {
   return (
-    <NavLink
-      to={to}
-      end={to === '/'}
-      className={({ isActive }) =>
-        cn(
-          'flex items-center gap-2.5 rounded-lg px-3 h-9 text-[13px] font-medium transition-all duration-150',
-          isActive
-            ? 'bg-primary text-primary-content sidebar-link-active'
-            : 'opacity-60 hover:opacity-100 hover:bg-base-200'
-        )
-      }
-    >
-      <Icon className="h-[18px] w-[18px] shrink-0" />
-      <span
-        className={cn(
-          'whitespace-nowrap transition-all duration-300',
-          expanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
-        )}
-      >
-        {label}
-      </span>
-    </NavLink>
+    <TooltipProvider delayDuration={0}>
+      <Tooltip open={!expanded ? undefined : false}>
+        <span className="relative block">
+          <TooltipTrigger asChild>
+            <NavLink
+              to={to}
+              end={to === '/'}
+              className={({ isActive }) =>
+                cn(
+                  'flex items-center gap-2.5 rounded-lg px-3 h-9 text-[13px] font-medium transition-all duration-150',
+                  isActive
+                    ? 'bg-primary text-primary-content sidebar-link-active'
+                    : 'opacity-60 hover:opacity-100 hover:bg-base-200'
+                )
+              }
+            >
+              <Icon className="h-[18px] w-[18px] shrink-0" />
+              <span
+                className={cn(
+                  'whitespace-nowrap transition-all duration-300',
+                  expanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
+                )}
+              >
+                {label}
+              </span>
+            </NavLink>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="font-medium">
+            {label}
+          </TooltipContent>
+        </span>
+      </Tooltip>
+    </TooltipProvider>
   )
 }

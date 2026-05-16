@@ -9,7 +9,6 @@ export interface QuickChip {
   value: string
   active: boolean
   onClick: () => void
-  variant?: 'default' | 'destructive' | 'warning' | 'success'
 }
 
 interface FilterBarProps {
@@ -69,7 +68,7 @@ export function FilterBar({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {secondaryFilters}
           </div>
-          {activeSecondaryCount > 0 && (
+          {(
             <div className="mt-3 flex justify-end">
               <Button
                 variant="ghost"
@@ -78,7 +77,7 @@ export function FilterBar({
                 onClick={() => setExpanded(false)}
               >
                 <X className="h-3 w-3" />
-                Cerrar
+                Cerrar filtros
               </Button>
             </div>
           )}
@@ -89,6 +88,7 @@ export function FilterBar({
         <div className="flex items-center gap-1.5 flex-wrap">
           {chips.map(chip => (
             <button
+              type="button"
               key={chip.value}
               onClick={chip.onClick}
               className={cn(

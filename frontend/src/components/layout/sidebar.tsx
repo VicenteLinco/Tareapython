@@ -88,6 +88,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
   }
 
   return (
+    <TooltipProvider delayDuration={0}>
     <aside
       className={cn(
         'fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-base-200 bg-base-100 transition-all duration-300 ease-out',
@@ -175,6 +176,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
         </button>
       </div>
     </aside>
+    </TooltipProvider>
   )
 }
 
@@ -189,39 +191,40 @@ function SidebarLink({
   label: string
   expanded: boolean
 }) {
+  const tooltipId = `tooltip-nav-${label.toLowerCase().replace(/\s+/g, '-')}`
+
   return (
-    <TooltipProvider delayDuration={0}>
-      <Tooltip open={!expanded ? undefined : false}>
-        <span className="relative block">
-          <TooltipTrigger asChild>
-            <NavLink
-              to={to}
-              end={to === '/'}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-2.5 rounded-lg px-3 h-9 text-[13px] font-medium transition-all duration-150',
-                  isActive
-                    ? 'bg-primary text-primary-content sidebar-link-active'
-                    : 'opacity-60 hover:opacity-100 hover:bg-base-200'
-                )
-              }
+    <Tooltip open={!expanded ? undefined : false}>
+      <span className="relative block">
+        <TooltipTrigger asChild>
+          <NavLink
+            to={to}
+            end={to === '/'}
+            aria-describedby={!expanded ? tooltipId : undefined}
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-2.5 rounded-lg px-3 h-9 text-[13px] font-medium transition-all duration-150',
+                isActive
+                  ? 'bg-primary text-primary-content sidebar-link-active'
+                  : 'opacity-60 hover:opacity-100 hover:bg-base-200'
+              )
+            }
+          >
+            <Icon className="h-[18px] w-[18px] shrink-0" />
+            <span
+              className={cn(
+                'whitespace-nowrap transition-all duration-300',
+                expanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
+              )}
             >
-              <Icon className="h-[18px] w-[18px] shrink-0" />
-              <span
-                className={cn(
-                  'whitespace-nowrap transition-all duration-300',
-                  expanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
-                )}
-              >
-                {label}
-              </span>
-            </NavLink>
-          </TooltipTrigger>
-          <TooltipContent side="right" className="font-medium">
-            {label}
-          </TooltipContent>
-        </span>
-      </Tooltip>
-    </TooltipProvider>
+              {label}
+            </span>
+          </NavLink>
+        </TooltipTrigger>
+        <TooltipContent id={tooltipId} side="right" className="font-medium">
+          {label}
+        </TooltipContent>
+      </span>
+    </Tooltip>
   )
 }

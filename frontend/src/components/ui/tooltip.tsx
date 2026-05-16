@@ -92,9 +92,10 @@ interface TooltipContentProps {
   side?: 'top' | 'right' | 'bottom' | 'left'
   className?: string
   children: React.ReactNode
+  id?: string
 }
 
-export function TooltipContent({ side = 'top', className, children }: TooltipContentProps) {
+export function TooltipContent({ side = 'top', className, children, id }: TooltipContentProps) {
   const { open, show } = React.useContext(TooltipInternalContext)
 
   // open===false → always hidden; open===undefined → controlled by hover (show)
@@ -111,6 +112,7 @@ export function TooltipContent({ side = 'top', className, children }: TooltipCon
 
   return (
     <span
+      id={id}
       role="tooltip"
       className={cn(
         'pointer-events-none absolute z-50 whitespace-nowrap rounded-md bg-base-content px-2.5 py-1 text-xs text-base-100 shadow-md',

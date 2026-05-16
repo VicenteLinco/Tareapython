@@ -387,30 +387,54 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
                 className="absolute top-full left-0 right-0 mt-1 z-50 bg-base-100 border border-base-200 rounded-xl shadow-lg overflow-y-auto max-h-64"
                 role="listbox"
               >
-                {groupedSearchItems.map(entry =>
-                  entry.type === 'header' ? (
-                    <div key={`h-${entry.letter}`} className="px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-base-content/30 bg-base-200/40 sticky top-0">
-                      {entry.letter}
-                    </div>
-                  ) : (
+                {isRecommendMode && (
+                  <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-base-content/40 border-b border-base-200">
+                    Sugeridos para descartar
+                  </div>
+                )}
+                {activeSuggestions.map((suggestion, idx) => {
+                  const lotesLabel =
+                    suggestion.lotes.length === 1
+                      ? `1 lote · ${suggestion.areas[0]}`
+                      : `${suggestion.lotes.length} lotes · ${suggestion.areas.slice(0, 2).join(', ')}${suggestion.areas.length > 2 ? '…' : ''}`
+                  const minDays = isRecommendMode
+                    ? Math.min(...suggestion.lotes.map((l) => daysUntil(l.fecha_vencimiento) ?? 0))
+                    : null
+                  return (
                     <div
-                      key={stockKey(entry.item)}
-                      ref={(el) => { searchItemRefs.current[entry.idx] = el }}
+                      key={suggestion.producto_nombre}
+                      ref={(el) => { searchItemRefs.current[idx] = el }}
                       role="option"
-                      aria-selected={entry.idx === searchActiveIndex}
+                      aria-selected={idx === searchActiveIndex}
                       className={cn(
-                        'flex items-center justify-between px-3 py-2 cursor-pointer text-sm',
-                        entry.idx === searchActiveIndex ? 'bg-primary/10 text-primary' : 'hover:bg-base-200/60'
+                        'flex items-center justify-between px-3 py-2.5 cursor-pointer text-sm gap-2',
+                        idx === searchActiveIndex
+                          ? 'bg-primary/10 text-primary'
+                          : 'hover:bg-base-200/60'
                       )}
                       onMouseDown={(e) => {
                         e.preventDefault()
-                        selectSearchItem(entry.item)
+                        selectProduct(suggestion)
                       }}
                     >
-                      <span className="font-medium truncate">{entry.item.producto_nombre}</span>
-                      <span className="text-[10px] font-mono opacity-40 shrink-0 ml-2">{entry.item.codigo_lote}</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        {isRecommendMode && (
+                          <span className="text-error text-[8px] shrink-0">●</span>
+                        )}
+                        <span className="font-medium truncate">{suggestion.producto_nombre}</span>
+                      </div>
+                      <span className="text-[10px] opacity-40 shrink-0 text-right">
+                        {isRecommendMode && minDays !== null
+                          ? `hace ${Math.abs(minDays)}d`
+                          : lotesLabel}
+                      </span>
                     </div>
                   )
+                })}
+                {isRecommendMode && (
+                  <div className="px-3 py-2 text-[10px] text-base-content/30 border-t border-base-200 italic">
+                    Busca por nombre o lote para agregar más
+                  </div>
                 )}
               </div>
             )}

@@ -750,6 +750,7 @@ struct LotesVencidosQuery {
     area_id: Option<i32>,
     proveedor_id: Option<i32>,
     dias_alerta: Option<i32>,
+    q: Option<String>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -774,13 +775,27 @@ async fn lotes_vencidos(
     Query(params): Query<LotesVencidosQuery>,
 ) -> Result<Json<Vec<LoteVencidoItem>>, AppError> {
     let dias = params.dias_alerta.unwrap_or(0);
+    let q = params
+        .q
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| format!("%{}%", s.to_lowercase()));
 
     let mut conditions = vec![
         "s.cantidad > 0".to_string(),
-        "l.fecha_vencimiento <= CURRENT_DATE + ($1 * INTERVAL '1 day')".to_string(),
+        "(
+            ($2::TEXT IS NULL AND l.fecha_vencimiento <= CURRENT_DATE + ($1 * INTERVAL '1 day'))
+            OR
+            ($2::TEXT IS NOT NULL AND (
+                LOWER(p.nombre) LIKE $2
+                OR LOWER(l.numero_lote) LIKE $2
+            ))
+        )"
+        .to_string(),
         "p.activo = true".to_string(),
     ];
-    let mut param_idx = 1u32;
+    let mut param_idx = 2u32;
 
     if params.area_id.is_some() {
         param_idx += 1;
@@ -818,7 +833,7 @@ async fn lotes_vencidos(
         where_clause
     );
 
-    let mut query = sqlx::query_as::<_, LoteVencidoItem>(&sql).bind(dias);
+    let mut query = sqlx::query_as::<_, LoteVencidoItem>(&sql).bind(dias).bind(q);
     if let Some(v) = params.area_id {
         query = query.bind(v);
     }

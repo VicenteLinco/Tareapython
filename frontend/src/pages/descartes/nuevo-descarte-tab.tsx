@@ -23,12 +23,17 @@ interface DescarteItemLocal extends DescarteVencidoItem {
   motivo: 'vencido' | 'dañado' | 'contaminado' | 'otro'
 }
 
+const stockKey = (item: Pick<DescarteVencidoItem, 'lote_id' | 'area_id'>) =>
+  `${item.lote_id}:${item.area_id}`
+
 interface NuevoDescarteTabProps {
   onDescarteCreado: () => void
 }
 
 export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
   const [search, setSearch] = useState('')
+  const [selectedSearchStockKey, setSelectedSearchStockKey] = useState<string | null>(null)
+  const [selectedSearchQuery, setSelectedSearchQuery] = useState<string | null>(null)
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false)
   const [searchActiveIndex, setSearchActiveIndex] = useState(-1)
   const searchContainerRef = useRef<HTMLDivElement>(null)
@@ -64,9 +69,11 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
     diasAlerta: filterIncluirProximos ? 30 : 0,
     areaId: filterAreaId,
     proveedorId: filterProveedorId,
+    q: selectedSearchStockKey ? selectedSearchQuery ?? search : search,
   })
 
   const filteredStock = useMemo(() => {
+    if (selectedSearchStockKey) return stock.filter((s) => stockKey(s) === selectedSearchStockKey)
     if (!search) return stock
     const q = search.toLowerCase()
     return stock.filter(
@@ -74,7 +81,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
         s.producto_nombre.toLowerCase().includes(q) ||
         s.codigo_lote.toLowerCase().includes(q)
     )
-  }, [stock, search])
+  }, [stock, search, selectedSearchStockKey])
 
   const selectedItems = Object.values(items)
   const totalSelected = selectedItems.length
@@ -85,7 +92,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
   const hasHealthyItems = healthyItems.length > 0
 
   const descarteMutation = useMutation({
-    mutationFn: ({ request, snapshot }: { request: DescarteRequest; snapshot: DescarteItemLocal[] }) =>
+    mutationFn: ({ request }: { request: DescarteRequest; snapshot: DescarteItemLocal[] }) =>
       api
         .post('/descartes', request, { headers: { 'X-Idempotency-Key': uuidv4() } })
         .then((r) => r.data),
@@ -119,20 +126,20 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
     onError: (err: unknown) => toast.error(parseApiError(err)),
   })
 
-  const toggleItem = (loteId: string) => {
+  const toggleItem = (stockItemKey: string) => {
     setItems((prev) => {
-      if (prev[loteId]) {
+      if (prev[stockItemKey]) {
         const rest = { ...prev }
-        delete rest[loteId]
+        delete rest[stockItemKey]
         return rest
       }
-      const stockItem = stock.find((s) => s.lote_id === loteId)
+      const stockItem = stock.find((s) => stockKey(s) === stockItemKey)
       if (!stockItem) return prev
       const days = daysUntil(stockItem.fecha_vencimiento)
       const isExpired = days !== null && days < 0
       return {
         ...prev,
-        [loteId]: {
+        [stockItemKey]: {
           ...stockItem,
           cantidad_descartar: stockItem.cantidad,
           motivo: isExpired ? 'vencido' : 'dañado',
@@ -142,11 +149,11 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
   }
 
   const updateItem = (
-    loteId: string,
+    stockItemKey: string,
     field: 'cantidad_descartar' | 'motivo',
     value: number | string
   ) => {
-    setItems((prev) => ({ ...prev, [loteId]: { ...prev[loteId], [field]: value } }))
+    setItems((prev) => ({ ...prev, [stockItemKey]: { ...prev[stockItemKey], [field]: value } }))
   }
 
   const executeDescarte = (justificacion?: string) => {
@@ -202,27 +209,49 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
       searchItemRefs.current[searchActiveIndex]?.scrollIntoView({ block: 'nearest' })
   }, [searchActiveIndex])
 
-  const searchSuggestions = search.length >= 1 ? filteredStock.slice(0, 8) : []
+  const searchSuggestions = filteredStock.slice(0, 16)
   const showSearchDropdown = searchDropdownOpen && searchSuggestions.length > 0
+
+  const groupedSearchItems = (() => {
+    const result: ({ type: 'header'; letter: string } | { type: 'item'; item: typeof filteredStock[number]; idx: number })[] = []
+    let lastL = ''
+    searchSuggestions.forEach((item, idx) => {
+      const l = item.producto_nombre[0]?.toUpperCase() ?? '#'
+      if (l !== lastL) { result.push({ type: 'header', letter: l }); lastL = l }
+      result.push({ type: 'item', item, idx })
+    })
+    return result
+  })()
+
+  const selectSearchItem = (item: typeof stock[number]) => {
+    setSearch(`${item.producto_nombre} · ${item.codigo_lote}`)
+    setSelectedSearchStockKey(stockKey(item))
+    setSelectedSearchQuery(item.codigo_lote)
+    setSearchDropdownOpen(false)
+    setSearchActiveIndex(-1)
+  }
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       if (!searchDropdownOpen) setSearchDropdownOpen(true)
+      if (searchSuggestions.length === 0) return
       setSearchActiveIndex((i) => (i < searchSuggestions.length - 1 ? i + 1 : 0))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
+      if (searchSuggestions.length === 0) return
       setSearchActiveIndex((i) => (i > 0 ? i - 1 : searchSuggestions.length - 1))
     } else if (e.key === 'Enter') {
       e.preventDefault()
       if (searchActiveIndex >= 0 && searchSuggestions[searchActiveIndex]) {
-        setSearch(searchSuggestions[searchActiveIndex].producto_nombre)
-        setSearchDropdownOpen(false)
-        setSearchActiveIndex(-1)
+        selectSearchItem(searchSuggestions[searchActiveIndex])
       }
     } else if (e.key === 'Escape') {
       setSearchDropdownOpen(false)
       setSearch('')
+      setSelectedSearchStockKey(null)
+      setSelectedSearchQuery(null)
+      setSearchActiveIndex(-1)
     }
   }
 
@@ -275,9 +304,14 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
               placeholder="Buscar por insumo o lote..."
               className="pl-9"
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setSearchDropdownOpen(true) }}
+              onChange={(e) => {
+                setSearch(e.target.value)
+                setSelectedSearchStockKey(null)
+                setSelectedSearchQuery(null)
+                setSearchDropdownOpen(true)
+              }}
               onKeyDown={handleSearchKeyDown}
-              onFocus={() => { if (search.length >= 1) setSearchDropdownOpen(true) }}
+              onFocus={() => setSearchDropdownOpen(true)}
               aria-autocomplete="list"
               aria-expanded={showSearchDropdown}
             />
@@ -286,27 +320,31 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
                 className="absolute top-full left-0 right-0 mt-1 z-50 bg-base-100 border border-base-200 rounded-xl shadow-lg overflow-y-auto max-h-64"
                 role="listbox"
               >
-                {searchSuggestions.map((item, i) => (
-                  <div
-                    key={item.lote_id}
-                    ref={(el) => { searchItemRefs.current[i] = el }}
-                    role="option"
-                    aria-selected={i === searchActiveIndex}
-                    className={cn(
-                      'flex items-center justify-between px-3 py-2 cursor-pointer text-sm',
-                      i === searchActiveIndex ? 'bg-primary/10 text-primary' : 'hover:bg-base-200/60'
-                    )}
-                    onMouseDown={(e) => {
-                      e.preventDefault()
-                      setSearch(item.producto_nombre)
-                      setSearchDropdownOpen(false)
-                      setSearchActiveIndex(-1)
-                    }}
-                  >
-                    <span className="font-medium truncate">{item.producto_nombre}</span>
-                    <span className="text-[10px] font-mono opacity-40 shrink-0 ml-2">{item.codigo_lote}</span>
-                  </div>
-                ))}
+                {groupedSearchItems.map(entry =>
+                  entry.type === 'header' ? (
+                    <div key={`h-${entry.letter}`} className="px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-base-content/30 bg-base-200/40 sticky top-0">
+                      {entry.letter}
+                    </div>
+                  ) : (
+                    <div
+                      key={stockKey(entry.item)}
+                      ref={(el) => { searchItemRefs.current[entry.idx] = el }}
+                      role="option"
+                      aria-selected={entry.idx === searchActiveIndex}
+                      className={cn(
+                        'flex items-center justify-between px-3 py-2 cursor-pointer text-sm',
+                        entry.idx === searchActiveIndex ? 'bg-primary/10 text-primary' : 'hover:bg-base-200/60'
+                      )}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        selectSearchItem(entry.item)
+                      }}
+                    >
+                      <span className="font-medium truncate">{entry.item.producto_nombre}</span>
+                      <span className="text-[10px] font-mono opacity-40 shrink-0 ml-2">{entry.item.codigo_lote}</span>
+                    </div>
+                  )
+                )}
               </div>
             )}
           </div>
@@ -369,7 +407,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
               ) : filteredStock.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-20 text-center opacity-40 italic text-sm">
-                    {stock.length === 0
+                    {stock.length === 0 && !search
                       ? 'No hay ítems vencidos en este momento'
                       : 'No se encontraron ítems con ese filtro'}
                   </td>
@@ -380,17 +418,18 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
                   const isExpired = days !== null && days < 0
                   const isExpiring = days !== null && days >= 0 && days <= 30
                   const isSano = days === null || days > 30
-                  const isSelected = !!items[s.lote_id]
-                  const item = items[s.lote_id]
+                  const itemKey = stockKey(s)
+                  const isSelected = !!items[itemKey]
+                  const item = items[itemKey]
 
-                  const rows: JSX.Element[] = [
+                  const rows: React.ReactElement[] = [
                     <tr
-                      key={s.lote_id}
+                      key={itemKey}
                       className={cn(
                         'hover:bg-base-200/30 cursor-pointer transition-colors',
                         isSelected && 'bg-primary/5 hover:bg-primary/10'
                       )}
-                      onClick={() => toggleItem(s.lote_id)}
+                      onClick={() => toggleItem(itemKey)}
                     >
                       <td>
                         <input
@@ -444,7 +483,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
                   if (isSelected && item) {
                     rows.push(
                       <tr
-                        key={`${s.lote_id}-edit`}
+                        key={`${itemKey}-edit`}
                         className="bg-primary/5"
                         onClick={(e) => e.stopPropagation()}
                       >
@@ -463,7 +502,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
                                 max={item.cantidad}
                                 step="any"
                                 onChange={(e) =>
-                                  updateItem(s.lote_id, 'cantidad_descartar', Number(e.target.value))
+                                  updateItem(itemKey, 'cantidad_descartar', Number(e.target.value))
                                 }
                               />
                             </div>
@@ -475,7 +514,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
                                 className="select select-bordered select-xs text-[11px]"
                                 value={item.motivo}
                                 onChange={(e) =>
-                                  updateItem(s.lote_id, 'motivo', e.target.value)
+                                  updateItem(itemKey, 'motivo', e.target.value)
                                 }
                               >
                                 <option value="vencido">Vencido</option>
@@ -486,7 +525,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
                             </div>
                             <button
                               className="ml-auto text-error opacity-50 hover:opacity-100"
-                              onClick={() => toggleItem(s.lote_id)}
+                              onClick={() => toggleItem(itemKey)}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -531,7 +570,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
               const isSano = days === null || days > 30
               return (
                 <div
-                  key={item.lote_id}
+                  key={stockKey(item)}
                   className="p-3 bg-base-200/40 rounded-xl border border-base-300 text-xs space-y-1"
                 >
                   <div className="flex justify-between items-start gap-1">
@@ -595,7 +634,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
               <ul className="space-y-1.5 max-h-36 overflow-y-auto">
                 {healthyItems.map((item) => (
                   <li
-                    key={item.lote_id}
+                    key={stockKey(item)}
                     className="flex items-center justify-between text-xs bg-base-200/50 rounded-xl px-3 py-2"
                   >
                     <span className="font-bold truncate">{item.producto_nombre}</span>

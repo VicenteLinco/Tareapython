@@ -2,7 +2,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { v4 as uuidv4 } from 'uuid'
-import { Search, Camera, Package, CheckCircle2 } from 'lucide-react'
+import { Search, Camera, Package, CheckCircle2, ShoppingCart, Zap, Trash2, Minus, Plus, X, AlertTriangle, XCircle } from 'lucide-react'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import type { ConsumoBatchRequest, StockItem, PaginatedResponse } from '@/types'
@@ -14,6 +14,7 @@ import { ProductoCard } from './components/producto-card'
 import { ConsumoDrawer } from './components/consumo-drawer'
 import type { CartItem } from './components/producto-card'
 import type { LoteDisponible } from './components/lote-selector'
+import { LoteSelector } from './components/lote-selector'
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut'
 import { KeyboardLegend } from '@/components/ui/keyboard-legend'
 import { cn, formatCantidad } from '@/lib/utils'
@@ -31,6 +32,272 @@ function pushRecentIds(userId: string, ids: string[]) {
   const prev = getRecentIds(userId).filter(id => !ids.includes(id))
   const next = [...ids, ...prev].slice(0, 8)
   localStorage.setItem(`consumos_recientes_${userId}`, JSON.stringify(next))
+}
+
+// ─── CartPanel: panel fijo de carrito para desktop (lg+) ─────────────────────
+
+interface CartPanelProps {
+  cart: Record<string, CartItem>
+  areaFiltro: number | null
+  onUpdateCantidad: (productoId: string, cantidad: number) => void
+  onUpdateLote: (productoId: string, loteId: string | null) => void
+  onRemove: (productoId: string) => void
+  onClear: () => void
+  onConfirm: () => void
+  isPending: boolean
+  notas: string
+  onNotasChange: (v: string) => void
+}
+
+function CartPanel({
+  cart, areaFiltro,
+  onUpdateCantidad, onUpdateLote, onRemove, onClear,
+  onConfirm, isPending, notas, onNotasChange,
+}: CartPanelProps) {
+  const items = Object.values(cart)
+  const count = items.length
+  const [showValidacion, setShowValidacion] = useState(false)
+
+  const hayCargando = items.some(i => i.cargando_lotes)
+  const itemsDesajustados = areaFiltro
+    ? items.filter(i => i.area_id !== 0 && i.area_id !== areaFiltro) : []
+  const hayDesajuste = itemsDesajustados.length > 0
+
+  function stockLoteSeleccionado(item: CartItem): number | null {
+    if (!item.lote_elegido_id) return null
+    return item.lotes.find(l => l.lote_id === item.lote_elegido_id)?.stock ?? null
+  }
+
+  const itemsConExceso = items.filter(i => {
+    const s = stockLoteSeleccionado(i)
+    return s !== null && i.cantidad_descontar > s
+  })
+  const confirmarBloqueado = hayCargando || hayDesajuste
+
+  const handleConfirmClick = () => {
+    if (itemsConExceso.length > 0) {
+      setShowValidacion(true)
+    } else {
+      onConfirm()
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-base-200 bg-base-100 flex flex-col max-h-[calc(100vh-120px)] overflow-hidden shadow-sm">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-base-200 flex-shrink-0">
+        <div className="flex items-center gap-2 font-bold text-sm">
+          <ShoppingCart className="h-4 w-4 text-primary" />
+          Consumo a registrar
+          {count > 0 && (
+            <span className="badge badge-primary badge-sm font-bold">{count}</span>
+          )}
+        </div>
+        {count > 0 && (
+          <button
+            className="btn btn-ghost btn-xs text-error gap-1"
+            onClick={onClear}
+          >
+            <X className="h-3 w-3" /> Vaciar
+          </button>
+        )}
+      </div>
+
+      {/* Items */}
+      <div className="flex-1 overflow-y-auto px-4 space-y-3 py-3 scrollbar-thin-hover">
+        {count === 0 ? (
+          <div className="flex flex-col items-center justify-center h-32 text-base-content/40 text-center">
+            <ShoppingCart className="h-8 w-8 mb-2 opacity-30" />
+            <p className="text-sm">El carrito está vacío</p>
+            <p className="text-xs mt-1">Buscá un insumo para agregar</p>
+          </div>
+        ) : (
+          <>
+            {hayDesajuste && (
+              <div className="flex items-start gap-2 bg-warning/10 border border-warning/30 rounded-xl px-3 py-2">
+                <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+                <p className="text-xs text-warning font-medium leading-snug">
+                  {itemsDesajustados.length} {itemsDesajustados.length === 1 ? 'item' : 'items'} de otra área.
+                  Cambia el filtro o elimínalos antes de confirmar.
+                </p>
+              </div>
+            )}
+
+            {items.map(item => {
+              const stockLote = stockLoteSeleccionado(item)
+              const excedeLote = stockLote !== null && item.cantidad_descontar > stockLote
+              const desajustado = areaFiltro !== null && item.area_id !== 0 && item.area_id !== areaFiltro
+
+              return (
+                <div
+                  key={item.producto_id}
+                  className={cn(
+                    'rounded-2xl p-3 space-y-2',
+                    desajustado ? 'bg-warning/5 border border-warning/30' : 'bg-base-200/40'
+                  )}
+                >
+                  {/* Fila 1: nombre + área + quitar */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm leading-tight line-clamp-2">{item.nombre}</p>
+                      {item.area_nombre && (
+                        <span className={cn(
+                          'inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full mt-1',
+                          desajustado ? 'bg-warning/15 text-warning' : 'bg-base-300/60 text-base-content/50'
+                        )}>
+                          {item.area_nombre}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      className="btn btn-ghost btn-xs btn-circle text-error flex-shrink-0 -mt-0.5"
+                      onClick={() => onRemove(item.producto_id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Fila 2: lote pill (izq) + stepper (der) */}
+                  <div className="flex items-center justify-between gap-2">
+                    <LoteSelector
+                      lotes={item.lotes}
+                      cargandoLotes={item.cargando_lotes}
+                      loteElegidoId={item.lote_elegido_id}
+                      unidad={item.unidad}
+                      unidad_plural={item.unidad_plural}
+                      onChange={id => onUpdateLote(item.producto_id, id)}
+                    />
+
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button
+                        className={cn(
+                          'w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium',
+                          'border border-base-300 hover:border-primary hover:bg-primary/8 hover:text-primary transition-all duration-150'
+                        )}
+                        onClick={() => onUpdateCantidad(item.producto_id, Math.max(1, item.cantidad_descontar - 1))}
+                      >
+                        <Minus className="h-3 w-3" />
+                      </button>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        step={1}
+                        className={cn(
+                          'input input-bordered input-xs h-7 w-14 rounded-lg px-1 text-center text-sm font-bold tabular-nums',
+                          '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
+                          excedeLote ? 'input-error text-error' : 'text-base-content'
+                        )}
+                        value={item.cantidad_descontar}
+                        onChange={e => {
+                          const next = Number(e.target.value)
+                          onUpdateCantidad(item.producto_id, Number.isFinite(next) ? Math.max(1, Math.trunc(next)) : 1)
+                        }}
+                        onFocus={e => e.currentTarget.select()}
+                        aria-label={`Cantidad de ${item.nombre}`}
+                      />
+                      <button
+                        className={cn(
+                          'w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium',
+                          'border border-base-300 hover:border-primary hover:bg-primary/8 hover:text-primary transition-all duration-150'
+                        )}
+                        onClick={() => onUpdateCantidad(item.producto_id, item.cantidad_descontar + 1)}
+                      >
+                        <Plus className="h-3 w-3" />
+                      </button>
+                      <span className="text-[11px] text-base-content/40 whitespace-nowrap">
+                        {item.unidad_plural && item.cantidad_descontar !== 1 ? item.unidad_plural : item.unidad}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Fila 3: feedback de stock */}
+                  {stockLote !== null && (
+                    excedeLote
+                      ? <p className="text-[11px] text-error font-medium">Excede stock del lote (máx {formatCantidad(stockLote, item.unidad, item.unidad_plural)})</p>
+                      : <p className="text-[11px] text-base-content/35">Disponible: {formatCantidad(stockLote, item.unidad, item.unidad_plural)}</p>
+                  )}
+                </div>
+              )
+            })}
+          </>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="px-4 pt-2 pb-4 border-t border-base-200 space-y-2 bg-base-100 flex-shrink-0">
+        <input
+          className="input input-bordered input-sm w-full rounded-xl text-sm"
+          placeholder="Nota (opcional)..."
+          value={notas}
+          onChange={e => onNotasChange(e.target.value)}
+        />
+        <button
+          className="btn btn-primary w-full rounded-xl gap-2"
+          disabled={count === 0 || isPending || confirmarBloqueado}
+          onClick={handleConfirmClick}
+        >
+          {isPending
+            ? <span className="loading loading-spinner loading-sm" />
+            : hayCargando
+              ? <><span className="loading loading-spinner loading-sm" /> Cargando lotes…</>
+              : <><Zap className="h-4 w-4" /> Confirmar consumo</>}
+        </button>
+      </div>
+
+      {/* Modal de validación */}
+      {showValidacion && (
+        <div className="modal modal-open z-50">
+          <div className="modal-box max-w-md">
+            <h3 className="font-bold text-base mb-1">Revisión antes de confirmar</h3>
+            <p className="text-sm text-base-content/60 mb-4">
+              {itemsConExceso.length} {itemsConExceso.length === 1 ? 'ítem excede' : 'ítems exceden'} el stock disponible.
+            </p>
+            <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
+              {items.map(item => {
+                const stock = stockLoteSeleccionado(item)
+                const excede = stock !== null && item.cantidad_descontar > stock
+                return (
+                  <div key={item.producto_id} className={cn(
+                    'flex items-center justify-between rounded-xl px-3 py-2 text-sm',
+                    excede ? 'bg-error/8 border border-error/20' : 'bg-success/8 border border-success/20',
+                  )}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {excede
+                        ? <XCircle className="size-4 text-error shrink-0" />
+                        : <CheckCircle2 className="size-4 text-success shrink-0" />}
+                      <span className="truncate font-medium">{item.nombre}</span>
+                    </div>
+                    <span className={cn('shrink-0 text-xs tabular-nums', excede ? 'text-error' : 'text-success')}>
+                      {formatCantidad(item.cantidad_descontar, item.unidad, item.unidad_plural)}
+                      {excede && stock !== null && (
+                        <span className="opacity-60"> / {formatCantidad(stock, item.unidad, item.unidad_plural)}</span>
+                      )}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="text-xs text-base-content/50 mb-4">
+              El backend usará FEFO automático. Si el stock total es insuficiente, el consumo fallará.
+            </p>
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowValidacion(false)}>
+                Corregir
+              </button>
+              <button
+                className="btn btn-error btn-sm"
+                onClick={() => { setShowValidacion(false); onConfirm() }}
+              >
+                Confirmar de todas formas
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => setShowValidacion(false)} />
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -289,179 +556,192 @@ export default function ConsumosPage() {
   const drawerCount = Object.keys(cart).length
   const showDropdown = dropdownOpen && dropdownItems.length > 0
 
+  // Props compartidas entre CartPanel y ConsumoDrawer
+  const cartProps = {
+    cart,
+    areaFiltro,
+    onUpdateCantidad: updateCantidad,
+    onUpdateLote: updateLote,
+    onRemove: removeItem,
+    onClear: clearCart,
+    onConfirm: handleConfirm,
+    isPending: batchMutation.isPending,
+    notas,
+    onNotasChange: setNotas,
+  }
+
   return (
-    <div
-      className="flex flex-col h-[calc(100vh-64px)] overflow-hidden transition-[margin] duration-300"
-      style={{ marginRight: drawerCount > 0 ? '320px' : 0 }}
-    >
+    <div className="flex flex-col lg:flex-row gap-6 items-start px-4 pt-3 pb-4 min-h-[calc(100vh-64px)]">
 
-      {/* ── Header: título + área ── */}
-      <div className="flex items-center justify-between px-4 pt-3 pb-2 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <h1 className="font-bold text-base">Registrar consumo</h1>
-          <KeyboardLegend shortcuts={[
-            { keys: ['/'], description: 'Enfocar búsqueda' },
-            { keys: ['↓'], description: 'Desplegar sugerencias' },
-            { keys: ['↑↓'], description: 'Navegar lista' },
-            { keys: ['Enter'], description: 'Agregar producto' },
-            { keys: ['Esc'], description: 'Cerrar / limpiar' },
-          ]} />
-        </div>
-        <select
-          className="select select-bordered select-sm rounded-xl text-sm max-w-[160px]"
-          value={areaFiltro ?? ''}
-          onChange={e => setAreaFiltro(e.target.value ? Number(e.target.value) : null)}
-        >
-          <option value="">Todas las áreas</option>
-          {areas.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-        </select>
-      </div>
+      {/* ── Columna izquierda — catálogo ── */}
+      <div className="w-full lg:flex-[3] min-w-0 flex flex-col">
 
-      {/* ── Barra de búsqueda + QR ── */}
-      <div className="px-4 pb-3 flex-shrink-0">
-        <div className="flex gap-2">
-          {/* Contenedor del autocomplete */}
-          <div ref={containerRef} className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-30 pointer-events-none z-10" />
-            <input
-              ref={inputRef}
-              className="input input-bordered w-full pl-9 h-11 rounded-xl text-sm"
-              placeholder="Buscar o escanear código…"
-              value={searchQuery}
-              onChange={handleInputChange}
-              onKeyDown={handleInputKeyDown}
-              onFocus={() => { if (dropdownItems.length > 0) setDropdownOpen(true) }}
-              autoComplete="off"
-              aria-autocomplete="list"
-              aria-expanded={showDropdown}
-              aria-activedescendant={activeIndex >= 0 ? `sugerencia-${activeIndex}` : undefined}
-            />
-
-            {/* Dropdown de sugerencias */}
-            {showDropdown && (
-              <div
-                className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 bg-base-100 border border-base-300 rounded-xl shadow-lg overflow-y-auto max-h-72"
-                role="listbox"
-              >
-                {searchQuery.length < 2 && recentIds.length > 0 && (
-                  <p className="text-[11px] text-base-content/40 px-3 pt-2 pb-1 font-medium">Usados recientemente</p>
-                )}
-                {isLoading && searchQuery.length >= 2 ? (
-                  <div className="py-4 text-center text-sm text-base-content/40">Buscando…</div>
-                ) : dropdownItems.map((item, i) => {
-                  const sinStock = (item.stock_total ?? 0) <= 0
-                  const enCarrito = !!cart[item.producto_id]
-                  return (
-                    <div
-                      key={item.producto_id}
-                      id={`sugerencia-${i}`}
-                      ref={el => { itemRefs.current[i] = el }}
-                      role="option"
-                      aria-selected={i === activeIndex}
-                      className={cn(
-                        'flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors',
-                        i === activeIndex && 'bg-base-200',
-                        i !== activeIndex && !sinStock && 'hover:bg-base-200/60',
-                        sinStock && 'opacity-40 cursor-not-allowed',
-                      )}
-                      onClick={() => !sinStock && addFromDropdown(item)}
-                      onMouseEnter={() => setActiveIndex(i)}
-                    >
-                      <ProductoImage
-                        src={item.imagen_url}
-                        size="sm"
-                        className="w-8 h-8 rounded-lg flex-shrink-0"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium leading-tight line-clamp-1">{item.producto_nombre}</p>
-                        {item.area_nombre && (
-                          <p className="text-[11px] text-base-content/40 leading-tight">{item.area_nombre}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {enCarrito && (
-                          <CheckCircle2 className="h-4 w-4 text-primary" />
-                        )}
-                        {sinStock ? (
-                          <span className="text-[10px] text-error font-semibold">Sin stock</span>
-                        ) : (
-                          <span className="text-[11px] text-base-content/50 font-medium tabular-nums">
-                            {formatCantidad(item.stock_total ?? 0, item.unidad, item.unidad_plural ?? undefined)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+        {/* Header: título + área */}
+        <div className="flex items-center justify-between pb-2 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <h1 className="font-bold text-base">Registrar consumo</h1>
+            <KeyboardLegend shortcuts={[
+              { keys: ['/'], description: 'Enfocar búsqueda' },
+              { keys: ['↓'], description: 'Desplegar sugerencias' },
+              { keys: ['↑↓'], description: 'Navegar lista' },
+              { keys: ['Enter'], description: 'Agregar producto' },
+              { keys: ['Esc'], description: 'Cerrar / limpiar' },
+            ]} />
           </div>
-
-          <button
-            className="btn btn-outline h-11 w-11 rounded-xl p-0 flex-shrink-0"
-            onClick={() => setIsScannerOpen(true)}
-            aria-label="Abrir escáner QR"
+          <select
+            className="select select-bordered select-sm rounded-xl text-sm max-w-[160px]"
+            value={areaFiltro ?? ''}
+            onChange={e => setAreaFiltro(e.target.value ? Number(e.target.value) : null)}
           >
-            <Camera className="h-5 w-5" />
-          </button>
+            <option value="">Todas las áreas</option>
+            {areas.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+          </select>
         </div>
-        {searchQuery.length === 1 && (
-          <p className="text-xs text-base-content/40 mt-1 px-1">Escribe al menos 2 letras para buscar</p>
-        )}
-      </div>
 
-      {/* ── Lista de recientes ── */}
-      <div
-        className="flex-1 overflow-y-auto px-4"
-        style={{ paddingBottom: drawerCount > 0 ? '80px' : '16px' }}
-      >
-        {isLoading && recentIds.length === 0 ? (
-          <PageLoading label="Cargando productos…" />
-        ) : emptyRecents ? (
-          <div className="py-20 text-center opacity-30">
-            <Package className="h-10 w-10 mx-auto mb-2" />
-            <p className="text-sm font-medium">Presiona ↓ o escribe para buscar</p>
-            <p className="text-xs mt-1">Los productos que uses aparecerán aquí</p>
-          </div>
-        ) : (
-          <>
-            <p className="text-xs text-base-content/40 mb-2 px-1">Usados recientemente</p>
-            <div className="flex flex-col gap-2">
-              {recentProducts.map(p => (
-                <ProductoCard
-                  key={p.producto_id}
-                  producto={p}
-                  isEnCarrito={!!cart[p.producto_id]}
-                  cantidadEnCarrito={cart[p.producto_id]?.cantidad_descontar ?? 0}
-                  onAdd={() => addToCart(p)}
-                  onIncrement={() => updateCantidad(p.producto_id, (cart[p.producto_id]?.cantidad_descontar ?? 0) + 1)}
-                  onDecrement={() => {
-                    const cur = cart[p.producto_id]?.cantidad_descontar ?? 0
-                    if (cur <= 1) removeItem(p.producto_id)
-                    else updateCantidad(p.producto_id, cur - 1)
-                  }}
-                />
-              ))}
+        {/* Barra de búsqueda + QR */}
+        <div className="pb-3 flex-shrink-0">
+          <div className="flex gap-2">
+            {/* Contenedor del autocomplete */}
+            <div ref={containerRef} className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-30 pointer-events-none z-10" />
+              <input
+                ref={inputRef}
+                className="input input-bordered w-full pl-9 h-11 rounded-xl text-sm"
+                placeholder="Buscar o escanear código…"
+                value={searchQuery}
+                onChange={handleInputChange}
+                onKeyDown={handleInputKeyDown}
+                onFocus={() => { if (dropdownItems.length > 0) setDropdownOpen(true) }}
+                autoComplete="off"
+                aria-autocomplete="list"
+                aria-expanded={showDropdown}
+                aria-activedescendant={activeIndex >= 0 ? `sugerencia-${activeIndex}` : undefined}
+              />
+
+              {/* Dropdown de sugerencias */}
+              {showDropdown && (
+                <div
+                  className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 bg-base-100 border border-base-300 rounded-xl shadow-lg overflow-y-auto max-h-72"
+                  role="listbox"
+                >
+                  {searchQuery.length < 2 && recentIds.length > 0 && (
+                    <p className="text-[11px] text-base-content/40 px-3 pt-2 pb-1 font-medium">Usados recientemente</p>
+                  )}
+                  {isLoading && searchQuery.length >= 2 ? (
+                    <div className="py-4 text-center text-sm text-base-content/40">Buscando…</div>
+                  ) : dropdownItems.map((item, i) => {
+                    const sinStock = (item.stock_total ?? 0) <= 0
+                    const enCarrito = !!cart[item.producto_id]
+                    return (
+                      <div
+                        key={item.producto_id}
+                        id={`sugerencia-${i}`}
+                        ref={el => { itemRefs.current[i] = el }}
+                        role="option"
+                        aria-selected={i === activeIndex}
+                        className={cn(
+                          'flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors',
+                          i === activeIndex && 'bg-base-200',
+                          i !== activeIndex && !sinStock && 'hover:bg-base-200/60',
+                          sinStock && 'opacity-40 cursor-not-allowed',
+                        )}
+                        onClick={() => !sinStock && addFromDropdown(item)}
+                        onMouseEnter={() => setActiveIndex(i)}
+                      >
+                        <ProductoImage
+                          src={item.imagen_url}
+                          size="sm"
+                          className="w-8 h-8 rounded-lg flex-shrink-0"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium leading-tight line-clamp-1">{item.producto_nombre}</p>
+                          {item.area_nombre && (
+                            <p className="text-[11px] text-base-content/40 leading-tight">{item.area_nombre}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {enCarrito && (
+                            <CheckCircle2 className="h-4 w-4 text-primary" />
+                          )}
+                          {sinStock ? (
+                            <span className="text-[10px] text-error font-semibold">Sin stock</span>
+                          ) : (
+                            <span className="text-[11px] text-base-content/50 font-medium tabular-nums">
+                              {formatCantidad(item.stock_total ?? 0, item.unidad, item.unidad_plural ?? undefined)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
-          </>
-        )}
+
+            <button
+              className="btn btn-outline h-11 w-11 rounded-xl p-0 flex-shrink-0"
+              onClick={() => setIsScannerOpen(true)}
+              aria-label="Abrir escáner QR"
+            >
+              <Camera className="h-5 w-5" />
+            </button>
+          </div>
+          {searchQuery.length === 1 && (
+            <p className="text-xs text-base-content/40 mt-1 px-1">Escribe al menos 2 letras para buscar</p>
+          )}
+        </div>
+
+        {/* Lista de recientes */}
+        <div
+          className="flex-1 overflow-y-auto"
+          style={{ paddingBottom: drawerCount > 0 ? '80px' : '16px' }}
+        >
+          {isLoading && recentIds.length === 0 ? (
+            <PageLoading label="Cargando productos…" />
+          ) : emptyRecents ? (
+            <div className="py-20 text-center opacity-30">
+              <Package className="h-10 w-10 mx-auto mb-2" />
+              <p className="text-sm font-medium">Presiona ↓ o escribe para buscar</p>
+              <p className="text-xs mt-1">Los productos que uses aparecerán aquí</p>
+            </div>
+          ) : (
+            <>
+              <p className="text-xs text-base-content/40 mb-2 px-1">Usados recientemente</p>
+              <div className="flex flex-col gap-2">
+                {recentProducts.map(p => (
+                  <ProductoCard
+                    key={p.producto_id}
+                    producto={p}
+                    isEnCarrito={!!cart[p.producto_id]}
+                    cantidadEnCarrito={cart[p.producto_id]?.cantidad_descontar ?? 0}
+                    onAdd={() => addToCart(p)}
+                    onIncrement={() => updateCantidad(p.producto_id, (cart[p.producto_id]?.cantidad_descontar ?? 0) + 1)}
+                    onDecrement={() => {
+                      const cur = cart[p.producto_id]?.cantidad_descontar ?? 0
+                      if (cur <= 1) removeItem(p.producto_id)
+                      else updateCantidad(p.producto_id, cur - 1)
+                    }}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
-      {/* ── Bottom Drawer ── */}
-      <ConsumoDrawer
-        cart={cart}
-        areaFiltro={areaFiltro}
-        isExpanded={isDrawerExpanded}
-        onToggle={() => setIsDrawerExpanded(e => !e)}
-        onUpdateCantidad={updateCantidad}
-        onUpdateLote={updateLote}
-        onRemove={removeItem}
-        onClear={clearCart}
-        onConfirm={handleConfirm}
-        isPending={batchMutation.isPending}
-        notas={notas}
-        onNotasChange={setNotas}
-      />
+      {/* ── Columna derecha — carrito (solo desktop lg+) ── */}
+      <div className="hidden lg:flex lg:flex-[2] lg:sticky lg:top-24 flex-col min-w-0">
+        <CartPanel {...cartProps} />
+      </div>
+
+      {/* ── Bottom Drawer (oculto en lg+) ── */}
+      <div className="lg:hidden">
+        <ConsumoDrawer
+          {...cartProps}
+          isExpanded={isDrawerExpanded}
+          onToggle={() => setIsDrawerExpanded(e => !e)}
+        />
+      </div>
 
       {/* ── Scanner QR overlay ── */}
       {isScannerOpen && (

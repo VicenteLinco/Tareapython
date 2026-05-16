@@ -48,8 +48,6 @@ interface NuevoDescarteTabProps {
 
 export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
   const [search, setSearch] = useState('')
-  const [selectedSearchStockKey, setSelectedSearchStockKey] = useState<string | null>(null)
-  const [selectedSearchQuery, setSelectedSearchQuery] = useState<string | null>(null)
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false)
   const [searchActiveIndex, setSearchActiveIndex] = useState(-1)
   const searchContainerRef = useRef<HTMLDivElement>(null)
@@ -67,11 +65,6 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
   const usuario = useAuthStore((s) => s.usuario)
   const searchTerm = search.trim()
   const canSearch = searchTerm.length >= MIN_SEARCH_CHARS
-  const querySearch = selectedSearchStockKey
-    ? selectedSearchQuery ?? searchTerm
-    : canSearch
-      ? searchTerm
-      : ''
 
   const { data: areas } = useQuery({
     queryKey: ['areas'],
@@ -92,20 +85,17 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
     diasAlerta: filterIncluirProximos ? 30 : 0,
     areaId: filterAreaId,
     proveedorId: filterProveedorId,
-    q: querySearch,
   })
 
   const filteredStock = useMemo(() => {
-    if (selectedSearchStockKey) return stock.filter((s) => stockKey(s) === selectedSearchStockKey)
-    if (!searchTerm) return stock
-    if (!canSearch) return []
+    if (!canSearch) return stock
     const q = normalizeSearch(searchTerm)
     return stock.filter(
       (s) =>
         normalizeSearch(s.producto_nombre).includes(q) ||
         normalizeSearch(s.codigo_lote).includes(q)
     )
-  }, [stock, searchTerm, canSearch, selectedSearchStockKey])
+  }, [stock, searchTerm, canSearch])
 
   const selectedItems = Object.values(items)
   const totalSelected = selectedItems.length
@@ -441,9 +431,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
               ) : filteredStock.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-20 text-center opacity-40 italic text-sm">
-                    {searchTerm && !canSearch
-                      ? `Escribe al menos ${MIN_SEARCH_CHARS} caracteres para buscar`
-                      : stock.length === 0 && !searchTerm
+                    {stock.length === 0
                       ? 'No hay ítems vencidos en este momento'
                       : 'No se encontraron ítems con ese filtro'}
                   </td>

@@ -224,7 +224,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
   }, [searchActiveIndex])
 
   const searchSuggestions = useMemo(() => {
-    if (!canSearch || selectedSearchStockKey) return []
+    if (!canSearch) return []
     const q = normalizeSearch(searchTerm)
     return [...filteredStock]
       .sort((a, b) => {
@@ -233,7 +233,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
         return a.producto_nombre.localeCompare(b.producto_nombre, 'es')
       })
       .slice(0, 12)
-  }, [canSearch, filteredStock, searchTerm, selectedSearchStockKey])
+  }, [canSearch, filteredStock, searchTerm])
   const showSearchDropdown = searchDropdownOpen && searchSuggestions.length > 0
 
   const groupedSearchItems = (() => {

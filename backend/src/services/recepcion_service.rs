@@ -1,14 +1,127 @@
 use rust_decimal::Decimal;
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use validator::Validate;
 
 use crate::dto::recepcion::{
     CreateRecepcion, DetalleRecepcionRow, LoteCreado, PaginatedRecepciones, RecepcionListItem,
-    RecepcionQuery,
+    RecepcionQuery, RecepcionReconciliacionRow,
 };
 use crate::errors::AppError;
 use crate::services::stock_ops;
+
+async fn reconciliar_solicitud_recepcion(
+    tx: &mut Transaction<'_, Postgres>,
+    recepcion_id: Uuid,
+    solicitud_id: Uuid,
+    proveedor_id: i32,
+    nota: Option<&str>,
+) -> Result<bool, AppError> {
+    #[derive(sqlx::FromRow)]
+    struct CantidadSolicitada {
+        producto_id: Uuid,
+        cantidad: Decimal,
+        unidad: Option<String>,
+    }
+
+    #[derive(sqlx::FromRow)]
+    struct CantidadRecibida {
+        producto_id: Uuid,
+        cantidad: Decimal,
+    }
+
+    let solicitados = sqlx::query_as::<_, CantidadSolicitada>(
+        r#"SELECT
+               d.producto_id,
+               SUM(d.cantidad_sugerida) AS cantidad,
+               MIN(d.unidad) AS unidad
+           FROM solicitud_compra_detalle d
+           JOIN productos p ON p.id = d.producto_id
+           WHERE d.solicitud_id = $1
+             AND p.proveedor_id = $2
+           GROUP BY d.producto_id"#,
+    )
+    .bind(solicitud_id)
+    .bind(proveedor_id)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    let recibidos = sqlx::query_as::<_, CantidadRecibida>(
+        r#"SELECT producto_id, SUM(cantidad_unidades_base) AS cantidad
+           FROM recepcion_detalle
+           WHERE recepcion_id = $1
+           GROUP BY producto_id"#,
+    )
+    .bind(recepcion_id)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    let solicitados_map: HashMap<Uuid, (Decimal, Option<String>)> = solicitados
+        .into_iter()
+        .map(|row| (row.producto_id, (row.cantidad, row.unidad)))
+        .collect();
+    let recibidos_map: HashMap<Uuid, Decimal> = recibidos
+        .into_iter()
+        .map(|row| (row.producto_id, row.cantidad))
+        .collect();
+
+    let mut producto_ids: HashSet<Uuid> = solicitados_map.keys().copied().collect();
+    producto_ids.extend(recibidos_map.keys().copied());
+
+    sqlx::query("DELETE FROM recepcion_reconciliacion WHERE recepcion_id = $1")
+        .bind(recepcion_id)
+        .execute(&mut **tx)
+        .await?;
+
+    let mut cubre_todo_lo_solicitado = !solicitados_map.is_empty();
+
+    for producto_id in producto_ids {
+        let (cantidad_solicitada, unidad) = solicitados_map
+            .get(&producto_id)
+            .cloned()
+            .unwrap_or((Decimal::ZERO, None));
+        let cantidad_recibida = recibidos_map
+            .get(&producto_id)
+            .copied()
+            .unwrap_or(Decimal::ZERO);
+        let diferencia = cantidad_recibida - cantidad_solicitada;
+
+        let estado = if cantidad_solicitada == Decimal::ZERO && cantidad_recibida > Decimal::ZERO {
+            "extra"
+        } else if cantidad_solicitada > Decimal::ZERO && cantidad_recibida == Decimal::ZERO {
+            cubre_todo_lo_solicitado = false;
+            "no_recibido"
+        } else if cantidad_recibida < cantidad_solicitada {
+            cubre_todo_lo_solicitado = false;
+            "faltante"
+        } else if cantidad_recibida > cantidad_solicitada {
+            "sobrante"
+        } else {
+            "ok"
+        };
+
+        sqlx::query(
+            r#"INSERT INTO recepcion_reconciliacion
+               (recepcion_id, solicitud_id, producto_id, estado,
+                cantidad_solicitada, cantidad_recibida, diferencia, unidad, nota)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
+        )
+        .bind(recepcion_id)
+        .bind(solicitud_id)
+        .bind(producto_id)
+        .bind(estado)
+        .bind(cantidad_solicitada)
+        .bind(cantidad_recibida)
+        .bind(diferencia)
+        .bind(unidad)
+        .bind(nota)
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    Ok(cubre_todo_lo_solicitado)
+}
 
 pub async fn listar(
     pool: &PgPool,
@@ -279,11 +392,41 @@ pub async fn crear_recepcion(
         }
     }
 
+    if let Some(solicitud_id) = req.solicitud_id {
+        let cubre_todo = reconciliar_solicitud_recepcion(
+            &mut tx,
+            recepcion_id,
+            solicitud_id,
+            req.proveedor_id,
+            req.nota.as_deref(),
+        )
+        .await?;
+
+        if estado == "completa" && cubre_todo {
+            sqlx::query(
+                "UPDATE solicitudes_compra
+                 SET estado = 'completada', fecha_cierre = COALESCE(fecha_cierre, NOW())
+                 WHERE id = $1 AND estado IN ('guardada', 'parcialmente_enviada', 'enviada', 'parcialmente_recibida')",
+            )
+            .bind(solicitud_id)
+            .execute(&mut *tx)
+            .await?;
+        } else if !cubre_todo {
+            sqlx::query(
+                "UPDATE solicitudes_compra
+                 SET estado = 'parcialmente_recibida'
+                 WHERE id = $1 AND estado IN ('guardada', 'parcialmente_enviada', 'enviada', 'parcialmente_recibida')",
+            )
+            .bind(solicitud_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
+
     tx.commit().await?;
     Ok((recepcion_id, lotes_creados))
 }
 
-#[allow(dead_code)]
 pub async fn confirmar_borrador(
     pool: &PgPool,
     id: Uuid,
@@ -292,17 +435,18 @@ pub async fn confirmar_borrador(
     let mut tx = pool.begin().await?;
 
     // Verificar que existe y es borrador
-    let res: Option<(String, Option<Uuid>)> =
-        sqlx::query_as("SELECT estado, solicitud_id FROM recepciones WHERE id = $1")
+    let res: Option<(String, Option<Uuid>, i32)> =
+        sqlx::query_as("SELECT estado, solicitud_id, proveedor_id FROM recepciones WHERE id = $1")
             .bind(id)
             .fetch_optional(&mut *tx)
             .await?;
 
-    let (estado, solicitud_id) = res.ok_or(AppError::NotFound("Recepción no encontrada".into()))?;
+    let (estado, solicitud_id, proveedor_id) =
+        res.ok_or(AppError::NotFound("Recepción no encontrada".into()))?;
 
     if estado != "borrador" {
         tx.rollback().await?;
-        return Err(AppError::BusinessLogic(
+        return Err(AppError::ConflictWithCode(
             "Solo se pueden confirmar recepciones en estado borrador".into(),
             "ESTADO_INVALIDO".into(),
         ));
@@ -359,10 +503,28 @@ pub async fn confirmar_borrador(
         .await?;
 
     if let Some(sid) = solicitud_id {
-        sqlx::query("UPDATE solicitudes_compra SET estado = 'completada' WHERE id = $1")
+        let cubre_todo =
+            reconciliar_solicitud_recepcion(&mut tx, id, sid, proveedor_id, nota.as_deref())
+                .await?;
+        if cubre_todo {
+            sqlx::query(
+                "UPDATE solicitudes_compra
+                 SET estado = 'completada', fecha_cierre = COALESCE(fecha_cierre, NOW())
+                 WHERE id = $1 AND estado IN ('guardada', 'parcialmente_enviada', 'enviada', 'parcialmente_recibida')",
+            )
             .bind(sid)
             .execute(&mut *tx)
             .await?;
+        } else {
+            sqlx::query(
+                "UPDATE solicitudes_compra
+                 SET estado = 'parcialmente_recibida'
+                 WHERE id = $1 AND estado IN ('guardada', 'parcialmente_enviada', 'enviada', 'parcialmente_recibida')",
+            )
+            .bind(sid)
+            .execute(&mut *tx)
+            .await?;
+        }
     }
 
     tx.commit().await?;
@@ -388,6 +550,59 @@ pub async fn obtener_detalles(
            LEFT JOIN presentaciones pr ON pr.id = rd.presentacion_id
            WHERE rd.recepcion_id = $1
            ORDER BY p.nombre"#,
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .map_err(Into::into)
+}
+
+pub async fn eliminar_borrador(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+    let estado: Option<String> =
+        sqlx::query_scalar("SELECT estado FROM recepciones WHERE id = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?;
+
+    let estado = estado.ok_or(AppError::NotFound("Recepción no encontrada".into()))?;
+
+    if estado != "borrador" {
+        return Err(AppError::ConflictWithCode(
+            "Solo se pueden eliminar recepciones en estado borrador".into(),
+            "ESTADO_INVALIDO".into(),
+        ));
+    }
+
+    sqlx::query("DELETE FROM recepciones WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+pub async fn obtener_reconciliacion(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Vec<RecepcionReconciliacionRow>, AppError> {
+    sqlx::query_as::<_, RecepcionReconciliacionRow>(
+        r#"SELECT
+            rr.id, rr.recepcion_id, rr.solicitud_id, rr.producto_id,
+            p.nombre as producto_nombre,
+            rr.estado, rr.cantidad_solicitada, rr.cantidad_recibida,
+            rr.diferencia, rr.unidad, rr.nota, rr.created_at
+           FROM recepcion_reconciliacion rr
+           JOIN productos p ON p.id = rr.producto_id
+           WHERE rr.recepcion_id = $1
+           ORDER BY
+             CASE rr.estado
+               WHEN 'no_recibido' THEN 1
+               WHEN 'faltante' THEN 2
+               WHEN 'sobrante' THEN 3
+               WHEN 'extra' THEN 4
+               ELSE 5
+             END,
+             p.nombre"#,
     )
     .bind(id)
     .fetch_all(pool)

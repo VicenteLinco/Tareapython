@@ -17,6 +17,9 @@ pub enum AppError {
     #[error("Conflicto con ID: {0}")]
     ConflictWithId(String, String, Uuid),
 
+    #[error("Conflicto: {0}")]
+    ConflictWithCode(String, String),
+
     #[error("Regla de negocio: {0}")]
     BusinessLogic(String, String),
 
@@ -62,7 +65,7 @@ impl IntoResponse for AppError {
         let (status, error_code, message, id) = match &self {
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone(), None),
             AppError::Validation(msg) => (
-                StatusCode::BAD_REQUEST,
+                StatusCode::UNPROCESSABLE_ENTITY,
                 "VALIDATION_ERROR",
                 msg.clone(),
                 None,
@@ -73,6 +76,12 @@ impl IntoResponse for AppError {
                 code.as_str(),
                 msg.clone(),
                 Some(*uuid),
+            ),
+            AppError::ConflictWithCode(msg, code) => (
+                StatusCode::CONFLICT,
+                code.as_str(),
+                msg.clone(),
+                None,
             ),
             AppError::BusinessLogic(msg, code) => (
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -113,18 +122,14 @@ impl IntoResponse for AppError {
             }
         };
 
-        let mut error_obj = json!({
+        let mut body = json!({
             "code": error_code,
             "message": message,
         });
 
         if let Some(uuid) = id {
-            error_obj["sesion_id"] = json!(uuid);
+            body["sesion_id"] = json!(uuid);
         }
-
-        let body = json!({
-            "error": error_obj
-        });
 
         (status, axum::Json(body)).into_response()
     }

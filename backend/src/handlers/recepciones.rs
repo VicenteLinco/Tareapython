@@ -1,6 +1,6 @@
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -49,10 +49,12 @@ async fn obtener(
     .ok_or(AppError::NotFound("Recepción no encontrada".into()))?;
 
     let detalles = recepcion_service::obtener_detalles(&state.pool, id).await?;
+    let reconciliacion = recepcion_service::obtener_reconciliacion(&state.pool, id).await?;
 
     Ok(Json(serde_json::json!({
         "recepcion": recepcion,
-        "detalle": detalles
+        "detalle": detalles,
+        "reconciliacion": reconciliacion
     })))
 }
 
@@ -64,23 +66,35 @@ async fn crear(
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
 
-    let idem_key = idempotency::extract_idempotency_key(&headers)?;
-    if let Some((_status, body)) =
-        idempotency::try_claim(&state.pool, &idem_key, "POST /recepciones", claims.sub).await?
-    {
-        return Ok((StatusCode::CREATED, Json(body)));
+    let estado = req.estado.clone().unwrap_or_else(|| "completa".to_string());
+    let idem_key = if estado == "borrador" && !headers.contains_key("X-Idempotency-Key") {
+        None
+    } else {
+        Some(idempotency::extract_idempotency_key(&headers)?)
+    };
+
+    if let Some(key) = &idem_key {
+        if let Some((_status, body)) =
+            idempotency::try_claim(&state.pool, key, "POST /recepciones", claims.sub).await?
+        {
+            return Ok((StatusCode::CREATED, Json(body)));
+        }
     }
 
     let (id, lotes) = match recepcion_service::crear_recepcion(&state.pool, req, claims.sub).await {
         Ok(result) => result,
         Err(e) => {
-            idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
+            if let Some(key) = &idem_key {
+                idempotency::cleanup_on_error(&state.pool, key).await?;
+            }
             return Err(e);
         }
     };
 
-    let response = serde_json::json!({ "id": id, "lotes": lotes });
-    idempotency::save_response(&state.pool, &idem_key, 201, &response).await?;
+    let response = serde_json::json!({ "id": id, "estado": estado, "lotes": lotes });
+    if let Some(key) = &idem_key {
+        idempotency::save_response(&state.pool, key, 201, &response).await?;
+    }
 
     Ok((StatusCode::CREATED, Json(response)))
 }
@@ -204,10 +218,31 @@ async fn get_scanner_items(
     })))
 }
 
+async fn confirmar(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
+    let id = recepcion_service::confirmar_borrador(&state.pool, id, claims.sub).await?;
+    Ok(Json(serde_json::json!({ "id": id })))
+}
+
+async fn eliminar_borrador_handler(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    crate::auth::middleware::require_role(&["admin"])(&claims)?;
+    recepcion_service::eliminar_borrador(&state.pool, id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
-        .route("/{id}", get(obtener))
+        .route("/{id}", get(obtener).delete(eliminar_borrador_handler))
+        .route("/{id}/confirmar", post(confirmar))
         .route("/{id}/foto", post(subir_foto))
         .route("/scanner-session", post(crear_scanner_session))
         .route("/scanner-session/{token}/scan", post(scan_codigo))

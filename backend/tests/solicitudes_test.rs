@@ -5,6 +5,15 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 async fn setup_producto(_pool: &PgPool, token: &str, app: &axum::Router) -> Uuid {
+    let (_, proveedor_json) = common::post_json(
+        app,
+        "/api/v1/proveedores",
+        token,
+        serde_json::json!({ "nombre": format!("Proveedor Test {}", Uuid::new_v4()) }),
+    )
+    .await;
+    let proveedor_id = proveedor_json["id"].as_i64().unwrap();
+
     let (_, prod_json) = common::post_json(
         app,
         "/api/v1/productos",
@@ -12,6 +21,7 @@ async fn setup_producto(_pool: &PgPool, token: &str, app: &axum::Router) -> Uuid
         serde_json::json!({
             "nombre": format!("Producto Test {}", Uuid::new_v4()),
             "unidad_base_id": 1,
+            "proveedor_id": proveedor_id,
             "stock_minimo": 100,
             "presentaciones": [
                 { "nombre": "Unitario", "nombre_plural": "Unitarios", "factor_conversion": 1 }
@@ -31,7 +41,7 @@ async fn flujo_completo_solicitud(pool: PgPool) {
 
     let prod_id = setup_producto(&pool, &admin_token, &app).await;
 
-    // 1. Tecnologo crea solicitud
+    // 1. Tecnologo crea solicitud como borrador
     let (status, res) = common::post_json(
         &app,
         "/api/v1/solicitudes-compra",
@@ -44,7 +54,7 @@ async fn flujo_completo_solicitud(pool: PgPool) {
     )
     .await;
 
-    assert_eq!(status, StatusCode::OK); // El handler retorna OK con status: "success"
+    assert_eq!(status, StatusCode::OK);
     let solicitud_id = res["id"].as_str().unwrap();
 
     // 2. Admin lista solicitudes
@@ -54,15 +64,15 @@ async fn flujo_completo_solicitud(pool: PgPool) {
     assert!(
         solicitudes
             .iter()
-            .any(|s| s["id"] == solicitud_id && s["estado"] == "pendiente")
+            .any(|s| s["id"] == solicitud_id && s["estado"] == "borrador")
     );
 
-    // 3. Admin aprueba
+    // 3. Guardar solicitud
     let (status, _) = common::post_json(
         &app,
-        &format!("/api/v1/solicitudes-compra/{}/revisar", solicitud_id),
+        &format!("/api/v1/solicitudes-compra/{}/guardar", solicitud_id),
         &admin_token,
-        serde_json::json!({ "estado": "aprobada", "nota_revision": "Aprobado" }),
+        serde_json::json!({}),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -75,11 +85,11 @@ async fn flujo_completo_solicitud(pool: PgPool) {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(res["estado"], "aprobada");
+    assert_eq!(res["estado"], "guardada");
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn no_admin_no_puede_revisar(pool: PgPool) {
+async fn tecnologo_puede_guardar_solicitud(pool: PgPool) {
     let admin_token = common::admin_access_token(&pool).await;
     let app = common::test_app(pool.clone());
     let tec_token = common::create_tecnologo_token(&pool, &[1]).await;
@@ -97,19 +107,19 @@ async fn no_admin_no_puede_revisar(pool: PgPool) {
     .await;
     let solicitud_id = res["id"].as_str().unwrap();
 
-    // Tecnologo intenta revisar -> 403 Forbidden
+    // Tecnologo puede guardar su borrador
     let (status, _) = common::post_json(
         &app,
-        &format!("/api/v1/solicitudes-compra/{}/revisar", solicitud_id),
+        &format!("/api/v1/solicitudes-compra/{}/guardar", solicitud_id),
         &tec_token,
-        serde_json::json!({ "estado": "aprobada" }),
+        serde_json::json!({}),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(status, StatusCode::OK);
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn no_se_puede_revisar_dos_veces(pool: PgPool) {
+async fn no_se_puede_guardar_dos_veces(pool: PgPool) {
     let admin_token = common::admin_access_token(&pool).await;
     let app = common::test_app(pool.clone());
     let prod_id = setup_producto(&pool, &admin_token, &app).await;
@@ -125,28 +135,28 @@ async fn no_se_puede_revisar_dos_veces(pool: PgPool) {
     .await;
     let solicitud_id = res["id"].as_str().unwrap();
 
-    // Aprobar primera vez
+    // Guardar primera vez
     common::post_json(
         &app,
-        &format!("/api/v1/solicitudes-compra/{}/revisar", solicitud_id),
+        &format!("/api/v1/solicitudes-compra/{}/guardar", solicitud_id),
         &admin_token,
-        serde_json::json!({"estado": "aprobada"}),
+        serde_json::json!({}),
     )
     .await;
 
-    // Intentar revisar de nuevo -> 422
+    // Intentar guardar de nuevo -> 422
     let (status, _) = common::post_json(
         &app,
-        &format!("/api/v1/solicitudes-compra/{}/revisar", solicitud_id),
+        &format!("/api/v1/solicitudes-compra/{}/guardar", solicitud_id),
         &admin_token,
-        serde_json::json!({"estado": "rechazada"}),
+        serde_json::json!({}),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn rechazo_con_nota(pool: PgPool) {
+async fn cancelacion_con_motivo(pool: PgPool) {
     let admin_token = common::admin_access_token(&pool).await;
     let app = common::test_app(pool.clone());
     let prod_id = setup_producto(&pool, &admin_token, &app).await;
@@ -164,9 +174,18 @@ async fn rechazo_con_nota(pool: PgPool) {
 
     let (status, _) = common::post_json(
         &app,
-        &format!("/api/v1/solicitudes-compra/{}/revisar", solicitud_id),
+        &format!("/api/v1/solicitudes-compra/{}/guardar", solicitud_id),
         &admin_token,
-        serde_json::json!({ "estado": "rechazada", "nota_revision": "Stock suficiente" }),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = common::post_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}/cancelar", solicitud_id),
+        &admin_token,
+        serde_json::json!({ "motivo": "Stock suficiente" }),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -177,8 +196,8 @@ async fn rechazo_con_nota(pool: PgPool) {
         &admin_token,
     )
     .await;
-    assert_eq!(res["estado"], "rechazada");
-    assert_eq!(res["nota_revision"], "Stock suficiente");
+    assert_eq!(res["estado"], "cancelada");
+    assert_eq!(res["motivo_cierre"], "Stock suficiente");
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -197,7 +216,6 @@ async fn solicitud_vacia_creada_correctamente(pool: PgPool) {
     .await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(res["status"], "success");
 
     let solicitud_id = res["id"].as_str().unwrap();
     let (_, res_get) = common::get_json(
@@ -206,6 +224,7 @@ async fn solicitud_vacia_creada_correctamente(pool: PgPool) {
         &admin_token,
     )
     .await;
+    assert_eq!(res_get["estado"], "borrador");
     assert_eq!(res_get["items"].as_array().unwrap().len(), 0);
 }
 

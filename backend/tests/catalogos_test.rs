@@ -68,13 +68,14 @@ async fn actualizar_categoria(pool: PgPool) {
     )
     .await;
     let id = json["id"].as_i64().unwrap();
+    let version = json["version"].as_i64().unwrap();
 
     // Actualizar
     let (status, json) = common::put_json(
         &app,
         &format!("/api/v1/categorias/{}", id),
         &token,
-        serde_json::json!({ "nombre": "Actualizada" }),
+        serde_json::json!({ "nombre": "Actualizada", "version": version }),
     )
     .await;
 

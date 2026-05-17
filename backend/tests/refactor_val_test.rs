@@ -44,17 +44,20 @@ async fn test_integridad_stock_y_servicios_refactorizados(pool: sqlx::PgPool) {
             .unwrap();
 
     let producto_id = Uuid::new_v4();
-    sqlx::query!(
+    sqlx::query(
         "INSERT INTO productos (id, codigo_interno, nombre, categoria_id, unidad_base_id, proveedor_id, stock_minimo) \
          VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        producto_id,
-        format!("TEST-{}", Uuid::new_v4().to_string()[..8].to_string()),
-        "Producto Test Refactor",
-        categoria_id,
-        unidad_id,
-        proveedor_id,
-        Decimal::from(10)
-    ).execute(&pool).await.unwrap();
+    )
+    .bind(producto_id)
+    .bind(format!("TEST-{}", Uuid::new_v4().to_string()[..8].to_string()))
+    .bind("Producto Test Refactor")
+    .bind(categoria_id)
+    .bind(unidad_id)
+    .bind(proveedor_id)
+    .bind(Decimal::from(10))
+    .execute(&pool)
+    .await
+    .unwrap();
 
     // 3. Realizar Recepción (Ingreso de Stock)
     let fecha = chrono::Utc::now();
@@ -99,11 +102,11 @@ async fn test_integridad_stock_y_servicios_refactorizados(pool: sqlx::PgPool) {
     );
 
     // 4. Realizar Descarte (Salida de Stock)
-    let lote_id = sqlx::query_scalar!(
+    let lote_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM lotes WHERE producto_id = $1 AND numero_lote = $2",
-        producto_id,
-        num_lote
     )
+    .bind(producto_id)
+    .bind(num_lote)
     .fetch_one(&pool)
     .await
     .unwrap();

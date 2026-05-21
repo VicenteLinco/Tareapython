@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import type { PaginatedSesiones, Area } from '@/types'
@@ -80,11 +80,11 @@ export function useConteoList() {
       queryClient.invalidateQueries({ queryKey: ['conteo'] })
       queryClient.invalidateQueries({ queryKey: ['conteo-pendientes'] })
       if (data.total_items === 0) {
-        toast.warning('Esta área no tiene insumos en stock. El conteo se creó vacío.')
+        notify.warning('Esta área no tiene insumos en stock. El conteo se creó vacío.')
       }
       navigate(`/conteo/${data.id}`)
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const handleCrear = (areaId: number) => {
@@ -116,10 +116,10 @@ export function useConteoList() {
       }
       queryClient.invalidateQueries({ queryKey: ['conteo'] })
       queryClient.invalidateQueries({ queryKey: ['conteo-pendientes'] })
-      toast.success(`${areaIds.length} sesiones de conteo creadas`)
-      if (vacias > 0) toast.warning(`${vacias} área${vacias > 1 ? 's' : ''} sin stock en sistema`)
+      notify.success(`${areaIds.length} sesiones de conteo creadas`)
+      if (vacias > 0) notify.warning(`${vacias} área${vacias > 1 ? 's' : ''} sin stock en sistema`)
     } catch (err) {
-      toast.error(parseApiError(err))
+      notify.error(parseApiError(err))
     } finally {
       setIsCreatingMultiple(false)
     }

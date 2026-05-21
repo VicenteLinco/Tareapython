@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import type {
@@ -228,11 +228,11 @@ export function useSolicitudState() {
     onSuccess: (res) => {
       if (!solicitudId) setSolicitudId(res.data.id)
       queryClient.invalidateQueries({ queryKey: ['solicitudes-historial'] })
-      toast.success('Borrador guardado')
+      notify.success('Borrador guardado')
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(msg ?? 'Error al guardar borrador')
+      notify.error(msg ?? 'Error al guardar borrador')
     },
   })
 
@@ -266,7 +266,7 @@ export function useSolicitudState() {
       return api.post(`/solicitudes-compra/${id}/guardar`)
     },
     onSuccess: () => {
-      toast.success('Solicitud guardada correctamente')
+      notify.success('Solicitud guardada correctamente')
       setItems([])
       setSolicitudId(null)
       setProveedoresFiltro([])
@@ -279,7 +279,7 @@ export function useSolicitudState() {
       const msg = (err as { response?: { data?: { error?: { message?: string }; message?: string } }; message?: string })?.response?.data?.error?.message
         ?? (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
         ?? (err as { message?: string })?.message
-      toast.error(msg ?? 'Error al guardar solicitud')
+      notify.error(msg ?? 'Error al guardar solicitud')
     },
   })
 
@@ -289,15 +289,15 @@ export function useSolicitudState() {
     onSuccess: (data, { solicitudId }) => {
       queryClient.setQueryData(['solicitud-detail', solicitudId], data)
       queryClient.invalidateQueries({ queryKey: ['solicitudes-historial'] })
-      toast.success(data.estado === 'enviada' ? 'Solicitud completamente enviada' : 'Envio registrado')
+      notify.success(data.estado === 'enviada' ? 'Solicitud completamente enviada' : 'Envio registrado')
     },
     onError: (err: unknown) => {
       const e = err as { response?: { status?: number; data?: { error?: { message?: string }; message?: string } } }
       if (e.response?.status === 409) {
         if (selectedSolicitudId) queryClient.invalidateQueries({ queryKey: ['solicitud-detail', selectedSolicitudId] })
-        toast.error('Version desactualizada, recarga la pagina')
+        notify.error('Version desactualizada, recarga la pagina')
       } else {
-        toast.error(e.response?.data?.error?.message ?? e.response?.data?.message ?? 'Error registrando envio')
+        notify.error(e.response?.data?.error?.message ?? e.response?.data?.message ?? 'Error registrando envio')
       }
     },
   })
@@ -308,7 +308,7 @@ export function useSolicitudState() {
     onSuccess: (data, { solicitudId }) => {
       queryClient.setQueryData(['solicitud-detail', solicitudId], data)
       queryClient.invalidateQueries({ queryKey: ['solicitudes-historial'] })
-      toast.success('Envio cancelado')
+      notify.success('Envio cancelado')
     },
   })
 
@@ -316,12 +316,12 @@ export function useSolicitudState() {
 
   const handleAddFromRec = async (r: ItemRecomendado) => {
     if (items.find(i => i.producto_id === r.producto_id)) {
-      toast.error('Producto ya está en la lista')
+      notify.error('Producto ya está en la lista')
       return
     }
     const proveedorId = r.proveedor_id ?? selectedProveedor?.id ?? null
     if (proveedorId == null) {
-      toast.error('Todos los items deben tener proveedor asignado')
+      notify.error('Todos los items deben tener proveedor asignado')
       return
     }
     const horizData = await fetchHorizonte(r.producto_id, proveedorId)
@@ -362,12 +362,12 @@ export function useSolicitudState() {
 
   const handleAddFromRecConCantidad = async (r: ItemRecomendado, cantidad: number) => {
     if (items.find(i => i.producto_id === r.producto_id)) {
-      toast.error('Producto ya está en la lista')
+      notify.error('Producto ya está en la lista')
       return
     }
     const proveedorId = r.proveedor_id ?? selectedProveedor?.id ?? null
     if (proveedorId == null) {
-      toast.error('Todos los items deben tener proveedor asignado')
+      notify.error('Todos los items deben tener proveedor asignado')
       return
     }
     const horizData = await fetchHorizonte(r.producto_id, proveedorId)
@@ -402,7 +402,7 @@ export function useSolicitudState() {
 
   const handleAddFromSearch = async (p: Producto) => {
     if (items.find(i => i.producto_id === p.id)) {
-      toast.error('Producto ya está en la lista')
+      notify.error('Producto ya está en la lista')
       return
     }
     const px = p as ProductoExt
@@ -459,11 +459,11 @@ export function useSolicitudState() {
     if (items.length === 0) return
     const label = dias >= 365 ? '1 año' : dias >= 180 ? '6 meses' : dias >= 90 ? '3 meses' : `${dias} días`
     if (conservados === items.length) {
-      toast.info('Todos los items tienen horizonte personalizado 📌')
+      notify.info('Todos los items tienen horizonte personalizado 📌')
     } else if (conservados > 0) {
-      toast.success(`Horizonte actualizado a ${label}. ${recalculados} recalculados, ${conservados} con horizonte personalizado 📌.`)
+      notify.success(`Horizonte actualizado a ${label}. ${recalculados} recalculados, ${conservados} con horizonte personalizado 📌.`)
     } else {
-      toast.success(`Horizonte actualizado a ${label}. ${recalculados} ${recalculados === 1 ? 'item recalculado' : 'items recalculados'}.`)
+      notify.success(`Horizonte actualizado a ${label}. ${recalculados} ${recalculados === 1 ? 'item recalculado' : 'items recalculados'}.`)
     }
   }
 
@@ -488,7 +488,7 @@ export function useSolicitudState() {
   const handleSaveBorrador = () => {
     if (items.length === 0) return
     if (items.some(i => i.proveedor_id == null)) {
-      toast.error('Todos los items deben tener proveedor asignado')
+      notify.error('Todos los items deben tener proveedor asignado')
       return
     }
     setIsSaving(true)
@@ -524,7 +524,7 @@ export function useSolicitudState() {
   const handleLimpiarFiltros = () => setProveedoresFiltro([])
   const handleQuitarProveedorCarrito = (proveedorId: number) => {
     setItems(prev => prev.filter(i => i.proveedor_id !== proveedorId))
-    toast.success('Items del proveedor removidos del pedido')
+    notify.success('Items del proveedor removidos del pedido')
   }
 
   // ── Detail query ─────────────────────────────────────────────────────────────

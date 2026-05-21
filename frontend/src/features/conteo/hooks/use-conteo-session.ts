@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 import type { ConteoDetalle, ConteoItem } from '@/types'
 import { v4 as uuidv4 } from 'uuid'
@@ -78,15 +78,15 @@ export function useConteoSession(id: string | undefined) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conteo-detalle', id] })
       setLocalItems({})
-      toast.success('Cambios guardados')
+      notify.success('Cambios guardados')
     },
     onError: (err: ApiError) => {
       if (err?.response?.data?.code === 'VERSION_CONFLICT') {
-        toast.error('Conflicto de versión. Recargando datos...')
+        notify.error('Conflicto de versión. Recargando datos...')
         queryClient.invalidateQueries({ queryKey: ['conteo-detalle', id] })
         setLocalItems({})
       } else {
-        toast.error('Error al guardar')
+        notify.error('Error al guardar')
       }
     },
   })
@@ -100,10 +100,10 @@ export function useConteoSession(id: string | undefined) {
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['conteo'] })
       queryClient.invalidateQueries({ queryKey: ['conteo-pendientes'] })
-      toast.success(`Conteo confirmado: ${res.ajustes_generados} ajustes generados`)
+      notify.success(`Conteo confirmado: ${res.ajustes_generados} ajustes generados`)
       navigate('/conteo')
     },
-    onError: () => toast.error('Error al confirmar el conteo'),
+    onError: () => notify.error('Error al confirmar el conteo'),
   })
 
   const actions = useMemo(() => ({

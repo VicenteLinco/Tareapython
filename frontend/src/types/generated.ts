@@ -2,7 +2,7 @@
 // Ejecutar `cargo run --bin export_types` para regenerar.
 // NO editar manualmente.
 
-export type EstadoSolicitud = "borrador" | "pendiente_aprobacion" | "aprobada" | "rechazada" | "parcialmente_enviada" | "enviada" | "cerrada" | "cancelada"
+export type EstadoSolicitud = "borrador" | "guardada" | "pendiente_aprobacion" | "aprobada" | "rechazada" | "parcialmente_enviada" | "parcialmente_recibida" | "enviada" | "completada" | "cerrada" | "cancelada"
 export type EstadoRecepcion = "borrador" | "confirmada" | "cancelada"
 export type EstadoOrdenCompra = "borrador" | "enviada" | "recibida_parcial" | "recibida_total" | "cancelada"
 export type Area = { id: number; nombre: string; es_bodega: boolean; activa: boolean; created_at: string; conteo_frecuencia_dias: number; version: number; total_items_stock: number | null }

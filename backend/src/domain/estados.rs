@@ -5,11 +5,14 @@ use specta::Type;
 #[serde(rename_all = "snake_case")]
 pub enum EstadoSolicitud {
     Borrador,
+    Guardada,
     PendienteAprobacion,
     Aprobada,
     Rechazada,
     ParcialmenteEnviada,
+    ParcialmenteRecibida,
     Enviada,
+    Completada,
     Cerrada,
     Cancelada,
 }

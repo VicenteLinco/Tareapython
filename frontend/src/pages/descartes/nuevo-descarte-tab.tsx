@@ -9,7 +9,7 @@ import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import type { Area, Proveedor, DescarteVencidoItem, DescarteSession } from '@/types'
 import type { DescarteRequest } from '@/types/generated'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import { cn, formatCantidad, daysUntil, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -156,7 +156,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
       setItems({})
       onDescarteCreado()
     },
-    onError: (err: unknown) => toast.error(parseApiError(err)),
+    onError: (err: unknown) => notify.error(parseApiError(err)),
   })
 
   const toggleItem = (stockItemKey: string) => {
@@ -195,7 +195,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
 
     const invalidItem = snapshot.find((i) => i.cantidad_descartar <= 0)
     if (invalidItem) {
-      toast.error(`La cantidad de "${invalidItem.producto_nombre}" debe ser mayor a 0`)
+      notify.error(`La cantidad de "${invalidItem.producto_nombre}" debe ser mayor a 0`)
       return
     }
 

@@ -1,7 +1,7 @@
 // frontend/src/hooks/use-inactivity-timeout.ts
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { INACTIVITY_TIMEOUT_MS, INACTIVITY_WARNING_MS } from '@/lib/auth-config'
 
@@ -34,7 +34,7 @@ export function useInactivityTimeout() {
     dialogOpenRef.current = false
     setDialogOpen(false)
     logoutFn()
-    toast.info('Sesión cerrada por inactividad')
+    notify.info('Sesión cerrada por inactividad')
     navigate('/login', { replace: true })
   }
 

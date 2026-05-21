@@ -10,7 +10,7 @@ import api from '@/lib/api'
 import type { ConteoItem, Presentacion } from '@/types'
 import { cn, formatDate, formatCantidad, formatStockHumano } from '@/lib/utils'
 import { exportarConteoGlobalDiaPDF, exportarConteoSesionPDF } from '@/lib/conteo-pdf'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 
 interface Configuracion {
   nombre_laboratorio: string
@@ -111,7 +111,7 @@ export default function ConteoDetallePage() {
         usuarioNombre: usuario?.nombre || 'Usuario',
       })
     } catch {
-      toast.error('No se pudo generar el PDF del conteo')
+      notify.error('No se pudo generar el PDF del conteo')
     } finally {
       setPdfLoading(null)
     }
@@ -129,7 +129,7 @@ export default function ConteoDetallePage() {
         usuarioNombre: usuario?.nombre || 'Usuario',
       })
     } catch {
-      toast.error('No se pudo generar el PDF global del dia')
+      notify.error('No se pudo generar el PDF global del dia')
     } finally {
       setPdfLoading(null)
     }

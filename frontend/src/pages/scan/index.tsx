@@ -2,7 +2,7 @@ import { useParams } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import api from '@/lib/api'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 
 interface Html5ScannerInstance {
   render: (onSuccess: (decodedText: string) => void, onError: () => void) => void
@@ -25,10 +25,10 @@ export default function ScanPage() {
         try {
           await api.post(`/recepciones/scanner-session/${token}/scan`, { codigo: code })
           setScanned([...scannedRef.current])
-          toast.success(`Escaneado: ${code}`)
+          notify.success(`Escaneado: ${code}`)
         } catch {
           scannedRef.current = scannedRef.current.filter(c => c !== code)
-          toast.error('Error al enviar escaneo')
+          notify.error('Error al enviar escaneo')
         }
       },
       () => undefined

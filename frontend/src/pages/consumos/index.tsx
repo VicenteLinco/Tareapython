@@ -6,7 +6,7 @@ import { Search, Camera, Package, CheckCircle2, ShoppingCart, Zap, Trash2, Minus
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import type { ConsumoBatchRequest, StockItem, PaginatedResponse } from '@/types'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { QrScanner } from '@/components/shared/qr-scanner'
 import { PageLoading } from '@/components/ui/page-state'
@@ -381,7 +381,7 @@ export default function ConsumosPage() {
   // ── Agregar al carrito ─────────────────────────────────────────────────────
 
   const addToCart = useCallback((p: StockItem) => {
-    if ((p.stock_total ?? 0) <= 0) { toast.error('Sin stock disponible'); return }
+    if ((p.stock_total ?? 0) <= 0) { notify.error('Sin stock disponible'); return }
     const key = p.producto_id
     setCart(prev => {
       if (prev[key]) return { ...prev, [key]: { ...prev[key], cantidad_descontar: prev[key].cantidad_descontar + 1 } }
@@ -489,10 +489,10 @@ export default function ConsumosPage() {
         params: { q: code, ...(areaFiltro && { area_id: areaFiltro }) }
       })
       const items = res.data.data
-      if (items.length === 0) { toast.error('Producto no encontrado'); return }
+      if (items.length === 0) { notify.error('Producto no encontrado'); return }
       addToCart(items[0])
       setIsScannerOpen(false)
-    } catch { toast.error('Error al escanear') }
+    } catch { notify.error('Error al escanear') }
   }, [areaFiltro, addToCart])
 
   // ── Mutation batch ─────────────────────────────────────────────────────────
@@ -508,9 +508,9 @@ export default function ConsumosPage() {
       setCart({})
       setNotas('')
       setIsDrawerExpanded(false)
-      toast.success('Consumo registrado')
+      notify.success('Consumo registrado')
     },
-    onError: (err: unknown) => toast.error(parseApiError(err)),
+    onError: (err: unknown) => notify.error(parseApiError(err)),
   })
 
   const handleConfirm = () => {

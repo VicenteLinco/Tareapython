@@ -4,7 +4,7 @@ import {
   Upload, Download, CheckCircle2, AlertTriangle, XCircle,
   Package, Layers, BarChart3, Boxes, RefreshCw, Lock, FileUp
 } from 'lucide-react'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import { SmartImporter } from './smart-importer'
@@ -218,16 +218,16 @@ export default function SetupPage() {
       setPaso('resultado-stock')
       qc.invalidateQueries({ queryKey: ['setup', 'estado'] })
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const finalizarMut = useMutation({
     mutationFn: () => api.post('/setup/finalizar'),
     onSuccess: () => {
-      toast.success('¡Carga inicial completada! El sistema está listo.')
+      notify.success('¡Carga inicial completada! El sistema está listo.')
       qc.invalidateQueries({ queryKey: ['setup', 'estado'] })
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   // ── Pantalla de carga ──

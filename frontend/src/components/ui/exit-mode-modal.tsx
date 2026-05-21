@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Lock, X } from 'lucide-react'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 import { clearDeviceMode } from '@/lib/device-mode'
 
@@ -27,7 +27,7 @@ export function ExitModeModal({ onConfirm, onCancel }: ExitModeModalProps) {
         setPin('')
       }
     } catch {
-      toast.error('Error al verificar PIN')
+      notify.error('Error al verificar PIN')
     } finally {
       setLoading(false)
     }

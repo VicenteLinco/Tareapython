@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Upload, Save, X, Building2 } from 'lucide-react'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 import { PageLoading } from '@/components/ui/page-state'
 
@@ -68,16 +68,16 @@ export default function ConfiguracionPage() {
       api.put<Configuracion>('/configuracion', payload).then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['configuracion'] })
-      toast.success('Configuración guardada')
+      notify.success('Configuración guardada')
     },
-    onError: () => toast.error('Error al guardar configuración'),
+    onError: () => notify.error('Error al guardar configuración'),
   })
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     if (file.size > 512 * 1024) {
-      toast.error('El logo no puede superar 512 KB')
+      notify.error('El logo no puede superar 512 KB')
       return
     }
     const reader = new FileReader()
@@ -98,7 +98,7 @@ export default function ConfiguracionPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!nombre.trim()) {
-      toast.error('El nombre del laboratorio es requerido')
+      notify.error('El nombre del laboratorio es requerido')
       return
     }
     mutation.mutate({

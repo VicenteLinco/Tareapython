@@ -27,7 +27,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { StockDetail } from './stock-detail'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { exportarStockPDF } from '@/lib/stock-pdf'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import { useFilterStorage } from '@/hooks/use-filter-storage'
 import { FilterBar } from '@/components/ui/filter-bar'
 
@@ -522,7 +522,7 @@ export default function StockPage() {
               setShowPdfModal(false)
             } catch (e) {
               console.error('[PDF Export] Error:', e)
-              toast.error('Error al generar el PDF')
+              notify.error('Error al generar el PDF')
             }
           }}
         />

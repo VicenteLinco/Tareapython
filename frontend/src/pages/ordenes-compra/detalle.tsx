@@ -1,7 +1,7 @@
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Send, XCircle, PackageCheck } from 'lucide-react'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 import type { OrdenCompraDetalle } from '@/types'
 import { formatDate, cn } from '@/lib/utils'
@@ -33,19 +33,19 @@ export default function OrdenCompraDetallePage() {
   const enviarMutation = useMutation({
     mutationFn: () => api.post(`/ordenes-compra/${id}/enviar`),
     onSuccess: () => {
-      toast.success('Orden marcada como enviada')
+      notify.success('Orden marcada como enviada')
       queryClient.invalidateQueries({ queryKey: ['ordenes-compra'] })
     },
-    onError: () => toast.error('Error al marcar como enviada'),
+    onError: () => notify.error('Error al marcar como enviada'),
   })
 
   const cancelarMutation = useMutation({
     mutationFn: () => api.post(`/ordenes-compra/${id}/cancelar`),
     onSuccess: () => {
-      toast.success('Orden cancelada')
+      notify.success('Orden cancelada')
       queryClient.invalidateQueries({ queryKey: ['ordenes-compra'] })
     },
-    onError: () => toast.error('Error al cancelar la orden'),
+    onError: () => notify.error('Error al cancelar la orden'),
   })
 
   if (isLoading) {

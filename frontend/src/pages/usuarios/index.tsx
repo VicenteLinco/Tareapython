@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, UserX, UserCheck, KeyRound, X, Search } from 'lucide-react'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -93,10 +93,10 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
     mutationFn: (data: CreateUsuario) => api.post('/usuarios', data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['usuarios'] })
-      toast.success('Usuario creado')
+      notify.success('Usuario creado')
       onClose()
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const updateMut = useMutation({
@@ -104,15 +104,15 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
       api.put(`/usuarios/${usuario!.id}`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['usuarios'] })
-      toast.success('Usuario actualizado')
+      notify.success('Usuario actualizado')
       onClose()
     },
     onError: (err: unknown) => {
       const apiErr = err as { response?: { status?: number } }
       if (apiErr.response?.status === 409) {
-        toast.error('Conflicto: El usuario fue modificado por otro administrador. Recarga la lista.')
+        notify.error('Conflicto: El usuario fue modificado por otro administrador. Recarga la lista.')
       } else {
-        toast.error(parseApiError(err))
+        notify.error(parseApiError(err))
       }
     },
   })
@@ -145,7 +145,7 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
         version: form.version,
       })
     } else {
-      if (!form.password) { toast.error('La contraseña es obligatoria'); return }
+      if (!form.password) { notify.error('La contraseña es obligatoria'); return }
       createMut.mutate(form)
     }
   }
@@ -274,16 +274,16 @@ function ModalPassword({ userId, onClose }: { userId: string | null; onClose: ()
   const mut = useMutation({
     mutationFn: () => api.post(`/usuarios/${userId}/reset-password`, { password_nueva: password }),
     onSuccess: () => {
-      toast.success('Contraseña actualizada')
+      notify.success('Contraseña actualizada')
       onClose()
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (password !== confirmar) { toast.error('Las contraseñas no coinciden'); return }
-    if (password.length < 8) { toast.error('Mínimo 8 caracteres'); return }
+    if (password !== confirmar) { notify.error('Las contraseñas no coinciden'); return }
+    if (password.length < 8) { notify.error('Mínimo 8 caracteres'); return }
     mut.mutate()
   }
 
@@ -372,10 +372,10 @@ export default function UsuariosPage() {
           }),
     onSuccess: (_, u) => {
       qc.invalidateQueries({ queryKey: ['usuarios'] })
-      toast.success(u.activo ? 'Usuario desactivado' : 'Usuario reactivado')
+      notify.success(u.activo ? 'Usuario desactivado' : 'Usuario reactivado')
       setToggleTarget(null)
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const filtrados = usuarios.filter((u) =>

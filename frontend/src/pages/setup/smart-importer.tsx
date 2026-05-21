@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { 
-  FileUp, ArrowRight, CheckCircle2, 
-  AlertCircle, Table as TableIcon, 
+import {
+  FileUp, ArrowRight, CheckCircle2,
+  AlertCircle, Table as TableIcon,
   ChevronLeft, X,
   Database, Info
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 
 interface SmartImporterProps {
@@ -47,9 +47,9 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
     if (!selectedFile) return
-    
+
     if (!selectedFile.name.endsWith('.csv')) {
-      toast.error('Por favor, sube un archivo CSV válido')
+      notify.error('Por favor, sube un archivo CSV válido')
       return
     }
 
@@ -78,7 +78,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
 
   const validateMapping = async () => {
     if (!mapping.nombre || !mapping.unidad) {
-      toast.error('Debes mapear al menos el Nombre y la Unidad')
+      notify.error('Debes mapear al menos el Nombre y la Unidad')
       return
     }
 
@@ -96,7 +96,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
       setErrors(res.data.errores || [])
       setStep('PREVIEW')
     } catch {
-      toast.error('Error al validar el archivo')
+      notify.error('Error al validar el archivo')
     } finally {
       setIsValidating(false)
     }
@@ -114,14 +114,14 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
     try {
       const res = await api.post('/setup/importar-productos', formData)
       if (res.data.valido) {
-        toast.success('Importación completada con éxito')
+        notify.success('Importación completada con éxito')
         onComplete()
       } else {
-        toast.error('Hubo errores durante la importación real')
+        notify.error('Hubo errores durante la importación real')
         setErrors(res.data.errores)
       }
     } catch {
-      toast.error('Error crítico en el servidor')
+      notify.error('Error crítico en el servidor')
     } finally {
       setIsImporting(false)
     }

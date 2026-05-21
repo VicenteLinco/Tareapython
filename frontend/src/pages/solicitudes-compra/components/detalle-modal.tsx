@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FileDown, Send, PackageCheck, XCircle, ShoppingBag } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import { formatDate, cn, formatCantidad } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -95,40 +95,40 @@ export function DetalleModal({
     mutationFn: (data: CreateOrdenCompraRequest) => api.post('/ordenes-compra', data),
     onSuccess: (response) => {
       const { numero_documento } = response.data
-      toast.success(`OC ${numero_documento} creada`)
+      notify.success(`OC ${numero_documento} creada`)
       queryClient.invalidateQueries({ queryKey: ['ordenes-compra'] })
       invalidate()
       setOcModal(false)
       setOcFechaEntrega('')
       setOcNota('')
     },
-    onError: () => toast.error('Error al crear la Orden de Compra'),
+    onError: () => notify.error('Error al crear la Orden de Compra'),
   })
 
   const enviarMut = useMutation({
     mutationFn: () =>
       api.post(`/solicitudes-compra/${solicitudId}/enviar`, { metodo_envio: metodoEnvio || null }),
     onSuccess: () => {
-      toast.success('Solicitud marcada como enviada')
+      notify.success('Solicitud marcada como enviada')
       invalidate()
       setConfirmEnviar(false)
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(msg ?? 'Error al marcar enviada')
+      notify.error(msg ?? 'Error al marcar enviada')
     },
   })
 
   const completarMut = useMutation({
     mutationFn: () => api.post(`/solicitudes-compra/${solicitudId}/completar`, {}),
     onSuccess: () => {
-      toast.success('Solicitud marcada como completada')
+      notify.success('Solicitud marcada como completada')
       invalidate()
       setConfirmCompletar(false)
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(msg ?? 'Error al completar solicitud')
+      notify.error(msg ?? 'Error al completar solicitud')
     },
   })
 
@@ -136,14 +136,14 @@ export function DetalleModal({
     mutationFn: () =>
       api.post(`/solicitudes-compra/${solicitudId}/cancelar`, { motivo: cancelMotivo.trim() }),
     onSuccess: () => {
-      toast.success('Solicitud cancelada')
+      notify.success('Solicitud cancelada')
       invalidate()
       setCancelOpen(false)
       setCancelMotivo('')
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(msg ?? 'Error al cancelar solicitud')
+      notify.error(msg ?? 'Error al cancelar solicitud')
     },
   })
 
@@ -159,7 +159,7 @@ export function DetalleModal({
       })
     },
     onSuccess: () => {
-      toast.success('Envio registrado')
+      notify.success('Envio registrado')
       invalidate()
       setEnvioDialogo(null)
       setNotaEnvio('')
@@ -167,10 +167,10 @@ export function DetalleModal({
     onError: (err: unknown) => {
       const e = err as { response?: { status?: number; data?: { error?: { message?: string }; message?: string } } }
       if (e.response?.status === 409) {
-        toast.error('Version desactualizada, recarga la pagina')
+        notify.error('Version desactualizada, recarga la pagina')
         invalidate()
       } else {
-        toast.error(e.response?.data?.error?.message ?? e.response?.data?.message ?? 'Error registrando envio')
+        notify.error(e.response?.data?.error?.message ?? e.response?.data?.message ?? 'Error registrando envio')
       }
     },
   })
@@ -181,13 +181,13 @@ export function DetalleModal({
         data: { version: envio.version },
       }),
     onSuccess: () => {
-      toast.success('Envio cancelado')
+      notify.success('Envio cancelado')
       invalidate()
     },
     onError: (err: unknown) => {
       const e = err as { response?: { status?: number; data?: { error?: { message?: string }; message?: string } } }
-      if (e.response?.status === 409) toast.error('Version desactualizada, recarga la pagina')
-      else toast.error(e.response?.data?.error?.message ?? e.response?.data?.message ?? 'Error cancelando envio')
+      if (e.response?.status === 409) notify.error('Version desactualizada, recarga la pagina')
+      else notify.error(e.response?.data?.error?.message ?? e.response?.data?.message ?? 'Error cancelando envio')
       invalidate()
     },
   })
@@ -671,7 +671,7 @@ export function DetalleModal({
                 if (!detail || !solicitudId) return
                 const proveedorId = detail.proveedores_resumen?.[0]?.proveedor_id
                 if (!proveedorId) {
-                  toast.error('No se encontró proveedor en la solicitud')
+                  notify.error('No se encontró proveedor en la solicitud')
                   return
                 }
                 const payload: CreateOrdenCompraRequest = {

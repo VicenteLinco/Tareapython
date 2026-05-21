@@ -15,6 +15,7 @@ import {
   Trash2,
   History,
   ShoppingCart,
+  ShoppingBag,
   Settings,
   SlidersHorizontal,
   Users,
@@ -56,6 +57,7 @@ const navGroups = [
     items: [
       { to: '/recepciones', icon: ArrowDownToLine, label: 'Recepciones' },
       { to: '/solicitudes-compra', icon: ShoppingCart, label: 'Solicitudes' },
+      { to: '/ordenes-compra', icon: ShoppingBag, label: 'Órdenes de Compra' },
     ],
   },
 ]
@@ -91,7 +93,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
     <TooltipProvider delayDuration={0}>
     <aside
       className={cn(
-        'fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-base-200 bg-base-100 transition-all duration-300 ease-out',
+        'fixed left-0 top-0 z-40 flex h-screen flex-col overflow-hidden border-r border-base-200 bg-base-100 transition-all duration-300 ease-out',
         expanded ? 'w-56' : 'w-[60px]'
       )}
       onMouseEnter={() => onExpandedChange(true)}
@@ -114,15 +116,14 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
 
       {/* Navigation */}
       <nav className={cn(
-        "flex-1 py-2 px-2 transition-all duration-300",
-        expanded ? "overflow-y-auto scrollbar-thin-hover" : "overflow-y-hidden"
+        "flex-1 min-h-0 px-2 py-[clamp(0.25rem,1vh,0.5rem)] overflow-hidden transition-all duration-300"
       )}>
         {navGroups.map((group, i) => (
           <div key={i}>
-            {i > 0 && <div className="my-3 mx-2 h-px bg-base-200" />}
+            {i > 0 && <div className="mx-2 my-[clamp(0.375rem,1.4vh,0.75rem)] h-px bg-base-200" />}
             {group.label && (
               <p className={cn(
-                'px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest opacity-40 transition-all duration-300',
+                'px-3 mb-[clamp(0.125rem,0.5vh,0.25rem)] text-[10px] font-semibold uppercase tracking-widest opacity-40 transition-all duration-300',
                 expanded ? 'opacity-40' : 'opacity-0'
               )}>
                 {group.label}
@@ -138,9 +139,9 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
 
         {isAdmin && (
           <>
-            <div className="my-3 mx-2 h-px bg-base-200" />
+            <div className="mx-2 my-[clamp(0.375rem,1.4vh,0.75rem)] h-px bg-base-200" />
             <p className={cn(
-              'px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest opacity-40 transition-all duration-300',
+              'px-3 mb-[clamp(0.125rem,0.5vh,0.25rem)] text-[10px] font-semibold uppercase tracking-widest opacity-40 transition-all duration-300',
               expanded ? 'opacity-40' : 'opacity-0'
             )}>
               Admin
@@ -155,7 +156,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
       </nav>
 
       {/* Bottom actions */}
-      <div className="border-t border-base-200 p-2 space-y-0.5">
+      <div className="shrink-0 border-t border-base-200 p-2 space-y-0.5">
         <button
           onClick={toggleTheme}
           className="flex h-9 w-full items-center gap-2.5 rounded-lg px-3 text-sm opacity-50 hover:opacity-100 hover:bg-base-200 transition-all cursor-pointer"

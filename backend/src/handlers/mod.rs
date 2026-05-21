@@ -9,6 +9,7 @@ pub mod descartes;
 pub mod health;
 pub mod lotes;
 pub mod movimientos;
+pub mod ordenes_compra;
 pub mod presentaciones;
 pub mod productos;
 pub mod proveedores;

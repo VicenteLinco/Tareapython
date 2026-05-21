@@ -1,6 +1,7 @@
 // frontend/src/pages/solicitudes-compra/components/detalle-modal.tsx
 import { useState } from 'react'
-import { FileDown, Send, CheckCircle2, XCircle } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { FileDown, Send, PackageCheck, XCircle, ShoppingBag } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { formatDate, cn, formatCantidad } from '@/lib/utils'
@@ -12,7 +13,8 @@ import { PageLoading } from '@/components/ui/page-state'
 import api from '@/lib/api'
 import { exportarSolicitudPDF } from '@/lib/solicitud-pdf'
 import { formatPesos } from '../solicitud-utils'
-import type { SolicitudDetalle } from '@/types'
+import type { SolicitudDetalle, CreateOrdenCompraRequest } from '@/types'
+import { useAuthStore } from '@/hooks/use-auth-store'
 
 interface DetalleModalProps {
   solicitudId: string | null
@@ -31,6 +33,7 @@ const estadoBadgeClass = (estado: string) =>
   estado === 'completada' ? 'bg-success/10 text-success border-success/30' :
   estado === 'guardada'   ? 'bg-warning/10 text-warning border-warning/30' :
   estado === 'parcialmente_enviada' ? 'bg-info/10 text-info border-info/30' :
+  estado === 'parcialmente_recibida' ? 'bg-warning/10 text-warning border-warning/30' :
   estado === 'cancelada'  ? 'bg-error/10 text-error border-error/30' :
   estado === 'enviada'    ? 'bg-info/10 text-info border-info/30' :
   'bg-base-200 text-base-content/50 border-base-300'
@@ -38,6 +41,7 @@ const estadoBadgeClass = (estado: string) =>
 const estadoLabel = (estado: string) =>
   estado === 'guardada' ? 'pendiente' :
   estado === 'parcialmente_enviada' ? 'env. parcial' :
+  estado === 'parcialmente_recibida' ? 'rec. parcial' :
   estado
 
 export function DetalleModal({
@@ -53,6 +57,9 @@ export function DetalleModal({
   onPdfFirmaChange,
 }: DetalleModalProps) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const usuario = useAuthStore((s) => s.usuario)
+  const isAdmin = usuario?.rol === 'admin'
   const [confirmEnviar, setConfirmEnviar] = useState(false)
   const [confirmCompletar, setConfirmCompletar] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
@@ -61,6 +68,11 @@ export function DetalleModal({
   const [envioDialogo, setEnvioDialogo] = useState<SolicitudDetalle['envios'][number] | null>(null)
   const [fechaEnvio, setFechaEnvio] = useState(() => new Date().toISOString().slice(0, 10))
   const [notaEnvio, setNotaEnvio] = useState('')
+
+  // Generar OC
+  const [ocModal, setOcModal] = useState(false)
+  const [ocFechaEntrega, setOcFechaEntrega] = useState('')
+  const [ocNota, setOcNota] = useState('')
 
   const fmt = (v: number | string | null) => formatPesos(v, monedaCodigo)
 
@@ -78,6 +90,20 @@ export function DetalleModal({
     queryClient.invalidateQueries({ queryKey: ['solicitudes-guardadas'] })
     queryClient.invalidateQueries({ queryKey: ['solicitudes-recomendaciones'] })
   }
+
+  const ocMutation = useMutation({
+    mutationFn: (data: CreateOrdenCompraRequest) => api.post('/ordenes-compra', data),
+    onSuccess: (response) => {
+      const { numero_documento } = response.data
+      toast.success(`OC ${numero_documento} creada`)
+      queryClient.invalidateQueries({ queryKey: ['ordenes-compra'] })
+      invalidate()
+      setOcModal(false)
+      setOcFechaEntrega('')
+      setOcNota('')
+    },
+    onError: () => toast.error('Error al crear la Orden de Compra'),
+  })
 
   const enviarMut = useMutation({
     mutationFn: () =>
@@ -203,8 +229,9 @@ export function DetalleModal({
 
   const estado = detail?.estado
   const puedeEnviar = estado === 'guardada'
-  const puedeCompletar = estado === 'guardada' || estado === 'parcialmente_enviada' || estado === 'enviada'
-  const puedeCancelar = estado === 'guardada' || estado === 'parcialmente_enviada' || estado === 'enviada'
+  const puedeRecibir = estado === 'guardada' || estado === 'parcialmente_enviada' || estado === 'enviada' || estado === 'parcialmente_recibida'
+  const puedeCancelar = estado === 'guardada' || estado === 'parcialmente_enviada' || estado === 'enviada' || estado === 'parcialmente_recibida'
+  const puedeGenerarOC = isAdmin && estado === 'aprobada'
 
   return (
     <>
@@ -417,6 +444,14 @@ export function DetalleModal({
                     <XCircle className="h-4 w-4" /> Cancelar
                   </Button>
                 )}
+                {puedeGenerarOC && (
+                  <Button
+                    className="rounded-xl h-10 gap-2"
+                    onClick={() => setOcModal(true)}
+                  >
+                    <ShoppingBag className="h-4 w-4" /> Generar OC
+                  </Button>
+                )}
                 {puedeEnviar && (
                   <Button
                     className="rounded-xl h-10 gap-2 bg-info hover:bg-info/90 text-info-content"
@@ -425,12 +460,15 @@ export function DetalleModal({
                     <Send className="h-4 w-4" /> Marcar enviada
                   </Button>
                 )}
-                {puedeCompletar && (
+                {puedeRecibir && (
                   <Button
                     className="rounded-xl h-10 gap-2 bg-success hover:bg-success/90 text-success-content"
-                    onClick={() => setConfirmCompletar(true)}
+                    onClick={() => {
+                      onClose()
+                      navigate('/recepciones/nueva')
+                    }}
                   >
-                    <CheckCircle2 className="h-4 w-4" /> Marcar completada
+                    <PackageCheck className="h-4 w-4" /> Recibir pedido
                   </Button>
                 )}
                 <Button className="rounded-xl h-10" onClick={onClose}>Cerrar</Button>
@@ -585,6 +623,76 @@ export function DetalleModal({
             >
               {cancelarMut.isPending && <span className="loading loading-spinner loading-xs mr-2" />}
               Cancelar solicitud
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Generar OC */}
+      <Dialog
+        open={ocModal}
+        onClose={() => { setOcModal(false); setOcFechaEntrega(''); setOcNota('') }}
+        title="Generar Orden de Compra"
+        closeOnBackdrop={false}
+      >
+        <div className="space-y-4">
+          <p className="text-sm opacity-60">
+            Se creará una OC vinculada a la solicitud <b>{detail?.numero_documento}</b> con los ítems actuales.
+          </p>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold opacity-60 uppercase">Fecha entrega esperada (opcional)</label>
+            <Input
+              type="date"
+              value={ocFechaEntrega}
+              onChange={e => setOcFechaEntrega(e.target.value)}
+              className="rounded-xl"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold opacity-60 uppercase">Nota (opcional)</label>
+            <textarea
+              className="textarea textarea-bordered rounded-xl w-full text-sm"
+              rows={2}
+              value={ocNota}
+              onChange={e => setOcNota(e.target.value)}
+              placeholder="Observaciones para la OC"
+            />
+          </div>
+          <div className="modal-action">
+            <Button
+              variant="ghost"
+              onClick={() => { setOcModal(false); setOcFechaEntrega(''); setOcNota('') }}
+              disabled={ocMutation.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                if (!detail || !solicitudId) return
+                const proveedorId = detail.proveedores_resumen?.[0]?.proveedor_id
+                if (!proveedorId) {
+                  toast.error('No se encontró proveedor en la solicitud')
+                  return
+                }
+                const payload: CreateOrdenCompraRequest = {
+                  solicitud_id: solicitudId,
+                  proveedor_id: proveedorId,
+                  fecha_entrega_esperada: ocFechaEntrega || undefined,
+                  nota: ocNota.trim() || undefined,
+                  items: detail.items.map(i => ({
+                    producto_id: i.producto_id,
+                    presentacion_id: i.presentacion_id ?? undefined,
+                    cantidad_solicitada: parseFloat(i.cantidad_sugerida),
+                    precio_unitario: i.precio_unitario ? parseFloat(i.precio_unitario) : undefined,
+                    unidad: i.unidad,
+                  })),
+                }
+                ocMutation.mutate(payload)
+              }}
+              disabled={ocMutation.isPending}
+            >
+              {ocMutation.isPending && <span className="loading loading-spinner loading-xs mr-2" />}
+              Crear OC
             </Button>
           </div>
         </div>

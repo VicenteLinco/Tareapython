@@ -23,6 +23,8 @@ const UsuariosPage = lazy(() => import('@/pages/usuarios'))
 const ConteoPage = lazy(() => import('@/pages/conteo/index'))
 const ConteoDetallePage = lazy(() => import('@/pages/conteo/detalle'))
 const AuditLogPage = lazy(() => import('@/pages/audit-log'))
+const OrdenesCompraPage = lazy(() => import('@/pages/ordenes-compra'))
+const OrdenCompraDetallePage = lazy(() => import('@/pages/ordenes-compra/detalle'))
 const ScanPage = lazy(() => import('./pages/scan/index'))
 
 const queryClient = new QueryClient({
@@ -73,6 +75,8 @@ export default function App() {
                   <Route path="/conteo/:id" element={<ConteoDetallePage />} />
                   <Route path="/movimientos" element={<MovimientosPage />} />
                   <Route path="/solicitudes-compra" element={<SolicitudesCompraPage />} />
+                  <Route path="/ordenes-compra" element={<OrdenesCompraPage />} />
+                  <Route path="/ordenes-compra/:id" element={<OrdenCompraDetallePage />} />
                   <Route path="/creador-productos" element={<CreadorProductosPage />} />
                   <Route path="/configuracion" element={<ConfiguracionPage />} />
                   <Route path="/usuarios" element={<UsuariosPage />} />

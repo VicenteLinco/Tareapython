@@ -323,3 +323,72 @@ export interface DescarteSession {
   areas: string[]
   items: DescarteSessionItem[]
 }
+
+// ============================================================
+// Órdenes de Compra
+// ============================================================
+
+export interface OrdenCompraResumen {
+  id: string
+  numero_documento: string
+  proveedor_nombre: string
+  estado: 'borrador' | 'enviada' | 'recibida_parcial' | 'recibida_total' | 'cancelada'
+  fecha_emision: string
+  fecha_entrega_esperada: string | null
+  items_count: number
+  solicitud_numero: string | null
+  usuario_nombre: string
+}
+
+export interface OrdenCompraItem {
+  id: number
+  producto_id: string
+  producto_nombre: string
+  presentacion_nombre: string | null
+  cantidad_solicitada: number
+  cantidad_recibida: number
+  precio_unitario: number | null
+  unidad: string
+  area_destino_nombre: string | null
+}
+
+export interface RecepcionVinculada {
+  id: string
+  numero_documento: string
+  estado: string
+  fecha_recepcion: string
+  usuario_nombre: string
+}
+
+export interface OrdenCompraDetalle {
+  orden_compra: {
+    id: string
+    numero_documento: string
+    proveedor_id: number
+    proveedor_nombre: string
+    estado: OrdenCompraResumen['estado']
+    fecha_emision: string
+    fecha_entrega_esperada: string | null
+    nota: string | null
+    solicitud_id: string | null
+    solicitud_numero: string | null
+    usuario_nombre: string
+  }
+  items: OrdenCompraItem[]
+  recepciones: RecepcionVinculada[]
+}
+
+export interface CreateOrdenCompraRequest {
+  solicitud_id?: string
+  proveedor_id: number
+  fecha_entrega_esperada?: string
+  nota?: string
+  items: {
+    producto_id: string
+    presentacion_id?: number
+    cantidad_solicitada: number
+    precio_unitario?: number
+    unidad: string
+    area_destino_id?: number
+  }[]
+}

@@ -21,6 +21,7 @@ const ESTADO_FILTROS: { value: string | null; label: string }[] = [
   { value: 'guardada', label: 'Pendientes' },
   { value: 'parcialmente_enviada', label: 'Env. parcial' },
   { value: 'enviada', label: 'Enviadas' },
+  { value: 'parcialmente_recibida', label: 'Rec. parcial' },
   { value: 'completada', label: 'Completadas' },
   { value: 'cancelada', label: 'Canceladas' },
 ]
@@ -29,6 +30,7 @@ const estadoBadgeClass = (estado: string) =>
   estado === 'completada' ? 'bg-success/10 text-success border-success/30' :
   estado === 'guardada'   ? 'bg-warning/10 text-warning border-warning/30' :
   estado === 'parcialmente_enviada' ? 'bg-info/10 text-info border-info/30' :
+  estado === 'parcialmente_recibida' ? 'bg-warning/10 text-warning border-warning/30' :
   estado === 'cancelada'  ? 'bg-error/10 text-error border-error/30' :
   estado === 'enviada'    ? 'bg-info/10 text-info border-info/30' :
   estado === 'borrador'   ? 'bg-base-200 text-base-content/50 border-base-300' :
@@ -37,6 +39,7 @@ const estadoBadgeClass = (estado: string) =>
 const estadoLabel = (estado: string) =>
   estado === 'guardada' ? 'pendiente' :
   estado === 'parcialmente_enviada' ? 'env. parcial' :
+  estado === 'parcialmente_recibida' ? 'rec. parcial' :
   estado
 
 export function HistorialView({

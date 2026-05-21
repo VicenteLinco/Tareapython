@@ -106,3 +106,19 @@ pub struct DetalleRecepcionRow {
     pub unidad_base_nombre_plural: String,
     pub area_destino: String,
 }
+
+#[derive(Debug, Serialize, sqlx::FromRow, Type)]
+pub struct RecepcionReconciliacionRow {
+    pub id: Uuid,
+    pub recepcion_id: Uuid,
+    pub solicitud_id: Uuid,
+    pub producto_id: Uuid,
+    pub producto_nombre: String,
+    pub estado: String,
+    pub cantidad_solicitada: Decimal,
+    pub cantidad_recibida: Decimal,
+    pub diferencia: Decimal,
+    pub unidad: Option<String>,
+    pub nota: Option<String>,
+    pub created_at: DateTime<Utc>,
+}

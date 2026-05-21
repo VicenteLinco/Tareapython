@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import api from '@/lib/api'
+import { parseApiError } from '@/lib/api-error'
 import type { PaginatedSesiones, Area } from '@/types'
 import { useAreaStore } from '@/hooks/use-area-store'
 
@@ -13,6 +14,8 @@ export interface AreaPendiente {
   ultimo_conteo_confirmado: string | null
   dias_desde_ultimo: number | null
 }
+
+export type AreaStockStatus = 'loading' | 'con-stock' | 'sin-stock'
 
 export function useConteoList() {
   const navigate = useNavigate()
@@ -43,6 +46,25 @@ export function useConteoList() {
     queryFn: () => api.get<Area[]>('/areas').then((r) => r.data),
   })
 
+  const areaIds = (areasQuery.data ?? []).filter((a) => a.activa).map((a) => a.id)
+
+  const areaStockStatusQuery = useQuery({
+    queryKey: ['conteo-area-stock-status', areaIds],
+    enabled: areaIds.length > 0,
+    queryFn: async () => {
+      const results = await Promise.all(
+        areaIds.map((areaId) =>
+          api
+            .get<{ productos: unknown[] }>(`/stock/area/${areaId}`, { params: { per_page: 1 } })
+            .then((r) => [areaId, r.data.productos.length > 0 ? 'con-stock' : 'sin-stock'] as const)
+            .catch(() => [areaId, 'sin-stock'] as const)
+        )
+      )
+      return Object.fromEntries(results) as Record<number, AreaStockStatus>
+    },
+    staleTime: 60000,
+  })
+
   // Query: Áreas con conteo pendiente
   const pendientesQuery = useQuery({
     queryKey: ['conteo-pendientes'],
@@ -62,7 +84,7 @@ export function useConteoList() {
       }
       navigate(`/conteo/${data.id}`)
     },
-    onError: () => toast.error('Error al crear sesión de conteo'),
+    onError: (err) => toast.error(parseApiError(err)),
   })
 
   const handleCrear = (areaId: number) => {
@@ -96,8 +118,8 @@ export function useConteoList() {
       queryClient.invalidateQueries({ queryKey: ['conteo-pendientes'] })
       toast.success(`${areaIds.length} sesiones de conteo creadas`)
       if (vacias > 0) toast.warning(`${vacias} área${vacias > 1 ? 's' : ''} sin stock en sistema`)
-    } catch {
-      toast.error('Error al crear alguna sesión de conteo')
+    } catch (err) {
+      toast.error(parseApiError(err))
     } finally {
       setIsCreatingMultiple(false)
     }
@@ -113,10 +135,16 @@ export function useConteoList() {
     setPage(1)
   }
 
+  const areaStockStatus: Record<number, AreaStockStatus> = {
+    ...Object.fromEntries(areaIds.map((areaId) => [areaId, 'loading' as AreaStockStatus])),
+    ...(areaStockStatusQuery.data ?? {}),
+  }
+
   return {
     sesiones: sesionesQuery.data,
     isLoading: sesionesQuery.isLoading,
     areas: areasQuery.data ?? [],
+    areaStockStatus,
     pendientes: pendientesQuery.data ?? [],
     filters: {
       estado: filterEstado,

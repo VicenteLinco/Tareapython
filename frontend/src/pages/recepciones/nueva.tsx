@@ -110,15 +110,18 @@ export default function NuevaRecepcionPage() {
       setSolicitudNumero(numero)
       solicitudModal.onClose()
       toast.success('Solicitud vinculada')
+      const itemsProveedor = (res.data.items ?? []).filter((it: { proveedor_id?: number | null }) =>
+        !proveedorId || it.proveedor_id === proveedorId
+      )
       setSolicitudItemsRef(
-        (res.data.items ?? []).map((it: { producto_id: string; producto_nombre: string; cantidad_sugerida: string; unidad: string }) => ({
+        itemsProveedor.map((it: { producto_id: string; producto_nombre: string; cantidad_sugerida: string; unidad: string }) => ({
           producto_id: it.producto_id,
           producto_nombre: it.producto_nombre,
           cantidad_base: parseFloat(it.cantidad_sugerida) || 0,
           unidad: it.unidad,
         }))
       )
-      for (const item of res.data.items) {
+      for (const item of itemsProveedor) {
         try {
           const p = productos?.find((x: Producto) => String(x.id) === String(item.producto_id))
           if (p) {

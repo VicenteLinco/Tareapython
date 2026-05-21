@@ -37,7 +37,7 @@ export function useRecepcionWizard() {
     queryKey: ['solicitudes-activas', proveedorId],
     queryFn: () => api.get<{ data: SolicitudResumen[] }>('/solicitudes-compra', {
       params: { per_page: 100, ...(proveedorId ? { proveedor_id: proveedorId } : {}) }
-    }).then(r => (r.data.data ?? []).filter(s => ['aprobada', 'enviada'].includes(s.estado))),
+    }).then(r => (r.data.data ?? []).filter(s => ['guardada', 'parcialmente_enviada', 'enviada', 'parcialmente_recibida'].includes(s.estado))),
   })
 
   const setProveedorId = (id: number | null) => {

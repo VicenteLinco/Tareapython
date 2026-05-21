@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Upload, Save, X, Building2, Lock, Eye, EyeOff } from 'lucide-react'
+import { Upload, Save, X, Building2 } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 import { PageLoading } from '@/components/ui/page-state'
@@ -8,7 +8,6 @@ import { PageLoading } from '@/components/ui/page-state'
 interface Configuracion {
   nombre_laboratorio: string
   logo_base64: string
-  pin_kiosko: string
   conteo_ciego: boolean
   dias_autonomia_objetivo: number
   lead_time_default: number
@@ -30,7 +29,6 @@ export default function ConfiguracionPage() {
   const [nombre, setNombre] = useState('')
   const [logo, setLogo] = useState('')
   const [preview, setPreview] = useState('')
-  const [pinKiosko, setPinKiosko] = useState('')
   const [conteoCiego, setConteoCiego] = useState(false)
   const [diasAutonomia, setDiasAutonomia] = useState(15)
   const [leadTime, setLeadTime] = useState(3)
@@ -38,8 +36,6 @@ export default function ConfiguracionPage() {
   const [monedaSimbolo, setMonedaSimbolo] = useState('$')
   const [conteoPeriodoDias, setConteoPeriodoDias] = useState(30)
   const [factorHistorialCorto, setFactorHistorialCorto] = useState(0.35)
-  const [showPin, setShowPin] = useState(false)
-  const [pinOrigenConfigurado, setPinOrigenConfigurado] = useState(false)
 
   // Sync con datos cargados
   const initialized = useRef(false)
@@ -47,8 +43,6 @@ export default function ConfiguracionPage() {
     setNombre(data.nombre_laboratorio)
     setLogo(data.logo_base64)
     setPreview(data.logo_base64)
-    setPinKiosko(data.pin_kiosko || '')
-    setPinOrigenConfigurado(!!(data.pin_kiosko))
     setConteoCiego(!!data.conteo_ciego)
     setDiasAutonomia(data.dias_autonomia_objetivo || 15)
     setLeadTime(data.lead_time_default || 3)
@@ -63,7 +57,6 @@ export default function ConfiguracionPage() {
     mutationFn: (payload: {
       nombre_laboratorio: string;
       logo_base64: string;
-      pin_kiosko: string;
       conteo_ciego: boolean;
       dias_autonomia_objetivo: number;
       lead_time_default: number;
@@ -111,7 +104,6 @@ export default function ConfiguracionPage() {
     mutation.mutate({
       nombre_laboratorio: nombre.trim(),
       logo_base64: logo,
-      pin_kiosko: pinKiosko.trim(),
       conteo_ciego: conteoCiego,
       dias_autonomia_objetivo: diasAutonomia,
       lead_time_default: leadTime,
@@ -195,46 +187,6 @@ export default function ConfiguracionPage() {
               Seleccionar imagen
             </button>
           )}
-        </div>
-
-        {/* Seguridad Kiosko */}
-        <div className="card bg-base-100 shadow-sm border border-base-200 p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-sm flex items-center gap-2">
-              <Lock className="h-4 w-4 opacity-60" /> Seguridad Kiosko
-            </h3>
-            {pinOrigenConfigurado || pinKiosko.trim() ? (
-              <span className="text-[11px] font-bold text-success flex items-center gap-1">
-                ✓ PIN configurado
-              </span>
-            ) : (
-              <span className="text-[11px] font-bold text-warning flex items-center gap-1">
-                ⚠ PIN no configurado
-              </span>
-            )}
-          </div>
-          <p className="text-xs opacity-50">
-            Este PIN se pide al salir del modo kiosko o QR. Si lo olvidas, un admin puede resetearlo desde aquí.
-            Deja vacío para salir sin PIN.
-          </p>
-          <label className="input input-bordered flex items-center gap-2 w-full max-w-xs">
-            <Lock className="h-4 w-4 opacity-40 shrink-0" />
-            <input
-              type={showPin ? 'text' : 'password'}
-              className="grow font-mono"
-              placeholder="Ej: 1234"
-              maxLength={8}
-              value={pinKiosko}
-              onChange={(e) => setPinKiosko(e.target.value.replace(/\D/g, ''))}
-            />
-            <button
-              type="button"
-              className="opacity-40 hover:opacity-80"
-              onClick={() => setShowPin((v) => !v)}
-            >
-              {showPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </label>
         </div>
 
         {/* Moneda */}

@@ -5,7 +5,8 @@ use inventario_lab_backend::dto::{
     proveedor::{CreateProveedor, ProveedorQuery, UpdateProveedor},
     recepcion::{
         CreateRecepcion, DetalleRecepcionInput, DetalleRecepcionRow, LoteCreado,
-        PaginatedRecepciones, RecepcionListItem, RecepcionQuery, SubirFotoInput,
+        PaginatedRecepciones, RecepcionListItem, RecepcionQuery, RecepcionReconciliacionRow,
+        SubirFotoInput,
     },
     solicitud::{
         CancelarEnvioInput, CreateSolicitudItem, EnvioProveedorView, ItemRecomendado,
@@ -123,6 +124,7 @@ fn main() {
     append!(CreateRecepcion);
     append!(DetalleRecepcionInput);
     append!(DetalleRecepcionRow);
+    append!(RecepcionReconciliacionRow);
     append!(LoteCreado);
 
     match fs::write(&out_path, &output) {

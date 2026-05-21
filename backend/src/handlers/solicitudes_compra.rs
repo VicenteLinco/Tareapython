@@ -467,7 +467,7 @@ pub async fn recomendaciones(
             JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
             JOIN productos p2 ON p2.id = scd.producto_id
             LEFT JOIN proveedores prov2 ON prov2.id = p2.proveedor_id
-            WHERE sc.estado IN ('guardada', 'parcialmente_enviada', 'enviada')
+            WHERE sc.estado IN ('guardada', 'parcialmente_enviada', 'enviada', 'parcialmente_recibida')
               AND sc.fecha_creacion >= NOW() - (
                   COALESCE(p2.lead_time_propio,
                            prov2.dias_despacho_tierra,
@@ -978,7 +978,14 @@ async fn completar(
     let rows = sqlx::query(
         "UPDATE solicitudes_compra
          SET estado = 'completada', fecha_cierre = NOW()
-         WHERE id = $1 AND estado IN ('guardada', 'parcialmente_enviada', 'enviada')",
+         WHERE id = $1
+           AND estado IN ('guardada', 'parcialmente_enviada', 'enviada', 'parcialmente_recibida')
+           AND EXISTS (
+               SELECT 1
+               FROM recepciones r
+               WHERE r.solicitud_id = solicitudes_compra.id
+                 AND r.estado = 'completa'
+           )",
     )
     .bind(id)
     .execute(&state.pool)
@@ -986,7 +993,7 @@ async fn completar(
 
     if rows.rows_affected() == 0 {
         return Err(AppError::BusinessLogic(
-            "Solo se puede completar una solicitud guardada o enviada".into(),
+            "Para completar una solicitud primero debe existir una recepcion completa vinculada".into(),
             "ESTADO_INVALIDO".into(),
         ));
     }
@@ -1008,7 +1015,7 @@ async fn cancelar(
     let rows = sqlx::query(
         "UPDATE solicitudes_compra
          SET estado = 'cancelada', fecha_cierre = NOW(), motivo_cierre = $2
-         WHERE id = $1 AND estado IN ('guardada', 'parcialmente_enviada', 'enviada')",
+         WHERE id = $1 AND estado IN ('guardada', 'parcialmente_enviada', 'enviada', 'parcialmente_recibida')",
     )
     .bind(id)
     .bind(motivo)
@@ -1085,7 +1092,7 @@ async fn horizonte_sugerido(
                 FROM solicitud_compra_detalle scd
                 JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
                 WHERE scd.producto_id = p.id
-                  AND sc.estado IN ('guardada', 'parcialmente_enviada', 'enviada')
+                  AND sc.estado IN ('guardada', 'parcialmente_enviada', 'enviada', 'parcialmente_recibida')
             ), 0.0)                                                           AS "ya_pedido!: f64"
         FROM productos p
         LEFT JOIN proveedores prov ON prov.id = $3

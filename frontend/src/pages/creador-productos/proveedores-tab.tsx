@@ -278,8 +278,6 @@ export default function ProveedoresTab() {
     },
   ]
 
-  const isSaving = createMut.isPending || updateMut.isPending
-
   useEffect(() => { setSearchActiveIndex(-1) }, [search])
 
   useEffect(() => {

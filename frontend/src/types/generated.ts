@@ -52,6 +52,7 @@ export type CreateRecepcion = { proveedor_id: number; guia_despacho: string | nu
 estado: string | null; fecha_recepcion: string; nota: string | null; motivo_rechazo: string | null; solicitud_id: string | null; detalle: DetalleRecepcionInput[] }
 export type DetalleRecepcionInput = { producto_id: string; numero_lote: string; fecha_vencimiento: string; presentacion_id: number | null; cantidad_presentaciones: string; area_destino_id: number; costo_unitario: string | null; precio_unitario: string | null }
 export type DetalleRecepcionRow = { id: number; producto_nombre: string; numero_lote: string; fecha_vencimiento: string; presentacion_nombre: string | null; cantidad_presentaciones: string; factor_conversion_usado: string; cantidad_unidades_base: string; unidad_base_nombre: string; unidad_base_nombre_plural: string; area_destino: string }
+export type RecepcionReconciliacionRow = { id: string; recepcion_id: string; solicitud_id: string; producto_id: string; producto_nombre: string; estado: string; cantidad_solicitada: string; cantidad_recibida: string; diferencia: string; unidad: string | null; nota: string | null; created_at: string }
 /**
  * Información del lote creado durante la recepción, para generar etiquetas QR
  */

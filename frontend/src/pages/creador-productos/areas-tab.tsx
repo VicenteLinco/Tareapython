@@ -104,7 +104,7 @@ export default function AreasTab() {
         },
       })
     } else {
-      createMut.mutate({ nombre: nombre.trim(), es_bodega: esBodega, conteo_frecuencia_dias: frecuenciaDias })
+      createMut.mutate({ nombre: nombre.trim(), es_bodega: esBodega })
     }
   }
 

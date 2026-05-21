@@ -39,7 +39,7 @@ pub async fn listar(pool: &PgPool, params: UsuarioQuery) -> Result<Vec<UsuarioRe
 
     let usuarios = if let Some(rol) = &params.rol {
         sqlx::query_as::<_, Usuario>(
-            "SELECT id, nombre, email, password_hash, rol, activo, version FROM usuarios WHERE activo = $1 AND rol = $2 ORDER BY nombre",
+            "SELECT id, nombre, email, password_hash, rol, activo, version, created_at, updated_at FROM usuarios WHERE activo = $1 AND rol = $2 ORDER BY nombre",
         )
         .bind(activo)
         .bind(rol)
@@ -47,7 +47,7 @@ pub async fn listar(pool: &PgPool, params: UsuarioQuery) -> Result<Vec<UsuarioRe
         .await?
     } else {
         sqlx::query_as::<_, Usuario>(
-            "SELECT id, nombre, email, password_hash, rol, activo, version FROM usuarios WHERE activo = $1 ORDER BY nombre",
+            "SELECT id, nombre, email, password_hash, rol, activo, version, created_at, updated_at FROM usuarios WHERE activo = $1 ORDER BY nombre",
         )
         .bind(activo)
         .fetch_all(pool)
@@ -64,7 +64,7 @@ pub async fn listar(pool: &PgPool, params: UsuarioQuery) -> Result<Vec<UsuarioRe
 
 pub async fn obtener(pool: &PgPool, id: Uuid) -> Result<UsuarioResponse, AppError> {
     let user = sqlx::query_as::<_, Usuario>(
-        "SELECT id, nombre, email, password_hash, rol, activo, version FROM usuarios WHERE id = $1",
+        "SELECT id, nombre, email, password_hash, rol, activo, version, created_at, updated_at FROM usuarios WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -94,7 +94,7 @@ pub async fn crear(
 
     let user = sqlx::query_as::<_, Usuario>(
         "INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES ($1, $2, $3, $4) \
-         RETURNING id, nombre, email, password_hash, rol, activo, version, created_at",
+         RETURNING id, nombre, email, password_hash, rol, activo, version, created_at, updated_at",
     )
     .bind(&nombre)
     .bind(&email)
@@ -148,7 +148,7 @@ pub async fn actualizar(
     }
 
     let anterior = sqlx::query_as::<_, Usuario>(
-        "SELECT id, nombre, email, rol, version FROM usuarios WHERE id = $1",
+        "SELECT id, nombre, email, password_hash, rol, activo, version, created_at, updated_at FROM usuarios WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -169,7 +169,7 @@ pub async fn actualizar(
     let user = sqlx::query_as::<_, Usuario>(
         "UPDATE usuarios SET nombre = $1, email = $2, rol = $3, version = version + 1, updated_at = NOW() \
          WHERE id = $4 AND version = $5 \
-         RETURNING id, nombre, email, password_hash, rol, activo, version",
+         RETURNING id, nombre, email, password_hash, rol, activo, version, created_at, updated_at",
     )
     .bind(nombre)
     .bind(email_ref)

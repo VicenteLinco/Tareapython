@@ -20,3 +20,16 @@ Thumbs.db
 
 # Git worktrees
 .worktrees/
+
+# Binarios compilados
+*.exe
+release/*.exe
+inventario-lab-backend
+
+# Artefactos de build
+backend/build_err.txt
+backend/build_output.txt
+
+# Archivos de brainstorming y planes internos
+.superpowers/
+docs/superpowers/

@@ -33,7 +33,7 @@ function getAreaUrgencia(area: { conteo_frecuencia_dias: number }, pendiente: { 
 
 export default function ConteoPage() {
   const navigate = useNavigate()
-  const { sesiones, isLoading, areas, pendientes, filters, actions, isCreating, periodoGlobalDias } = useConteoList()
+  const { sesiones, isLoading, areas, areaStockStatus, pendientes, filters, actions, isCreating, periodoGlobalDias } = useConteoList()
   const [showModal, setShowModal] = useState(false)
   const [selectedAreaIds, setSelectedAreaIds] = useState<number[]>([])
   const [ocultarSinStock, setOcultarSinStock] = useState(true)
@@ -81,6 +81,9 @@ export default function ConteoPage() {
               .sort((a, b) => (b.dias_desde_ultimo ?? 9999) - (a.dias_desde_ultimo ?? 9999))
               .map((p) => {
                 const dias = p.dias_desde_ultimo
+                const stockStatus = areaStockStatus[p.area_id]
+                const isCheckingStock = stockStatus === 'loading'
+                const sinStock = stockStatus === 'sin-stock'
                 const isAtrasada = dias === null || dias > (p.frecuencia_dias ?? 30)
                 const isProxima = !isAtrasada && dias !== null && dias >= (p.frecuencia_dias ?? 30) * 0.7
                 const urgenciaLabel = dias === null
@@ -101,16 +104,17 @@ export default function ConteoPage() {
                       )}>
                         {urgenciaLabel}
                       </span>
+                      {sinStock && <span className="badge badge-xs badge-ghost shrink-0">Sin stock</span>}
                     </div>
                     <button
                       className={cn(
                         "btn btn-xs shrink-0",
                         isAtrasada || dias === null ? "btn-error" : isProxima ? "btn-warning" : "btn-ghost"
                       )}
-                      disabled={isCreating}
+                      disabled={isCreating || isCheckingStock || sinStock}
                       onClick={() => handleCrear(p.area_id)}
                     >
-                      + Crear sesión
+                      {isCheckingStock ? 'Verificando...' : '+ Crear sesión'}
                     </button>
                   </div>
                 )
@@ -227,8 +231,8 @@ export default function ConteoPage() {
                     {areas
                         .filter(a => a.activa)
                         .filter(a => {
-                            const sinStock = (a.total_items_stock ?? 0) === 0
-                            return !ocultarSinStock || !sinStock
+                            const status = areaStockStatus[a.id]
+                            return !ocultarSinStock || status === 'loading' || status === 'con-stock'
                         })
                         .sort((a, b) => {
                             const pa = pendientes.find(p => p.area_id === a.id)
@@ -239,7 +243,9 @@ export default function ConteoPage() {
                         })
                         .map(a => {
                             const pendiente = pendientes.find(p => p.area_id === a.id)
-                            const sinStock = (a.total_items_stock ?? 0) === 0
+                            const stockStatus = areaStockStatus[a.id]
+                            const isCheckingStock = stockStatus === 'loading'
+                            const sinStock = stockStatus === 'sin-stock'
                             const urgencia = getAreaUrgencia(a, pendiente, periodoGlobalDias)
                             const selected = selectedAreaIds.includes(a.id)
                             return (
@@ -247,7 +253,7 @@ export default function ConteoPage() {
                                     key={a.id}
                                     className={cn(
                                         'flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors',
-                                        sinStock ? 'opacity-40 cursor-not-allowed bg-base-200/50' :
+                                        sinStock || isCheckingStock ? 'opacity-40 cursor-not-allowed bg-base-200/50' :
                                         selected ? 'bg-primary/10 border border-primary/30' :
                                         'hover:bg-base-200 border border-transparent'
                                     )}
@@ -256,15 +262,16 @@ export default function ConteoPage() {
                                         type="checkbox"
                                         className="checkbox checkbox-sm checkbox-primary"
                                         checked={selected}
-                                        disabled={sinStock}
-                                        onChange={() => !sinStock && toggleArea(a.id)}
+                                        disabled={sinStock || isCheckingStock}
+                                        onChange={() => !sinStock && !isCheckingStock && toggleArea(a.id)}
                                     />
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-sm font-semibold">{a.nombre}</span>
+                                            {isCheckingStock && <span className="badge badge-xs badge-ghost">Verificando</span>}
                                             {sinStock && <span className="badge badge-xs badge-ghost">Sin stock</span>}
                                         </div>
-                                        {!sinStock && (
+                                        {!sinStock && !isCheckingStock && (
                                             <>
                                                 <div className="w-full bg-base-200 rounded-full h-1.5 mb-1">
                                                     <div

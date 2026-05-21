@@ -168,13 +168,20 @@ async fn importar_productos(
                 .unwrap_or("")
                 .trim()
         };
+        let get_first_val = |keys: &[&str]| {
+            keys.iter()
+                .map(|key| get_val(key))
+                .find(|value| !value.is_empty())
+                .unwrap_or("")
+        };
 
         let nombre = get_val("nombre");
-        let codigo_interno = get_val("codigo_interno");
-        let unidad_nombre = get_val("unidad_base");
-        let unidad_plural = get_val("unidad_base_plural");
-        let stock_minimo_str = get_val("stock_seguridad");
-        let precio_str = get_val("precio_unitario");
+        let descripcion = get_val("descripcion");
+        let codigo_interno_csv = get_val("codigo_interno");
+        let unidad_nombre = get_first_val(&["unidad_base", "unidad"]);
+        let unidad_plural = get_first_val(&["unidad_base_plural", "unidad_plural"]);
+        let stock_minimo_str = get_first_val(&["stock_seguridad", "stock_minimo"]);
+        let precio_str = get_first_val(&["precio_unitario", "precio_unidad"]);
         let cod_proveedor = get_val("codigo_proveedor");
         let proveedor_nombre = get_val("proveedor");
         let categoria_nombre = get_val("categoria");
@@ -187,13 +194,12 @@ async fn importar_productos(
             });
             continue;
         }
-        if codigo_interno.is_empty() {
-            errores.push(ImportError {
-                fila: fila_num,
-                mensaje: "codigo_interno es obligatorio".into(),
-            });
-            continue;
-        }
+        let codigo_generado = format!("IMP-{}", uuid::Uuid::new_v4().to_string()[..8].to_uppercase());
+        let codigo_interno = if codigo_interno_csv.is_empty() {
+            codigo_generado.as_str()
+        } else {
+            codigo_interno_csv
+        };
 
         // Preview (primeras 5 filas)
         if preview.len() < 5 {
@@ -297,12 +303,17 @@ async fn importar_productos(
 
         sqlx::query(
             "INSERT INTO productos
-             (codigo_interno, nombre, unidad_base_id, categoria_id, proveedor_id,
+             (codigo_interno, nombre, descripcion, unidad_base_id, categoria_id, proveedor_id,
               stock_minimo, precio_unidad, codigo_proveedor)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .bind(codigo_interno)
         .bind(nombre)
+        .bind(if descripcion.is_empty() {
+            None
+        } else {
+            Some(descripcion)
+        })
         .bind(u_id)
         .bind(cat_id)
         .bind(prov_id)

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { X, Smartphone } from 'lucide-react'
 import QRCode from 'qrcode'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 
 interface ScannedItem {
@@ -28,7 +28,7 @@ export function QrScannerSession({ onItemsScanned, onClose }: QrScannerSessionPr
         setToken(r.data.token)
         setExpiresAt(new Date(r.data.expires_at))
       })
-      .catch(() => toast.error('No se pudo crear sesión de escáner'))
+      .catch(() => notify.error('No se pudo crear sesión de escáner'))
   }, [])
 
   useEffect(() => {
@@ -36,7 +36,7 @@ export function QrScannerSession({ onItemsScanned, onClose }: QrScannerSessionPr
     const scanUrl = `${window.location.origin}/scan/${token}`
     QRCode.toDataURL(scanUrl, { width: 200, margin: 2 })
       .then(url => setQrDataUrl(url))
-      .catch(() => toast.error('No se pudo generar el QR'))
+      .catch(() => notify.error('No se pudo generar el QR'))
   }, [token])
 
   useEffect(() => {
@@ -46,7 +46,7 @@ export function QrScannerSession({ onItemsScanned, onClose }: QrScannerSessionPr
         const res = await api.get<{ items: ScannedItem[] }>(`/recepciones/scanner-session/${token}/items`)
         if (res.data.items.length > 0) {
           setAccumulatedItems(prev => [...prev, ...res.data.items])
-          toast.success(`${res.data.items.length} ítem(s) escaneado(s)`)
+          notify.success(`${res.data.items.length} ítem(s) escaneado(s)`)
         }
       } catch {
         // El polling puede fallar transitoriamente; se reintenta en el siguiente intervalo.

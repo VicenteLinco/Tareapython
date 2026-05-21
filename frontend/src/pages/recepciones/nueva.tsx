@@ -6,7 +6,7 @@ import api from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import { imprimirEtiquetas } from '@/lib/label-print'
 import { LabelsSection } from './components/labels-section'
 import { LoteBottomSheet } from './components/lote-bottom-sheet'
@@ -109,7 +109,7 @@ export default function NuevaRecepcionPage() {
       setSolicitudId(id)
       setSolicitudNumero(numero)
       solicitudModal.onClose()
-      toast.success('Solicitud vinculada')
+      notify.success('Solicitud vinculada')
       const itemsProveedor = (res.data.items ?? []).filter((it: { proveedor_id?: number | null }) =>
         !proveedorId || it.proveedor_id === proveedorId
       )
@@ -133,11 +133,11 @@ export default function NuevaRecepcionPage() {
             await addProducto(p, item.presentacion_id ?? undefined, qty)
           }
         } catch (e) {
-          toast.error('Error cargando producto: ' + (e instanceof Error ? e.message : String(e)))
+          notify.error('Error cargando producto: ' + (e instanceof Error ? e.message : String(e)))
         }
       }
     } catch (e) {
-      toast.error('Error al vincular solicitud: ' + (e instanceof Error ? e.message : String(e)))
+      notify.error('Error al vincular solicitud: ' + (e instanceof Error ? e.message : String(e)))
     }
   }
 

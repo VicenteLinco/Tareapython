@@ -4,7 +4,7 @@ import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
 import api from '@/lib/api'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import { useDialogState } from '@/hooks/useDialogState'
 import { type DetalleLineUI, type LoteLineUI } from '../components/item-card'
 import { isCardComplete, isLoteComplete } from '../components/item-card-utils'
@@ -125,9 +125,9 @@ export function useRecepcionItems({
     if (!proveedorId || productoProveedorId === proveedorId) return true
     if (productoProveedorId) {
       const nombreProv = proveedores?.find(p => p.id === productoProveedorId)?.nombre ?? 'otro proveedor'
-      toast.error(`"${productoNombre}" pertenece a ${nombreProv}`)
+      notify.error(`"${productoNombre}" pertenece a ${nombreProv}`)
     } else {
-      toast.error(`"${productoNombre}" no tiene proveedor asignado`)
+      notify.error(`"${productoNombre}" no tiene proveedor asignado`)
     }
     return false
   }, [proveedorId, proveedores])
@@ -142,9 +142,9 @@ export function useRecepcionItems({
     if (proveedorId && prod.proveedor_id !== proveedorId) {
       if (prod.proveedor_id) {
         const nombreProv = proveedores?.find(p => p.id === prod.proveedor_id)?.nombre ?? 'otro proveedor'
-        toast.error(`"${prod.nombre}" pertenece a ${nombreProv}`)
+        notify.error(`"${prod.nombre}" pertenece a ${nombreProv}`)
       } else {
-        toast.error(`"${prod.nombre}" no tiene proveedor asignado`)
+        notify.error(`"${prod.nombre}" no tiene proveedor asignado`)
       }
       return
     }
@@ -186,9 +186,9 @@ export function useRecepcionItems({
         collapsed: false,
       }
       setDetalles(prev => [line, ...prev])
-      toast.success(`${prod.nombre} añadido`)
+      notify.success(`${prod.nombre} añadido`)
     } catch {
-      toast.error('Error al cargar producto')
+      notify.error('Error al cargar producto')
     }
   }, [proveedorId, proveedores])
 
@@ -208,7 +208,7 @@ export function useRecepcionItems({
           p.codigo_interno.toLowerCase() === q.toLowerCase()
         )
         if (found) { await addProducto(found); return }
-        toast.error('Producto no encontrado')
+        notify.error('Producto no encontrado')
         return
       }
 
@@ -231,7 +231,7 @@ export function useRecepcionItems({
               ? { ...d, collapsed: false, lotes: [...d.lotes, nuevoLote] }
               : d
           ))
-          toast.success(`Lote ${data.numero_lote} añadido a ${data.producto_nombre}`)
+          notify.success(`Lote ${data.numero_lote} añadido a ${data.producto_nombre}`)
           return
         }
 
@@ -259,7 +259,7 @@ export function useRecepcionItems({
           collapsed: false,
         }
         setDetalles(prev => [line, ...prev])
-        toast.success(`Lote ${data.numero_lote} añadido`)
+        notify.success(`Lote ${data.numero_lote} añadido`)
       } else if (data.tipo === 'presentacion') {
         const prod = productos?.find(p => p.id === data.producto_id || String(p.id) === String(data.producto_id))
         if (prod) await addProducto(prod, data.presentacion_id)
@@ -268,7 +268,7 @@ export function useRecepcionItems({
         if (prod) await addProducto(prod)
       }
     } catch {
-      toast.error('Error en la búsqueda')
+      notify.error('Error en la búsqueda')
     }
   }, [detalles, productos, validarProveedorEscaneado, addProducto])
 
@@ -284,7 +284,7 @@ export function useRecepcionItems({
 
       if (!data.encontrado) {
         navigator.vibrate?.([80, 40, 80])
-        toast.error('Producto no encontrado')
+        notify.error('Producto no encontrado')
         return
       }
 
@@ -304,7 +304,7 @@ export function useRecepcionItems({
         }))
         setScanCount(prev => prev + 1)
         navigator.vibrate?.(50)
-        toast.success(`+1 ${existingDetalle.producto_nombre}`, { duration: 1500 })
+        notify.success(`+1 ${existingDetalle.producto_nombre}`)
         return
       }
 
@@ -343,7 +343,7 @@ export function useRecepcionItems({
         setDetalles(prev => [line, ...prev])
         setScanCount(prev => prev + 1)
         navigator.vibrate?.(50)
-        toast.success(`${data.producto_nombre} agregado`)
+        notify.success(`${data.producto_nombre} agregado`)
         return
       }
 
@@ -357,7 +357,7 @@ export function useRecepcionItems({
         areaNombre: data.area_nombre || '',
       })
     } catch {
-      toast.error('Error al buscar producto')
+      notify.error('Error al buscar producto')
     }
   }, [detalles, validarProveedorEscaneado])
 
@@ -408,7 +408,7 @@ export function useRecepcionItems({
       setScanCount(prev => prev + 1)
       navigator.vibrate?.(50)
     } catch {
-      toast.error('Error al cargar producto')
+      notify.error('Error al cargar producto')
     } finally {
       setPendingScan(null)
       setScannerPaused(false)
@@ -518,7 +518,7 @@ export function useRecepcionItems({
         setLotesConfirmados(paraImprimir)
         printModal.onOpen()
       } else {
-        toast.success('Recepción confirmada')
+        notify.success('Recepción confirmada')
         navigate('/recepciones')
       }
     },
@@ -531,7 +531,7 @@ export function useRecepcionItems({
             || (data as Record<string, unknown>).message as string
             || JSON.stringify(data)
           : 'Error al confirmar recepción'
-      toast.error(String(msg))
+      notify.error(String(msg))
     },
   })
 
@@ -546,12 +546,12 @@ export function useRecepcionItems({
   ]
 
   const handleConfirmar = useCallback(() => {
-    if (!proveedorId) { toast.error('Selecciona un proveedor'); return }
-    if (!guiaDespacho.trim() && !guiaProvisoria) { toast.error('Ingresa el número de guía de despacho o marca como provisoria'); return }
+    if (!proveedorId) { notify.error('Selecciona un proveedor'); return }
+    if (!guiaDespacho.trim() && !guiaProvisoria) { notify.error('Ingresa el número de guía de despacho o marca como provisoria'); return }
 
     if (decision === 'rechazada') {
       if (motivosSeleccionados.length === 0 && !motivoOtro.trim()) {
-        toast.error('Indica al menos un motivo de rechazo')
+        notify.error('Indica al menos un motivo de rechazo')
         return
       }
       const motivos = [
@@ -575,10 +575,10 @@ export function useRecepcionItems({
     const validos = detalles.filter(d =>
       d.area_destino_id && d.lotes.some(l => l.codigo_lote && l.fecha_vencimiento)
     )
-    if (validos.length === 0) { toast.error('Completa al menos un ítem con lote, vencimiento y área'); return }
+    if (validos.length === 0) { notify.error('Completa al menos un ítem con lote, vencimiento y área'); return }
 
     if (decision === 'parcial' && !nota.trim()) {
-      toast.error('Indica en la nota qué faltó por recibir')
+      notify.error('Indica en la nota qué faltó por recibir')
       return
     }
 

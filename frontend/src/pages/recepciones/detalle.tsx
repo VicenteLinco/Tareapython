@@ -11,7 +11,7 @@ import { PageLoading } from '@/components/ui/page-state'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
 import { formatDate, daysUntil, cn, formatCantidad, getImageUrl } from '@/lib/utils'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 
 interface RecepcionHeader {
   id: string
@@ -65,10 +65,10 @@ export default function RecepcionDetallePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['recepcion', id] })
       queryClient.invalidateQueries({ queryKey: ['recepciones'] })
-      toast.success('Guía de despacho actualizada')
+      notify.success('Guía de despacho actualizada')
       setConfirmReplace(false)
     },
-    onError: () => toast.error('No se pudo guardar la foto'),
+    onError: () => notify.error('No se pudo guardar la foto'),
   })
 
   const confirmarMutation = useMutation({
@@ -76,9 +76,9 @@ export default function RecepcionDetallePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['recepcion', id] })
       queryClient.invalidateQueries({ queryKey: ['recepciones'] })
-      toast.success('Recepción confirmada')
+      notify.success('Recepción confirmada')
     },
-    onError: () => toast.error('Error al confirmar recepción'),
+    onError: () => notify.error('Error al confirmar recepción'),
   })
 
   function handleFotoFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -483,7 +483,7 @@ export default function RecepcionDetallePage() {
       {showQrScanner && (
         <QrScannerSession
           onItemsScanned={(items) => {
-            toast.success(`${items.length} producto(s) escaneados`)
+            notify.success(`${items.length} producto(s) escaneados`)
           }}
           onClose={() => setShowQrScanner(false)}
         />

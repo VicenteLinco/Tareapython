@@ -4,7 +4,7 @@ import { Printer, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatCantidad } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { imprimirEtiquetas, type LoteParaEtiqueta } from '@/lib/label-print'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import type { DetalleLineUI } from './item-card'
 import { isLoteComplete } from './item-card-utils'
 
@@ -30,7 +30,7 @@ export function LabelsSection({ detalles, onToggleEtiqueta, onCantidadEtiqueta, 
       try {
         await imprimirEtiquetas(lotesConfirmados)
       } catch {
-        toast.error('Error al generar etiquetas')
+        notify.error('Error al generar etiquetas')
       } finally {
         setImprimiendo(false)
       }

@@ -8,7 +8,7 @@ import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select
 import api from '@/lib/api'
 import type { Proveedor, RecepcionListItem } from '@/types'
 import { formatDate, daysUntil, cn, formatCantidad } from '@/lib/utils'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import { useFilterStorage } from '@/hooks/use-filter-storage'
 
 const PAGE_SIZE = 15
@@ -313,9 +313,9 @@ export default function RecepcionesPage() {
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['recepciones'] })
       queryClient.invalidateQueries({ queryKey: ['recepcion-detalle-inline', id] })
-      toast.success('Recepción confirmada')
+      notify.success('Recepción confirmada')
     },
-    onError: () => toast.error('Error al confirmar recepción'),
+    onError: () => notify.error('Error al confirmar recepción'),
   })
 
   const eliminarMutation = useMutation({
@@ -324,9 +324,9 @@ export default function RecepcionesPage() {
       queryClient.invalidateQueries({ queryKey: ['recepciones'] })
       queryClient.invalidateQueries({ queryKey: ['recepcion-detalle-inline', id] })
       setSelectedId(null)
-      toast.success('Borrador eliminado')
+      notify.success('Borrador eliminado')
     },
-    onError: () => toast.error('Error al eliminar borrador'),
+    onError: () => notify.error('Error al eliminar borrador'),
   })
 
   const handleRowClick = (id: string) => {

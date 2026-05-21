@@ -105,6 +105,8 @@ export default function SolicitudesCompraPage() {
               <PedidoPanel
                 proveedor={s.selectedProveedor}
                 items={s.items}
+                itemsByProveedor={s.itemsByProveedor}
+                totalGeneral={s.totalGeneral}
                 solicitudId={s.solicitudId}
                 isSaving={s.isSaving}
                 isGuardando={s.guardarMutation.isPending}
@@ -162,6 +164,8 @@ export default function SolicitudesCompraPage() {
               <PedidoPanel
                 proveedor={s.selectedProveedor}
                 items={s.items}
+                itemsByProveedor={s.itemsByProveedor}
+                totalGeneral={s.totalGeneral}
                 solicitudId={s.solicitudId}
                 isSaving={s.isSaving}
                 isGuardando={s.guardarMutation.isPending}

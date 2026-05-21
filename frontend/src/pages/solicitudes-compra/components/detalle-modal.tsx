@@ -196,6 +196,43 @@ export function DetalleModal({
     if (!detail) return
     const subtotal = calcTotal(detail.items)
     const iva = subtotal * 0.19
+
+    const mapItem = (i: SolicitudDetalle['items'][number]) => ({
+      producto_nombre: i.producto_nombre,
+      cantidad_sugerida: parseFloat(i.cantidad_sugerida),
+      unidad: i.unidad,
+      unidad_plural: i.unidad_plural,
+      codigo_maestro: i.codigo_maestro,
+      codigo_proveedor: i.codigo_proveedor,
+      proveedor_nombre: i.proveedor_nombre,
+      presentacion_nombre: i.presentacion_nombre,
+      presentacion_nombre_plural: i.presentacion_nombre_plural,
+      factor_conversion: i.factor_conversion ? parseFloat(i.factor_conversion) : null,
+      cantidad_presentaciones: i.cantidad_presentaciones ? parseFloat(i.cantidad_presentaciones) : null,
+      precio_unitario: i.precio_unitario ? parseFloat(i.precio_unitario) : null,
+    })
+
+    // Agrupar items por proveedor para el PDF multi-proveedor
+    const gruposMap = new Map<string, { items: SolicitudDetalle['items']; subtotal_neto: number }>()
+    for (const i of detail.items) {
+      const provNombre = i.proveedor_nombre || 'Sin proveedor'
+      const current = gruposMap.get(provNombre) ?? { items: [], subtotal_neto: 0 }
+      const qty = parseFloat(i.cantidad_sugerida)
+      const fc = i.factor_conversion ? parseFloat(i.factor_conversion) : null
+      const pu = i.precio_unitario ? parseFloat(i.precio_unitario) : 0
+      const neto = qty * (i.presentacion_id && fc ? pu * fc : pu)
+      current.items.push(i)
+      current.subtotal_neto += neto
+      gruposMap.set(provNombre, current)
+    }
+    const grupos = Array.from(gruposMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([proveedor_nombre, g]) => ({
+        proveedor_nombre,
+        subtotal_neto: g.subtotal_neto,
+        items: g.items.map(mapItem),
+      }))
+
     exportarSolicitudPDF({
       numero_documento: detail.numero_documento,
       fecha_creacion: detail.fecha_creacion,
@@ -208,20 +245,8 @@ export function DetalleModal({
       logoBase64: logoBase64 ?? null,
       monedaSimbolo,
       firma_solicitante_label: pdfFirmaLabel || null,
-      items: detail.items.map(i => ({
-        producto_nombre: i.producto_nombre,
-        cantidad_sugerida: parseFloat(i.cantidad_sugerida),
-        unidad: i.unidad,
-        unidad_plural: i.unidad_plural,
-        codigo_maestro: i.codigo_maestro,
-        codigo_proveedor: i.codigo_proveedor,
-        proveedor_nombre: i.proveedor_nombre,
-        presentacion_nombre: i.presentacion_nombre,
-        presentacion_nombre_plural: i.presentacion_nombre_plural,
-        factor_conversion: i.factor_conversion ? parseFloat(i.factor_conversion) : null,
-        cantidad_presentaciones: i.cantidad_presentaciones ? parseFloat(i.cantidad_presentaciones) : null,
-        precio_unitario: i.precio_unitario ? parseFloat(i.precio_unitario) : null,
-      })),
+      items: detail.items.map(mapItem),
+      grupos: grupos.length > 1 ? grupos : undefined,
     })
   }
 

@@ -30,6 +30,11 @@ interface SolicitudPdfOptions {
   logoBase64?: string | null
   monedaSimbolo?: string
   firma_solicitante_label?: string | null
+  grupos?: Array<{
+    proveedor_nombre: string
+    items: SolicitudPdfOptions['items']
+    subtotal_neto: number
+  }>
 }
 
 interface JsPdfWithAutoTable extends jsPDF {
@@ -51,7 +56,7 @@ const C = {
 
 export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promise<void> {
   const {
-    numero_documento, fecha_creacion, usuario_nombre, nota, items,
+    numero_documento, fecha_creacion, usuario_nombre, nota, items, grupos,
     nombreLaboratorio, subtotal_neto, iva, total_con_iva,
     firma_solicitante_label,
   } = options
@@ -158,104 +163,139 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
     return `${sym}${n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
 
-  autoTable(doc, {
-    startY: y,
-    margin: { left: 12, right: 12 },
-    head: [[
-      '#',
-      'Producto',
-      'Cantidad',
-      'P. Unit. Base',
-      'Total Neto',
-    ]],
-    body: items.map((item, index) => {
-      const usaPresentacion = !!(item.presentacion_nombre && item.factor_conversion && item.cantidad_presentaciones)
+  const tableStartY = y
 
-      const baseEquiv = usaPresentacion
-        ? Math.round(item.cantidad_presentaciones! * item.factor_conversion!)
-        : Math.round(item.cantidad_sugerida)
-      const presLabel = usaPresentacion
-        ? (item.cantidad_presentaciones === 1
-          ? item.presentacion_nombre!
-          : (item.presentacion_nombre_plural ?? item.presentacion_nombre + 's'))
-        : ''
-      const baseQty = Math.round(item.cantidad_sugerida)
-      const baseUnitLabel = baseQty === 1
-        ? item.unidad
-        : (item.unidad_plural ?? item.unidad)
-      const cantDisplay = usaPresentacion
-        ? `${item.cantidad_presentaciones} ${presLabel}\n= ${baseEquiv} ${baseEquiv === 1 ? item.unidad : (item.unidad_plural ?? item.unidad)}`
-        : `${baseQty} ${baseUnitLabel}`
+  const renderTablaItems = (itemsToRender: typeof items, startY: number): number => {
+    let finalY = startY
+    autoTable(doc, {
+      startY,
+      margin: { left: 12, right: 12 },
+      head: [[
+        '#',
+        'Producto',
+        'Cantidad',
+        'P. Unit. Base',
+        'Total Neto',
+      ]],
+      body: itemsToRender.map((item, index) => {
+        const usaPresentacion = !!(item.presentacion_nombre && item.factor_conversion && item.cantidad_presentaciones)
 
-      const precioBase = item.precio_unitario ?? 0
-      const precioPres = (usaPresentacion && item.factor_conversion)
-        ? precioBase * item.factor_conversion
-        : null
-      const qty = usaPresentacion ? item.cantidad_presentaciones! : item.cantidad_sugerida
-      const precioEfectivo = precioPres ?? precioBase
-      const hasPrice = item.precio_unitario != null && item.precio_unitario > 0
-      const neto = hasPrice ? qty * precioEfectivo : 0
+        const baseEquiv = usaPresentacion
+          ? Math.round(item.cantidad_presentaciones! * item.factor_conversion!)
+          : Math.round(item.cantidad_sugerida)
+        const presLabel = usaPresentacion
+          ? (item.cantidad_presentaciones === 1
+            ? item.presentacion_nombre!
+            : (item.presentacion_nombre_plural ?? item.presentacion_nombre + 's'))
+          : ''
+        const baseQty = Math.round(item.cantidad_sugerida)
+        const baseUnitLabel = baseQty === 1
+          ? item.unidad
+          : (item.unidad_plural ?? item.unidad)
+        const cantDisplay = usaPresentacion
+          ? `${item.cantidad_presentaciones} ${presLabel}\n= ${baseEquiv} ${baseEquiv === 1 ? item.unidad : (item.unidad_plural ?? item.unidad)}`
+          : `${baseQty} ${baseUnitLabel}`
 
-      // Columna de precio: siempre precio por unidad base
-      const precioDisplay = hasPrice
-        ? fmtMonto(precioBase)
-        : '—'
+        const precioBase = item.precio_unitario ?? 0
+        const precioPres = (usaPresentacion && item.factor_conversion)
+          ? precioBase * item.factor_conversion
+          : null
+        const qty = usaPresentacion ? item.cantidad_presentaciones! : item.cantidad_sugerida
+        const precioEfectivo = precioPres ?? precioBase
+        const hasPrice = item.precio_unitario != null && item.precio_unitario > 0
+        const neto = hasPrice ? qty * precioEfectivo : 0
 
-      return [
-        index + 1,
-        item.producto_nombre,
-        { content: cantDisplay, styles: { fontSize: 6.5 } },
-        precioDisplay,
-        hasPrice ? fmtMonto(neto) : '—',
-      ]
-    }),
-    theme: 'grid',
-    headStyles: {
-      fillColor: C.primary,
-      textColor: C.white,
-      fontSize: 6.5,
-      fontStyle: 'bold',
-      halign: 'center',
-      cellPadding: { top: 3, right: 2, bottom: 3, left: 2 },
-    },
-    styles: { fontSize: 7.5, cellPadding: { top: 3, right: 2, bottom: 3, left: 2 }, valign: 'middle' },
-    columnStyles: {
-      0: { halign: 'center', cellWidth: 8 },
-      1: { cellWidth: 82, cellPadding: { top: 3, right: 2, bottom: 3, left: 3 } },
-      2: { halign: 'center', cellWidth: 30 },
-      3: { halign: 'right', cellWidth: 34 },
-      4: { halign: 'right', cellWidth: 38 },
-    },
-    alternateRowStyles: { fillColor: C.bgLight },
-    didParseCell: (data: CellHookData) => {
-      if (data.section !== 'body' || data.column.index !== 1) return
-      const item = items[data.row.index]
-      if (!item) return
-      const hasExtra = item.codigo_proveedor || item.codigo_maestro
-      if (hasExtra) {
-        data.cell.styles.cellPadding = { top: 3, right: 2, bottom: 11, left: 3 }
-      }
-    },
-    didDrawCell: (data: CellHookData) => {
-      if (data.section !== 'body' || data.column.index !== 1) return
-      const item = items[data.row.index]
-      if (!item) return
-      const parts: string[] = []
-      if (item.codigo_proveedor) parts.push(`Prv: ${item.codigo_proveedor}`)
-      if (item.codigo_maestro)   parts.push(`Bod: ${item.codigo_maestro}`)
-      if (parts.length === 0) return
-      const line = parts.join('   ·   ')
-      const prevSize = doc.getFontSize()
-      const prevFont = doc.getFont()
-      doc.setFontSize(5.5)
-      doc.setTextColor(120, 130, 150)
-      doc.setFont('helvetica', 'normal')
-      doc.text(line, data.cell.x + 3, data.cell.y + data.cell.height - 3.5)
-      doc.setFontSize(prevSize)
-      doc.setTextColor(...C.textMain)
-      doc.setFont(prevFont.fontName, prevFont.fontStyle)
-    },
-  })
+        // Columna de precio: siempre precio por unidad base
+        const precioDisplay = hasPrice
+          ? fmtMonto(precioBase)
+          : '—'
+
+        return [
+          index + 1,
+          item.producto_nombre,
+          { content: cantDisplay, styles: { fontSize: 6.5 } },
+          precioDisplay,
+          hasPrice ? fmtMonto(neto) : '—',
+        ]
+      }),
+      theme: 'grid',
+      headStyles: {
+        fillColor: C.primary,
+        textColor: C.white,
+        fontSize: 6.5,
+        fontStyle: 'bold',
+        halign: 'center',
+        cellPadding: { top: 3, right: 2, bottom: 3, left: 2 },
+      },
+      styles: { fontSize: 7.5, cellPadding: { top: 3, right: 2, bottom: 3, left: 2 }, valign: 'middle' },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 8 },
+        1: { cellWidth: 82, cellPadding: { top: 3, right: 2, bottom: 3, left: 3 } },
+        2: { halign: 'center', cellWidth: 30 },
+        3: { halign: 'right', cellWidth: 34 },
+        4: { halign: 'right', cellWidth: 38 },
+      },
+      alternateRowStyles: { fillColor: C.bgLight },
+      didParseCell: (data: CellHookData) => {
+        if (data.section !== 'body' || data.column.index !== 1) return
+        const item = itemsToRender[data.row.index]
+        if (!item) return
+        const hasExtra = item.codigo_proveedor || item.codigo_maestro
+        if (hasExtra) {
+          data.cell.styles.cellPadding = { top: 3, right: 2, bottom: 11, left: 3 }
+        }
+      },
+      didDrawCell: (data: CellHookData) => {
+        if (data.section !== 'body' || data.column.index !== 1) return
+        const item = itemsToRender[data.row.index]
+        if (!item) return
+        const parts: string[] = []
+        if (item.codigo_proveedor) parts.push(`Prv: ${item.codigo_proveedor}`)
+        if (item.codigo_maestro)   parts.push(`Bod: ${item.codigo_maestro}`)
+        if (parts.length === 0) return
+        const line = parts.join('   ·   ')
+        const prevSize = doc.getFontSize()
+        const prevFont = doc.getFont()
+        doc.setFontSize(5.5)
+        doc.setTextColor(120, 130, 150)
+        doc.setFont('helvetica', 'normal')
+        doc.text(line, data.cell.x + 3, data.cell.y + data.cell.height - 3.5)
+        doc.setFontSize(prevSize)
+        doc.setTextColor(...C.textMain)
+        doc.setFont(prevFont.fontName, prevFont.fontStyle)
+      },
+      didDrawPage: (d: CellHookData) => {
+        finalY = (d.cursor?.y ?? finalY)
+      },
+    })
+    return (doc as JsPdfWithAutoTable).lastAutoTable.finalY
+  }
+
+  if (grupos && grupos.length > 1) {
+    let currentY = tableStartY
+    for (const grupo of grupos) {
+      // Header del proveedor
+      doc.setFontSize(8)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(C.primary[0], C.primary[1], C.primary[2])
+      doc.text(grupo.proveedor_nombre.toUpperCase(), 14, currentY + 5)
+      currentY += 9
+
+      // Tabla del grupo
+      currentY = renderTablaItems(grupo.items, currentY)
+
+      // Subtotal del grupo
+      doc.setFontSize(7.5)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(C.textMain[0], C.textMain[1], C.textMain[2])
+      const subtotalText = `Subtotal ${grupo.proveedor_nombre}: ${sym}${grupo.subtotal_neto.toLocaleString('es-CL', { minimumFractionDigits: 0 })}`
+      doc.text(subtotalText, doc.internal.pageSize.width - 14, currentY + 4, { align: 'right' })
+      currentY += 10
+    }
+  } else {
+    // Comportamiento original: tabla única
+    renderTablaItems(items, tableStartY)
+  }
 
   // --- CAJA DE TOTALES ---
   const tableEndY = (doc as JsPdfWithAutoTable).lastAutoTable.finalY + 6

@@ -1,5 +1,10 @@
 export * from './generated'
-import type { Presentacion } from './generated'
+import type { Presentacion, EstadoSolicitud, EstadoRecepcion, EstadoOrdenCompra, SolicitudResumen as GeneratedSolicitudResumen, SolicitudDetalle as GeneratedSolicitudDetalle } from './generated'
+
+// --- Type Overrides (Narrowing) ---
+// Los tipos generados usan `estado: string`, pero aquí los especificamos con los enums correctos
+export type SolicitudResumen = Omit<GeneratedSolicitudResumen, 'estado'> & { estado: EstadoSolicitud }
+export type SolicitudDetalle = Omit<GeneratedSolicitudDetalle, 'estado'> & { estado: EstadoSolicitud }
 
 // --- Auth (Frontend Specific or Not Yet Generated) ---
 export interface LoginRequest {
@@ -116,7 +121,7 @@ export interface Recepcion {
   proveedor_nombre?: string
   guia_despacho?: string | null
   fecha_recepcion: string
-  estado: 'borrador' | 'confirmada'
+  estado: EstadoRecepcion
   nota: string | null
   usuario_id: number
   usuario_nombre?: string
@@ -332,7 +337,7 @@ export interface OrdenCompraResumen {
   id: string
   numero_documento: string
   proveedor_nombre: string
-  estado: 'borrador' | 'enviada' | 'recibida_parcial' | 'recibida_total' | 'cancelada'
+  estado: EstadoOrdenCompra
   fecha_emision: string
   fecha_entrega_esperada: string | null
   items_count: number

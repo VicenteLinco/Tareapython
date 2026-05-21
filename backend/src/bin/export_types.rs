@@ -1,3 +1,4 @@
+use inventario_lab_backend::domain::{EstadoSolicitud, EstadoRecepcion, EstadoOrdenCompra};
 use inventario_lab_backend::dto::{
     area::{AsignarProductosRequest, CreateArea, ProductoAreaRow, UpdateArea},
     categoria::{CreateCategoria, UpdateCategoria},
@@ -60,6 +61,11 @@ fn main() {
             }
         };
     }
+
+    // Enums de dominio
+    append!(EstadoSolicitud);
+    append!(EstadoRecepcion);
+    append!(EstadoOrdenCompra);
 
     // Modelos
     append!(Area);

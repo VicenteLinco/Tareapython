@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
 import { getPresFormatos, savePresFormatos, type PresFormato } from '@/lib/pres-formatos'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 
 export default function PresentacionesFormatosTab() {
   const [formatos, setFormatos] = useState<PresFormato[]>(() => getPresFormatos())
@@ -14,14 +14,14 @@ export default function PresentacionesFormatosTab() {
     const nombre_plural = nuevo.nombre_plural.trim() || nombre
     if (!nombre) return
     if (formatos.some((f) => f.nombre.toLowerCase() === nombre.toLowerCase())) {
-      toast.error('Ya existe ese formato')
+      notify.error('Ya existe ese formato')
       return
     }
     const updated = [...formatos, { nombre, nombre_plural }].sort((a, b) => a.nombre.localeCompare(b.nombre))
     setFormatos(updated)
     savePresFormatos(updated)
     setNuevo({ nombre: '', nombre_plural: '' })
-    toast.success('Formato añadido')
+    notify.success('Formato añadido')
   }
 
   function handleDelete(nombre: string) {
@@ -29,7 +29,7 @@ export default function PresentacionesFormatosTab() {
     const updated = formatos.filter((f) => f.nombre !== nombre)
     setFormatos(updated)
     savePresFormatos(updated)
-    toast.success('Formato eliminado')
+    notify.success('Formato eliminado')
   }
 
   const columns = [

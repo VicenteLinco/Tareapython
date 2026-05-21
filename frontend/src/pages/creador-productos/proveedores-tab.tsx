@@ -8,7 +8,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 import type { Proveedor, CreateProveedor, UpdateProveedor } from '@/types'
 
@@ -73,10 +73,10 @@ export default function ProveedoresTab() {
     mutationFn: (data: CreateProveedor) => api.post('/proveedores', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proveedores'] })
-      toast.success('Proveedor creado')
+      notify.success('Proveedor creado')
       closeForm()
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const updateMut = useMutation({
@@ -84,30 +84,30 @@ export default function ProveedoresTab() {
       api.put(`/proveedores/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proveedores'] })
-      toast.success('Proveedor actualizado')
+      notify.success('Proveedor actualizado')
       closeForm()
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => api.delete(`/proveedores/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proveedores'] })
-      toast.success('Proveedor desactivado')
+      notify.success('Proveedor desactivado')
       setDeleteTarget(null)
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const reactivarMut = useMutation({
     mutationFn: (id: number) => api.post(`/proveedores/${id}/reactivar`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proveedores'] })
-      toast.success('Proveedor reactivado')
+      notify.success('Proveedor reactivado')
       setReactivateTarget(null)
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   function openCreate() {

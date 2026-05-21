@@ -15,7 +15,7 @@ import { Sheet } from '@/components/ui/sheet'
 import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 import { getPresFormatos, type PresFormato } from '@/lib/pres-formatos'
 import type {
@@ -127,20 +127,20 @@ export default function ProductosTab() {
     mutationFn: (id: string) => api.delete(`/productos/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productos'] })
-      toast.success('Producto desactivado')
+      notify.success('Producto desactivado')
       setDeleteTarget(null)
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const reactivarMut = useMutation({
     mutationFn: (id: string) => api.post(`/productos/${id}/reactivar`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productos'] })
-      toast.success('Producto reactivado')
+      notify.success('Producto reactivado')
       setReactivateTarget(null)
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const columns = [
@@ -474,11 +474,11 @@ function QuickCreateCategoria({
     mutationFn: () => api.post<Categoria>('/categorias', { nombre: nombre.trim() }),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['categorias'] })
-      toast.success('Categoría creada')
+      notify.success('Categoría creada')
       onCreated(res.data)
       setNombre('')
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
   return (
     <Dialog open={open} onClose={onClose} title="Nueva categoría">
@@ -510,11 +510,11 @@ function QuickCreateUnidad({
     }),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['unidades-basicas'] })
-      toast.success('Unidad creada')
+      notify.success('Unidad creada')
       onCreated(res.data)
       setF({ nombre: '', nombre_plural: '' })
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
   return (
     <Dialog open={open} onClose={onClose} title="Nueva unidad básica">
@@ -551,11 +551,11 @@ function QuickCreateArea({
     mutationFn: () => api.post<Area>('/areas', { nombre: nombre.trim() }),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['areas'] })
-      toast.success('Área creada')
+      notify.success('Área creada')
       onCreated(res.data)
       setNombre('')
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
   return (
     <Dialog open={open} onClose={onClose} title="Nueva área">
@@ -684,10 +684,10 @@ function CreateProductoDialog({
     mutationFn: (data: CreateProducto) => api.post('/productos', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productos'] })
-      toast.success('Producto creado')
+      notify.success('Producto creado')
       handleClose()
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   function handleClose() {
@@ -705,10 +705,10 @@ function CreateProductoDialog({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.nombre.trim()) { toast.error('El nombre del producto es requerido'); return }
-    if (!form.unidad_base_id) { toast.error('Selecciona una unidad base'); return }
-    if (!form.area_id) { toast.error('Selecciona un área'); return }
-    if (!form.proveedor_id) { toast.error('Selecciona un proveedor'); return }
+    if (!form.nombre.trim()) { notify.error('El nombre del producto es requerido'); return }
+    if (!form.unidad_base_id) { notify.error('Selecciona una unidad base'); return }
+    if (!form.area_id) { notify.error('Selecciona un área'); return }
+    if (!form.proveedor_id) { notify.error('Selecciona un proveedor'); return }
     const presentaciones =
       form.pres_nombre && form.pres_factor
         ? [{
@@ -1233,16 +1233,16 @@ function EditProductoDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productos'] })
       queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
-      toast.success('Producto actualizado')
+      notify.success('Producto actualizado')
       onClose()
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!producto) return
-    if (!form.proveedor_id) { toast.error('Selecciona un proveedor'); return }
+    if (!form.proveedor_id) { notify.error('Selecciona un proveedor'); return }
 
     // Build new presentacion if filled
     const hasNewPres = form.pres_nombre && form.pres_factor
@@ -1273,9 +1273,9 @@ function EditProductoDialog({
         version: form.pres_version,
       }).then(() => {
         queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
-        toast.success('Presentación actualizada')
+        notify.success('Presentación actualizada')
       }).catch((err) => {
-        toast.error(parseApiError(err))
+        notify.error(parseApiError(err))
       })
     } else if (!form.pres_id && hasNewPres) {
       // Create new presentation
@@ -1286,8 +1286,8 @@ function EditProductoDialog({
         codigo_barras: form.pres_codigo_barras.trim() || undefined,
       }).then(() => {
         queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
-        toast.success('Presentación agregada')
-      }).catch((err) => toast.error(parseApiError(err)))
+        notify.success('Presentación agregada')
+      }).catch((err) => notify.error(parseApiError(err)))
     }
   }
 
@@ -1342,9 +1342,9 @@ function EditProductoDialog({
       await api.put(`/productos/${productoId}/imagen`, { data_url: dataUrl })
       queryClient.invalidateQueries({ queryKey: ['productos'] })
       queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
-      toast.success('Imagen actualizada')
+      notify.success('Imagen actualizada')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Error subiendo imagen')
+      notify.error(err instanceof Error ? err.message : 'Error subiendo imagen')
     } finally {
       setUploadingImage(false)
     }
@@ -1356,9 +1356,9 @@ function EditProductoDialog({
       await api.delete(`/productos/${productoId}/imagen`)
       queryClient.invalidateQueries({ queryKey: ['productos'] })
       queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
-      toast.success('Imagen eliminada')
+      notify.success('Imagen eliminada')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Error eliminando imagen')
+      notify.error(err instanceof Error ? err.message : 'Error eliminando imagen')
     } finally {
       setUploadingImage(false)
     }

@@ -7,7 +7,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import type { UnidadBasica, CreateUnidadBasica, UpdateUnidadBasica } from '@/types'
 
 export default function UnidadesTab() {
@@ -27,10 +27,10 @@ export default function UnidadesTab() {
     mutationFn: (data: CreateUnidadBasica) => api.post('/unidades-basicas', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unidades-basicas'] })
-      toast.success('Unidad creada')
+      notify.success('Unidad creada')
       closeDialog()
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const updateMut = useMutation({
@@ -38,20 +38,20 @@ export default function UnidadesTab() {
       api.put(`/unidades-basicas/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unidades-basicas'] })
-      toast.success('Unidad actualizada')
+      notify.success('Unidad actualizada')
       closeDialog()
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => api.delete(`/unidades-basicas/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unidades-basicas'] })
-      toast.success('Unidad eliminada')
+      notify.success('Unidad eliminada')
       setDeleteTarget(null)
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   function openCreate() {

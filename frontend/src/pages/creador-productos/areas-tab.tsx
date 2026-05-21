@@ -8,7 +8,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 import type { Area, CreateArea, UpdateArea } from '@/types'
 
@@ -42,10 +42,10 @@ export default function AreasTab() {
     mutationFn: (data: CreateArea) => api.post('/areas', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['areas'] })
-      toast.success('Área creada')
+      notify.success('Área creada')
       closeForm()
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const updateMut = useMutation({
@@ -53,20 +53,20 @@ export default function AreasTab() {
       api.put(`/areas/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['areas'] })
-      toast.success('Área actualizada')
+      notify.success('Área actualizada')
       closeForm()
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => api.delete(`/areas/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['areas'] })
-      toast.success('Área eliminada')
+      notify.success('Área eliminada')
       setDeleteTarget(null)
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   function openCreate() {

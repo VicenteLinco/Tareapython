@@ -7,7 +7,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
-import { toast } from 'sonner'
+import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 import type { Categoria, CreateCategoria, UpdateCategoria } from '@/types'
 
@@ -40,10 +40,10 @@ export default function CategoriasTab() {
     mutationFn: (data: CreateCategoria) => api.post('/categorias', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categorias'] })
-      toast.success('Categoría creada')
+      notify.success('Categoría creada')
       closeForm()
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const updateMut = useMutation({
@@ -51,20 +51,20 @@ export default function CategoriasTab() {
       api.put(`/categorias/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categorias'] })
-      toast.success('Categoría actualizada')
+      notify.success('Categoría actualizada')
       closeForm()
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => api.delete(`/categorias/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categorias'] })
-      toast.success('Categoría eliminada')
+      notify.success('Categoría eliminada')
       setDeleteTarget(null)
     },
-    onError: (err) => toast.error(parseApiError(err)),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   function openCreate() {

@@ -542,6 +542,23 @@ export function useSolicitudState() {
     ? (recomendaciones ?? []).filter(r => proveedoresFiltro.some(p => p.id === r.proveedor_id))
     : (recomendaciones ?? [])
 
+  const recsByProveedor = useMemo(() => {
+    const map = new Map<number, { proveedor_id: number; proveedor_nombre: string; recs: ItemRecomendado[] }>()
+    for (const r of recsFiltered) {
+      const pid = r.proveedor_id ?? -1
+      const entry = map.get(pid) ?? {
+        proveedor_id: pid,
+        proveedor_nombre: r.proveedor_nombre ?? 'Sin proveedor',
+        recs: [],
+      }
+      entry.recs.push(r)
+      map.set(pid, entry)
+    }
+    return Array.from(map.values()).sort((a, b) =>
+      a.proveedor_nombre.localeCompare(b.proveedor_nombre)
+    )
+  }, [recsFiltered])
+
   const itemsByProveedor = useMemo(() => {
     const map = new Map<number, { proveedor_nombre: string; items: SolicitudItem[]; subtotal: number }>()
     for (const item of items) {
@@ -611,7 +628,7 @@ export function useSolicitudState() {
     // Datos globales
     proveedores, isLoadingProveedores,
     recomendaciones, isLoadingRecs,
-    recsFiltered, urgenciasByProveedor, itemsByProveedor, totalGeneral,
+    recsFiltered, recsByProveedor, urgenciasByProveedor, itemsByProveedor, totalGeneral,
     vencimientoByProveedor, diasVencimiento, setDiasVencimiento,
     configuracion, monedaCodigo,
   }

@@ -6,7 +6,7 @@ import type { Producto, PaginatedResponse } from '@/types'
 import { ProductoImage } from '@/components/ui/producto-image'
 
 interface Props {
-  proveedorId: number
+  proveedorId: number | null
   monedaCodigo?: string
   excluidos: string[]
   onAdd: (p: Producto) => void

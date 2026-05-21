@@ -149,8 +149,8 @@ export default function SolicitudesCompraPage() {
             />
             <div className="flex-1 grid grid-cols-1 lg:grid-cols-[30%_1fr] gap-4 min-h-0">
               <QuiebresPanelIzquierdo
-                proveedor={s.selectedProveedor}
-                recomendaciones={s.recsFiltered}
+                selectedProveedor={s.selectedProveedor}
+                recsByProveedor={s.recsByProveedor}
                 isLoadingRecs={s.isLoadingRecs}
                 itemsEnPedido={s.items}
                 tab={s.tabIzquierdo}

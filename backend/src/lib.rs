@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod config;
 pub mod db;
+pub mod domain;
 pub mod dto;
 pub mod errors;
 pub mod handlers;

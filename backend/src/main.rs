@@ -11,6 +11,7 @@ use tracing_subscriber::EnvFilter;
 mod auth;
 mod config;
 mod db;
+mod domain;
 mod dto;
 mod errors;
 mod handlers;

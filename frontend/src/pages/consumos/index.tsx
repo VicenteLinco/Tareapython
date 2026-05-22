@@ -83,7 +83,7 @@ function CartPanel({
   }
 
   return (
-    <div className="rounded-xl border border-base-200 bg-base-100 flex flex-col max-h-[calc(100vh-120px)] overflow-hidden shadow-sm">
+    <div className="rounded-xl border border-base-200 bg-base-100 flex flex-col h-full overflow-hidden shadow-sm">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-base-200 flex-shrink-0">
         <div className="flex items-center gap-2 font-bold text-sm">
@@ -349,7 +349,7 @@ export default function ConsumosPage() {
   const { data: areasData } = useQuery({
     queryKey: ['areas'],
     queryFn: () => api.get<{ id: number; nombre: string; activa: boolean }[]>('/areas').then(r => r.data),
-    staleTime: 300_000,
+    staleTime: 5 * 60 * 1000,
   })
   const areas = areasData?.filter(a => a.activa) ?? []
 
@@ -727,7 +727,7 @@ export default function ConsumosPage() {
       </div>
 
       {/* ── Columna derecha — carrito (solo desktop lg+) ── */}
-      <div className="hidden lg:flex lg:flex-[2] lg:sticky lg:top-24 flex-col min-w-0">
+      <div className="hidden lg:flex lg:flex-[2] lg:sticky lg:top-24 flex-col min-w-0 h-[calc(100vh-112px)]">
         <CartPanel {...cartProps} />
       </div>
 

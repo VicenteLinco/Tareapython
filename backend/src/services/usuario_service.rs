@@ -12,13 +12,6 @@ use crate::dto::usuario::{
 use crate::errors::AppError;
 use crate::models::usuario::Usuario;
 
-#[derive(sqlx::FromRow)]
-struct AreaRow {
-    usuario_id: Uuid,
-    id: i32,
-    nombre: String,
-}
-
 async fn build_usuario_response(
     pool: &PgPool,
     user: &Usuario,
@@ -42,6 +35,13 @@ async fn build_usuario_response(
 }
 
 pub async fn listar(pool: &PgPool, params: UsuarioQuery) -> Result<Vec<UsuarioResponse>, AppError> {
+    #[derive(sqlx::FromRow)]
+    struct AreaRow {
+        usuario_id: Uuid,
+        id: i32,
+        nombre: String,
+    }
+
     let activo = params.activo.unwrap_or(true);
 
     let usuarios = if let Some(rol) = &params.rol {

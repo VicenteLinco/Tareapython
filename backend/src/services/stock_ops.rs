@@ -15,6 +15,47 @@ pub struct LoteFefo {
     pub area_id: i32,
 }
 
+/// Distribuye una salida FEFO de forma pura (sin acceso a DB).
+/// Retorna `Vec<(lote_id, cantidad_a_tomar)>` en el orden en que deben
+/// consumirse los lotes.
+///
+/// # Errores
+/// - `AppError::Validation` si `cantidad_total` es cero o negativo.
+/// - `AppError::StockInsuficiente` si la suma de lotes no alcanza `cantidad_total`.
+pub fn distribuir_fefo(
+    lotes: &[LoteFefo],
+    cantidad_total: Decimal,
+) -> Result<Vec<(Uuid, Decimal)>, AppError> {
+    if cantidad_total <= Decimal::ZERO {
+        return Err(AppError::Validation(
+            "La cantidad solicitada debe ser mayor a cero".into(),
+        ));
+    }
+
+    let mut restante = cantidad_total;
+    let mut salidas: Vec<(Uuid, Decimal)> = Vec::new();
+
+    for lote in lotes {
+        if restante.is_zero() {
+            break;
+        }
+        let tomar = lote.cantidad.min(restante);
+        if tomar > Decimal::ZERO {
+            restante -= tomar;
+            salidas.push((lote.lote_id, tomar));
+        }
+    }
+
+    if !restante.is_zero() {
+        return Err(AppError::StockInsuficiente {
+            disponible: cantidad_total - restante,
+            solicitado: cantidad_total,
+        });
+    }
+
+    Ok(salidas)
+}
+
 /// Busca lotes con FEFO para un producto en un área, bloqueando los registros (FOR UPDATE).
 pub async fn lotes_fefo(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -67,6 +108,7 @@ pub fn stock_total(lotes: &[LoteFefo]) -> Decimal {
 
 /// Aplica un consumo/salida FEFO: inserta movimientos.
 /// La tabla 'stock' y 'cantidad_resultante' se actualizan vía Trigger.
+/// Delega la distribución de cantidades a `distribuir_fefo` (lógica pura).
 #[allow(clippy::too_many_arguments)]
 pub async fn aplicar_salida_fefo(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -78,25 +120,25 @@ pub async fn aplicar_salida_fefo(
     nota: Option<&str>,
     origen: Option<&str>,
 ) -> Result<Vec<MovimientoGenerado>, AppError> {
-    let mut restante = cantidad_total;
+    // Calcular distribución pura primero (sin DB)
+    let plan = distribuir_fefo(lotes, cantidad_total)?;
+
+    // Crear un índice lote_id → area_id para los inserts
+    let area_por_lote: std::collections::HashMap<Uuid, i32> =
+        lotes.iter().map(|l| (l.lote_id, l.area_id)).collect();
+
     let mut movimientos = Vec::new();
 
-    for lote in lotes {
-        if restante <= Decimal::ZERO {
-            break;
-        }
-
-        let consumir = restante.min(lote.cantidad);
-        restante -= consumir;
-
+    for (lote_id, consumir) in plan {
+        let area_id = area_por_lote[&lote_id];
         let mov = sqlx::query_as::<_, MovimientoGenerado>(
             r#"INSERT INTO movimientos (grupo_movimiento, lote_id, area_id, tipo, cantidad, usuario_id, origen, nota)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                RETURNING id, numero_documento, cantidad, cantidad_resultante"#,
         )
         .bind(grupo_movimiento)
-        .bind(lote.lote_id)
-        .bind(lote.area_id)
+        .bind(lote_id)
+        .bind(area_id)
         .bind(tipo)
         .bind(consumir)
         .bind(usuario_id)
@@ -175,4 +217,98 @@ pub async fn validar_acceso_area(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    fn make_lote(lote_id: Uuid, cantidad: Decimal) -> LoteFefo {
+        LoteFefo {
+            stock_id: 1,
+            lote_id,
+            cantidad,
+            area_id: 1,
+        }
+    }
+
+    // ─── Escenario 1: Un solo lote, cantidad suficiente ─────────────────────
+    #[test]
+    fn fefo_un_lote_suficiente() {
+        let id = Uuid::new_v4();
+        let lotes = vec![make_lote(id, dec!(100))];
+        let plan = distribuir_fefo(&lotes, dec!(60)).expect("debe distribuir");
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].0, id);
+        assert_eq!(plan[0].1, dec!(60));
+    }
+
+    // ─── Escenario 2: Varios lotes en orden FEFO ────────────────────────────
+    #[test]
+    fn fefo_varios_lotes_en_orden() {
+        let id1 = Uuid::new_v4(); // primer lote a vencer (más próximo)
+        let id2 = Uuid::new_v4();
+        let id3 = Uuid::new_v4();
+        // Los lotes deben llegar ya ordenados por fecha (como los retorna la DB)
+        let lotes = vec![
+            make_lote(id1, dec!(30)),
+            make_lote(id2, dec!(50)),
+            make_lote(id3, dec!(20)),
+        ];
+        // Pedir 70: debe tomar 30 del primer lote y 40 del segundo
+        let plan = distribuir_fefo(&lotes, dec!(70)).expect("debe distribuir");
+        assert_eq!(plan.len(), 2);
+        assert_eq!(plan[0], (id1, dec!(30)));
+        assert_eq!(plan[1], (id2, dec!(40)));
+    }
+
+    // ─── Escenario 3: Primer lote agotado (cantidad 0) → salta al siguiente ─
+    #[test]
+    fn fefo_lote_agotado_salta_al_siguiente() {
+        let id1 = Uuid::new_v4();
+        let id2 = Uuid::new_v4();
+        let lotes = vec![
+            make_lote(id1, dec!(0)),   // agotado: la DB filtra con cantidad > 0,
+                                        // pero si llega con 0, debe ignorarse
+            make_lote(id2, dec!(50)),
+        ];
+        let plan = distribuir_fefo(&lotes, dec!(30)).expect("debe distribuir");
+        // Solo debe aparecer el segundo lote
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].0, id2);
+        assert_eq!(plan[0].1, dec!(30));
+    }
+
+    // ─── Escenario 4: Stock insuficiente ────────────────────────────────────
+    #[test]
+    fn fefo_stock_insuficiente() {
+        let lotes = vec![
+            make_lote(Uuid::new_v4(), dec!(10)),
+            make_lote(Uuid::new_v4(), dec!(15)),
+        ];
+        let err = distribuir_fefo(&lotes, dec!(50)).expect_err("debe fallar");
+        match err {
+            AppError::StockInsuficiente { disponible, solicitado } => {
+                assert_eq!(disponible, dec!(25));
+                assert_eq!(solicitado, dec!(50));
+            }
+            other => panic!("error inesperado: {:?}", other),
+        }
+    }
+
+    // ─── Escenario 5: Cantidad cero o negativa → error de validación ────────
+    #[test]
+    fn fefo_cantidad_cero_es_invalida() {
+        let lotes = vec![make_lote(Uuid::new_v4(), dec!(100))];
+        let err = distribuir_fefo(&lotes, dec!(0)).expect_err("debe fallar con cero");
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[test]
+    fn fefo_cantidad_negativa_es_invalida() {
+        let lotes = vec![make_lote(Uuid::new_v4(), dec!(100))];
+        let err = distribuir_fefo(&lotes, dec!(-5)).expect_err("debe fallar con negativo");
+        assert!(matches!(err, AppError::Validation(_)));
+    }
 }

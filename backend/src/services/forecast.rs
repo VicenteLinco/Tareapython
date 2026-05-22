@@ -538,4 +538,62 @@ mod tests {
         let u = classify_urgencia(500.0, 0.0, 0.0, 10.0, 10.0, 120.0, 400.0);
         assert_eq!(u, None);
     }
+
+    // ─── Escenarios D6 requeridos ────────────────────────────────────────────
+
+    /// D6-F1: Consumo estable diario → confianza Alta, cantidad_sugerida > 0
+    /// cuando stock_actual < target, μ ≈ consumo_diario.
+    #[test]
+    fn forecast_consumo_estable() {
+        // 60 días con consumo constante de 10 u/día → 60 días con consumo ≥ 30 → Alta
+        let serie = vec![10.0; 60];
+        let cfg = ForecastConfig::default();
+        let r = compute_forecast(&serie, 50.0, 0.0, 0.0, 7, cfg);
+        assert_eq!(r.confianza, Confianza::Alta, "consumo estable debe dar confianza Alta");
+        assert!(r.mu > 9.5 && r.mu < 10.5, "μ debe estar cerca de 10, dio {}", r.mu);
+        assert!(r.cantidad_sugerida > 0.0, "debe sugerir compra cuando stock < target");
+    }
+
+    /// D6-F2: Consumo esporádico (muchos ceros) → confianza Baja o Media según
+    /// cuántos días tienen consumo real.
+    #[test]
+    fn forecast_consumo_esporadico() {
+        // 60 días: solo 5 días con consumo → dias_con_consumo < 14 → Baja
+        let mut serie = vec![0.0; 60];
+        serie[10] = 20.0;
+        serie[25] = 15.0;
+        serie[40] = 30.0;
+        serie[50] = 10.0;
+        serie[58] = 5.0;
+        let cfg = ForecastConfig::default();
+        let r = compute_forecast(&serie, 100.0, 50.0, 0.0, 7, cfg);
+        assert_eq!(
+            r.confianza,
+            Confianza::Baja,
+            "consumo esporádico con <14 días activos debe dar confianza Baja"
+        );
+        assert_eq!(r.dias_con_consumo, 5);
+        // Con confianza baja y stock_actual=100 >= stock_minimo=50 → cantidad_sugerida = 0
+        assert_eq!(r.cantidad_sugerida, 0.0);
+    }
+
+    /// D6-F3: Sin historia (todos ceros) → confianza Baja, usa stock_mínimo como referencia.
+    #[test]
+    fn forecast_sin_historia() {
+        // 60 días con cero consumo (producto nuevo o sin movimientos)
+        let serie = vec![0.0; 60];
+        let cfg = ForecastConfig::default();
+        // stock_actual=0, stock_minimo=100 → debe sugerir 100
+        let r = compute_forecast(&serie, 0.0, 100.0, 0.0, 7, cfg);
+        assert_eq!(r.confianza, Confianza::Baja, "sin historia debe dar confianza Baja");
+        assert_eq!(r.dias_con_consumo, 0);
+        assert_eq!(r.mu, 0.0);
+        // cantidad_sugerida = stock_minimo - stock_actual - ya_pedido = 100 - 0 - 0 = 100
+        assert!(
+            approx(r.cantidad_sugerida, 100.0, 0.01),
+            "sin historia debe sugerir stock_mínimo, dio {}",
+            r.cantidad_sugerida
+        );
+        assert!(r.razon.contains("Historial insuficiente"));
+    }
 }

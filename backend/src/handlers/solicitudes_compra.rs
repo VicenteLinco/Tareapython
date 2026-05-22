@@ -759,7 +759,7 @@ async fn recalcular_estado_solicitud(
     sqlx::query(
         "UPDATE solicitudes_compra
          SET estado = $1, fecha_envio = $2
-         WHERE id = $3 AND estado NOT IN ('cancelada','completada')",
+         WHERE id = $3 AND estado NOT IN ('cancelada','completada','parcialmente_recibida')",
     )
     .bind(nuevo_estado)
     .bind(fecha_max)

@@ -256,7 +256,7 @@ export function DetalleModal({
   const puedeEnviar = estado === 'guardada'
   const puedeRecibir = estado === 'guardada' || estado === 'parcialmente_enviada' || estado === 'enviada' || estado === 'parcialmente_recibida'
   const puedeCancelar = estado === 'guardada' || estado === 'parcialmente_enviada' || estado === 'enviada' || estado === 'parcialmente_recibida'
-  const puedeGenerarOC = isAdmin && estado === 'aprobada'
+  const puedeGenerarOC = isAdmin && (estado === 'guardada' || estado === 'parcialmente_enviada' || estado === 'enviada' || estado === 'parcialmente_recibida')
 
   return (
     <>

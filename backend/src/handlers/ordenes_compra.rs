@@ -116,7 +116,7 @@ async fn crear(
 
     let mut tx = state.pool.begin().await?;
 
-    // If linked to a solicitud, verify it's 'aprobada' then mark it 'enviada'
+    // If linked to a solicitud, verify it's in a state that allows creating an OC
     if let Some(sid) = payload.solicitud_id {
         let estado_sol: Option<String> =
             sqlx::query_scalar("SELECT estado FROM solicitudes_compra WHERE id = $1")
@@ -128,19 +128,14 @@ async fn crear(
             None => {
                 return Err(AppError::NotFound("Solicitud de compra no encontrada".into()));
             }
-            Some(e) if e != "aprobada" => {
+            Some("guardada") | Some("parcialmente_enviada") | Some("enviada") | Some("parcialmente_recibida") => {}
+            Some(e) => {
                 return Err(AppError::BusinessLogic(
-                    "Solo se puede crear una orden de compra a partir de una solicitud 'aprobada'".into(),
+                    format!("No se puede crear una orden de compra desde una solicitud en estado '{}'", e),
                     "SOLICITUD_ESTADO_INVALIDO".into(),
                 ));
             }
-            _ => {}
         }
-
-        sqlx::query("UPDATE solicitudes_compra SET estado = 'enviada' WHERE id = $1")
-            .bind(sid)
-            .execute(&mut *tx)
-            .await?;
     }
 
     // Insert cabecera

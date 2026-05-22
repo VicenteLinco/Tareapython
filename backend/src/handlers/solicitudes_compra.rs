@@ -16,6 +16,7 @@ struct SolicitudListParams {
 
 use crate::auth::models::Claims;
 use crate::db::AppState;
+use crate::domain::EstadoSolicitud;
 use crate::dto::solicitud::{
     CancelarEnvioInput, CreateSolicitudItem, EnvioProveedorView, ProveedorResumen,
     RegistrarEnvioInput, SolicitudDetalle, SolicitudDetalleItem, SolicitudResumen,
@@ -59,7 +60,7 @@ struct SolicitudDetalleRow {
     pub id: Uuid,
     pub numero_documento: String,
     pub fecha_creacion: DateTime<Utc>,
-    pub estado: String,
+    pub estado: EstadoSolicitud,
     pub nota: Option<String>,
     pub usuario_nombre: String,
     pub fecha_envio: Option<DateTime<Utc>>,

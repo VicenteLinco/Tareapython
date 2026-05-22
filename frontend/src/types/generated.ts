@@ -3,8 +3,13 @@
 // NO editar manualmente.
 
 export type EstadoSolicitud = "borrador" | "guardada" | "parcialmente_enviada" | "enviada" | "parcialmente_recibida" | "completada" | "cancelada"
-export type EstadoRecepcion = "borrador" | "confirmada" | "cancelada"
+export type EstadoRecepcion = "borrador" | "completa" | "parcial" | "rechazada"
 export type EstadoOrdenCompra = "borrador" | "enviada" | "recibida_parcial" | "recibida_total" | "cancelada"
+export type EstadoConteoSesion = "borrador" | "en_progreso" | "confirmado" | "cancelado"
+export type EstadoConteoItem = "contado" | "no_contado"
+export type EstadoEnvioProveedor = "pendiente" | "enviado" | "cancelado"
+export type ConfianzaForecast = "alta" | "media" | "baja"
+export type UrgenciaReposicion = "critica" | "alta" | "media"
 export type Area = { id: number; nombre: string; es_bodega: boolean; activa: boolean; created_at: string; conteo_frecuencia_dias: number; version: number; total_items_stock: number | null }
 export type Categoria = { id: number; nombre: string; descripcion: string | null; created_at: string; version: number }
 export type UnidadBasica = { id: number; nombre: string; nombre_plural: string; version: number }
@@ -36,10 +41,10 @@ export type UpdateSolicitudRequest = { nota: string | null; items: CreateSolicit
 export type CreateSolicitudItem = { producto_id: string; cantidad_sugerida: string; unidad: string; precio_unitario: string | null; presentacion_id: number | null; cantidad_presentaciones: string | null; horizonte_dias: number | null; horizonte_sugerido: number | null; horizonte_razon: string | null }
 export type RegistrarEnvioInput = { proveedor_id: number; metodo_envio: string; fecha_envio: string | null; nota: string | null; version: number }
 export type CancelarEnvioInput = { version: number }
-export type EnvioProveedorView = { proveedor_id: number; proveedor_nombre: string; estado: string; metodo_envio: string | null; fecha_envio: string | null; nota: string | null; total_items: number; monto_total: string; version: number }
+export type EnvioProveedorView = { proveedor_id: number; proveedor_nombre: string; estado: EstadoEnvioProveedor; metodo_envio: string | null; fecha_envio: string | null; nota: string | null; total_items: number; monto_total: string; version: number }
 export type ProveedorResumen = { proveedor_id: number; proveedor_nombre: string; total_items: number; monto_total: string }
-export type SolicitudResumen = { id: string; numero_documento: string; fecha_creacion: string; estado: string; usuario_nombre: string; items_count: number; fecha_envio: string | null; fecha_cierre: string | null; proveedores_count: number; proveedores_nombres: string | null }
-export type SolicitudDetalle = { id: string; numero_documento: string; fecha_creacion: string; estado: string; usuario_nombre: string; nota: string | null; fecha_envio: string | null; fecha_cierre: string | null; motivo_cierre: string | null; metodo_envio: string | null; items: SolicitudDetalleItem[]; envios: EnvioProveedorView[]; proveedores_resumen: ProveedorResumen[] }
+export type SolicitudResumen = { id: string; numero_documento: string; fecha_creacion: string; estado: EstadoSolicitud; usuario_nombre: string; items_count: number; fecha_envio: string | null; fecha_cierre: string | null; proveedores_count: number; proveedores_nombres: string | null }
+export type SolicitudDetalle = { id: string; numero_documento: string; fecha_creacion: string; estado: EstadoSolicitud; usuario_nombre: string; nota: string | null; fecha_envio: string | null; fecha_cierre: string | null; motivo_cierre: string | null; metodo_envio: string | null; items: SolicitudDetalleItem[]; envios: EnvioProveedorView[]; proveedores_resumen: ProveedorResumen[] }
 export type SolicitudDetalleItem = { producto_id: string; proveedor_id: number | null; producto_nombre: string; cantidad_sugerida: string; unidad: string; unidad_plural: string | null; codigo_proveedor: string | null; codigo_maestro: string | null; proveedor_nombre: string | null; presentacion_nombre: string | null; presentacion_nombre_plural: string | null; factor_conversion: string | null; precio_unitario: string | null; presentacion_id: number | null; cantidad_presentaciones: string | null; imagen_url: string | null; horizonte_dias: number | null; horizonte_sugerido: number | null; horizonte_razon: string | null }
 export type DescarteRequest = { items: DescarteItem[] }
 export type DescarteItem = { lote_id: string; area_id: number; cantidad: string; tipo: string; nota: string | null }
@@ -47,7 +52,7 @@ export type DescarteResponse = { grupo_movimiento: string; movimientos: Movimien
 export type MovimientoGenerado = { id: string; numero_documento: string; cantidad: string; cantidad_resultante: string }
 export type RecepcionQuery = { proveedor_id: number | null; estado: string | null; desde: string | null; hasta: string | null; busqueda: string | null; area_id: number | null; page: number | null; per_page: number | null }
 export type PaginatedRecepciones = { data: RecepcionListItem[]; total: number; page: number; per_page: number; total_pages: number }
-export type RecepcionListItem = { id: string; numero_documento: string; proveedor_nombre: string; proveedor_icono: string | null; guia_despacho: string | null; estado: string; fecha_recepcion: string; usuario_nombre: string; created_at: string; areas_destino: string | null; tiene_foto: boolean; solicitud_id: string | null; items_count: number; lotes_count: number }
+export type RecepcionListItem = { id: string; numero_documento: string; proveedor_nombre: string; proveedor_icono: string | null; guia_despacho: string | null; estado: EstadoRecepcion; fecha_recepcion: string; usuario_nombre: string; created_at: string; areas_destino: string | null; tiene_foto: boolean; solicitud_id: string | null; items_count: number; lotes_count: number }
 export type SubirFotoInput = { data_url: string }
 export type CreateRecepcion = { proveedor_id: number; guia_despacho: string | null; 
 /**

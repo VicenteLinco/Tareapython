@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::auth::models::Claims;
 use crate::db::AppState;
+use crate::domain::EstadoRecepcion;
 use crate::dto::recepcion::{CreateRecepcion, RecepcionQuery, SubirFotoInput};
 use crate::errors::AppError;
 use crate::services::{idempotency, recepcion_service, storage};
@@ -19,7 +20,7 @@ pub struct RecepcionConProveedor {
     pub proveedor_id: i32,
     pub proveedor_nombre: String,
     pub guia_despacho: Option<String>,
-    pub estado: String,
+    pub estado: EstadoRecepcion,
     pub fecha_recepcion: DateTime<Utc>,
     pub usuario_id: Uuid,
     pub nota: Option<String>,

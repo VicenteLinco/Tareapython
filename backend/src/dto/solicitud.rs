@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
 
+use crate::domain::{EstadoEnvioProveedor, EstadoSolicitud};
+
 #[derive(Debug, Serialize, sqlx::FromRow, Type)]
 #[allow(dead_code)]
 pub struct ItemRecomendado {
@@ -64,7 +66,7 @@ pub struct SolicitudResumen {
     pub id: Uuid,
     pub numero_documento: String,
     pub fecha_creacion: DateTime<Utc>,
-    pub estado: String,
+    pub estado: EstadoSolicitud,
     pub usuario_nombre: String,
     pub items_count: i32, // Cambiado de i64 a i32
     pub fecha_envio: Option<DateTime<Utc>>,
@@ -78,7 +80,7 @@ pub struct SolicitudDetalle {
     pub id: Uuid,
     pub numero_documento: String,
     pub fecha_creacion: DateTime<Utc>,
-    pub estado: String,
+    pub estado: EstadoSolicitud,
     pub usuario_nombre: String,
     pub nota: Option<String>,
     pub fecha_envio: Option<DateTime<Utc>>,
@@ -131,7 +133,7 @@ pub struct CancelarEnvioInput {
 pub struct EnvioProveedorView {
     pub proveedor_id: i32,
     pub proveedor_nombre: String,
-    pub estado: String,
+    pub estado: EstadoEnvioProveedor,
     pub metodo_envio: Option<String>,
     pub fecha_envio: Option<DateTime<Utc>>,
     pub nota: Option<String>,

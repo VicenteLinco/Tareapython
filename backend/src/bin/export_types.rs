@@ -1,4 +1,7 @@
-use inventario_lab_backend::domain::{EstadoSolicitud, EstadoRecepcion, EstadoOrdenCompra};
+use inventario_lab_backend::domain::{
+    ConfianzaForecast, EstadoConteoItem, EstadoConteoSesion, EstadoEnvioProveedor,
+    EstadoOrdenCompra, EstadoRecepcion, EstadoSolicitud, UrgenciaReposicion,
+};
 use inventario_lab_backend::dto::{
     area::{AsignarProductosRequest, CreateArea, ProductoAreaRow, UpdateArea},
     categoria::{CreateCategoria, UpdateCategoria},
@@ -67,6 +70,11 @@ fn main() {
     append!(EstadoSolicitud);
     append!(EstadoRecepcion);
     append!(EstadoOrdenCompra);
+    append!(EstadoConteoSesion);
+    append!(EstadoConteoItem);
+    append!(EstadoEnvioProveedor);
+    append!(ConfianzaForecast);
+    append!(UrgenciaReposicion);
 
     // Modelos
     append!(Area);

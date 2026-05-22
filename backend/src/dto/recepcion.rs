@@ -5,6 +5,8 @@ use specta::Type;
 use uuid::Uuid;
 use validator::Validate;
 
+use crate::domain::EstadoRecepcion;
+
 #[derive(Debug, Deserialize, Type)]
 pub struct RecepcionQuery {
     pub proveedor_id: Option<i32>,
@@ -33,7 +35,7 @@ pub struct RecepcionListItem {
     pub proveedor_nombre: String,
     pub proveedor_icono: Option<String>,
     pub guia_despacho: Option<String>,
-    pub estado: String,
+    pub estado: EstadoRecepcion,
     pub fecha_recepcion: DateTime<Utc>,
     pub usuario_nombre: String,
     pub created_at: DateTime<Utc>,

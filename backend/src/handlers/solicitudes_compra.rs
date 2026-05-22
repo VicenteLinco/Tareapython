@@ -161,33 +161,15 @@ async fn obtener_solicitud_por_id(
     .fetch_all(pool)
     .await?;
 
-    let proveedores_resumen = sqlx::query_as::<_, ProveedorResumen>(
-        r#"SELECT
-               p.proveedor_id,
-               COALESCE(prov.nombre, '[Proveedor eliminado]') AS proveedor_nombre,
-               COUNT(d.id)::integer AS total_items,
-               COALESCE(SUM(
-                   COALESCE(d.cantidad_presentaciones, d.cantidad_sugerida)
-                   * COALESCE(
-                       CASE
-                           WHEN d.presentacion_id IS NOT NULL AND pres.factor_conversion IS NOT NULL
-                           THEN d.precio_unitario * pres.factor_conversion
-                           ELSE d.precio_unitario
-                       END,
-                       0
-                   )
-               ), 0) AS monto_total
-           FROM solicitud_compra_detalle d
-           JOIN productos p ON p.id = d.producto_id
-           LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
-           LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
-           WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
-           GROUP BY p.proveedor_id, prov.nombre
-           ORDER BY proveedor_nombre"#,
-    )
-    .bind(id)
-    .fetch_all(pool)
-    .await?;
+    let proveedores_resumen: Vec<ProveedorResumen> = envios
+        .iter()
+        .map(|e| ProveedorResumen {
+            proveedor_id: e.proveedor_id,
+            proveedor_nombre: e.proveedor_nombre.clone(),
+            total_items: e.total_items,
+            monto_total: e.monto_total,
+        })
+        .collect();
 
     Ok(SolicitudDetalle {
         id: solicitud.id,

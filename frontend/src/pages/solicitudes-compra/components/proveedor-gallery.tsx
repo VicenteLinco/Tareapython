@@ -1,8 +1,48 @@
 // frontend/src/pages/solicitudes-compra/components/proveedor-gallery.tsx
+import { useState } from 'react'
 import { CheckCircle2, Clock, Mail, Phone } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageLoading } from '@/components/ui/page-state'
 import type { Proveedor } from '@/types'
+
+function getProveedorInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(w => w[0]?.toUpperCase() ?? '')
+    .join('')
+}
+
+function getProveedorHue(name: string): number {
+  return name.split('').reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) & 0xffff, 7) % 360
+}
+
+function ProveedorAvatar({ nombre, icono }: { nombre: string; icono: string | null }) {
+  const [imgError, setImgError] = useState(false)
+  const hue = getProveedorHue(nombre)
+  const initials = getProveedorInitials(nombre)
+
+  const showImg = icono && !imgError
+
+  return (
+    <div
+      className="w-14 h-14 rounded-2xl flex items-center justify-center overflow-hidden transition-transform group-hover:scale-110 shrink-0"
+      style={!showImg ? { background: `hsl(${hue}, 58%, 46%)` } : undefined}
+    >
+      {showImg ? (
+        <img
+          src={icono}
+          alt={nombre}
+          className="h-full w-full object-contain"
+          onError={() => setImgError(true)}
+        />
+      ) : (
+        <span className="text-white font-black text-lg tracking-tight select-none">{initials}</span>
+      )}
+    </div>
+  )
+}
 
 const DIAS_OPTIONS = [7, 15, 30, 60, 90] as const
 
@@ -48,14 +88,7 @@ function ProveedorCard({ proveedor, urgencias, criticos, lotesVenciendo, diasVen
         <span className="absolute top-3 right-3 badge badge-success badge-sm font-bold text-[9px]">✓ OK</span>
       )}
 
-      <div className={cn(
-        "w-14 h-14 rounded-2xl flex items-center justify-center text-2xl transition-transform group-hover:scale-110 overflow-hidden",
-        hasCriticos ? 'bg-error/10' : hasUrgencias ? 'bg-warning/10' : 'bg-success/10'
-      )}>
-        {proveedor.icono
-          ? <img src={proveedor.icono} alt={proveedor.nombre} className="h-full w-full object-contain" />
-          : '🏭'}
-      </div>
+      <ProveedorAvatar nombre={proveedor.nombre} icono={proveedor.icono} />
 
       <div className="flex-1 flex flex-col gap-1 w-full">
         <p className="font-bold text-sm leading-tight">{proveedor.nombre}</p>

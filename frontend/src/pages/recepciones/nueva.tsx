@@ -1,6 +1,7 @@
 // frontend/src/pages/recepciones/nueva.tsx
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { useRef, useEffect } from 'react'
 import { ArrowLeft, CheckCircle2, Layers } from 'lucide-react'
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -22,6 +23,8 @@ import type { Area, Proveedor, Producto } from '@/types'
 
 export default function NuevaRecepcionPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const autoLinkedRef = useRef(false)
   const wizard = useRecepcionWizard()
 
   const {
@@ -103,13 +106,13 @@ export default function NuevaRecepcionPage() {
 
   // ─── Vincular solicitud ───────────────────────────────────────────────────────
 
-  const handleVincularSolicitud = async (id: string, numero: string) => {
+  const handleVincularSolicitud = async (id: string, numero: string, silent = false) => {
     try {
       const res = await api.get(`/solicitudes-compra/${id}`)
       setSolicitudId(id)
-      setSolicitudNumero(numero)
+      setSolicitudNumero(numero || res.data.numero_documento || id)
       solicitudModal.onClose()
-      notify.success('Solicitud vinculada')
+      if (!silent) notify.success('Solicitud vinculada')
       const itemsProveedor = (res.data.items ?? []).filter((it: { proveedor_id?: number | null }) =>
         !proveedorId || it.proveedor_id === proveedorId
       )
@@ -140,6 +143,26 @@ export default function NuevaRecepcionPage() {
       notify.error('Error al vincular solicitud: ' + (e instanceof Error ? e.message : String(e)))
     }
   }
+
+  // ─── Auto-vincular desde URL params ──────────────────────────────────────────
+
+  const sqIdParam = searchParams.get('solicitud_id')
+  const pIdParam = searchParams.get('proveedor_id')
+
+  useEffect(() => {
+    if (pIdParam) wizard.setProveedorId(parseInt(pIdParam))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!sqIdParam || autoLinkedRef.current || !productos) return
+    if (pIdParam && wizard.proveedorId !== parseInt(pIdParam)) return
+    autoLinkedRef.current = true
+    handleVincularSolicitud(sqIdParam, '', true).then(() => {
+      setPasoActual(2)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productos, wizard.proveedorId])
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 

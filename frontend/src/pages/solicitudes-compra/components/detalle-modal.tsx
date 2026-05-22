@@ -1,7 +1,7 @@
 // frontend/src/pages/solicitudes-compra/components/detalle-modal.tsx
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FileDown, Send, PackageCheck, XCircle, ShoppingBag } from 'lucide-react'
+import { FileDown, Send, PackageCheck, XCircle, ShoppingBag, ChevronDown } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { notify } from '@/lib/notify'
 import { formatDate, cn, formatCantidad } from '@/lib/utils'
@@ -66,6 +66,18 @@ export function DetalleModal({
   const [cancelMotivo, setCancelMotivo] = useState('')
   const [metodoEnvio, setMetodoEnvio] = useState('email')
   const [envioDialogo, setEnvioDialogo] = useState<SolicitudDetalle['envios'][number] | null>(null)
+  const [recepcionOpen, setRecepcionOpen] = useState(false)
+  const recepcionRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!recepcionOpen) return
+    const handler = (e: MouseEvent) => {
+      if (recepcionRef.current && !recepcionRef.current.contains(e.target as Node))
+        setRecepcionOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [recepcionOpen])
   const [fechaEnvio, setFechaEnvio] = useState(() => new Date().toISOString().slice(0, 10))
   const [notaEnvio, setNotaEnvio] = useState('')
 
@@ -491,15 +503,56 @@ export function DetalleModal({
                   </Button>
                 )}
                 {puedeRecibir && (
-                  <Button
-                    className="rounded-xl h-10 gap-2 bg-success hover:bg-success/90 text-success-content"
-                    onClick={() => {
-                      onClose()
-                      navigate('/recepciones/nueva')
-                    }}
-                  >
-                    <PackageCheck className="h-4 w-4" /> Recibir pedido
-                  </Button>
+                  <div className="relative" ref={recepcionRef}>
+                    {(detail?.proveedores_resumen?.length ?? 0) > 1 ? (
+                      <>
+                        <Button
+                          className="rounded-xl h-10 gap-2 bg-success hover:bg-success/90 text-success-content"
+                          onClick={() => setRecepcionOpen(o => !o)}
+                        >
+                          <PackageCheck className="h-4 w-4" />
+                          Recibir pedido
+                          <ChevronDown className="h-3.5 w-3.5 ml-0.5" />
+                        </Button>
+                        {recepcionOpen && (
+                          <div className="absolute bottom-full right-0 mb-1 bg-base-100 border border-base-300 rounded-2xl shadow-xl py-1 min-w-52 z-50">
+                            <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 px-3 pt-2 pb-1">
+                              Seleccionar proveedor
+                            </p>
+                            {detail!.proveedores_resumen.map(p => (
+                              <button
+                                key={p.proveedor_id}
+                                className="w-full text-left px-3 py-2 hover:bg-base-200 transition-colors text-sm"
+                                onClick={() => {
+                                  setRecepcionOpen(false)
+                                  onClose()
+                                  navigate(`/recepciones/nueva?solicitud_id=${solicitudId}&proveedor_id=${p.proveedor_id}`)
+                                }}
+                              >
+                                <p className="font-semibold leading-tight">{p.proveedor_nombre}</p>
+                                <p className="text-[11px] opacity-50">
+                                  {p.total_items} {Number(p.total_items) === 1 ? 'ítem' : 'ítems'}
+                                </p>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <Button
+                        className="rounded-xl h-10 gap-2 bg-success hover:bg-success/90 text-success-content"
+                        onClick={() => {
+                          onClose()
+                          const provId = detail?.proveedores_resumen?.[0]?.proveedor_id
+                          const params = new URLSearchParams({ solicitud_id: solicitudId! })
+                          if (provId) params.set('proveedor_id', String(provId))
+                          navigate(`/recepciones/nueva?${params}`)
+                        }}
+                      >
+                        <PackageCheck className="h-4 w-4" /> Recibir pedido
+                      </Button>
+                    )}
+                  </div>
                 )}
                 <Button className="rounded-xl h-10" onClick={onClose}>Cerrar</Button>
               </div>

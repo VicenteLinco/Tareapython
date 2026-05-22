@@ -4,15 +4,23 @@ import { cn } from '@/lib/utils'
 import { NuevoDescarteTab } from './nuevo-descarte-tab'
 import { HistorialTab } from './historial-tab'
 import { useQueryClient } from '@tanstack/react-query'
+import type { DescarteSession } from '@/types'
 
 type Tab = 'nuevo' | 'historial'
 
 export default function DescartesPage() {
   const [tab, setTab] = useState<Tab>('nuevo')
+  const [successSession, setSuccessSession] = useState<DescarteSession | null>(null)
   const queryClient = useQueryClient()
 
-  const handleDescarteCreado = () => {
+  const handleDescarteCreado = (session: DescarteSession) => {
     queryClient.invalidateQueries({ queryKey: ['descartes-historial'] })
+    setSuccessSession(session)
+  }
+
+  const goToNuevo = () => {
+    setSuccessSession(null)
+    setTab('nuevo')
   }
 
   return (
@@ -35,7 +43,7 @@ export default function DescartesPage() {
                 ? 'tab-active bg-error text-error-content font-bold shadow'
                 : 'hover:bg-base-300'
             )}
-            onClick={() => setTab('nuevo')}
+            onClick={goToNuevo}
           >
             <Plus className="w-4 h-4" />
             Nuevo Descarte
@@ -57,7 +65,11 @@ export default function DescartesPage() {
 
       {/* Contenido */}
       {tab === 'nuevo' ? (
-        <NuevoDescarteTab onDescarteCreado={handleDescarteCreado} />
+        <NuevoDescarteTab
+          successSession={successSession}
+          onDescarteCreado={handleDescarteCreado}
+          onNuevoDescarte={goToNuevo}
+        />
       ) : (
         <HistorialTab />
       )}

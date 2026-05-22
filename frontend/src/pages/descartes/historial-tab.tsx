@@ -28,7 +28,7 @@ export function HistorialTab() {
     queryFn: () => api.get<Record<string, string>>('/configuracion').then((r) => r.data),
   })
 
-  const { data, isLoading } = useDescartesHistorial({
+  const { data, isLoading, isError } = useDescartesHistorial({
     desde: desde || null,
     hasta: hasta || null,
     areaId: filterAreaId,
@@ -108,6 +108,10 @@ export function HistorialTab() {
           [1, 2, 3].map((i) => (
             <div key={i} className="h-16 bg-base-200 animate-pulse rounded-2xl" />
           ))
+        ) : isError ? (
+          <div className="py-20 text-center text-error text-sm">
+            Error al cargar el historial. Intenta recargar la página.
+          </div>
         ) : sessions.length === 0 ? (
           <div className="py-20 text-center opacity-40 italic text-sm">
             No hay descartes registrados en este período

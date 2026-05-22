@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, UserX, UserCheck, KeyRound, X, Search } from 'lucide-react'
+import { Plus, Pencil, UserX, UserCheck, KeyRound, X, Search, ShieldCheck, FlaskConical, BookOpen } from 'lucide-react'
 import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
@@ -17,22 +17,26 @@ import type {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const ROL_CONFIG = {
-  admin:     { label: 'Admin',      cls: 'badge-error' },
-  tecnologo: { label: 'Tecnólogo',  cls: 'badge-primary' },
-  consulta:  { label: 'Consulta',   cls: 'badge-ghost' },
+  admin:     { label: 'Admin',      badgeCls: 'bg-error/10 text-error border border-error/20',         icon: ShieldCheck,    avatarBg: 'bg-error/10',    avatarFg: 'text-error' },
+  tecnologo: { label: 'Tecnólogo',  badgeCls: 'bg-primary/10 text-primary border border-primary/20',   icon: FlaskConical,   avatarBg: 'bg-primary/10',  avatarFg: 'text-primary' },
+  consulta:  { label: 'Consulta',   badgeCls: 'bg-base-200 text-base-content/60 border border-base-300', icon: BookOpen,     avatarBg: 'bg-base-200',    avatarFg: 'text-base-content/50' },
 } as const
 
 function RolBadge({ rol }: { rol: string }) {
-  const c = ROL_CONFIG[rol as keyof typeof ROL_CONFIG] ?? { label: rol, cls: 'badge-neutral' }
-  return <span className={`badge badge-sm ${c.cls}`}>{c.label}</span>
+  const c = ROL_CONFIG[rol as keyof typeof ROL_CONFIG] ?? { label: rol, badgeCls: 'bg-base-200 text-base-content/60 border border-base-300' }
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold tracking-wide ${c.badgeCls}`}>
+      {c.label}
+    </span>
+  )
 }
 
-function Avatar({ nombre }: { nombre: string }) {
+function RolAvatar({ rol }: { rol: string }) {
+  const c = ROL_CONFIG[rol as keyof typeof ROL_CONFIG] ?? ROL_CONFIG.consulta
+  const Icon = c.icon
   return (
-    <div className="avatar placeholder">
-      <div className="bg-primary text-primary-content rounded-full w-10">
-        <span className="text-sm font-semibold">{nombre.charAt(0).toUpperCase()}</span>
-      </div>
+    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 ${c.avatarBg}`}>
+      <Icon className={`w-5 h-5 ${c.avatarFg}`} strokeWidth={1.75} />
     </div>
   )
 }
@@ -450,60 +454,62 @@ export default function UsuariosPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {filtrados.map((u) => (
             <div
               key={u.id}
-              className={`card bg-base-100 border shadow-sm hover:border-primary/30 transition-colors
-                ${u.activo ? 'border-base-200' : 'border-base-200 opacity-60'}`}
+              className={`group relative bg-base-100 border rounded-2xl shadow-sm transition-all duration-200
+                hover:shadow-md hover:border-primary/30
+                ${u.activo ? 'border-base-200' : 'border-base-200 grayscale opacity-55'}`}
             >
-              <div className="card-body p-4">
+              <div className="p-4">
                 {/* Header tarjeta */}
-                <div className="flex items-center gap-3">
-                  <Avatar nombre={u.nombre} />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{u.nombre}</p>
-                    <p className="text-xs text-base-content/50 truncate">{u.email}</p>
+                <div className="flex items-start gap-3">
+                  <RolAvatar rol={u.rol} />
+                  <div className="flex-1 min-w-0 pt-0.5">
+                    <p className="font-semibold text-sm leading-tight truncate">{u.nombre}</p>
+                    <p className="text-xs text-base-content/45 truncate mt-0.5">{u.email}</p>
                   </div>
                   <RolBadge rol={u.rol} />
                 </div>
 
                 {/* Áreas */}
-                <div className="flex flex-wrap gap-1 mt-2 min-h-5">
+                <div className="flex flex-wrap gap-1 mt-3 min-h-[22px]">
                   {u.areas.slice(0, 3).map((a) => (
-                    <span key={a.id} className="badge badge-ghost badge-sm">{a.nombre}</span>
+                    <span key={a.id} className="inline-flex items-center px-2 py-0.5 rounded-lg bg-base-200 text-[11px] text-base-content/60">{a.nombre}</span>
                   ))}
                   {u.areas.length > 3 && (
-                    <span className="badge badge-ghost badge-sm">+{u.areas.length - 3}</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-base-200 text-[11px] text-base-content/60">+{u.areas.length - 3} más</span>
                   )}
                   {u.areas.length === 0 && (
-                    <span className="text-xs text-base-content/30">Sin áreas asignadas</span>
+                    <span className="text-[11px] text-base-content/30 italic">Sin áreas asignadas</span>
                   )}
                 </div>
 
-                {/* Acciones */}
-                <div className="card-actions justify-end mt-2 gap-1">
+                {/* Separador + Acciones */}
+                <div className="flex items-center justify-end gap-0.5 mt-3 pt-3 border-t border-base-200">
                   <button
-                    className="btn btn-ghost btn-xs gap-1"
+                    className="btn btn-ghost btn-xs gap-1 text-base-content/50 hover:text-base-content"
                     onClick={() => setPasswordId(u.id)}
                     title="Cambiar contraseña"
                   >
-                    <KeyRound className="w-3 h-3" />
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Contraseña</span>
                   </button>
                   <button
-                    className="btn btn-ghost btn-xs gap-1"
+                    className="btn btn-ghost btn-xs gap-1 text-base-content/50 hover:text-base-content"
                     onClick={() => setEditando(u)}
                   >
-                    <Pencil className="w-3 h-3" />
+                    <Pencil className="w-3.5 h-3.5" />
                     Editar
                   </button>
                   <button
-                    className={`btn btn-xs gap-1 btn-ghost ${u.activo ? 'text-error' : 'text-success'}`}
+                    className={`btn btn-ghost btn-xs gap-1 ${u.activo ? 'text-error/60 hover:text-error hover:bg-error/5' : 'text-success/70 hover:text-success hover:bg-success/5'}`}
                     onClick={() => setToggleTarget(u)}
                   >
                     {u.activo
-                      ? <><UserX className="w-3 h-3" />Desactivar</>
-                      : <><UserCheck className="w-3 h-3" />Activar</>
+                      ? <><UserX className="w-3.5 h-3.5" />Desactivar</>
+                      : <><UserCheck className="w-3.5 h-3.5" />Activar</>
                     }
                   </button>
                 </div>

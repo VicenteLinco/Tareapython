@@ -192,3 +192,21 @@ Comportamiento requerido:
 El input nunca se deshabilita por una precondición externa; la validación va en `onSelect`.
 
 El skill `autocomplete-buscador` detalla la implementación completa (estados, refs, ARIA, filtro inclusivo).
+
+### Regla de selects y dropdowns (Frontend)
+
+**Regla obligatoria:** Todo `<select>` o dropdown dentro de un panel de filtros debe tener fondo sólido y borde visible. Nunca usar opacidad parcial en el fondo de un control de formulario.
+
+```tsx
+// ✅ Correcto — fondo sólido + borde definido
+<select className="select select-sm bg-base-100 border border-base-300 rounded-xl ...">
+
+// ❌ Incorrecto — bg-base-200/50 hace el select semitransparente
+<select className="select select-sm bg-base-200/50 border-none ...">
+```
+
+**Panel de filtros expandible (`FilterBar`):**
+- El contenedor del panel usa `bg-base-100 border border-base-200 rounded-2xl shadow-sm` (sin opacidad).
+- **Nunca usar tokens de shadcn/ui** (`bg-muted`, `bg-background`, `text-muted-foreground`, `border-border`) — este proyecto usa DaisyUI. Esos tokens no están definidos y producen fondos/textos transparentes.
+- Equivalencias DaisyUI: `bg-muted` → `bg-base-200`, `bg-background` → `bg-base-100`, `text-muted-foreground` → `text-base-content/50`, `border-border` → `border-base-300`.
+- Cada `<select>` dentro de un panel de filtros debe ir envuelto en un `<div className="flex flex-col gap-1">` con un `<label>` de `text-[10px] font-bold uppercase tracking-widest text-base-content/40`.

@@ -264,7 +264,7 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
         doc.setTextColor(...C.textMain)
         doc.setFont(prevFont.fontName, prevFont.fontStyle)
       },
-      didDrawPage: (d: CellHookData) => {
+      didDrawPage: (d) => {
         finalY = (d.cursor?.y ?? finalY)
       },
     })

@@ -1,6 +1,6 @@
 # Plan de mejoras — Inventario Laboratorio Clínico
 
-**Última actualización:** 2026-04-28  
+**Última actualización:** 2026-05-22  
 **Objetivo:** elevar claridad de información al usuario, reducir fricción de uso y pagar deuda técnica sin romper funcionalidad.
 
 Esfuerzo estimado: S = ½ día · M = 1-2 días · L = 3-5 días · XL = >1 semana
@@ -224,16 +224,18 @@ Esfuerzo estimado: S = ½ día · M = 1-2 días · L = 3-5 días · XL = >1 sema
 - Atajos de teclado en Consumos.
 - Emojis eliminados de Conteo y Recepciones.
 
-### Sprint 2 — Flujos críticos y dashboard (~12 días)
-**A4 ✅, A5, A6, A7 ✅, B1, B3, B5, B8, D1**
+### Sprint 2 — Flujos críticos y dashboard ✅ Completo
+**A4 ✅, A5 ✅, A6 ✅, A7 ✅, B1 ✅, B3 ✅, B5 ✅, B8 ✅**
 - Dashboard accionable con 3 secciones. ✅
-- Filtros guardados por pantalla.
-- Búsqueda global Ctrl+K.
-- Tooltips en métricas de forecasting.
-- Recepción guiada paso a paso.
-- Separación revisión/edición en solicitudes.
-- Reconciliación post-recepción.
-- Historial visible por producto.
+- Filtros guardados por pantalla (`useFilterStorage` en stock, recepciones, movimientos, audit log). ✅
+- Búsqueda global Ctrl+K (`GlobalSearch` en AppLayout, busca stock + recepciones + acciones). ✅
+- Tooltips en métricas de forecasting. ✅
+- Recepción guiada paso a paso (wizard 3 pasos, modo experto). ✅
+- Separación revisión/edición en solicitudes (tab Sugeridos / Por proveedor). ✅
+- Reconciliación post-recepción (`ReconciliacionModal`). ✅
+- Historial visible por producto (`ProductTimeline` en stock-detail, gráfico semanal 90 días). ✅
+- Multi-proveedor solicitudes (spec completa: envíos granulares, PDF, detalle-modal). ✅
+- Integración recepción → solicitud con filtro por proveedor (deeplink `?solicitud_id&proveedor_id`). ✅
 
 ### Sprint 3 — Calidad estructural (~12 días)
 **D2, D3 (2 páginas más críticas), D4, D5, D6, D7, D8**

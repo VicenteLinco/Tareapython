@@ -46,7 +46,6 @@ function PedidoItem({
   item,
   horizonteGlobal,
   popoverOpenId,
-  monedaCodigo,
   fmt,
   onUpdateQty,
   onRemove,
@@ -57,7 +56,6 @@ function PedidoItem({
   item: SolicitudItem
   horizonteGlobal: number
   popoverOpenId: string | null
-  monedaCodigo: string
   fmt: (v: number | string | null) => string
   onUpdateQty: (pid: string, val: number) => void
   onRemove: (pid: string) => void
@@ -291,7 +289,6 @@ export function PedidoPanel({
                 item={item}
                 horizonteGlobal={horizonteGlobal}
                 popoverOpenId={popoverOpenId}
-                monedaCodigo={monedaCodigo}
                 fmt={fmt}
                 onUpdateQty={onUpdateQty}
                 onRemove={onRemove}
@@ -317,7 +314,6 @@ export function PedidoPanel({
                       item={item}
                       horizonteGlobal={horizonteGlobal}
                       popoverOpenId={popoverOpenId}
-                      monedaCodigo={monedaCodigo}
                       fmt={fmt}
                       onUpdateQty={onUpdateQty}
                       onRemove={onRemove}

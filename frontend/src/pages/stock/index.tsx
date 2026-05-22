@@ -123,16 +123,19 @@ export default function StockPage() {
   const { data: categorias } = useQuery({
     queryKey: ['categorias'],
     queryFn: () => api.get<Categoria[]>('/categorias').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
   })
 
   const { data: proveedores } = useQuery({
     queryKey: ['proveedores'],
     queryFn: () => api.get<Proveedor[]>('/proveedores').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
   })
 
   const { data: areas } = useQuery({
     queryKey: ['areas'],
     queryFn: () => api.get<Area[]>('/areas').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
   })
 
   const items = stockResponse?.data ?? []
@@ -280,34 +283,43 @@ export default function StockPage() {
         }
         secondaryFilters={
           <>
-            <select
-              className="select select-sm h-10 w-full bg-base-200/50 border-none rounded-xl text-xs font-medium"
-              value={categoriaId ?? ''}
-              onChange={(e) => setCategoriaId(e.target.value ? Number(e.target.value) : null)}
-            >
-              <option value="">Categorías</option>
-              {categorias?.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-            </select>
-            <select
-              className="select select-sm h-10 w-full bg-base-200/50 border-none rounded-xl text-xs font-medium"
-              value={proveedorId ?? ''}
-              onChange={(e) => setProveedorId(e.target.value ? Number(e.target.value) : null)}
-            >
-              <option value="">Proveedores</option>
-              {proveedores?.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-            </select>
-            <select
-              className="select select-sm h-10 w-full bg-base-200/50 border-none rounded-xl text-xs font-medium"
-              value={estado}
-              onChange={e => setEstado(e.target.value as EstadoFiltro)}
-            >
-              <option value="todos">Todos</option>
-              <option value="normal">Normal</option>
-              <option value="bajo">Stock bajo</option>
-              <option value="critico">Crítico</option>
-              <option value="sin_stock">Sin stock</option>
-              <option value="vence_pronto">Por vencer</option>
-            </select>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40 px-1">Categoría</label>
+              <select
+                className="select select-sm h-10 w-full bg-base-100 border border-base-300 rounded-xl text-xs font-medium"
+                value={categoriaId ?? ''}
+                onChange={(e) => setCategoriaId(e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="">Todas las categorías</option>
+                {categorias?.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40 px-1">Proveedor</label>
+              <select
+                className="select select-sm h-10 w-full bg-base-100 border border-base-300 rounded-xl text-xs font-medium"
+                value={proveedorId ?? ''}
+                onChange={(e) => setProveedorId(e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="">Todos los proveedores</option>
+                {proveedores?.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40 px-1">Estado</label>
+              <select
+                className="select select-sm h-10 w-full bg-base-100 border border-base-300 rounded-xl text-xs font-medium"
+                value={estado}
+                onChange={e => setEstado(e.target.value as EstadoFiltro)}
+              >
+                <option value="todos">Todos los estados</option>
+                <option value="normal">Normal</option>
+                <option value="bajo">Stock bajo</option>
+                <option value="critico">Crítico</option>
+                <option value="sin_stock">Sin stock</option>
+                <option value="vence_pronto">Por vencer</option>
+              </select>
+            </div>
           </>
         }
         activeSecondaryCount={activeSecondaryCount}

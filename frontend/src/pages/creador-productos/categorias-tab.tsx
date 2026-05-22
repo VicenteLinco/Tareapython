@@ -34,6 +34,7 @@ export default function CategoriasTab() {
   const { data: categorias = [], isLoading } = useQuery({
     queryKey: ['categorias'],
     queryFn: () => api.get<Categoria[]>('/categorias').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
   })
 
   const createMut = useMutation({

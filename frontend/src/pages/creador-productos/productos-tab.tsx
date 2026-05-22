@@ -106,21 +106,25 @@ export default function ProductosTab() {
   const { data: categorias } = useQuery({
     queryKey: ['categorias'],
     queryFn: () => api.get<Categoria[]>('/categorias').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
   })
 
   const { data: unidades } = useQuery({
     queryKey: ['unidades-basicas'],
     queryFn: () => api.get<UnidadBasica[]>('/unidades-basicas').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
   })
 
   const { data: areas } = useQuery({
     queryKey: ['areas'],
     queryFn: () => api.get<Area[]>('/areas').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
   })
 
   const { data: proveedores } = useQuery({
     queryKey: ['proveedores'],
     queryFn: () => api.get<Proveedor[]>('/proveedores').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
   })
 
   const deleteMut = useMutation({

@@ -62,10 +62,12 @@ const groupByProduct = (items: DescarteVencidoItem[]): ProductSuggestion[] => {
 }
 
 interface NuevoDescarteTabProps {
-  onDescarteCreado: () => void
+  successSession: DescarteSession | null
+  onDescarteCreado: (session: DescarteSession) => void
+  onNuevoDescarte: () => void
 }
 
-export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
+export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDescarte }: NuevoDescarteTabProps) {
   const [search, setSearch] = useState('')
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false)
   const [searchActiveIndex, setSearchActiveIndex] = useState(-1)
@@ -78,7 +80,6 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
   const [items, setItems] = useState<Record<string, DescarteItemLocal>>({})
   const [showHealthyWarning, setShowHealthyWarning] = useState(false)
   const [healthyJustification, setHealthyJustification] = useState('')
-  const [successSession, setSuccessSession] = useState<DescarteSession | null>(null)
 
   const queryClient = useQueryClient()
   const usuario = useAuthStore((s) => s.usuario)
@@ -88,11 +89,13 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
   const { data: areas } = useQuery({
     queryKey: ['areas'],
     queryFn: () => api.get<Area[]>('/areas').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
   })
 
   const { data: proveedores } = useQuery({
     queryKey: ['proveedores'],
     queryFn: () => api.get<Proveedor[]>('/proveedores').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
   })
 
   const { data: config } = useQuery({
@@ -100,7 +103,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
     queryFn: () => api.get<Record<string, string>>('/configuracion').then((r) => r.data),
   })
 
-  const { data: stock = [], isLoading } = useDescartesStock({
+  const { data: stock = [], isLoading, isError: stockError } = useDescartesStock({
     diasAlerta: filterIncluirProximos ? 30 : 0,
     areaId: filterAreaId,
     proveedorId: filterProveedorId,
@@ -133,7 +136,6 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
       const { snapshot } = variables
       queryClient.invalidateQueries({ queryKey: ['stock'] })
       queryClient.invalidateQueries({ queryKey: ['descartes-stock'] })
-      queryClient.invalidateQueries({ queryKey: ['descartes-historial'] })
       const session: DescarteSession = {
         grupo_movimiento: data.grupo_movimiento,
         fecha: new Date().toISOString(),
@@ -152,9 +154,8 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
           nota: null,
         })),
       }
-      setSuccessSession(session)
       setItems({})
-      onDescarteCreado()
+      onDescarteCreado(session)
     },
     onError: (err: unknown) => notify.error(parseApiError(err)),
   })
@@ -352,7 +353,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
               <Download className="w-4 h-4" />
               Descargar Acta PDF
             </Button>
-            <Button variant="outline" className="w-full" onClick={() => setSuccessSession(null)}>
+            <Button variant="outline" className="w-full" onClick={onNuevoDescarte}>
               Nuevo descarte
             </Button>
           </div>
@@ -364,7 +365,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
   return (
     <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
       {/* Lista izquierda */}
-      <div className="flex-1 flex flex-col min-w-0 gap-3">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 gap-3">
         {/* Filtros */}
         <div className="flex flex-wrap items-center gap-2">
           <div ref={searchContainerRef} className="relative flex-1 min-w-[200px]">
@@ -495,6 +496,12 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
                     </td>
                   </tr>
                 ))
+              ) : stockError ? (
+                <tr>
+                  <td colSpan={5} className="py-20 text-center text-error text-sm">
+                    Error al cargar el stock. Intenta recargar la página.
+                  </td>
+                </tr>
               ) : filteredStock.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-20 text-center opacity-40 italic text-sm">
@@ -637,7 +644,7 @@ export function NuevoDescarteTab({ onDescarteCreado }: NuevoDescarteTabProps) {
       {/* Carrito derecho */}
       <div
         className={cn(
-          'w-full lg:w-80 flex flex-col bg-base-100 border border-base-200 rounded-2xl shadow-lg transition-all',
+          'w-full lg:w-80 flex flex-col min-h-0 bg-base-100 border border-base-200 rounded-2xl shadow-lg transition-all',
           totalSelected === 0 && 'opacity-40 grayscale'
         )}
       >

@@ -36,6 +36,7 @@ export default function AreasTab() {
   const { data: areas = [], isLoading } = useQuery({
     queryKey: ['areas'],
     queryFn: () => api.get<Area[]>('/areas').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
   })
 
   const createMut = useMutation({

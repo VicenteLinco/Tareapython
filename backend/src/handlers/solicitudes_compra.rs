@@ -787,40 +787,51 @@ async fn enviar(
     Json(req): Json<EnviarRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let mut tx = state.pool.begin().await?;
-    let rows = sqlx::query(
-        "UPDATE solicitudes_compra
-         SET estado = 'enviada', fecha_envio = NOW(), metodo_envio = $2
-         WHERE id = $1 AND estado = 'guardada'",
+
+    // Acepta guardada O parcialmente_enviada
+    let estado_actual: Option<String> =
+        sqlx::query_scalar("SELECT estado FROM solicitudes_compra WHERE id = $1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+    match estado_actual.as_deref() {
+        None => return Err(AppError::NotFound("Solicitud no encontrada".into())),
+        Some("guardada") | Some("parcialmente_enviada") => {}
+        _ => {
+            return Err(AppError::BusinessLogic(
+                "Solo se puede marcar como enviada una solicitud guardada o parcialmente enviada".into(),
+                "ESTADO_INVALIDO".into(),
+            ));
+        }
+    }
+
+    // Actualizar metodo_envio en la cabecera (el estado lo calcula recalcular_estado_solicitud)
+    sqlx::query(
+        "UPDATE solicitudes_compra SET metodo_envio = $2 WHERE id = $1",
     )
     .bind(id)
     .bind(req.metodo_envio.as_deref())
     .execute(&mut *tx)
     .await?;
 
-    if rows.rows_affected() == 0 {
-        return Err(AppError::BusinessLogic(
-            "Solo se puede marcar como enviada una solicitud guardada".into(),
-            "ESTADO_INVALIDO".into(),
-        ));
-    }
-
+    // Insertar envios solo para proveedores que no los tengan ya
+    // ON CONFLICT DO NOTHING preserva los envios granulares ya registrados
     sqlx::query(
         "INSERT INTO solicitud_envios (solicitud_id, proveedor_id, estado, metodo_envio, fecha_envio, usuario_envio_id)
          SELECT DISTINCT $1, p.proveedor_id, 'enviado', COALESCE($2, 'otro'), NOW(), $3
          FROM solicitud_compra_detalle d
          JOIN productos p ON p.id = d.producto_id
          WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
-         ON CONFLICT (solicitud_id, proveedor_id) DO UPDATE
-         SET estado = 'enviado',
-             metodo_envio = EXCLUDED.metodo_envio,
-             fecha_envio = EXCLUDED.fecha_envio,
-             usuario_envio_id = EXCLUDED.usuario_envio_id",
+         ON CONFLICT (solicitud_id, proveedor_id) DO NOTHING",
     )
     .bind(id)
     .bind(req.metodo_envio.as_deref())
     .bind(claims.sub)
     .execute(&mut *tx)
     .await?;
+
+    recalcular_estado_solicitud(&mut tx, id).await?;
     tx.commit().await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }

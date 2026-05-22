@@ -51,13 +51,10 @@ pub async fn procesar_descartes(
         .ok_or(AppError::NotFound("No hay stock de este lote en esta área".into()))?;
 
         if stock.cantidad < item.cantidad {
-            return Err(AppError::BusinessLogic(
-                format!(
-                    "Stock insuficiente. Disponible: {}, solicitado: {}",
-                    stock.cantidad, item.cantidad
-                ),
-                "STOCK_INSUFICIENTE".into(),
-            ));
+            return Err(AppError::StockInsuficiente {
+                disponible: stock.cantidad,
+                solicitado: item.cantidad,
+            });
         }
 
         let lote_fefo = stock_ops::LoteFefo {

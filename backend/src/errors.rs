@@ -1,6 +1,7 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use serde_json::json;
+use rust_decimal::Decimal;
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 #[derive(Debug, thiserror::Error)]
@@ -37,6 +38,27 @@ pub enum AppError {
 
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
+
+    // --- Variantes de dominio tipadas ---
+
+    /// Stock insuficiente al consumir o descartar
+    #[error("Stock insuficiente: disponible {disponible}, solicitado {solicitado}")]
+    StockInsuficiente {
+        disponible: Decimal,
+        solicitado: Decimal,
+    },
+
+    /// Lote ya agotado (cantidad == 0)
+    #[error("Lote agotado: {lote_id}")]
+    LoteAgotado { lote_id: Uuid },
+
+    /// Lote vencido
+    #[error("Lote vencido: {lote_id}")]
+    LoteVencido { lote_id: Uuid },
+
+    /// Conflicto de versión en optimistic locking
+    #[error("Conflicto de versión: esperada {esperada}, actual {actual}")]
+    VersionConflict { esperada: i64, actual: i64 },
 }
 
 impl From<validator::ValidationErrors> for AppError {
@@ -62,34 +84,34 @@ impl From<validator::ValidationErrors> for AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, error_code, message, id) = match &self {
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone(), None),
+        // (status, code, message, details)
+        let (status, code, message, details): (StatusCode, &str, String, Option<Value>) = match self {
+            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg, None),
             AppError::Validation(msg) => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "VALIDATION_ERROR",
-                msg.clone(),
+                msg,
                 None,
             ),
-            AppError::Conflict(msg) => (StatusCode::CONFLICT, "CONFLICT", msg.clone(), None),
-            AppError::ConflictWithId(msg, code, uuid) => (
-                StatusCode::CONFLICT,
-                code.as_str(),
-                msg.clone(),
-                Some(*uuid),
-            ),
-            AppError::ConflictWithCode(msg, code) => (
-                StatusCode::CONFLICT,
-                code.as_str(),
-                msg.clone(),
-                None,
-            ),
-            AppError::BusinessLogic(msg, code) => (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                code.as_str(),
-                msg.clone(),
-                None,
-            ),
-            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, "FORBIDDEN", msg.clone(), None),
+            AppError::Conflict(msg) => (StatusCode::CONFLICT, "CONFLICT", msg, None),
+            AppError::ConflictWithId(msg, code, uuid) => {
+                // Build response directly — code is dynamic String
+                let body = json!({
+                    "code": code,
+                    "message": msg,
+                    "details": { "sesion_id": uuid },
+                });
+                return (StatusCode::CONFLICT, axum::Json(body)).into_response();
+            }
+            AppError::ConflictWithCode(msg, code) => {
+                let body = json!({ "code": code, "message": msg });
+                return (StatusCode::CONFLICT, axum::Json(body)).into_response();
+            }
+            AppError::BusinessLogic(msg, code) => {
+                let body = json!({ "code": code, "message": msg });
+                return (StatusCode::UNPROCESSABLE_ENTITY, axum::Json(body)).into_response();
+            }
+            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, "FORBIDDEN", msg, None),
             AppError::Unauthorized => (
                 StatusCode::UNAUTHORIZED,
                 "UNAUTHORIZED",
@@ -120,15 +142,51 @@ impl IntoResponse for AppError {
                     None,
                 )
             }
+            AppError::StockInsuficiente {
+                disponible,
+                solicitado,
+            } => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "STOCK_INSUFICIENTE",
+                format!(
+                    "Stock insuficiente: disponible {}, solicitado {}",
+                    disponible, solicitado
+                ),
+                Some(json!({
+                    "disponible": disponible.to_string(),
+                    "solicitado": solicitado.to_string()
+                })),
+            ),
+            AppError::LoteAgotado { lote_id } => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "LOTE_AGOTADO",
+                format!("El lote {} está agotado", lote_id),
+                Some(json!({ "lote_id": lote_id })),
+            ),
+            AppError::LoteVencido { lote_id } => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "LOTE_VENCIDO",
+                format!("El lote {} está vencido", lote_id),
+                Some(json!({ "lote_id": lote_id })),
+            ),
+            AppError::VersionConflict { esperada, actual } => (
+                StatusCode::CONFLICT,
+                "VERSION_CONFLICT",
+                format!(
+                    "Conflicto de versión: esperada {}, actual {}",
+                    esperada, actual
+                ),
+                Some(json!({ "esperada": esperada, "actual": actual })),
+            ),
         };
 
         let mut body = json!({
-            "code": error_code,
+            "code": code,
             "message": message,
         });
 
-        if let Some(uuid) = id {
-            body["sesion_id"] = json!(uuid);
+        if let Some(d) = details {
+            body["details"] = d;
         }
 
         (status, axum::Json(body)).into_response()
@@ -144,4 +202,20 @@ pub fn validate_text_length(value: &str, field: &str, max: usize) -> Result<(), 
         )));
     }
     Ok(())
+}
+
+/// Helper para construir un body de error con details de tipo Value.
+#[allow(dead_code)]
+pub fn error_with_details(
+    status: StatusCode,
+    code: &'static str,
+    message: impl Into<String>,
+    details: Value,
+) -> Response {
+    let body = json!({
+        "code": code,
+        "message": message.into(),
+        "details": details,
+    });
+    (status, axum::Json(body)).into_response()
 }

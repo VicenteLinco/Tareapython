@@ -61,3 +61,24 @@ export type RecepcionReconciliacionRow = { id: string; recepcion_id: string; sol
  * Información del lote creado durante la recepción, para generar etiquetas QR
  */
 export type LoteCreado = { lote_id: string; codigo_interno: string; numero_lote: string; fecha_vencimiento: string; producto_id: string; producto_nombre: string; presentacion_nombre: string | null; area_nombre: string; cantidad: string }
+export type ApiErrorCode =
+  | "NOT_FOUND"
+  | "VALIDATION_ERROR"
+  | "CONFLICT"
+  | "FORBIDDEN"
+  | "UNAUTHORIZED"
+  | "RATE_LIMITED"
+  | "INTERNAL_ERROR"
+  | "STOCK_INSUFICIENTE"
+  | "STOCK_INSUFICIENTE_BATCH"
+  | "LOTE_AGOTADO"
+  | "LOTE_VENCIDO"
+  | "VERSION_CONFLICT"
+  | (string & {});
+
+export interface ApiError {
+  code: ApiErrorCode;
+  message: string;
+  details?: Record<string, unknown>;
+}
+

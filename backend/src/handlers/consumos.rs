@@ -120,10 +120,10 @@ async fn consumo(
         tx.rollback().await?;
         idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
 
-        return Err(AppError::BusinessLogic(
-            "Stock insuficiente".into(),
-            "STOCK_INSUFICIENTE".into(),
-        ));
+        return Err(AppError::StockInsuficiente {
+            disponible,
+            solicitado: cantidad_base,
+        });
     }
 
     let grupo = Uuid::new_v4();

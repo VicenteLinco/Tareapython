@@ -135,6 +135,29 @@ fn main() {
     append!(RecepcionReconciliacionRow);
     append!(LoteCreado);
 
+    // Tipos de error de API — añadidos manualmente (no vienen de specta)
+    writeln!(output, r#"export type ApiErrorCode ="#).unwrap();
+    writeln!(output, r#"  | "NOT_FOUND""#).unwrap();
+    writeln!(output, r#"  | "VALIDATION_ERROR""#).unwrap();
+    writeln!(output, r#"  | "CONFLICT""#).unwrap();
+    writeln!(output, r#"  | "FORBIDDEN""#).unwrap();
+    writeln!(output, r#"  | "UNAUTHORIZED""#).unwrap();
+    writeln!(output, r#"  | "RATE_LIMITED""#).unwrap();
+    writeln!(output, r#"  | "INTERNAL_ERROR""#).unwrap();
+    writeln!(output, r#"  | "STOCK_INSUFICIENTE""#).unwrap();
+    writeln!(output, r#"  | "STOCK_INSUFICIENTE_BATCH""#).unwrap();
+    writeln!(output, r#"  | "LOTE_AGOTADO""#).unwrap();
+    writeln!(output, r#"  | "LOTE_VENCIDO""#).unwrap();
+    writeln!(output, r#"  | "VERSION_CONFLICT""#).unwrap();
+    writeln!(output, r#"  | (string & {{}});"#).unwrap();
+    writeln!(output).unwrap();
+    writeln!(output, r#"export interface ApiError {{"#).unwrap();
+    writeln!(output, r#"  code: ApiErrorCode;"#).unwrap();
+    writeln!(output, r#"  message: string;"#).unwrap();
+    writeln!(output, r#"  details?: Record<string, unknown>;"#).unwrap();
+    writeln!(output, r#"}}"#).unwrap();
+    writeln!(output).unwrap();
+
     match fs::write(&out_path, &output) {
         Ok(_) => println!("Tipos exportados a {:?}", out_path),
         Err(e) => eprintln!("Error escribiendo archivo: {}", e),

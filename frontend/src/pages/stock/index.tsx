@@ -1,108 +1,47 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import {
-  Search,
-  Plus,
-  FileDown,
-  LayoutGrid,
-  List as ListIcon,
-  AlertTriangle,
-  Clock,
-  ChevronRight,
-  Package,
-  Info,
-  TrendingUp,
-  X,
-} from 'lucide-react'
+import { Search, Plus, FileDown, LayoutGrid, List as ListIcon, ChevronRight, Package, X } from 'lucide-react'
 import api from '@/lib/api'
-import { ProductoImage } from '@/components/ui/producto-image'
-import type { StockItem, PaginatedResponse, Categoria, Proveedor, Area } from '@/types'
-import { cn, daysUntil, formatCantidad } from '@/lib/utils'
+import type { StockItem, PaginatedResponse } from '@/types'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { EmptyState } from '@/components/ui/page-state'
-import { Skeleton } from '@/components/ui/skeleton'
-import { StockDetail } from './stock-detail'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { exportarStockPDF } from '@/lib/stock-pdf'
 import { notify } from '@/lib/notify'
-import { useFilterStorage } from '@/hooks/use-filter-storage'
 import { FilterBar } from '@/components/ui/filter-bar'
+import { useAreas, useCategorias, useProveedores } from '@/hooks/dominio/useCatalogos'
+import { useStockFilters } from './hooks/useStockFilters'
+import { PdfExportModal } from './components/pdf-export-modal'
+import { SearchDropdown } from './components/search-dropdown'
+import { StockSecondaryFilters } from './components/stock-secondary-filters'
+import { StockDetailPanel } from './components/stock-detail-panel'
+import { StockList } from './components/stock-list'
 
 export default function StockPage() {
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const [search, setSearch] = useState(searchParams.get('search') || '')
+  const [searchParams] = useSearchParams()
   const [view, setView] = useState<'grid' | 'list'>('list')
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('select') || null)
   const [showPdfModal, setShowPdfModal] = useState(false)
-  const [searchActiveIndex, setSearchActiveIndex] = useState(-1)
-  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false)
-  const searchContainerRef = useRef<HTMLDivElement>(null)
-  const searchItemRefs = useRef<(HTMLDivElement | null)[]>([])
 
-  const STOCK_FILTER_DEFAULTS = { categoriaId: null as number | null, proveedorId: null as number | null, areaId: null as number | null }
-  const { filters: sf, setFilters: setSf, clearFilters: clearSf, hasActiveFilters: hasSfActive } = useFilterStorage('stock', STOCK_FILTER_DEFAULTS)
-  const categoriaId = sf.categoriaId
-  const proveedorId = sf.proveedorId
-  const areaId = sf.areaId
-  const setCategoriaId = (v: number | null) => setSf(f => ({ ...f, categoriaId: v }))
-  const setProveedorId = (v: number | null) => setSf(f => ({ ...f, proveedorId: v }))
-  const setAreaId = (v: number | null) => setSf(f => ({ ...f, areaId: v }))
-
-  // Selector único de estado — lee ?estado= con compat ?filter=
-  type EstadoFiltro = 'todos' | 'normal' | 'bajo' | 'critico' | 'sin_stock' | 'vence_pronto'
-  const estadoParam = (searchParams.get('estado') ?? searchParams.get('filter') ?? 'todos') as string
-  const estadoValido: EstadoFiltro = (['todos','normal','bajo','critico','sin_stock','vence_pronto'] as string[]).includes(estadoParam)
-    ? estadoParam as EstadoFiltro
-    : estadoParam === 'sin-stock' ? 'sin_stock'  // compat legacy
-    : 'todos'
-  const [estado, setEstadoState] = useState<EstadoFiltro>(estadoValido)
-
-  const setEstado = (e: EstadoFiltro) => {
-    setEstadoState(e)
-    const newParams = new URLSearchParams(searchParams)
-    newParams.delete('filter')
-    newParams.delete('alertas')
-    if (e === 'todos') newParams.delete('estado')
-    else newParams.set('estado', e)
-    setSearchParams(newParams)
-  }
+  const {
+    search, setSearch,
+    estado, setEstado,
+    categoriaId, setCategoriaId,
+    proveedorId, setProveedorId,
+    areaId, setAreaId,
+    clearSf, hasSfActive,
+    searchActiveIndex, setSearchActiveIndex,
+    searchDropdownOpen, setSearchDropdownOpen,
+    searchContainerRef,
+    searchItemRefs,
+    handleSearchKeyDown,
+  } = useStockFilters()
 
   const usuario = useAuthStore(s => s.usuario)
-
-  useEffect(() => { setSearchActiveIndex(-1) }, [search])
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node))
-        setSearchDropdownOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  useEffect(() => {
-    if (searchActiveIndex >= 0)
-      searchItemRefs.current[searchActiveIndex]?.scrollIntoView({ block: 'nearest' })
-  }, [searchActiveIndex])
-
-  // Sincronizar URL con estado local
-  useEffect(() => {
-    const s = searchParams.get('search')
-    const sel = searchParams.get('select')
-    if (s !== null && s !== search) setSearch(s)
-    if (sel !== null && sel !== selectedId) setSelectedId(sel)
-    // Sincronizar estado desde URL (navegación externa como Dashboard)
-    const eParam = searchParams.get('estado') ?? searchParams.get('filter') ?? 'todos'
-    const eValido: EstadoFiltro = (['todos','normal','bajo','critico','sin_stock','vence_pronto'] as string[]).includes(eParam)
-      ? eParam as EstadoFiltro
-      : eParam === 'sin-stock' ? 'sin_stock'
-      : 'todos'
-    if (eValido !== estado) setEstadoState(eValido)
-  }, [searchParams, search, selectedId, estado])
 
   // Queries
   const { data: stockResponse, isLoading } = useQuery({
@@ -120,23 +59,9 @@ export default function StockPage() {
       }).then((r) => r.data),
   })
 
-  const { data: categorias } = useQuery({
-    queryKey: ['categorias'],
-    queryFn: () => api.get<Categoria[]>('/categorias').then((r) => r.data),
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const { data: proveedores } = useQuery({
-    queryKey: ['proveedores'],
-    queryFn: () => api.get<Proveedor[]>('/proveedores').then((r) => r.data),
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const { data: areas } = useQuery({
-    queryKey: ['areas'],
-    queryFn: () => api.get<Area[]>('/areas').then((r) => r.data),
-    staleTime: 5 * 60 * 1000,
-  })
+  const { data: categorias } = useCategorias()
+  const { data: proveedores } = useProveedores()
+  const { data: areas } = useAreas()
 
   const items = stockResponse?.data ?? []
   const selectedItem = items.find(i => i.producto_id === selectedId)
@@ -160,29 +85,6 @@ export default function StockPage() {
     })
     return result
   })()
-
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      if (!searchDropdownOpen) setSearchDropdownOpen(true)
-      if (searchSuggestions.length === 0) return
-      setSearchActiveIndex(i => i < searchSuggestions.length - 1 ? i + 1 : 0)
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      if (searchSuggestions.length === 0) return
-      setSearchActiveIndex(i => i > 0 ? i - 1 : searchSuggestions.length - 1)
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      if (searchActiveIndex >= 0 && searchSuggestions[searchActiveIndex]) {
-        setSearch(searchSuggestions[searchActiveIndex].producto_nombre)
-        setSearchDropdownOpen(false)
-        setSearchActiveIndex(-1)
-      }
-    } else if (e.key === 'Escape') {
-      setSearchDropdownOpen(false)
-      setSearchActiveIndex(-1)
-    }
-  }
 
   return (
     <div className="space-y-6">
@@ -231,43 +133,19 @@ export default function StockPage() {
               className="pl-9 h-10 bg-base-200/50 border-transparent focus:bg-base-100 transition-all rounded-xl text-xs"
               value={search}
               onChange={(e) => { setSearch(e.target.value); setSearchDropdownOpen(true) }}
-              onKeyDown={handleSearchKeyDown}
+              onKeyDown={(e) => handleSearchKeyDown(e, searchSuggestions)}
               onFocus={() => setSearchDropdownOpen(true)}
               aria-autocomplete="list"
               aria-expanded={showSearchDropdown}
             />
             {showSearchDropdown && (
-              <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-base-100 border border-base-200 rounded-xl shadow-lg overflow-y-auto max-h-72" role="listbox">
-                {groupedSearchItems.map(entry =>
-                  entry.type === 'header' ? (
-                    <div key={`h-${entry.letter}`} className="px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-base-content/30 bg-base-200/40 sticky top-0">
-                      {entry.letter}
-                    </div>
-                  ) : (
-                    <div
-                      key={entry.item.producto_id}
-                      ref={el => { searchItemRefs.current[entry.idx] = el }}
-                      role="option"
-                      aria-selected={entry.idx === searchActiveIndex}
-                      className={cn(
-                        "flex items-center justify-between px-3 py-2 cursor-pointer text-sm transition-colors",
-                        entry.idx === searchActiveIndex ? "bg-primary/10 text-primary" : "hover:bg-base-200/60"
-                      )}
-                      onMouseDown={(e) => {
-                        e.preventDefault()
-                        setSearch(entry.item.producto_nombre)
-                        setSearchDropdownOpen(false)
-                        setSearchActiveIndex(-1)
-                      }}
-                    >
-                      <span className="font-medium truncate">{entry.item.producto_nombre}</span>
-                      {entry.item.codigo_interno && (
-                        <span className="text-[10px] font-mono opacity-40 shrink-0 ml-2">#{entry.item.codigo_interno}</span>
-                      )}
-                    </div>
-                  )
-                )}
-              </div>
+              <SearchDropdown
+                groupedItems={groupedSearchItems}
+                activeIndex={searchActiveIndex}
+                itemRefs={searchItemRefs}
+                onSelect={(name) => { setSearch(name); setSearchDropdownOpen(false) }}
+                setActiveIndex={setSearchActiveIndex}
+              />
             )}
           </div>
         }
@@ -282,45 +160,16 @@ export default function StockPage() {
           </select>
         }
         secondaryFilters={
-          <>
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40 px-1">Categoría</label>
-              <select
-                className="select select-sm h-10 w-full bg-base-100 border border-base-300 rounded-xl text-xs font-medium"
-                value={categoriaId ?? ''}
-                onChange={(e) => setCategoriaId(e.target.value ? Number(e.target.value) : null)}
-              >
-                <option value="">Todas las categorías</option>
-                {categorias?.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40 px-1">Proveedor</label>
-              <select
-                className="select select-sm h-10 w-full bg-base-100 border border-base-300 rounded-xl text-xs font-medium"
-                value={proveedorId ?? ''}
-                onChange={(e) => setProveedorId(e.target.value ? Number(e.target.value) : null)}
-              >
-                <option value="">Todos los proveedores</option>
-                {proveedores?.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40 px-1">Estado</label>
-              <select
-                className="select select-sm h-10 w-full bg-base-100 border border-base-300 rounded-xl text-xs font-medium"
-                value={estado}
-                onChange={e => setEstado(e.target.value as EstadoFiltro)}
-              >
-                <option value="todos">Todos los estados</option>
-                <option value="normal">Normal</option>
-                <option value="bajo">Stock bajo</option>
-                <option value="critico">Crítico</option>
-                <option value="sin_stock">Sin stock</option>
-                <option value="vence_pronto">Por vencer</option>
-              </select>
-            </div>
-          </>
+          <StockSecondaryFilters
+            categorias={categorias}
+            proveedores={proveedores}
+            categoriaId={categoriaId}
+            proveedorId={proveedorId}
+            estado={estado}
+            setCategoriaId={setCategoriaId}
+            setProveedorId={setProveedorId}
+            setEstado={setEstado}
+          />
         }
         activeSecondaryCount={activeSecondaryCount}
         chips={[
@@ -370,150 +219,33 @@ export default function StockPage() {
           "transition-all duration-300",
           selectedId ? "hidden lg:block lg:col-span-7" : "lg:col-span-12"
         )}>
-          {isLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {[1, 2, 3, 4, 5, 6].map(i => <Skeleton key={i} className="h-32 w-full rounded-2xl" />)}
-            </div>
-          ) : items.length === 0 ? (
-            <EmptyState
-              icon={<Package className="h-6 w-6" />}
-              title="No se encontraron productos"
-              description="Ajusta la búsqueda o cambia los filtros para ver más resultados."
-            />
-          ) : view === 'list' ? (
-            <div className="bg-base-100 rounded-3xl border border-base-200 overflow-hidden shadow-sm">
-              <table className="table table-zebra w-full">
-                <thead>
-                  <tr className="bg-base-200/50 text-[10px] uppercase tracking-widest opacity-50 border-none">
-                    <th className="pl-6">Producto</th>
-                    <th>Categoría</th>
-                    <th className="text-center">Existencias</th>
-                    <th>Estado</th>
-                    <th className="w-10"></th>
-                  </tr>
-                </thead>
-                <tbody className="border-none">
-                  {items.map(item => (
-                    <tr 
-                      key={item.producto_id} 
-                      className={cn(
-                        "hover:bg-primary/5 cursor-pointer transition-colors group border-base-200",
-                        selectedId === item.producto_id && "bg-primary/5 active-row"
-                      )}
-                      onClick={() => setSelectedId(item.producto_id)}
-                    >
-                      <td className="pl-6 py-4">
-                        <div className="flex items-center gap-2.5">
-                          <ProductoImage src={item.imagen_url} size="sm" />
-                          <div className="flex flex-col">
-                            <span className="font-bold text-sm text-base-content group-hover:text-primary transition-colors">{item.producto_nombre}</span>
-                            <span className="text-[10px] font-mono opacity-40 uppercase tracking-tighter">#{item.codigo_interno}</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="text-xs font-medium opacity-60 bg-base-200 px-2 py-1 rounded-lg">{item.categoria || 'Sin categoría'}</span>
-                      </td>
-                      <td className="text-center">
-                        <div className="flex flex-col items-center">
-                          <span className="font-mono font-bold text-base leading-none">{Math.round(item.stock_total ?? 0)}</span>
-                          <span className="text-[9px] opacity-40 uppercase font-bold mt-1">
-                            {formatCantidad(item.stock_total ?? 0, item.unidad, item.unidad_plural ?? undefined).replace(/^[\d.,\s]+/, '').trim()}
-                          </span>
-                        </div>
-                      </td>
-                      <td>
-                        <StockBadge item={item} />
-                      </td>
-                      <td className="pr-6">
-                        <ChevronRight className={cn("w-4 h-4 transition-all opacity-0 group-hover:opacity-100", selectedId === item.producto_id ? "translate-x-1 opacity-100 text-primary" : "opacity-20")} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {items.map(item => (
-                <button 
-                  key={item.producto_id}
-                  onClick={() => setSelectedId(item.producto_id)}
-                  className={cn(
-                    "flex flex-col p-5 bg-base-100 border border-base-200 rounded-[2rem] text-left transition-all hover:border-primary/40 hover:shadow-xl group relative overflow-hidden",
-                    selectedId === item.producto_id && "ring-2 ring-primary border-transparent shadow-xl"
-                  )}
-                >
-                  <div className="flex justify-between items-start mb-4">
-                    <ProductoImage src={item.imagen_url} size="md" className="group-hover:ring-2 group-hover:ring-primary/20" />
-                    <StockBadge item={item} />
-                  </div>
-                  <h3 className="font-bold text-base leading-tight mb-1 line-clamp-2">{item.producto_nombre}</h3>
-                  <p className="text-[10px] font-mono opacity-40 uppercase mb-4 tracking-widest">#{item.codigo_interno}</p>
-                  
-                  <div className="mt-auto pt-4 border-t border-base-200/50 flex items-end justify-between">
-                    <div>
-                      <p className="text-[10px] font-bold opacity-30 uppercase mb-1">Disponible</p>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-2xl font-bold tabular-nums leading-none">{Math.round(item.stock_total ?? 0)}</span>
-                        <span className="text-xs opacity-40">{formatCantidad(item.stock_total ?? 0, item.unidad, item.unidad_plural ?? undefined).replace(/^[\d.,\s]+/, '').trim()}</span>
-                      </div>
-                    </div>
-                    <div className="h-8 w-8 rounded-xl bg-base-200 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <ChevronRight className="w-4 h-4 opacity-40" />
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+          <StockList
+            items={items}
+            isLoading={isLoading}
+            view={view}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+          />
         </div>
 
         {/* Detail Panel */}
         {selectedId && (
-          <div className="col-span-1 lg:col-span-5 lg:sticky lg:top-24 animate-in slide-in-from-right-4 duration-300">
-            <div className="bg-base-100 border border-base-200 rounded-[2.5rem] shadow-2xl overflow-hidden">
-              <div className="flex items-center justify-between p-6 bg-base-200/30 border-b border-base-200">
-                {/* ← Volver solo en móvil */}
-                <button
-                  className="flex items-center gap-1.5 text-sm font-bold text-base-content/60 hover:text-base-content transition-colors lg:hidden"
-                  onClick={() => setSelectedId(null)}
-                >
-                  <ChevronRight className="w-4 h-4 rotate-180" /> Volver
-                </button>
-                <h2 className="font-bold text-lg hidden lg:block">{selectedId === 'new' ? 'Nuevo Producto' : 'Detalle de Inventario'}</h2>
-                <button className="btn btn-sm btn-ghost btn-circle hidden lg:flex" onClick={() => setSelectedId(null)}>✕</button>
-              </div>
-              <div className="p-6 custom-scrollbar max-h-[calc(100vh-250px)] overflow-y-auto">
-                {selectedId === 'new' ? (
-                  <p className="text-sm opacity-50 p-10 text-center italic">Formulario de creación pendiente...</p>
-                ) : selectedItem ? (
-                  <StockDetail item={selectedItem} areaId={areaId} />
-                ) : (
-                  <div className="py-12 text-center space-y-3">
-                    <Package className="w-8 h-8 mx-auto opacity-20" />
-                    <p className="text-sm font-medium opacity-40">Producto no visible con los filtros actuales</p>
-                    <button
-                      className="btn btn-ghost btn-sm rounded-xl text-primary"
-                      onClick={() => { clearSf(); setEstado('todos'); setSearch('') }}
-                    >
-                      Limpiar filtros
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <StockDetailPanel
+            selectedId={selectedId}
+            selectedItem={selectedItem}
+            areaId={areaId}
+            onClose={() => setSelectedId(null)}
+            onClearFilters={() => { clearSf(); setEstado('todos'); setSearch('') }}
+          />
         )}
       </div>
 
       {/* PDF Export Modal */}
       {showPdfModal && (
-        <PdfExportModal 
-          areas={areas ?? []} 
+        <PdfExportModal
+          areas={areas ?? []}
           onClose={() => setShowPdfModal(false)}
           onExport={async (selectedAreas, incluirResumen) => {
-
             try {
               const config = await api
                 .get<{ nombre_laboratorio: string; logo_base64: string }>('/configuracion')
@@ -539,360 +271,6 @@ export default function StockPage() {
           }}
         />
       )}
-    </div>
-  )
-}
-
-function StockBadge({ item }: { item: StockItem }) {
-  const stock = item.stock_total ?? 0
-  const dias = item.dias_autonomia ?? null
-  const diasPico = item.dias_autonomia_pico ?? null
-  const diasConConsumo = item.dias_con_consumo ?? 0
-  const leadTime = item.lead_time_propio ?? 3
-  const pocosData = diasConConsumo > 0 && diasConConsumo < 14
-
-  // 1. Sin stock
-  if (stock <= 0) return (
-    <div className="flex flex-col items-end gap-1">
-      <Badge variant="destructive" className="gap-1 text-[10px] font-bold uppercase px-2">
-        <Info className="h-3 w-3" /> Agotado
-      </Badge>
-      <span className="text-[9px] font-bold text-error uppercase tracking-tighter italic">Reponer de inmediato</span>
-    </div>
-  )
-
-  // 2. Crítico: días base <= lead time
-  if (dias !== null && dias <= leadTime) return (
-    <div className="flex flex-col items-end gap-1">
-      <Badge variant="destructive" className="gap-1 text-[10px] font-bold uppercase px-2 animate-pulse">
-        <AlertTriangle className="h-3 w-3" /> Crítico
-      </Badge>
-      <span className="text-[9px] font-bold text-error opacity-70 uppercase tracking-tighter">Quedan ~{Math.round(dias)} días</span>
-    </div>
-  )
-
-  // 3. Reponer pronto: días base <= lead time + 7
-  if (dias !== null && dias <= leadTime + 7) return (
-    <div className="flex flex-col items-end gap-1">
-      <Badge variant="warning" className="gap-1 text-[10px] font-bold uppercase px-2">
-        <Clock className="h-3 w-3" /> Reponer
-      </Badge>
-      <span className="text-[9px] font-bold text-warning opacity-70 uppercase tracking-tighter">Quedan ~{Math.round(dias)} días</span>
-    </div>
-  )
-
-  // 4. Pico posible: días normales OK pero en pico entraría en zona crítica
-  if (dias !== null && diasPico !== null && diasPico <= leadTime + 7) {
-    const tooltip = `En tu mayor pico reciente agotarías el stock en ~${diasPico} días.\nConsumo normal: ~${dias} días.`
-    return (
-      <div className="flex flex-col items-end gap-1" title={tooltip}>
-        <Badge variant="warning" className="gap-1 text-[10px] font-bold uppercase px-2 border-warning/30 bg-warning/10 text-warning">
-          <TrendingUp className="h-3 w-3" /> Pico posible
-        </Badge>
-        <span className="text-[9px] font-bold text-warning opacity-80 uppercase tracking-tighter">
-          Normal ~{Math.round(dias)} · Pico ~{Math.round(diasPico)} d
-        </span>
-      </div>
-    )
-  }
-
-  // 5. Vencido / por vencer
-  if (item.proximo_vencimiento) {
-    const days = daysUntil(item.proximo_vencimiento)
-    if (days !== null && days <= 0) return (
-      <div className="flex flex-col items-end gap-1">
-        <Badge variant="destructive" className="gap-1 text-[10px] font-bold uppercase px-2">
-          <Clock className="h-3 w-3" /> Vencido
-        </Badge>
-        <span className="text-[9px] font-bold text-error uppercase">Retirar de stock</span>
-      </div>
-    )
-    if (days !== null && days <= 30) return (
-      <div className="flex flex-col items-end gap-1">
-        <Badge variant="warning" className="gap-1 text-[10px] font-bold uppercase px-2 animate-pulse">
-          <Clock className="h-3 w-3" /> Riesgo
-        </Badge>
-        <span className="text-[9px] font-bold text-warning uppercase">Vence en {days} días</span>
-      </div>
-    )
-  }
-
-  // 6. OK — con o sin suficiente historial
-  // pocosData solo aplica cuando hay estimación (dias !== null); con 1 evento
-  // no hay consumo_base válido → dias es null → mostramos sin consumo.
-  const tieneEstimacionPocaData = pocosData && dias !== null
-  return (
-    <div className="flex flex-col items-end gap-1">
-      <Badge
-        variant="outline"
-        className={cn(
-          "text-[10px] font-bold uppercase px-2",
-          tieneEstimacionPocaData
-            ? "text-base-content/50 border-base-300 bg-base-200/50"
-            : "text-success border-success/20 bg-success/5"
-        )}
-        title={tieneEstimacionPocaData ? `Estimado con solo ${diasConConsumo} día(s) con consumo. Puede no ser preciso.` : undefined}
-      >
-        {tieneEstimacionPocaData ? '~OK' : 'OK'}
-      </Badge>
-      <span className="text-[9px] font-bold opacity-40 uppercase tracking-tighter">
-        {dias !== null
-          ? `~${Math.round(dias)} días${tieneEstimacionPocaData ? '*' : ''}`
-          : 'Sin consumo reciente'}
-      </span>
-    </div>
-  )
-}
-
-type AreaStockStatus = 'loading' | 'con-stock' | 'sin-stock'
-
-function PdfExportModal({
-  areas,
-  onClose,
-  onExport,
-}: {
-  areas: Area[]
-  onClose: () => void
-  onExport: (selectedAreas: Area[], incluirResumen: boolean) => Promise<void>
-}) {
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set(areas.map((a) => a.id)))
-  const [incluirResumen, setIncluirResumen] = useState(true)
-  const [loading, setLoading] = useState(false)
-  const [areaStatus, setAreaStatus] = useState<Record<number, AreaStockStatus>>(() =>
-    Object.fromEntries(areas.map((a) => [a.id, 'loading' as AreaStockStatus]))
-  )
-  const fetchedRef = useRef(false)
-
-  // Usa /stock/area/:id (solo devuelve items con cantidad > 0) para detección real de stock
-  useEffect(() => {
-    if (fetchedRef.current || areas.length === 0) return
-    fetchedRef.current = true
-    Promise.all(
-      areas.map((area) =>
-        api
-          .get<{ area: unknown; productos: unknown[] }>(`/stock/area/${area.id}`, { params: { per_page: 1 } })
-          .then((r) => ({ id: area.id, hasStock: r.data.productos.length > 0 }))
-          .catch(() => ({ id: area.id, hasStock: false }))
-      )
-    ).then((results) => {
-      setAreaStatus(
-        Object.fromEntries(results.map((r) => [r.id, r.hasStock ? 'con-stock' : 'sin-stock']))
-      )
-    })
-  }, [areas])
-
-  const isLoadingStatus = Object.values(areaStatus).some((s) => s === 'loading')
-  const areasConStock = areas.filter((a) => areaStatus[a.id] === 'con-stock').sort((a, b) => a.nombre.localeCompare(b.nombre))
-  const areasSinStock = areas.filter((a) => areaStatus[a.id] !== 'con-stock').sort((a, b) => a.nombre.localeCompare(b.nombre))
-  const countConStock = areasConStock.length
-
-  const toggleArea = (id: number) =>
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
-
-  const selectOnlyWithStock = () =>
-    setSelectedIds(new Set(areasConStock.map((a) => a.id)))
-
-  const toggleAll = () =>
-    setSelectedIds(selectedIds.size === areas.length ? new Set() : new Set(areas.map((a) => a.id)))
-
-  async function handleExport() {
-    if (selectedIds.size === 0) return
-    setLoading(true)
-    const selected = areas.filter((a) => selectedIds.has(a.id))
-    await onExport(selected, incluirResumen)
-    setLoading(false)
-  }
-
-  const AreaChip = ({ area, status }: { area: Area; status: AreaStockStatus }) => {
-    const checked = selectedIds.has(area.id)
-    return (
-      <button
-        type="button"
-        onClick={() => toggleArea(area.id)}
-        className={cn(
-          "relative flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all w-full",
-          checked
-            ? status === 'con-stock'
-              ? "bg-success/10 border-success/30 shadow-sm"
-              : "bg-base-200 border-base-300 shadow-sm"
-            : "border-transparent hover:bg-base-200/60 opacity-50"
-        )}
-      >
-        <span className={cn(
-          "w-2 h-2 rounded-full shrink-0 mt-0.5",
-          status === 'loading' ? "bg-base-300 animate-pulse" :
-          status === 'con-stock' ? "bg-success" : "bg-base-400"
-        )} />
-        <span className="text-sm font-medium leading-tight truncate flex-1">{area.nombre}</span>
-        {area.es_bodega && (
-          <span className="text-[9px] font-bold uppercase tracking-wider opacity-40 shrink-0">BD</span>
-        )}
-        {checked && (
-          <span className={cn(
-            "absolute top-1.5 right-1.5 w-3.5 h-3.5 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0",
-            status === 'con-stock' ? "bg-success" : "bg-base-content/30"
-          )}>✓</span>
-        )}
-      </button>
-    )
-  }
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-base-100 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-base-200 flex flex-col max-h-[90vh]">
-
-        {/* ── Header ── */}
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-primary/10 rounded-xl text-primary">
-                <FileDown className="h-4 w-4" />
-              </div>
-              <h2 className="font-bold text-base tracking-tight">Reporte de Inventario</h2>
-            </div>
-            <p className="text-[11px] opacity-40 mt-1 ml-10">PDF con stock por sección · carta horizontal</p>
-          </div>
-          <button className="btn btn-sm btn-ghost btn-circle" onClick={onClose}>✕</button>
-        </div>
-
-        {/* ── Body (scrollable) ── */}
-        <div className="overflow-y-auto px-6 pb-2 flex-1 space-y-5">
-
-          {/* Secciones */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-bold uppercase tracking-wider opacity-50">Secciones</p>
-              <div className="flex items-center gap-3">
-                {!isLoadingStatus && countConStock > 0 && (
-                  <button
-                    className="text-[11px] font-bold text-success hover:opacity-70 transition-opacity"
-                    onClick={selectOnlyWithStock}
-                  >
-                    Solo con stock ({countConStock})
-                  </button>
-                )}
-                <button
-                  className="text-[11px] font-bold text-primary hover:opacity-70 transition-opacity"
-                  onClick={toggleAll}
-                >
-                  {selectedIds.size === areas.length ? 'Limpiar' : 'Todas'}
-                </button>
-              </div>
-            </div>
-
-            {/* Contador seleccionados */}
-            <div className="flex items-center gap-2 text-[11px] opacity-50">
-              <span>{selectedIds.size} de {areas.length} seleccionadas</span>
-              {!isLoadingStatus && (
-                <span className="opacity-60">·
-                  <span className="text-success ml-1">{countConStock} con stock</span>
-                  {' · '}
-                  <span className="ml-0.5">{areas.length - countConStock} sin stock</span>
-                </span>
-              )}
-            </div>
-
-            {isLoadingStatus ? (
-              /* Skeleton mientras carga el estado */
-              <div className="grid grid-cols-2 gap-1.5">
-                {areas.map((area) => (
-                  <div key={area.id} className="h-9 rounded-xl bg-base-200 animate-pulse" />
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {/* Grupo: Con stock */}
-                {areasConStock.length > 0 && (
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-success" />
-                      <span className="text-[9px] font-bold uppercase tracking-widest text-success opacity-70">Con stock</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {areasConStock.map((area) => (
-                        <AreaChip key={area.id} area={area} status="con-stock" />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Grupo: Sin stock */}
-                {areasSinStock.length > 0 && (
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-base-400" />
-                      <span className="text-[9px] font-bold uppercase tracking-widest opacity-40">Sin stock registrado</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {areasSinStock.map((area) => (
-                        <AreaChip key={area.id} area={area} status="sin-stock" />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Opciones del reporte */}
-          <div className="space-y-2">
-            <p className="text-xs font-bold uppercase tracking-wider opacity-50">Contenido del PDF</p>
-            <button
-              type="button"
-              onClick={() => setIncluirResumen((v) => !v)}
-              className={cn(
-                "w-full flex items-center gap-4 px-4 py-3 rounded-2xl border transition-all text-left",
-                incluirResumen ? "bg-primary/5 border-primary/20" : "border-base-200 hover:bg-base-200/50 opacity-60"
-              )}
-            >
-              <div className={cn(
-                "w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors",
-                incluirResumen ? "bg-primary border-primary text-white" : "border-base-300"
-              )}>
-                {incluirResumen && <span className="text-[10px] font-bold">✓</span>}
-              </div>
-              <div>
-                <p className="text-sm font-bold">Resumen Ejecutivo</p>
-                <p className="text-[10px] opacity-50 mt-0.5">Página inicial con KPIs: total de insumos, alertas y áreas</p>
-              </div>
-            </button>
-          </div>
-
-        </div>
-
-        {/* ── Footer ── */}
-        <div className="px-6 py-4 border-t border-base-200 flex items-center justify-between shrink-0">
-          <p className="text-[11px] opacity-40">
-            {selectedIds.size === 0
-              ? 'Selecciona al menos una sección'
-              : `${selectedIds.size} ${selectedIds.size === 1 ? 'sección' : 'secciones'} · PDF carta horizontal`}
-          </p>
-          <div className="flex gap-2">
-            <button className="btn btn-ghost btn-sm h-9 px-4 font-bold" onClick={onClose}>Cancelar</button>
-            <button
-              className="btn btn-primary btn-sm h-9 px-5 font-bold gap-2"
-              disabled={selectedIds.size === 0 || loading}
-              onClick={handleExport}
-            >
-              {loading ? (
-                <span className="loading loading-spinner loading-xs" />
-              ) : (
-                <FileDown className="h-3.5 w-3.5" />
-              )}
-              {loading ? 'Generando...' : 'Generar PDF'}
-            </button>
-          </div>
-        </div>
-
-      </div>
     </div>
   )
 }

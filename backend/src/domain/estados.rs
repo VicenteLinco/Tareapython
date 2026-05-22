@@ -6,14 +6,10 @@ use specta::Type;
 pub enum EstadoSolicitud {
     Borrador,
     Guardada,
-    PendienteAprobacion,
-    Aprobada,
-    Rechazada,
     ParcialmenteEnviada,
-    ParcialmenteRecibida,
     Enviada,
+    ParcialmenteRecibida,
     Completada,
-    Cerrada,
     Cancelada,
 }
 

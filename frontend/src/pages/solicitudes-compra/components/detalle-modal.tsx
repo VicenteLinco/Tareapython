@@ -78,10 +78,14 @@ export function DetalleModal({
 
   const calcTotal = (items: SolicitudDetalle['items']) =>
     items.reduce((acc, i) => {
-      const qty = parseFloat(i.cantidad_sugerida)
       const fc = i.factor_conversion ? parseFloat(i.factor_conversion) : null
       const pu = i.precio_unitario ? parseFloat(i.precio_unitario) : 0
-      return acc + qty * (i.presentacion_id && fc ? pu * fc : pu)
+      const hasPres = !!(i.presentacion_id && i.cantidad_presentaciones && fc)
+      const qty = hasPres
+        ? parseFloat(i.cantidad_presentaciones!)
+        : parseFloat(i.cantidad_sugerida)
+      const price = hasPres ? pu * fc! : pu
+      return acc + qty * price
     }, 0)
 
   const invalidate = () => {
@@ -217,10 +221,11 @@ export function DetalleModal({
     for (const i of detail.items) {
       const provNombre = i.proveedor_nombre || 'Sin proveedor'
       const current = gruposMap.get(provNombre) ?? { items: [], subtotal_neto: 0 }
-      const qty = parseFloat(i.cantidad_sugerida)
       const fc = i.factor_conversion ? parseFloat(i.factor_conversion) : null
       const pu = i.precio_unitario ? parseFloat(i.precio_unitario) : 0
-      const neto = qty * (i.presentacion_id && fc ? pu * fc : pu)
+      const hasPres = !!(i.presentacion_id && i.cantidad_presentaciones && fc)
+      const qty = hasPres ? parseFloat(i.cantidad_presentaciones!) : parseFloat(i.cantidad_sugerida)
+      const neto = qty * (hasPres ? pu * fc! : pu)
       current.items.push(i)
       current.subtotal_neto += neto
       gruposMap.set(provNombre, current)

@@ -2,24 +2,26 @@
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useRef, useEffect } from 'react'
-import { ArrowLeft, CheckCircle2, Layers } from 'lucide-react'
+import { ArrowLeft, Layers } from 'lucide-react'
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { notify } from '@/lib/notify'
 import { imprimirEtiquetas } from '@/lib/label-print'
+import { useAreas, useProveedores, useConfiguracion } from '@/hooks/dominio'
 import { LabelsSection } from './components/labels-section'
 import { LoteBottomSheet } from './components/lote-bottom-sheet'
 import { ReconciliacionModal } from './components/ReconciliacionModal'
 import { VincularSolicitudModal } from './components/VincularSolicitudModal'
+import { WizardSteps } from './components/wizard-steps'
 import { useRecepcionWizard } from './hooks/useRecepcionWizard'
 import { useRecepcionItems } from './hooks/useRecepcionItems'
 import { ProveedorStep } from './steps/ProveedorStep'
 import { ItemsStep } from './steps/ItemsStep'
 import { ConfirmStep } from './steps/ConfirmStep'
 import { isCardComplete } from './components/item-card-utils'
-import type { Area, Proveedor, Producto } from '@/types'
+import type { Producto } from '@/types'
 
 export default function NuevaRecepcionPage() {
   const navigate = useNavigate()
@@ -42,15 +44,10 @@ export default function NuevaRecepcionPage() {
 
   // ─── Queries ─────────────────────────────────────────────────────────────────
 
-  const { data: areas } = useQuery({
-    queryKey: ['areas'],
-    queryFn: () => api.get<Area[]>('/areas').then(r => r.data),
-  })
-
-  const { data: proveedores } = useQuery({
-    queryKey: ['proveedores'],
-    queryFn: () => api.get<Proveedor[]>('/proveedores').then(r => r.data),
-  })
+  const { data: areas } = useAreas()
+  const { data: proveedores } = useProveedores()
+  const { data: configuracion } = useConfiguracion()
+  const monedaSimbolo = configuracion?.moneda_simbolo ?? '$'
 
   const { data: productos } = useQuery({
     queryKey: ['productos-recepcion', proveedorId],
@@ -58,12 +55,6 @@ export default function NuevaRecepcionPage() {
       params: { per_page: 500, ...(proveedorId ? { proveedor_id: proveedorId } : {}) },
     }).then(r => r.data.data),
   })
-
-  const { data: configuracion } = useQuery({
-    queryKey: ['configuracion'],
-    queryFn: () => api.get<{ moneda_simbolo: string }>('/configuracion').then(r => r.data),
-  })
-  const monedaSimbolo = configuracion?.moneda_simbolo ?? '$'
 
   // ─── Items hook ───────────────────────────────────────────────────────────────
 
@@ -190,39 +181,14 @@ export default function NuevaRecepcionPage() {
           </button>
         </div>
 
-        {/* Steps indicator */}
         {!modoExperto && (
-          <div className="flex items-center gap-0 bg-base-100 rounded-2xl border border-base-200 p-3">
-            {([
-              { n: 1 as const, label: 'Proveedor', ok: !!proveedorId },
-              { n: 2 as const, label: 'Ítems y lotes', ok: detalles.length > 0 && itemsCompletos === detalles.length },
-              { n: 3 as const, label: 'Confirmar', ok: false },
-            ]).map((step, idx) => (
-              <div key={step.n} className="flex items-center flex-1 min-w-0">
-                <button
-                  className={cn(
-                    'flex items-center gap-2 min-w-0 flex-1',
-                    pasoActual === step.n ? 'opacity-100' : step.ok ? 'opacity-70' : 'opacity-30'
-                  )}
-                  onClick={() => {
-                    if (step.n <= pasoActual || step.ok) setPasoActual(step.n)
-                  }}
-                >
-                  <div className={cn(
-                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-all',
-                    pasoActual === step.n ? 'bg-primary text-primary-content shadow-lg shadow-primary/30' :
-                    step.ok ? 'bg-success text-success-content' : 'bg-base-200 text-base-content/40'
-                  )}>
-                    {step.ok && pasoActual !== step.n ? <CheckCircle2 className="h-3.5 w-3.5" /> : step.n}
-                  </div>
-                  <span className={cn('text-xs font-bold hidden sm:block truncate', pasoActual === step.n ? 'text-primary' : 'text-base-content/50')}>
-                    {step.label}
-                  </span>
-                </button>
-                {idx < 2 && <div className="h-px flex-1 bg-base-200 mx-2 shrink-0" />}
-              </div>
-            ))}
-          </div>
+          <WizardSteps
+            pasoActual={pasoActual}
+            proveedorId={proveedorId}
+            detallesCount={detalles.length}
+            itemsCompletos={itemsCompletos}
+            onStepClick={setPasoActual}
+          />
         )}
       </div>
 

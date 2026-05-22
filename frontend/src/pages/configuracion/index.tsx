@@ -17,8 +17,6 @@ interface Configuracion {
   factor_historial_corto: number
   ventana_consumo_dias?: number
   periodo_revision_dias?: number
-  dias_minimos_historia?: number
-  nivel_servicio_z?: number
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -54,8 +52,6 @@ export default function ConfiguracionPage() {
   const [factorHistorialCorto, setFactorHistorialCorto] = useState(0.35)
   const [ventanaConsumoDias, setVentanaConsumoDias] = useState(90)
   const [periodoRevisionDias, setPeriodoRevisionDias] = useState(30)
-  const [diasMinimosHistoria, setDiasMinimosHistoria] = useState(30)
-  const [nivelServicioZ, setNivelServicioZ] = useState(1.65)
 
   useEffect(() => {
     if (!data) return
@@ -71,8 +67,6 @@ export default function ConfiguracionPage() {
     setFactorHistorialCorto(data.factor_historial_corto ?? 0.35)
     if (data.ventana_consumo_dias != null) setVentanaConsumoDias(data.ventana_consumo_dias)
     if (data.periodo_revision_dias != null) setPeriodoRevisionDias(data.periodo_revision_dias)
-    if (data.dias_minimos_historia != null) setDiasMinimosHistoria(data.dias_minimos_historia)
-    if (data.nivel_servicio_z != null) setNivelServicioZ(data.nivel_servicio_z)
   }, [data])
 
   const mutation = useMutation({
@@ -88,8 +82,6 @@ export default function ConfiguracionPage() {
       factor_historial_corto: number
       ventana_consumo_dias: number
       periodo_revision_dias: number
-      dias_minimos_historia: number
-      nivel_servicio_z: number
     }) => api.put<Configuracion>('/configuracion', payload).then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['configuracion'] })
@@ -138,8 +130,6 @@ export default function ConfiguracionPage() {
       factor_historial_corto: factorHistorialCorto,
       ventana_consumo_dias: ventanaConsumoDias,
       periodo_revision_dias: periodoRevisionDias,
-      dias_minimos_historia: diasMinimosHistoria,
-      nivel_servicio_z: nivelServicioZ,
     })
   }
 
@@ -426,43 +416,6 @@ export default function ConfiguracionPage() {
               </div>
               <p className="text-xs text-base-content/50 leading-relaxed">
                 Frecuencia esperada de reposición. Afecta el stock de seguridad.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-5">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Historial mínimo</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  className="input input-bordered w-24"
-                  value={diasMinimosHistoria}
-                  onChange={e => setDiasMinimosHistoria(Number(e.target.value))}
-                  min={7}
-                  max={180}
-                />
-                <span className="text-sm text-base-content/50">días</span>
-              </div>
-              <p className="text-xs text-base-content/50 leading-relaxed">
-                Días mínimos de historia para forecast completo. Por debajo se usa estimación corta.
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Factor Z (nivel de servicio)</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  className="input input-bordered w-24"
-                  value={nivelServicioZ}
-                  onChange={e => setNivelServicioZ(Number(e.target.value))}
-                  min={0.5}
-                  max={3}
-                  step={0.05}
-                />
-              </div>
-              <p className="text-xs text-base-content/50 leading-relaxed">
-                Z-score para stock de seguridad. 1.65 = 95%, 2.33 = 99%, 1.28 = 90%.
               </p>
             </div>
           </div>

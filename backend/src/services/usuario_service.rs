@@ -12,6 +12,13 @@ use crate::dto::usuario::{
 use crate::errors::AppError;
 use crate::models::usuario::Usuario;
 
+#[derive(sqlx::FromRow)]
+struct AreaRow {
+    usuario_id: Uuid,
+    id: i32,
+    nombre: String,
+}
+
 async fn build_usuario_response(
     pool: &PgPool,
     user: &Usuario,
@@ -54,12 +61,47 @@ pub async fn listar(pool: &PgPool, params: UsuarioQuery) -> Result<Vec<UsuarioRe
         .await?
     };
 
-    let mut responses = Vec::with_capacity(usuarios.len());
-    for user in &usuarios {
-        responses.push(build_usuario_response(pool, user).await?);
+    if usuarios.is_empty() {
+        return Ok(vec![]);
     }
 
-    Ok(responses)
+    let ids: Vec<Uuid> = usuarios.iter().map(|u| u.id).collect();
+
+    let area_rows = sqlx::query_as::<_, AreaRow>(
+        "SELECT ua.usuario_id, a.id, a.nombre \
+         FROM usuario_area ua \
+         JOIN areas a ON a.id = ua.area_id \
+         WHERE ua.usuario_id = ANY($1) \
+         ORDER BY a.nombre",
+    )
+    .bind(&ids)
+    .fetch_all(pool)
+    .await?;
+
+    let mut areas_map: std::collections::HashMap<Uuid, Vec<AreaSimple>> =
+        std::collections::HashMap::new();
+    for row in area_rows {
+        areas_map
+            .entry(row.usuario_id)
+            .or_default()
+            .push(AreaSimple { id: row.id, nombre: row.nombre });
+    }
+
+    Ok(usuarios
+        .into_iter()
+        .map(|u| {
+            let areas = areas_map.remove(&u.id).unwrap_or_default();
+            UsuarioResponse {
+                id: u.id,
+                nombre: u.nombre,
+                email: u.email,
+                rol: u.rol,
+                activo: u.activo,
+                areas,
+                version: u.version,
+            }
+        })
+        .collect())
 }
 
 pub async fn obtener(pool: &PgPool, id: Uuid) -> Result<UsuarioResponse, AppError> {

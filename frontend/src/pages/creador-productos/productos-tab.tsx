@@ -44,6 +44,20 @@ interface ProductoListItem {
   imagen_url?: string | null
 }
 
+interface ProveedorProductoItem {
+  id?: number
+  proveedor_id: number
+  proveedor_nombre?: string
+  proveedor_icono?: string | null
+  es_principal: boolean
+  codigo_proveedor?: string | null
+  precio_unidad?: string | null
+  lead_time_dias?: number | null
+  unidad_minima_pedido?: string | null
+  activo?: boolean
+  version?: number
+}
+
 interface ProductoDetailResponse {
   id: string
   codigo_interno: string | null
@@ -53,15 +67,16 @@ interface ProductoDetailResponse {
   categoria?: { id: number; nombre: string } | null
   categoria_nombre?: string | null
   unidad_base?: { id: number; nombre: string } | null
-  proveedor?: { id: number; nombre: string; icono: string | null } | null
   areas: { id: number; nombre: string }[]
   presentaciones: Presentacion[]
-  codigo_proveedor: string | null
+  proveedores: ProveedorProductoItem[]
   codigo_maestro: string | null
   stock_minimo: string
-  precio_unidad: string | null
-  lead_time_propio: number | null
   ubicacion: string | null
+  temperatura_almacenamiento: string | null
+  requiere_cadena_frio: boolean
+  dias_estabilidad_abierto: number | null
+  clase_riesgo: string | null
   activo: boolean
   version: number
   imagen_url?: string | null
@@ -666,18 +681,48 @@ function CreateProductoDialog({
     unidad_base_id: '',
     area_id: '',
     ubicacion: '',
-    proveedor_id: '',
-    codigo_proveedor: '',
     codigo_maestro: '',
     stock_minimo: '0',
-    precio_unidad: '',
-    precio_pres: '',
-    lead_time_propio: '0',
     pres_nombre: '',
     pres_nombre_plural: '',
     pres_factor: '',
     pres_codigo_barras: '',
   })
+
+  const [proveedoresForm, setProveedoresForm] = useState<ProveedorProductoItem[]>([])
+  const [temperaturaAlmacenamiento, setTemperaturaAlmacenamiento] = useState<string | null>(null)
+  const [requiereCadenaFrio, setRequiereCadenaFrio] = useState(false)
+  const [diasEstabilidadAbierto, setDiasEstabilidadAbierto] = useState<number | null>(null)
+  const [claseRiesgo, setClaseRiesgo] = useState<string | null>(null)
+
+  function agregarProveedorCreate(provId: number, nombre: string) {
+    setProveedoresForm(prev => {
+      if (prev.some(p => p.proveedor_id === provId)) return prev
+      const esPrimero = prev.length === 0
+      return [...prev, {
+        proveedor_id: provId,
+        proveedor_nombre: nombre,
+        es_principal: esPrimero,
+        codigo_proveedor: null,
+        precio_unidad: null,
+        lead_time_dias: null,
+      }]
+    })
+  }
+
+  function eliminarProveedorCreate(provId: number) {
+    setProveedoresForm(prev => {
+      const filtered = prev.filter(p => p.proveedor_id !== provId)
+      if (filtered.length > 0 && !filtered.some(p => p.es_principal)) {
+        return filtered.map((p, i) => i === 0 ? { ...p, es_principal: true } : p)
+      }
+      return filtered
+    })
+  }
+
+  function marcarPrincipalCreate(provId: number) {
+    setProveedoresForm(prev => prev.map(p => ({ ...p, es_principal: p.proveedor_id === provId })))
+  }
 
   const [newCatOpen, setNewCatOpen] = useState(false)
   const [newUnidadOpen, setNewUnidadOpen] = useState(false)
@@ -698,13 +743,15 @@ function CreateProductoDialog({
     onClose()
     setForm({
       nombre: '', descripcion: '', categoria_id: '', unidad_base_id: '',
-      area_id: '', ubicacion: '', proveedor_id: '', codigo_proveedor: '', codigo_maestro: '',
+      area_id: '', ubicacion: '', codigo_maestro: '',
       stock_minimo: '0',
-      precio_unidad: '',
-      precio_pres: '',
-      lead_time_propio: '0',
       pres_nombre: '', pres_nombre_plural: '', pres_factor: '', pres_codigo_barras: '',
     })
+    setProveedoresForm([])
+    setTemperaturaAlmacenamiento(null)
+    setRequiereCadenaFrio(false)
+    setDiasEstabilidadAbierto(null)
+    setClaseRiesgo(null)
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -712,7 +759,7 @@ function CreateProductoDialog({
     if (!form.nombre.trim()) { notify.error('El nombre del producto es requerido'); return }
     if (!form.unidad_base_id) { notify.error('Selecciona una unidad base'); return }
     if (!form.area_id) { notify.error('Selecciona un área'); return }
-    if (!form.proveedor_id) { notify.error('Selecciona un proveedor'); return }
+    if (proveedoresForm.length === 0) { notify.error('Agrega al menos un proveedor'); return }
     const presentaciones =
       form.pres_nombre && form.pres_factor
         ? [{
@@ -727,15 +774,23 @@ function CreateProductoDialog({
       descripcion: form.descripcion.trim() || undefined,
       categoria_id: form.categoria_id ? Number(form.categoria_id) : undefined,
       unidad_base_id: Number(form.unidad_base_id),
-      proveedor_id: form.proveedor_id ? Number(form.proveedor_id) : undefined,
-      codigo_proveedor: form.codigo_proveedor.trim() || undefined,
       codigo_maestro: form.codigo_maestro.trim() || undefined,
       stock_minimo: Number(form.stock_minimo) || 0,
-      precio_unidad: form.precio_unidad ? Number(form.precio_unidad) : undefined,
-      lead_time_propio: form.lead_time_propio ? Number(form.lead_time_propio) : undefined,
       area_ids: [Number(form.area_id)],
       ubicacion: form.ubicacion.trim() || undefined,
       presentaciones,
+      proveedores: proveedoresForm.map(pp => ({
+        proveedor_id: pp.proveedor_id,
+        es_principal: pp.es_principal,
+        codigo_proveedor: pp.codigo_proveedor || null,
+        precio_unidad: pp.precio_unidad || null,
+        lead_time_dias: pp.lead_time_dias || null,
+        unidad_minima_pedido: null,
+      })),
+      temperatura_almacenamiento: temperaturaAlmacenamiento,
+      requiere_cadena_frio: requiereCadenaFrio,
+      dias_estabilidad_abierto: diasEstabilidadAbierto,
+      clase_riesgo: claseRiesgo,
     })
   }
 
@@ -756,37 +811,10 @@ function CreateProductoDialog({
 
   function handlePresChange(nombre: string) {
     const found = presFormatos.find(p => p.nombre === nombre)
-    const factorValue = form.pres_factor
-    setForm(f => {
-      const pu = parseFloat(f.precio_unidad) || 0
-      const factor = parseFloat(factorValue) || 1
-      return {
-        ...f,
-        pres_nombre: nombre,
-        pres_nombre_plural: found?.nombre_plural || '',
-        pres_factor: factorValue,
-        precio_pres: f.precio_unidad ? (pu * factor).toFixed(2) : ''
-      }
-    })
-  }
-
-  function handlePrecioUnidadChange(val: string) {
-    const pu = parseFloat(val) || 0
-    const factor = parseFloat(form.pres_factor) || 1
-    setForm(f => ({ 
-      ...f, 
-      precio_unidad: val, 
-      precio_pres: val ? (pu * factor).toFixed(2) : '' 
-    }))
-  }
-
-  function handlePrecioPresChange(val: string) {
-    const pp = parseFloat(val) || 0
-    const factor = parseFloat(form.pres_factor) || 1
-    setForm(f => ({ 
-      ...f, 
-      precio_pres: val, 
-      precio_unidad: val ? (pp / factor).toFixed(4) : '' 
+    setForm(f => ({
+      ...f,
+      pres_nombre: nombre,
+      pres_nombre_plural: found?.nombre_plural || '',
     }))
   }
 
@@ -889,78 +917,162 @@ function CreateProductoDialog({
               <p className="text-[10px] text-base-content/40 mt-0.5">Lugar físico exacto: refrigerador, armario, estante</p>
             </div>
 
+            {/* Sección Proveedores */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">
+                Proveedores <span className="text-error">*</span>
+              </label>
+              {proveedoresForm.map((pp) => (
+                <div key={pp.proveedor_id} className="flex items-center gap-2 p-2 bg-base-200 rounded-lg">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium truncate">{pp.proveedor_nombre}</span>
+                    {pp.es_principal && (
+                      <span className="ml-2 text-[10px] font-bold uppercase text-primary">Principal</span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Cód. proveedor"
+                    value={pp.codigo_proveedor ?? ''}
+                    onChange={e => setProveedoresForm(prev => prev.map(p =>
+                      p.proveedor_id === pp.proveedor_id ? { ...p, codigo_proveedor: e.target.value || null } : p
+                    ))}
+                    className="input input-xs input-bordered w-28"
+                  />
+                  <input
+                    type="number"
+                    placeholder="Precio/u"
+                    value={pp.precio_unidad ?? ''}
+                    onChange={e => setProveedoresForm(prev => prev.map(p =>
+                      p.proveedor_id === pp.proveedor_id ? { ...p, precio_unidad: e.target.value || null } : p
+                    ))}
+                    className="input input-xs input-bordered w-24"
+                    min="0"
+                    step="0.01"
+                  />
+                  {!pp.es_principal && (
+                    <button
+                      type="button"
+                      onClick={() => marcarPrincipalCreate(pp.proveedor_id)}
+                      className="btn btn-xs btn-ghost text-xs"
+                      title="Marcar como principal"
+                    >★</button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => eliminarProveedorCreate(pp.proveedor_id)}
+                    className="btn btn-xs btn-ghost text-error"
+                  >✕</button>
+                </div>
+              ))}
+              <select
+                className="select select-sm bg-base-100 border border-base-300 rounded-xl w-full"
+                value=""
+                onChange={e => {
+                  const provId = parseInt(e.target.value)
+                  if (!provId) return
+                  const prov = proveedores.find((p) => p.id === provId)
+                  if (prov) agregarProveedorCreate(provId, prov.nombre)
+                }}
+              >
+                <option value="">+ Agregar proveedor...</option>
+                {proveedores
+                  .filter((p) => !proveedoresForm.some(pp => pp.proveedor_id === p.id))
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>{p.nombre}</option>
+                  ))
+                }
+              </select>
+            </div>
+
             <div className="form-control">
               <label className="label py-0.5">
-                <span className="label-text text-sm font-medium">Proveedor <span className="text-error">*</span></span>
+                <span className="label-text text-sm font-medium">Stock mínimo</span>
+                <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
               </label>
-              <ProveedorSelect
-                value={form.proveedor_id}
-                onChange={(v) => setForm((f) => ({ ...f, proveedor_id: v }))}
-                proveedores={proveedores}
-                placeholder="Seleccionar proveedor..."
-                allLabel="Sin proveedor"
+              <input
+                type="number"
+                className="input input-bordered input-sm h-9"
+                value={form.stock_minimo}
+                onChange={(e) => setForm((f) => ({ ...f, stock_minimo: e.target.value }))}
+                placeholder="Ej: 10"
+                min="0"
               />
             </div>
 
+            <div className="form-control">
+              <label className="label py-0.5">
+                <span className="label-text text-sm font-medium">Código maestro bodega</span>
+                <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+              </label>
+              <input
+                type="text"
+                className="input input-bordered input-sm h-9 font-mono"
+                value={form.codigo_maestro}
+                onChange={(e) => setForm((f) => ({ ...f, codigo_maestro: e.target.value }))}
+                placeholder="Cód. interno de bodega"
+              />
+              <p className="text-[10px] text-base-content/40 mt-0.5">Código interno maestro del laboratorio</p>
+            </div>
+          </div>
+
+          <div className="divider my-0" />
+
+          {/* ── Almacenamiento ── */}
+          <div className="space-y-3 border-t border-base-200 pt-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Almacenamiento</p>
             <div className="grid grid-cols-2 gap-3">
-              <div className="form-control">
-                <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Stock mínimo</span>
-                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-                </label>
-                <input
-                  type="number"
-                  className="input input-bordered input-sm h-9"
-                  value={form.stock_minimo}
-                  onChange={(e) => setForm((f) => ({ ...f, stock_minimo: e.target.value }))}
-                  placeholder="Ej: 10"
-                  min="0"
-                />
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Temperatura</label>
+                <select
+                  className="select select-sm bg-base-100 border border-base-300 rounded-xl"
+                  value={temperaturaAlmacenamiento ?? ''}
+                  onChange={e => setTemperaturaAlmacenamiento(e.target.value || null)}
+                >
+                  <option value="">No especificada</option>
+                  <option value="ambiente">Ambiente (15–30°C)</option>
+                  <option value="refrigerado">Refrigerado (2–8°C)</option>
+                  <option value="congelado">Congelado (-20°C)</option>
+                  <option value="ultra_frio">Ultra frío (-80°C)</option>
+                  <option value="no_aplica">No aplica</option>
+                </select>
               </div>
-              <div className="form-control">
-                <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Lead Time (Días)</span>
-                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-                </label>
-                <input
-                  type="number"
-                  className="input input-bordered input-sm h-9"
-                  value={form.lead_time_propio}
-                  onChange={(e) => setForm((f) => ({ ...f, lead_time_propio: e.target.value }))}
-                  placeholder="Ej: 5"
-                  min="0"
-                />
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Clase de riesgo</label>
+                <select
+                  className="select select-sm bg-base-100 border border-base-300 rounded-xl"
+                  value={claseRiesgo ?? ''}
+                  onChange={e => setClaseRiesgo(e.target.value || null)}
+                >
+                  <option value="">Ninguno</option>
+                  <option value="biologico">Biológico</option>
+                  <option value="quimico">Químico</option>
+                  <option value="inflamable">Inflamable</option>
+                  <option value="corrosivo">Corrosivo</option>
+                  <option value="radiactivo">Radiactivo</option>
+                </select>
               </div>
             </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="form-control">
-                <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Código proveedor</span>
-                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-                </label>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input
-                  type="text"
-                  className="input input-bordered input-sm h-9 font-mono"
-                  value={form.codigo_proveedor}
-                  onChange={(e) => setForm((f) => ({ ...f, codigo_proveedor: e.target.value }))}
-                  placeholder="Ref. en guía de despacho"
+                  type="checkbox"
+                  className="checkbox checkbox-sm checkbox-primary"
+                  checked={requiereCadenaFrio}
+                  onChange={e => setRequiereCadenaFrio(e.target.checked)}
                 />
-                <p className="text-[10px] text-base-content/40 mt-0.5">Referencia del proveedor (viene en la guía)</p>
-              </div>
-              <div className="form-control">
-                <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Código maestro bodega</span>
-                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-                </label>
+                <span className="text-sm">Requiere cadena de frío</span>
+              </label>
+              <div className="flex flex-col gap-1 flex-1">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Estabilidad abierto (días)</label>
                 <input
-                  type="text"
-                  className="input input-bordered input-sm h-9 font-mono"
-                  value={form.codigo_maestro}
-                  onChange={(e) => setForm((f) => ({ ...f, codigo_maestro: e.target.value }))}
-                  placeholder="Cód. interno de bodega"
+                  type="number"
+                  className="input input-sm input-bordered bg-base-100"
+                  placeholder="ej: 30"
+                  value={diasEstabilidadAbierto ?? ''}
+                  onChange={e => setDiasEstabilidadAbierto(e.target.value ? parseInt(e.target.value) : null)}
+                  min="1"
                 />
-                <p className="text-[10px] text-base-content/40 mt-0.5">Código interno maestro del laboratorio</p>
               </div>
             </div>
           </div>
@@ -1057,50 +1169,6 @@ function CreateProductoDialog({
 
           <div className="divider my-0" />
 
-          {/* ── Precio ── */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Precio de Referencia (Neto)</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3 bg-base-200/40 p-3 rounded-lg">
-              <div className="form-control">
-                <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Precio por unidad base</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs opacity-40">$</span>
-                  <input
-                    type="number"
-                    className="input input-bordered input-sm h-9 w-full pl-6"
-                    value={form.precio_unidad}
-                    onChange={(e) => handlePrecioUnidadChange(e.target.value)}
-                    placeholder="0.00"
-                    step="0.0001"
-                  />
-                </div>
-              </div>
-              <div className="form-control">
-                <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Precio por {form.pres_nombre || 'presentación'}</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs opacity-40">$</span>
-                  <input
-                    type="number"
-                    className="input input-bordered input-sm h-9 w-full pl-6"
-                    value={form.precio_pres}
-                    onChange={(e) => handlePrecioPresChange(e.target.value)}
-                    placeholder="0.00"
-                    step="0.01"
-                    disabled={!form.pres_nombre}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="divider my-0" />
-
           {/* ── Información adicional ── */}
           <div className="space-y-3">
             <div className="flex items-center gap-1.5">
@@ -1186,13 +1254,8 @@ function EditProductoDialog({
     categoria_id: '',
     area_id: '',
     ubicacion: '',
-    proveedor_id: '',
-    codigo_proveedor: '',
     codigo_maestro: '',
     stock_minimo: '0',
-    precio_unidad: '',
-    precio_pres: '',
-    lead_time_propio: '0',
     pres_id: '',
     pres_version: 0,
     pres_nombre: '',
@@ -1201,11 +1264,45 @@ function EditProductoDialog({
     pres_codigo_barras: '',
   })
 
+  const [proveedoresForm, setProveedoresFormEdit] = useState<ProveedorProductoItem[]>([])
+  const [temperaturaAlmacenamiento, setTemperaturaAlmacenamientoEdit] = useState<string | null>(null)
+  const [requiereCadenaFrio, setRequiereCadenaFrioEdit] = useState(false)
+  const [diasEstabilidadAbierto, setDiasEstabilidadAbiertoEdit] = useState<number | null>(null)
+  const [claseRiesgo, setClaseRiesgoEdit] = useState<string | null>(null)
+
+  function agregarProveedorEdit(provId: number, nombre: string) {
+    setProveedoresFormEdit(prev => {
+      if (prev.some(p => p.proveedor_id === provId)) return prev
+      const esPrimero = prev.length === 0
+      return [...prev, {
+        proveedor_id: provId,
+        proveedor_nombre: nombre,
+        es_principal: esPrimero,
+        codigo_proveedor: null,
+        precio_unidad: null,
+        lead_time_dias: null,
+      }]
+    })
+  }
+
+  function eliminarProveedorEdit(provId: number) {
+    setProveedoresFormEdit(prev => {
+      const filtered = prev.filter(p => p.proveedor_id !== provId)
+      if (filtered.length > 0 && !filtered.some(p => p.es_principal)) {
+        return filtered.map((p, i) => i === 0 ? { ...p, es_principal: true } : p)
+      }
+      return filtered
+    })
+  }
+
+  function marcarPrincipalEdit(provId: number) {
+    setProveedoresFormEdit(prev => prev.map(p => ({ ...p, es_principal: p.proveedor_id === provId })))
+  }
+
   useEffect(() => {
     if (producto) {
       const catId = producto.categoria?.id ?? producto.categoria_id
       const areaId = producto.areas?.[0]?.id ?? ''
-      const provId = producto.proveedor?.id ?? ''
       // Pre-populate presentation only when there is exactly one
       const presCount = producto.presentaciones?.length ?? 0
       const firstPres = presCount === 1 ? producto.presentaciones[0] : null
@@ -1215,13 +1312,8 @@ function EditProductoDialog({
         categoria_id: catId ? String(catId) : '',
         area_id: areaId ? String(areaId) : '',
         ubicacion: producto.ubicacion ?? '',
-        proveedor_id: provId ? String(provId) : '',
-        codigo_proveedor: producto.codigo_proveedor ?? '',
         codigo_maestro: producto.codigo_maestro ?? '',
         stock_minimo: String(Math.round(Number(producto.stock_minimo))),
-        precio_unidad: producto.precio_unidad ? String(producto.precio_unidad) : '',
-        precio_pres: (producto.precio_unidad && firstPres) ? (Number(producto.precio_unidad) * Number(firstPres.factor_conversion)).toFixed(2) : '',
-        lead_time_propio: String(producto.lead_time_propio ?? 0),
         pres_id: firstPres ? String(firstPres.id) : '',
         pres_version: firstPres?.version ?? 0,
         pres_nombre: firstPres?.nombre ?? '',
@@ -1229,6 +1321,11 @@ function EditProductoDialog({
         pres_factor: firstPres ? String(Math.round(Number(firstPres.factor_conversion))) : '',
         pres_codigo_barras: firstPres?.codigo_barras ?? '',
       })
+      setProveedoresFormEdit(producto.proveedores ?? [])
+      setTemperaturaAlmacenamientoEdit(producto.temperatura_almacenamiento ?? null)
+      setRequiereCadenaFrioEdit(producto.requiere_cadena_frio ?? false)
+      setDiasEstabilidadAbiertoEdit(producto.dias_estabilidad_abierto ?? null)
+      setClaseRiesgoEdit(producto.clase_riesgo ?? null)
     }
   }, [producto])
 
@@ -1246,7 +1343,7 @@ function EditProductoDialog({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!producto) return
-    if (!form.proveedor_id) { notify.error('Selecciona un proveedor'); return }
+    if (proveedoresForm.length === 0) { notify.error('Agrega al menos un proveedor'); return }
 
     // Build new presentacion if filled
     const hasNewPres = form.pres_nombre && form.pres_factor
@@ -1254,14 +1351,22 @@ function EditProductoDialog({
       nombre: form.nombre.trim() || undefined,
       descripcion: form.descripcion.trim() || undefined,
       categoria_id: form.categoria_id ? Number(form.categoria_id) : undefined,
-      proveedor_id: form.proveedor_id ? Number(form.proveedor_id) : undefined,
-      codigo_proveedor: form.codigo_proveedor.trim() || undefined,
       codigo_maestro: form.codigo_maestro.trim() || undefined,
       stock_minimo: Number(form.stock_minimo),
-      precio_unidad: form.precio_unidad ? Number(form.precio_unidad) : undefined,
-      lead_time_propio: Number(form.lead_time_propio) || 0,
       area_ids: form.area_id ? [Number(form.area_id)] : undefined,
       ubicacion: form.ubicacion.trim() || null,
+      proveedores: proveedoresForm.map(pp => ({
+        proveedor_id: pp.proveedor_id,
+        es_principal: pp.es_principal,
+        codigo_proveedor: pp.codigo_proveedor || null,
+        precio_unidad: pp.precio_unidad || null,
+        lead_time_dias: pp.lead_time_dias || null,
+        unidad_minima_pedido: null,
+      })),
+      temperatura_almacenamiento: temperaturaAlmacenamiento,
+      requiere_cadena_frio: requiereCadenaFrio,
+      dias_estabilidad_abierto: diasEstabilidadAbierto,
+      clase_riesgo: claseRiesgo,
       version: producto.version,
     }
 
@@ -1302,37 +1407,10 @@ function EditProductoDialog({
 
   function handlePresChange(nombre: string) {
     const found = presFormatos.find(p => p.nombre === nombre)
-    const factorValue = form.pres_factor
-    setForm(f => {
-      const pu = parseFloat(f.precio_unidad) || 0
-      const factor = parseFloat(factorValue) || 1
-      return {
-        ...f,
-        pres_nombre: nombre,
-        pres_nombre_plural: found?.nombre_plural || '',
-        pres_factor: factorValue,
-        precio_pres: f.precio_unidad ? (pu * factor).toFixed(2) : ''
-      }
-    })
-  }
-
-  function handlePrecioUnidadChange(val: string) {
-    const pu = parseFloat(val) || 0
-    const factor = parseFloat(form.pres_factor) || 1
-    setForm(f => ({ 
-      ...f, 
-      precio_unidad: val, 
-      precio_pres: val ? (pu * factor).toFixed(2) : '' 
-    }))
-  }
-
-  function handlePrecioPresChange(val: string) {
-    const pp = parseFloat(val) || 0
-    const factor = parseFloat(form.pres_factor) || 1
     setForm(f => ({
       ...f,
-      precio_pres: val,
-      precio_unidad: val ? (pp / factor).toFixed(4) : ''
+      pres_nombre: nombre,
+      pres_nombre_plural: found?.nombre_plural || '',
     }))
   }
 
@@ -1461,117 +1539,161 @@ function EditProductoDialog({
                 <label className="label py-0.5">
                   <span className="label-text text-sm font-medium">Proveedor <span className="text-error">*</span></span>
                 </label>
-                <ProveedorSelect
-                  value={form.proveedor_id}
-                  onChange={(v) => setForm((f) => ({ ...f, proveedor_id: v }))}
-                  proveedores={proveedores}
-                  placeholder="Seleccionar proveedor..."
-                  allLabel="Sin proveedor"
+                {/* Sección Proveedores */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">
+                    Proveedores <span className="text-error">*</span>
+                  </label>
+                  {proveedoresForm.map((pp) => (
+                    <div key={pp.proveedor_id} className="flex items-center gap-2 p-2 bg-base-200 rounded-lg">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium truncate">{pp.proveedor_nombre}</span>
+                        {pp.es_principal && (
+                          <span className="ml-2 text-[10px] font-bold uppercase text-primary">Principal</span>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Cód. proveedor"
+                        value={pp.codigo_proveedor ?? ''}
+                        onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
+                          p.proveedor_id === pp.proveedor_id ? { ...p, codigo_proveedor: e.target.value || null } : p
+                        ))}
+                        className="input input-xs input-bordered w-28"
+                      />
+                      <input
+                        type="number"
+                        placeholder="Precio/u"
+                        value={pp.precio_unidad ?? ''}
+                        onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
+                          p.proveedor_id === pp.proveedor_id ? { ...p, precio_unidad: e.target.value || null } : p
+                        ))}
+                        className="input input-xs input-bordered w-24"
+                        min="0"
+                        step="0.01"
+                      />
+                      {!pp.es_principal && (
+                        <button
+                          type="button"
+                          onClick={() => marcarPrincipalEdit(pp.proveedor_id)}
+                          className="btn btn-xs btn-ghost text-xs"
+                          title="Marcar como principal"
+                        >★</button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => eliminarProveedorEdit(pp.proveedor_id)}
+                        className="btn btn-xs btn-ghost text-error"
+                      >✕</button>
+                    </div>
+                  ))}
+                  <select
+                    className="select select-sm bg-base-100 border border-base-300 rounded-xl w-full"
+                    value=""
+                    onChange={e => {
+                      const provId = parseInt(e.target.value)
+                      if (!provId) return
+                      const prov = proveedores.find((p) => p.id === provId)
+                      if (prov) agregarProveedorEdit(provId, prov.nombre)
+                    }}
+                  >
+                    <option value="">+ Agregar proveedor...</option>
+                    {proveedores
+                      .filter((p) => !proveedoresForm.some(pp => pp.proveedor_id === p.id))
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>{p.nombre}</option>
+                      ))
+                    }
+                  </select>
+                </div>
+
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Stock mínimo</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                </label>
+                <input
+                  type="number"
+                  className="input input-bordered input-sm h-9"
+                  value={form.stock_minimo}
+                  onChange={(e) => setForm((f) => ({ ...f, stock_minimo: e.target.value }))}
+                  placeholder="Ej: 10"
+                  min="0"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="form-control">
-                  <label className="label py-0.5">
-                    <span className="label-text text-sm font-medium">Stock mínimo</span>
-                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-                  </label>
-                  <input
-                    type="number"
-                    className="input input-bordered input-sm h-9"
-                    value={form.stock_minimo}
-                    onChange={(e) => setForm((f) => ({ ...f, stock_minimo: e.target.value }))}
-                    placeholder="Ej: 10"
-                    min="0"
-                  />
-                </div>
-                <div className="form-control">
-                  <label className="label py-0.5">
-                    <span className="label-text text-sm font-medium">Lead Time (Días)</span>
-                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-                  </label>
-                  <input
-                    type="number"
-                    className="input input-bordered input-sm h-9"
-                    value={form.lead_time_propio}
-                    onChange={(e) => setForm((f) => ({ ...f, lead_time_propio: e.target.value }))}
-                    placeholder="Ej: 5"
-                    min="0"
-                  />
-                </div>
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Código maestro bodega</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                </label>
+                <input
+                  type="text"
+                  className="input input-bordered input-sm h-9 font-mono"
+                  value={form.codigo_maestro}
+                  onChange={(e) => setForm((f) => ({ ...f, codigo_maestro: e.target.value }))}
+                  placeholder="Cód. interno"
+                />
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="form-control">
-                  <label className="label py-0.5">
-                    <span className="label-text text-sm font-medium">Código proveedor</span>
-                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="input input-bordered input-sm h-9 font-mono"
-                    value={form.codigo_proveedor}
-                    onChange={(e) => setForm((f) => ({ ...f, codigo_proveedor: e.target.value }))}
-                    placeholder="Ref. en guía de despacho"
-                  />
-                  <p className="text-[10px] text-base-content/40 mt-0.5">Viene en la guía de despacho</p>
-                </div>
-                <div className="form-control">
-                  <label className="label py-0.5">
-                    <span className="label-text text-sm font-medium">Código maestro bodega</span>
-                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="input input-bordered input-sm h-9 font-mono"
-                    value={form.codigo_maestro}
-                    onChange={(e) => setForm((f) => ({ ...f, codigo_maestro: e.target.value }))}
-                    placeholder="Cód. interno"
-                  />
-                </div>
             </div>
-          </div>
 
           <div className="divider my-0" />
 
-          {/* ── Precio ── */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Precio de Referencia (Neto)</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3 bg-base-200/40 p-3 rounded-lg">
-              <div className="form-control">
-                <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Precio por unidad base</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs opacity-40">$</span>
-                  <input
-                    type="number"
-                    className="input input-bordered input-sm h-9 w-full pl-6"
-                    value={form.precio_unidad}
-                    onChange={(e) => handlePrecioUnidadChange(e.target.value)}
-                    placeholder="0.00"
-                    step="0.0001"
-                  />
-                </div>
+          {/* ── Almacenamiento ── */}
+          <div className="space-y-3 border-t border-base-200 pt-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Almacenamiento</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Temperatura</label>
+                <select
+                  className="select select-sm bg-base-100 border border-base-300 rounded-xl"
+                  value={temperaturaAlmacenamiento ?? ''}
+                  onChange={e => setTemperaturaAlmacenamientoEdit(e.target.value || null)}
+                >
+                  <option value="">No especificada</option>
+                  <option value="ambiente">Ambiente (15–30°C)</option>
+                  <option value="refrigerado">Refrigerado (2–8°C)</option>
+                  <option value="congelado">Congelado (-20°C)</option>
+                  <option value="ultra_frio">Ultra frío (-80°C)</option>
+                  <option value="no_aplica">No aplica</option>
+                </select>
               </div>
-              <div className="form-control">
-                <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Precio por {form.pres_nombre || 'presentación'}</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs opacity-40">$</span>
-                  <input
-                    type="number"
-                    className="input input-bordered input-sm h-9 w-full pl-6"
-                    value={form.precio_pres}
-                    onChange={(e) => handlePrecioPresChange(e.target.value)}
-                    placeholder="0.00"
-                    step="0.01"
-                    disabled={!form.pres_nombre}
-                  />
-                </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Clase de riesgo</label>
+                <select
+                  className="select select-sm bg-base-100 border border-base-300 rounded-xl"
+                  value={claseRiesgo ?? ''}
+                  onChange={e => setClaseRiesgoEdit(e.target.value || null)}
+                >
+                  <option value="">Ninguno</option>
+                  <option value="biologico">Biológico</option>
+                  <option value="quimico">Químico</option>
+                  <option value="inflamable">Inflamable</option>
+                  <option value="corrosivo">Corrosivo</option>
+                  <option value="radiactivo">Radiactivo</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-sm checkbox-primary"
+                  checked={requiereCadenaFrio}
+                  onChange={e => setRequiereCadenaFrioEdit(e.target.checked)}
+                />
+                <span className="text-sm">Requiere cadena de frío</span>
+              </label>
+              <div className="flex flex-col gap-1 flex-1">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Estabilidad abierto (días)</label>
+                <input
+                  type="number"
+                  className="input input-sm input-bordered bg-base-100"
+                  placeholder="ej: 30"
+                  value={diasEstabilidadAbierto ?? ''}
+                  onChange={e => setDiasEstabilidadAbiertoEdit(e.target.value ? parseInt(e.target.value) : null)}
+                  min="1"
+                />
               </div>
             </div>
           </div>
@@ -1807,9 +1929,6 @@ function ProductoDetail({ id }: { id: string }) {
         {producto.codigo_maestro && (
           <DetailRow label="Cód. maestro bodega" value={producto.codigo_maestro} mono />
         )}
-        {producto.codigo_proveedor && (
-          <DetailRow label="Cód. proveedor" value={producto.codigo_proveedor} mono />
-        )}
         <DetailRow label="Nombre" value={producto.nombre} />
         {producto.descripcion && (
           <DetailRow label="Descripción" value={producto.descripcion} />
@@ -1817,27 +1936,24 @@ function ProductoDetail({ id }: { id: string }) {
         <DetailRow label="Categoría" value={categoriaNombre} />
         <DetailRow label="Unidad base" value={producto.unidad_base?.nombre ?? '--'} />
         <DetailRow label="Stock mínimo" value={String(Math.round(Number(producto.stock_minimo)))} mono />
-        {producto.precio_unidad && (
-          <div className="flex justify-between items-start gap-3 border-b border-base-200/40 pb-1.5 last:border-none">
-            <span className="text-[11px] opacity-40 shrink-0 font-medium uppercase tracking-wider text-primary font-bold">Precio de ref.</span>
-            <div className="flex flex-col items-end">
-              <span className="text-sm font-mono">${Number(producto.precio_unidad).toFixed(4)} / {producto.unidad_base?.nombre || 'unidad'}</span>
-              {producto.presentaciones?.length === 1 && (
-                <span className="text-[10px] opacity-40 font-mono">
-                  ${(Number(producto.precio_unidad) * Number(producto.presentaciones[0].factor_conversion)).toFixed(2)} por {producto.presentaciones[0].nombre}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
         <DetailRow label="Estado" value={producto.activo ? 'Activo' : 'Inactivo'} />
 
-        {producto.proveedor && (
-          <div className="flex justify-between items-center">
-            <span className="text-xs opacity-40">Proveedor</span>
-            <div className="flex items-center gap-1.5">
-              <ProveedorIcon proveedor={producto.proveedor} className="h-4 w-4" />
-              <span className="text-sm">{producto.proveedor.nombre}</span>
+        {producto.proveedores && producto.proveedores.length > 0 && (
+          <div>
+            <h4 className="text-xs font-semibold uppercase tracking-wider opacity-40 mb-2">Proveedores</h4>
+            <div className="space-y-1.5">
+              {producto.proveedores.map((pp) => (
+                <div key={pp.proveedor_id} className="flex items-center justify-between bg-base-200/50 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{pp.proveedor_nombre ?? `Proveedor ${pp.proveedor_id}`}</span>
+                    {pp.es_principal && <span className="text-[10px] font-bold uppercase text-primary">Principal</span>}
+                  </div>
+                  <div className="flex flex-col items-end gap-0.5">
+                    {pp.codigo_proveedor && <span className="text-[10px] font-mono opacity-50">{pp.codigo_proveedor}</span>}
+                    {pp.precio_unidad && <span className="text-[10px] font-mono opacity-50">${pp.precio_unidad}/u</span>}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

@@ -128,7 +128,7 @@ pub async fn eliminar(
             .await?;
 
     let resultado = if stock_count.0 > 0 {
-        sqlx::query("UPDATE areas SET activa = false WHERE id = $1")
+        sqlx::query("UPDATE areas SET activa = false, deleted_at = NOW() WHERE id = $1")
             .bind(id)
             .execute(pool)
             .await?;

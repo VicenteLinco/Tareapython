@@ -187,34 +187,45 @@ export interface PaginatedResponse<T> {
 }
 
 // --- Producto DTOs ---
+export interface ProveedorProductoInput {
+  proveedor_id: number
+  es_principal: boolean
+  codigo_proveedor?: string | null
+  precio_unidad?: string | null
+  lead_time_dias?: number | null
+  unidad_minima_pedido?: string | null
+}
+
 export interface CreateProducto {
   nombre: string
   descripcion?: string | null
   categoria_id?: number | null
   unidad_base_id: number
-  proveedor_id?: number | null
-  codigo_proveedor?: string | null
   codigo_maestro?: string | null
   stock_minimo?: number
-  precio_unidad?: number | null
-  lead_time_propio?: number | null
   ubicacion?: string | null
+  temperatura_almacenamiento?: string | null
+  requiere_cadena_frio?: boolean
+  dias_estabilidad_abierto?: number | null
+  clase_riesgo?: string | null
   presentaciones?: { nombre: string; nombre_plural: string; factor_conversion: number; codigo_barras?: string | null }[]
   area_ids?: number[]
+  proveedores?: ProveedorProductoInput[]
 }
 
 export interface UpdateProducto {
   nombre?: string
   descripcion?: string | null
   categoria_id?: number | null
-  proveedor_id?: number | null
-  codigo_proveedor?: string | null
   codigo_maestro?: string | null
   stock_minimo?: number
-  precio_unidad?: number | null
-  lead_time_propio?: number | null
   ubicacion?: string | null
+  temperatura_almacenamiento?: string | null
+  requiere_cadena_frio?: boolean
+  dias_estabilidad_abierto?: number | null
+  clase_riesgo?: string | null
   area_ids?: number[]
+  proveedores?: ProveedorProductoInput[]
   version: number
 }
 

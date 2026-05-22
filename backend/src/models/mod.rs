@@ -4,6 +4,7 @@ pub mod lote;
 pub mod movimiento;
 pub mod presentacion;
 pub mod producto;
+pub mod producto_proveedor;
 pub mod proveedor;
 pub mod recepcion;
 pub mod solicitud;

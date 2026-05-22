@@ -188,7 +188,7 @@ async fn eliminar(
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
     let result =
-        sqlx::query("UPDATE presentaciones SET activa = false WHERE id = $1 AND activa = true")
+        sqlx::query("UPDATE presentaciones SET activa = false, deleted_at = NOW() WHERE id = $1 AND activa = true")
             .bind(id)
             .execute(&state.pool)
             .await?;

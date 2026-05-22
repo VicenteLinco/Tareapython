@@ -80,15 +80,16 @@ struct CreateProducto {
     descripcion: Option<String>,
     categoria_id: Option<i32>,
     unidad_base_id: i32,
-    proveedor_id: Option<i32>,
-    codigo_proveedor: Option<String>,
     codigo_maestro: Option<String>,
     stock_minimo: Option<Decimal>,
-    precio_unidad: Option<Decimal>,
-    lead_time_propio: Option<i32>,
     ubicacion: Option<String>,
+    temperatura_almacenamiento: Option<String>,
+    requiere_cadena_frio: Option<bool>,
+    dias_estabilidad_abierto: Option<i32>,
+    clase_riesgo: Option<String>,
     presentaciones: Option<Vec<CreatePresentacionInline>>,
     area_ids: Option<Vec<i32>>,
+    proveedores: Option<Vec<ProveedorProductoInput>>,
 }
 
 #[derive(Debug, Deserialize, specta::Type)]
@@ -99,19 +100,30 @@ pub struct CreatePresentacionInline {
     pub codigo_barras: Option<String>,
 }
 
+#[derive(Debug, Deserialize, specta::Type)]
+pub struct ProveedorProductoInput {
+    pub proveedor_id: i32,
+    pub es_principal: bool,
+    pub codigo_proveedor: Option<String>,
+    pub precio_unidad: Option<Decimal>,
+    pub lead_time_dias: Option<i32>,
+    pub unidad_minima_pedido: Option<Decimal>,
+}
+
 #[derive(Debug, Deserialize)]
 struct UpdateProducto {
     nombre: Option<String>,
     descripcion: Option<String>,
     categoria_id: Option<i32>,
-    proveedor_id: Option<i32>,
-    codigo_proveedor: Option<String>,
     codigo_maestro: Option<String>,
     stock_minimo: Option<Decimal>,
-    precio_unidad: Option<Decimal>,
-    lead_time_propio: Option<i32>,
     ubicacion: Option<String>,
+    temperatura_almacenamiento: Option<String>,
+    requiere_cadena_frio: Option<bool>,
+    dias_estabilidad_abierto: Option<i32>,
+    clase_riesgo: Option<String>,
     area_ids: Option<Vec<i32>>,
+    proveedores: Option<Vec<ProveedorProductoInput>>,
     version: i32,
 }
 
@@ -185,7 +197,10 @@ async fn listar(
         param_idx += 1;
     }
     if params.proveedor_id.is_some() {
-        conditions.push(format!("p.proveedor_id = ${}", param_idx));
+        conditions.push(format!(
+            "EXISTS (SELECT 1 FROM producto_proveedor pp WHERE pp.producto_id = p.id AND pp.proveedor_id = ${} AND pp.activo = TRUE)",
+            param_idx
+        ));
         param_idx += 1;
     }
 
@@ -320,15 +335,16 @@ async fn crear(
             descripcion: req.descripcion,
             categoria_id: req.categoria_id,
             unidad_base_id: req.unidad_base_id,
-            proveedor_id: req.proveedor_id,
-            codigo_proveedor: req.codigo_proveedor,
             codigo_maestro: req.codigo_maestro,
             stock_minimo: req.stock_minimo,
-            precio_unidad: req.precio_unidad,
-            lead_time_propio: req.lead_time_propio,
             ubicacion: req.ubicacion,
+            temperatura_almacenamiento: req.temperatura_almacenamiento,
+            requiere_cadena_frio: req.requiere_cadena_frio.unwrap_or(false),
+            dias_estabilidad_abierto: req.dias_estabilidad_abierto,
+            clase_riesgo: req.clase_riesgo,
             presentaciones: req.presentaciones,
             area_ids: req.area_ids,
+            proveedores: req.proveedores,
             usuario_id: claims.sub,
         },
     )
@@ -366,14 +382,15 @@ async fn actualizar(
             nombre: nombre.to_string(),
             descripcion: req.descripcion,
             categoria_id: req.categoria_id,
-            proveedor_id: req.proveedor_id,
-            codigo_proveedor: req.codigo_proveedor,
             codigo_maestro: req.codigo_maestro,
             stock_minimo: req.stock_minimo,
-            precio_unidad: req.precio_unidad,
-            lead_time_propio: req.lead_time_propio,
             ubicacion: req.ubicacion,
+            temperatura_almacenamiento: req.temperatura_almacenamiento,
+            requiere_cadena_frio: req.requiere_cadena_frio,
+            dias_estabilidad_abierto: req.dias_estabilidad_abierto,
+            clase_riesgo: req.clase_riesgo,
             area_ids: req.area_ids,
+            proveedores: req.proveedores,
             version_esperada: req.version,
             usuario_id: claims.sub,
         },

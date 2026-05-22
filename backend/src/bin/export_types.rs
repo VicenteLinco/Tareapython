@@ -24,7 +24,8 @@ use inventario_lab_backend::dto::{
 /// Ejecutar con: cargo run --bin export_types
 use inventario_lab_backend::models::{
     area::Area, categoria::Categoria, lote::Lote, presentacion::Presentacion, producto::Producto,
-    proveedor::Proveedor, unidad_basica::UnidadBasica, usuario::Usuario,
+    producto_proveedor::ProductoProveedor, proveedor::Proveedor, unidad_basica::UnidadBasica,
+    usuario::Usuario,
 };
 use inventario_lab_backend::services::stock_ops::MovimientoGenerado;
 use specta_typescript::{Typescript, export};
@@ -73,6 +74,7 @@ fn main() {
     append!(UnidadBasica);
     append!(Proveedor);
     append!(Producto);
+    append!(ProductoProveedor);
     append!(Presentacion);
     append!(Lote);
     append!(Usuario);

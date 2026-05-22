@@ -298,13 +298,14 @@ async fn listar(
     .await?;
 
     let bajo_minimo: (i64,) = sqlx::query_as(
-        r#"SELECT COUNT(*) FROM (
+        r#"SELECT COUNT(DISTINCT l.producto_id) FROM (
             SELECT l.producto_id FROM stock s
             JOIN lotes l ON l.id = s.lote_id
             JOIN productos p ON p.id = l.producto_id
-            WHERE s.cantidad > 0 AND p.stock_minimo > 0 AND p.activo = true
-            GROUP BY l.producto_id, p.stock_minimo
-            HAVING SUM(s.cantidad) < p.stock_minimo
+            LEFT JOIN producto_area pa ON pa.producto_id = p.id AND pa.area_id = s.area_id
+            WHERE s.cantidad > 0 AND COALESCE(pa.stock_minimo, p.stock_minimo, 0) > 0 AND p.activo = true
+            GROUP BY l.producto_id, s.area_id, pa.stock_minimo, p.stock_minimo
+            HAVING SUM(s.cantidad) < COALESCE(pa.stock_minimo, p.stock_minimo, 0)
         ) sub"#,
     )
     .fetch_one(&state.pool)
@@ -435,7 +436,7 @@ async fn stock_por_area(
                p.nombre,
                um.nombre as unidad,
                um.nombre_plural as unidad_plural,
-               p.stock_minimo,
+               COALESCE(pa.stock_minimo, p.stock_minimo, 0) AS stock_minimo,
                COALESCE(SUM(s.cantidad), 0) AS stock,
                (
                    SELECT JSON_AGG(JSON_BUILD_OBJECT(
@@ -459,9 +460,10 @@ async fn stock_por_area(
            JOIN lotes l ON l.id = s.lote_id
            JOIN productos p ON p.id = l.producto_id
            JOIN unidades_basicas um ON um.id = p.unidad_base_id
+           LEFT JOIN producto_area pa ON pa.producto_id = p.id AND pa.area_id = $1
            WHERE s.area_id = $1 AND s.cantidad > 0
            {}
-           GROUP BY p.id, p.codigo_interno, p.nombre, um.nombre, um.nombre_plural, p.stock_minimo
+           GROUP BY p.id, p.codigo_interno, p.nombre, um.nombre, um.nombre_plural, pa.stock_minimo, p.stock_minimo
            ORDER BY p.nombre
            LIMIT ${} OFFSET ${}"#,
         if params.q.is_some() {

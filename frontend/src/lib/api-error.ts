@@ -1,7 +1,7 @@
 interface ApiErrorBody {
   error?: string | { code?: string; message?: string }
   message?: string
-  details?: string
+  details?: Record<string, unknown>
 }
 
 export function parseApiError(err: unknown): string {
@@ -26,7 +26,7 @@ export function parseApiError(err: unknown): string {
     case 403: return 'No tienes permisos para esta acción.'
     case 404: return 'El recurso no fue encontrado.'
     case 409: return 'Conflicto: el registro fue modificado por otro usuario.'
-    case 422: return data?.details ?? 'Error de validación.'
+    case 422: return data?.message ?? 'Error de validación.'
     case 500: return 'Error del servidor. Intenta en unos minutos.'
     default:
       if (typeof navigator !== 'undefined' && !navigator.onLine) return 'Sin conexión a internet.'

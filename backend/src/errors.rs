@@ -96,10 +96,11 @@ impl IntoResponse for AppError {
             AppError::Conflict(msg) => (StatusCode::CONFLICT, "CONFLICT", msg, None),
             AppError::ConflictWithId(msg, code, uuid) => {
                 // Build response directly — code is dynamic String
+                // sesion_id at root for backward compatibility
                 let body = json!({
                     "code": code,
                     "message": msg,
-                    "details": { "sesion_id": uuid },
+                    "sesion_id": uuid,
                 });
                 return (StatusCode::CONFLICT, axum::Json(body)).into_response();
             }
@@ -204,18 +205,3 @@ pub fn validate_text_length(value: &str, field: &str, max: usize) -> Result<(), 
     Ok(())
 }
 
-/// Helper para construir un body de error con details de tipo Value.
-#[allow(dead_code)]
-pub fn error_with_details(
-    status: StatusCode,
-    code: &'static str,
-    message: impl Into<String>,
-    details: Value,
-) -> Response {
-    let body = json!({
-        "code": code,
-        "message": message.into(),
-        "details": details,
-    });
-    (status, axum::Json(body)).into_response()
-}

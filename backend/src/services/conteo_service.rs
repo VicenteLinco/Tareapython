@@ -170,10 +170,10 @@ impl ConteoService {
 
         if conflictos > 0 {
             tx.rollback().await?;
-            return Err(AppError::BusinessLogic(
-                format!("Conflicto de versión en {} ítems", conflictos),
-                "VERSION_CONFLICT".to_string(),
-            ));
+            return Err(AppError::VersionConflict {
+                esperada: 0,
+                actual: conflictos as i64,
+            });
         }
 
         // Si estaba en borrador y se actualizaron ítems, pasar a en_progreso

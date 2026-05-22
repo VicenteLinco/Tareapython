@@ -57,13 +57,13 @@ const navGroups = [
     items: [
       { to: '/recepciones', icon: ArrowDownToLine, label: 'Recepciones' },
       { to: '/solicitudes-compra', icon: ShoppingCart, label: 'Solicitudes' },
-      { to: '/ordenes-compra', icon: ShoppingBag, label: 'Órdenes de Compra' },
     ],
   },
 ]
 
 const adminItems = [
   { to: '/creador-productos', icon: Settings, label: 'Creador de Productos' },
+  { to: '/ordenes-compra', icon: ShoppingBag, label: 'Órdenes de Compra' },
   { to: '/configuracion', icon: SlidersHorizontal, label: 'Configuración' },
   { to: '/usuarios', icon: Users, label: 'Usuarios' },
   { to: '/audit-log', icon: FileText, label: 'Audit Log' },
@@ -116,7 +116,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
 
       {/* Navigation */}
       <nav className={cn(
-        "flex-1 min-h-0 px-2 py-[clamp(0.25rem,1vh,0.5rem)] overflow-hidden transition-all duration-300"
+        "flex-1 min-h-0 px-2 py-[clamp(0.25rem,1vh,0.5rem)] overflow-y-auto overflow-x-hidden transition-all duration-300"
       )}>
         {navGroups.map((group, i) => (
           <div key={i}>

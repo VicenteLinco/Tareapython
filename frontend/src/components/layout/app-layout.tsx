@@ -50,6 +50,7 @@ export function AppLayout() {
             className="btn btn-ghost btn-sm"
             onClick={() => setMobileSidebarOpen(true)}
             aria-label="Abrir menú"
+            aria-expanded={mobileSidebarOpen}
           >
             <Menu className="w-5 h-5" />
           </button>

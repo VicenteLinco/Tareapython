@@ -187,7 +187,7 @@ export function Sidebar({ expanded, onExpandedChange, mobileOpen, onMobileClose 
         </button>
         <button
           onClick={() => onExpandedChange(!expanded)}
-          className="flex h-9 w-full items-center justify-center rounded-lg opacity-30 hover:opacity-70 hover:bg-base-200 transition-all cursor-pointer"
+          className="hidden md:flex h-9 w-full items-center justify-center rounded-lg opacity-30 hover:opacity-70 hover:bg-base-200 transition-all cursor-pointer"
         >
           {expanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </button>

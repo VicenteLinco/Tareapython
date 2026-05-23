@@ -77,7 +77,7 @@ export default function SolicitudesCompraPage() {
 
       {/* Cuerpo */}
       {s.view === 'crear' && s.restaurando ? (
-        <div className="flex-1 grid grid-cols-[30%_1fr] gap-4 min-h-0 animate-pulse">
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[30%_1fr] gap-4 min-h-0 animate-pulse">
           <div className="bg-base-200/60 rounded-[2rem]" />
           <div className="flex flex-col gap-3">
             <div className="h-16 bg-base-200/60 rounded-2xl" />

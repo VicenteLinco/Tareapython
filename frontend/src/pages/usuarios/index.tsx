@@ -391,7 +391,7 @@ export default function UsuariosPage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="t-h1">Usuarios</h1>
           <p className="text-sm text-base-content/60 mt-0.5">
@@ -487,7 +487,7 @@ export default function UsuariosPage() {
                 </div>
 
                 {/* Separador + Acciones */}
-                <div className="flex items-center justify-end gap-0.5 mt-3 pt-3 border-t border-base-200">
+                <div className="flex flex-wrap items-center justify-end gap-0.5 mt-3 pt-3 border-t border-base-200">
                   <button
                     className="btn btn-ghost btn-xs gap-1 text-base-content/50 hover:text-base-content"
                     onClick={() => setPasswordId(u.id)}

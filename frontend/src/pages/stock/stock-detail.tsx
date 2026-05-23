@@ -223,9 +223,9 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
                     )}
                   >
                     <div className="flex items-start justify-between gap-2 mb-2">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-xs font-mono font-semibold">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-xs font-mono font-semibold truncate">
                             Lote <span className="text-base-content">{lote.numero_lote}</span>
                           </p>
                           {isSoon && !isExpired && (

@@ -158,7 +158,7 @@ export default function NuevaRecepcionPage() {
   // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen p-4">
+    <div className="min-h-screen p-4 pb-20 lg:pb-4">
       {/* Header + Wizard */}
       <div className="flex flex-col gap-4 mb-5">
         <div className="flex items-center justify-between gap-3">
@@ -220,6 +220,38 @@ export default function NuevaRecepcionPage() {
           />
         </div>
       </div>
+
+      {/* Barra de navegación sticky — solo mobile, solo modo wizard */}
+      {!modoExperto && (
+        <div className="fixed bottom-0 left-0 right-0 lg:hidden z-20 bg-base-100 border-t border-base-200 px-4 py-3 flex gap-3">
+          <button
+            disabled={pasoActual === 1}
+            onClick={() => setPasoActual(p => (p - 1) as 1 | 2 | 3)}
+            className="btn btn-ghost flex-1"
+          >
+            ← Anterior
+          </button>
+          {pasoActual < 3 ? (
+            <button
+              disabled={pasoActual === 1 && !proveedorId}
+              onClick={() => setPasoActual(p => (p + 1) as 1 | 2 | 3)}
+              className="btn btn-primary flex-1"
+            >
+              Siguiente →
+            </button>
+          ) : (
+            <button
+              onClick={items.handleConfirmar}
+              disabled={items.confirmarMutation.isPending}
+              className="btn btn-primary flex-1"
+            >
+              {items.confirmarMutation.isPending
+                ? <span className="loading loading-spinner loading-sm" />
+                : 'Confirmar recepción'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Bottom sheet datos de lote */}
       <LoteBottomSheet

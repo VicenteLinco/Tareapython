@@ -499,7 +499,7 @@ function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange
 
   return (
     <div className={cn(
-      'px-3 py-2.5 transition-all duration-200 border-l-4', 
+      'px-3 py-3 transition-all duration-200 border-l-4',
       esNoContado ? 'bg-warning/5 border-warning opacity-60' : 
       contado ? 'bg-success/5 border-success' : 'bg-base-100 border-transparent'
     )}>

@@ -11,6 +11,7 @@ import type { ConteoItem, Presentacion } from '@/types'
 import { cn, formatDate, formatCantidad, formatStockHumano } from '@/lib/utils'
 import { exportarConteoGlobalDiaPDF, exportarConteoSesionPDF } from '@/lib/conteo-pdf'
 import { notify } from '@/lib/notify'
+import { MobileConteoView } from './components/mobile-conteo-view'
 
 interface Configuracion {
   nombre_laboratorio: string
@@ -73,6 +74,14 @@ export default function ConteoDetallePage() {
   const [showConfirmar, setShowConfirmar] = useState(false)
   const [colapsados, setColapsados] = useState<Record<string, boolean>>({})
   const [pdfLoading, setPdfLoading] = useState<'area' | 'global' | null>(null)
+
+  // Detección de mobile
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
 
   const toggleColapsar = (productoId: string) =>
     setColapsados((prev) => ({ ...prev, [productoId]: !prev[productoId] }))
@@ -148,6 +157,93 @@ export default function ConteoDetallePage() {
   if (!sesion) return null
 
   const grupos = agruparPorProducto(items)
+
+  // Vista móvil optimizada (un ítem a la vez) cuando es mobile y la sesión es editable
+  if (isMobile && editable) {
+    return (
+      <div className="flex flex-col min-h-screen bg-base-200">
+        {/* Header sticky */}
+        <div className="sticky top-0 z-30 bg-base-100 border-b border-base-200 shadow-sm">
+          <div className="flex items-center gap-3 px-4 py-3">
+            <button onClick={() => navigate('/conteo')} className="btn btn-ghost btn-sm btn-circle">
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold truncate">{sesion.area_nombre}</p>
+              <p className="text-xs opacity-50">Conteo · {formatDate(sesion.created_at)}</p>
+            </div>
+            {editable && hasChanges && (
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={actions.save}
+                disabled={isSaving}
+              >
+                {isSaving ? <span className="loading loading-spinner loading-xs" /> : 'Guardar'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Vista móvil */}
+        <MobileConteoView
+          items={items}
+          stats={stats}
+          editable={editable}
+          isSaving={isSaving}
+          conteoCiego={config?.conteo_ciego ?? false}
+          actions={{
+            updateCantidad: (item, valor) => actions.updateItem(item, valor),
+            toggleNoContado: actions.toggleNoContado,
+            save: actions.save,
+          }}
+        />
+
+        {/* Confirmar Bar */}
+        {isAdmin && editable && !hasChanges && (
+          <div className="fixed bottom-0 left-0 right-0 p-4 bg-base-100 border-t border-base-200">
+            <button className="btn btn-primary w-full" onClick={() => setShowConfirmar(true)}>
+              Revisar y confirmar
+            </button>
+          </div>
+        )}
+
+        {/* Bottom sheet confirmar */}
+        {showConfirmar && (
+          <div className="modal modal-open modal-bottom">
+            <div className="modal-box rounded-t-2xl rounded-b-none">
+              <h3 className="font-bold text-lg mb-4">Resumen de ajustes</h3>
+              <div className="space-y-2 mb-4">
+                <ResumenRow label="Sin diferencia" value={stats.sinDiff} className="text-success" icon={<CheckCircle2 className="size-4" />} />
+                <ResumenRow label="Ajuste negativo" value={stats.negativo} className="text-error" icon={<TrendingDown className="size-4" />} />
+                <ResumenRow label="Ajuste positivo" value={stats.positivo} className="text-info" icon={<TrendingUp className="size-4" />} />
+                <ResumenRow label="No contados" value={stats.noContados} className="opacity-50" icon={<Minus className="size-4" />} />
+              </div>
+              <div className="form-control mb-4">
+                <label className="label"><span className="label-text">Nota (opcional)</span></label>
+                <textarea
+                  className="textarea textarea-bordered"
+                  rows={2}
+                  value={nota}
+                  onChange={(e) => actions.setNota(e.target.value)}
+                />
+              </div>
+              <div className="modal-action">
+                <button className="btn btn-ghost flex-1" onClick={() => setShowConfirmar(false)}>Cancelar</button>
+                <button
+                  className="btn btn-primary flex-1"
+                  onClick={actions.confirm}
+                  disabled={isConfirming}
+                >
+                  {isConfirming ? <span className="loading loading-spinner loading-sm" /> : 'Confirmar ajustes'}
+                </button>
+              </div>
+            </div>
+            <div className="modal-backdrop" onClick={() => setShowConfirmar(false)} />
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-base-200">

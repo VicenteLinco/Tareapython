@@ -7,6 +7,7 @@ import { PageLoading } from '@/components/ui/page-state'
 import { EmptyState } from '@/components/ui/empty-state'
 import { EstadoBadge } from '@/components/ui/estado-badge'
 import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import api from '@/lib/api'
 import type { Proveedor, RecepcionListItem } from '@/types'
 import { formatDate, daysUntil, cn } from '@/lib/utils'
@@ -232,9 +233,7 @@ function RecepcionDetailPanel({
           <button
             className="btn btn-sm btn-error btn-outline gap-1"
             disabled={eliminarPending}
-            onClick={() => {
-              if (confirm('¿Eliminar este borrador?')) onEliminar(recepcion.id)
-            }}
+            onClick={() => onEliminar(recepcion.id)}
           >
             {eliminarPending
               ? <span className="loading loading-spinner loading-xs" />
@@ -261,6 +260,8 @@ export default function RecepcionesPage() {
   const [searchInput, setSearchInput] = useState('')
   const [page, setPage] = useState(1)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [borradorAEliminar, setBorradorAEliminar] = useState<string | null>(null)
+  const [borradorItemAEliminar, setBorradorItemAEliminar] = useState<RecepcionListItem | null>(null)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -508,7 +509,8 @@ export default function RecepcionesPage() {
                                 className="btn btn-xs btn-ghost text-error"
                                 disabled={eliminarMutation.isPending}
                                 onClick={() => {
-                                  if (confirm('¿Eliminar este borrador?')) eliminarMutation.mutate(item.id)
+                                  setBorradorAEliminar(item.id)
+                                  setBorradorItemAEliminar(item)
                                 }}
                               >
                                 <Trash2 className="h-3 w-3" />
@@ -582,12 +584,43 @@ export default function RecepcionesPage() {
             isLoading={loadingDetalle}
             onClose={() => setSelectedId(null)}
             onConfirmar={(id) => confirmarMutation.mutate(id)}
-            onEliminar={(id) => eliminarMutation.mutate(id)}
+            onEliminar={(id) => {
+              const item = pageRows.find((r) => r.id === id) ?? null
+              setBorradorAEliminar(id)
+              setBorradorItemAEliminar(item)
+            }}
             confirmarPending={confirmarMutation.isPending}
             eliminarPending={eliminarMutation.isPending}
           />
         </div>
       )}
+
+      {/* Confirmar eliminación de borrador */}
+      <ConfirmDialog
+        open={borradorAEliminar !== null}
+        onClose={() => { setBorradorAEliminar(null); setBorradorItemAEliminar(null) }}
+        onConfirm={() => {
+          if (borradorAEliminar) eliminarMutation.mutate(borradorAEliminar)
+          setBorradorAEliminar(null)
+          setBorradorItemAEliminar(null)
+        }}
+        loading={eliminarMutation.isPending}
+        title="Eliminar borrador"
+        description="Esta acción eliminará el borrador permanentemente."
+        confirmLabel="Eliminar"
+        variant="danger"
+        impacto={[
+          ...(borradorItemAEliminar?.numero_documento
+            ? [{ label: 'Documento', valor: borradorItemAEliminar.numero_documento }]
+            : []),
+          ...(borradorItemAEliminar?.proveedor_nombre
+            ? [{ label: 'Proveedor', valor: borradorItemAEliminar.proveedor_nombre }]
+            : []),
+          ...(borradorItemAEliminar && borradorItemAEliminar.items_count > 0
+            ? [{ label: 'Ítems', valor: `${borradorItemAEliminar.items_count} ${borradorItemAEliminar.items_count === 1 ? 'item' : 'items'} · ${borradorItemAEliminar.lotes_count} ${borradorItemAEliminar.lotes_count === 1 ? 'lote' : 'lotes'}` }]
+            : []),
+        ]}
+      />
     </div>
   )
 }

@@ -14,6 +14,7 @@ import { cn, formatCantidad, daysUntil, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useDescartesStock } from './use-descartes-stock'
 import { exportarDescartePDF } from '@/lib/descarte-pdf'
 import { useAuthStore } from '@/hooks/use-auth-store'
@@ -80,6 +81,7 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
   const [items, setItems] = useState<Record<string, DescarteItemLocal>>({})
   const [showHealthyWarning, setShowHealthyWarning] = useState(false)
   const [healthyJustification, setHealthyJustification] = useState('')
+  const [showMainConfirm, setShowMainConfirm] = useState(false)
 
   const queryClient = useQueryClient()
   const usuario = useAuthStore((s) => s.usuario)
@@ -698,7 +700,7 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
             className="w-full h-10 rounded-xl gap-2"
             variant="destructive"
             disabled={totalSelected === 0 || descarteMutation.isPending}
-            onClick={handleConfirm}
+            onClick={() => setShowMainConfirm(true)}
           >
             {descarteMutation.isPending ? (
               <span className="loading loading-spinner loading-sm" />
@@ -712,6 +714,25 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
           </p>
         </div>
       </div>
+
+      {/* Confirmación principal de descarte */}
+      <ConfirmDialog
+        open={showMainConfirm}
+        onClose={() => setShowMainConfirm(false)}
+        onConfirm={() => { setShowMainConfirm(false); handleConfirm() }}
+        loading={descarteMutation.isPending}
+        title="Confirmar descarte"
+        description="Se registrarán movimientos de salida tipo DESCARTE para los siguientes ítems."
+        confirmLabel="Sí, descartar"
+        variant="danger"
+        impacto={[
+          { label: 'Ítems a descartar', valor: String(selectedItems.length), destacado: true },
+          { label: 'Lotes involucrados', valor: String(selectedItems.length) },
+          ...(hasHealthyItems
+            ? [{ label: 'Ítems en buen estado', valor: String(healthyItems.length), destacado: true }]
+            : []),
+        ]}
+      />
 
       {/* Modal advertencia sanos */}
       {showHealthyWarning && (

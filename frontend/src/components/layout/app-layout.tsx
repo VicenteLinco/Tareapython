@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Outlet, Navigate } from 'react-router-dom'
+import { Menu } from 'lucide-react'
 import { Sidebar } from './sidebar'
 import { Header } from './header'
 import { Breadcrumb } from './breadcrumb'
@@ -7,12 +8,14 @@ import { useAuthStore } from '@/hooks/use-auth-store'
 import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout'
 import { InactivityWarningDialog } from '@/components/auth/InactivityWarningDialog'
 import { GlobalSearch } from '@/components/ui/global-search'
+import { cn } from '@/lib/utils'
 
 export function AppLayout() {
   const accessToken = useAuthStore((s) => s.accessToken)
   const { dialogOpen, secondsLeft, onContinue } = useInactivityTimeout()
   const [searchOpen, setSearchOpen] = useState(false)
   const [sidebarExpanded, setSidebarExpanded] = useState(false)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -31,11 +34,29 @@ export function AppLayout() {
 
   return (
     <div className="min-h-screen bg-base-200/50">
-      <Sidebar expanded={sidebarExpanded} onExpandedChange={setSidebarExpanded} />
-      <div className={sidebarExpanded ? 'pl-56 transition-all duration-300' : 'pl-[60px] transition-all duration-300'}>
+      <Sidebar
+        expanded={sidebarExpanded}
+        onExpandedChange={setSidebarExpanded}
+        mobileOpen={mobileSidebarOpen}
+        onMobileClose={() => setMobileSidebarOpen(false)}
+      />
+      <div className={cn(
+        'transition-all duration-300',
+        sidebarExpanded ? 'md:pl-56' : 'md:pl-[60px]',
+      )}>
+        {/* Hamburger — solo visible en móvil */}
+        <div className="md:hidden fixed top-[14px] left-3 z-30">
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setMobileSidebarOpen(true)}
+            aria-label="Abrir menú"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        </div>
         <Header onOpenSearch={() => setSearchOpen(true)} />
         <Breadcrumb />
-        <main className="mx-auto max-w-6xl px-6 py-6">
+        <main className="mx-auto max-w-6xl px-4 sm:px-6 py-4 sm:py-6">
           <Outlet />
         </main>
       </div>

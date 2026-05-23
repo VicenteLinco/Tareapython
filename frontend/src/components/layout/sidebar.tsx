@@ -73,14 +73,18 @@ const adminItems = [
 interface SidebarProps {
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
+  mobileOpen: boolean
+  onMobileClose: () => void
 }
 
-export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
+export function Sidebar({ expanded, onExpandedChange, mobileOpen, onMobileClose }: SidebarProps) {
   const [isDark, setIsDark] = useState(
     document.documentElement.getAttribute('data-theme') === 'dark'
   )
   const usuario = useAuthStore((s) => s.usuario)
   const isAdmin = usuario?.rol === 'admin'
+
+  const effectiveExpanded = expanded || mobileOpen
 
   const toggleTheme = () => {
     const next = isDark ? 'light' : 'dark'
@@ -91,14 +95,26 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
 
   return (
     <TooltipProvider delayDuration={0}>
-    <aside
-      className={cn(
-        'fixed left-0 top-0 z-40 flex h-screen flex-col overflow-hidden border-r border-base-200 bg-base-100 transition-all duration-300 ease-out',
-        expanded ? 'w-56' : 'w-[60px]'
+      {/* Mobile backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          onClick={onMobileClose}
+        />
       )}
-      onMouseEnter={() => onExpandedChange(true)}
-      onMouseLeave={() => onExpandedChange(false)}
-    >
+      <aside
+        className={cn(
+          'fixed left-0 top-0 z-50 flex h-screen flex-col overflow-hidden border-r border-base-200 bg-base-100 transition-all duration-300 ease-out',
+          // Desktop: siempre visible, ancho por expanded
+          'md:translate-x-0',
+          effectiveExpanded ? 'md:w-56' : 'md:w-[60px]',
+          // Mobile: drawer full-width, translate según mobileOpen
+          'w-64',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+        )}
+        onMouseEnter={() => { if (window.innerWidth >= 768) onExpandedChange(true) }}
+        onMouseLeave={() => { if (window.innerWidth >= 768) onExpandedChange(false) }}
+      >
       {/* Logo */}
       <div className="flex h-[60px] items-center gap-2.5 px-4 border-b border-base-200">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
@@ -107,7 +123,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
         <span
           className={cn(
             'font-semibold text-sm tracking-tight whitespace-nowrap transition-all duration-300',
-            expanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
+            effectiveExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2 w-0 overflow-hidden'
           )}
         >
           Lab Inventario
@@ -124,14 +140,14 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
             {group.label && (
               <p className={cn(
                 'px-3 mb-[clamp(0.125rem,0.5vh,0.25rem)] text-[10px] font-semibold uppercase tracking-widest opacity-40 transition-all duration-300',
-                expanded ? 'opacity-40' : 'opacity-0'
+                effectiveExpanded ? 'opacity-40' : 'opacity-0'
               )}>
                 {group.label}
               </p>
             )}
             <div className="space-y-0.5">
               {group.items.map((item) => (
-                <SidebarLink key={item.to} {...item} expanded={expanded} />
+                <SidebarLink key={item.to} {...item} expanded={effectiveExpanded} />
               ))}
             </div>
           </div>
@@ -142,13 +158,13 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
             <div className="mx-2 my-[clamp(0.375rem,1.4vh,0.75rem)] h-px bg-base-200" />
             <p className={cn(
               'px-3 mb-[clamp(0.125rem,0.5vh,0.25rem)] text-[10px] font-semibold uppercase tracking-widest opacity-40 transition-all duration-300',
-              expanded ? 'opacity-40' : 'opacity-0'
+              effectiveExpanded ? 'opacity-40' : 'opacity-0'
             )}>
               Admin
             </p>
             <div className="space-y-0.5">
               {adminItems.map((item) => (
-                <SidebarLink key={item.to} {...item} expanded={expanded} />
+                <SidebarLink key={item.to} {...item} expanded={effectiveExpanded} />
               ))}
             </div>
           </>
@@ -164,7 +180,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
           {isDark ? <Sun className="h-[18px] w-[18px] shrink-0" /> : <Moon className="h-[18px] w-[18px] shrink-0" />}
           <span className={cn(
             'whitespace-nowrap transition-all duration-300',
-            expanded ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'
+            effectiveExpanded ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'
           )}>
             {isDark ? 'Modo claro' : 'Modo oscuro'}
           </span>
@@ -180,6 +196,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
     </TooltipProvider>
   )
 }
+
 
 function SidebarLink({
   to,

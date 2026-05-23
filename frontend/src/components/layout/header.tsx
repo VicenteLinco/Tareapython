@@ -18,7 +18,7 @@ export function Header({ onOpenSearch }: HeaderProps) {
   }
 
   return (
-    <header className="glass-header sticky top-0 z-20 flex h-[60px] items-center justify-between border-b border-base-200 bg-base-100/80 px-6">
+    <header className="glass-header sticky top-0 z-20 flex h-[60px] items-center justify-between border-b border-base-200 bg-base-100/80 pl-14 pr-6 md:px-6">
       <div className="flex items-center gap-3">
         {onOpenSearch && (
           <button

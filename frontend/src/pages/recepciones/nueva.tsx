@@ -166,7 +166,7 @@ export default function NuevaRecepcionPage() {
             <Button variant="ghost" size="sm" onClick={() => navigate('/recepciones')}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <h1 className="text-xl font-bold">Nueva Recepción</h1>
+            <h1 className="t-h1">Nueva Recepción</h1>
           </div>
           <button
             className={cn(

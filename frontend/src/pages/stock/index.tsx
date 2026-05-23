@@ -92,7 +92,7 @@ export default function StockPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight text-base-content">
+            <h1 className="t-h1 tracking-tight text-base-content">
               {estado === 'critico' ? 'Riesgo de Quiebre' :
                estado === 'bajo'    ? 'Stock Bajo' :
                estado === 'sin_stock' ? 'Stock Quebrado' :

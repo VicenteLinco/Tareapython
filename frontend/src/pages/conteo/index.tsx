@@ -63,7 +63,7 @@ export default function ConteoPage() {
       <div className="flex items-center gap-3 mb-6">
         <ClipboardCheck className="h-6 w-6 text-primary" />
         <div>
-          <h1 className="text-xl font-semibold">Conteo de Inventario</h1>
+          <h1 className="t-h1">Conteo de Inventario</h1>
           <p className="text-sm opacity-50">Sesiones de conteo físico</p>
         </div>
       </div>

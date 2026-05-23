@@ -34,7 +34,7 @@ export default function CreadorProductosPage() {
   return (
     <div className="space-y-0">
       <div className="mb-4">
-        <h1 className="text-2xl font-bold tracking-tight">Creador de Productos</h1>
+        <h1 className="t-h1 tracking-tight">Creador de Productos</h1>
         <p className="text-sm opacity-50 mt-0.5">Administra los datos maestros del sistema</p>
       </div>
 

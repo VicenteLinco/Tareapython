@@ -393,7 +393,7 @@ export default function UsuariosPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Usuarios</h1>
+          <h1 className="t-h1">Usuarios</h1>
           <p className="text-sm text-base-content/60 mt-0.5">
             {usuarios.filter((u) => u.activo).length} activos · {usuarios.filter((u) => !u.activo).length} inactivos
           </p>

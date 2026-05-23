@@ -246,7 +246,7 @@ export default function SetupPage() {
         <div className="p-4 bg-success/10 rounded-full w-fit mx-auto mb-4">
           <Lock className="w-8 h-8 text-success" />
         </div>
-        <h2 className="text-xl font-semibold mb-2">Setup completado</h2>
+        <h2 className="t-h2 mb-2">Setup completado</h2>
         <p className="text-base-content/60 text-sm mb-6">
           La carga inicial fue finalizada. El sistema tiene{' '}
           <strong>{estado.productos_cargados}</strong> productos y{' '}
@@ -284,7 +284,7 @@ export default function SetupPage() {
 
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold">Carga inicial</h1>
+        <h1 className="t-h1">Carga inicial</h1>
         <p className="text-base-content/60 text-sm mt-1">
           Importa el catálogo de productos y el stock inicial desde archivos CSV.
         </p>

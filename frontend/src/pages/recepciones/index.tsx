@@ -354,7 +354,7 @@ export default function RecepcionesPage() {
         selectedId ? 'lg:flex-[3]' : 'w-full'
       )}>
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Recepciones</h1>
+          <h1 className="t-h1">Recepciones</h1>
           <button className="btn btn-primary" onClick={() => navigate('/recepciones/nueva')}>
             <Plus className="h-4 w-4" />
             Nueva Recepción

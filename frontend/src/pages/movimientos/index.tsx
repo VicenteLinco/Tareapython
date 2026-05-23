@@ -388,7 +388,7 @@ export default function MovimientosPage() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Movimientos</h1>
+          <h1 className="t-h1 tracking-tight">Movimientos</h1>
           <p className="text-sm opacity-50 mt-0.5">Historial y analisis de consumo</p>
         </div>
       </div>

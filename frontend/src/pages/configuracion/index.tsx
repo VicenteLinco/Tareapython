@@ -138,7 +138,7 @@ export default function ConfiguracionPage() {
   return (
     <div className="max-w-2xl">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight">Configuración</h1>
+        <h1 className="t-h1 tracking-tight">Configuración</h1>
         <p className="text-sm text-base-content/50 mt-1">
           Ajustes generales del sistema de inventario
         </p>

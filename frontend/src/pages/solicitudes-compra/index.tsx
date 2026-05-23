@@ -35,7 +35,7 @@ export default function SolicitudesCompraPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className="t-h1 flex items-center gap-2">
             <ShoppingCart className="h-6 w-6 text-primary" />
             Solicitudes de Compra
           </h1>

@@ -40,7 +40,7 @@ export default function OrdenesCompraPage() {
             <span>/</span>
             <span>Órdenes de Compra</span>
           </div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className="t-h1 flex items-center gap-2">
             <ShoppingBag className="w-6 h-6 text-primary" />
             Órdenes de Compra
           </h1>

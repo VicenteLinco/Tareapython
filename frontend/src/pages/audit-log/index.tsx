@@ -246,7 +246,7 @@ export default function AuditLogPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
+        <h1 className="t-h1 flex items-center gap-2">
           <History className="w-6 h-6 text-primary" />
           Auditoría del Sistema
         </h1>

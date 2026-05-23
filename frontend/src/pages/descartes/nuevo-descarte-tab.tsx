@@ -335,7 +335,7 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
             <CheckCircle2 className="w-9 h-9 text-success" />
           </div>
           <div>
-            <h2 className="text-xl font-bold">Descarte registrado</h2>
+            <h2 className="t-h2">Descarte registrado</h2>
             <p className="text-sm opacity-50 mt-1">
               {successSession.total_items} {successSession.total_items === 1 ? 'ítem' : 'ítems'} descartados
               · {successSession.areas.join(', ')}

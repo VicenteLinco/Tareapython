@@ -4,6 +4,7 @@ import { CheckCircle2, X, RotateCcw, ShoppingCart, Eye, EyeOff, Minus, Plus } fr
 import { MetricTooltip } from '@/components/ui/metric-tooltip'
 import { cn, formatCantidad } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
+import { UrgenciaTag } from '@/components/ui/urgencia-tag'
 import type { ItemRecomendado, SolicitudItem } from '@/types'
 
 interface RevisionViewProps {
@@ -143,13 +144,8 @@ export function RevisionView({
         <div className="flex-1 min-w-0 space-y-1.5">
           <div className="flex items-start gap-2 flex-wrap">
             <span className="font-bold text-sm leading-tight">{r.producto_nombre}</span>
-            {estado === 'pendiente' && (isCritica || isAlta) && (
-              <span className={cn(
-                'text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full shrink-0',
-                isCritica ? 'bg-error/15 text-error' : 'bg-warning/15 text-warning'
-              )}>
-                {isCritica ? 'crítico' : 'alta'}
-              </span>
+            {estado === 'pendiente' && (
+              <UrgenciaTag valor={r.nivel_urgencia} size="sm" />
             )}
             {estado === 'aceptado' && (
               <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full bg-success/15 text-success shrink-0">

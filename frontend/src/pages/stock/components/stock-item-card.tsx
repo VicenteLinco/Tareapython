@@ -3,6 +3,7 @@ import { ProductoImage } from '@/components/ui/producto-image'
 import type { StockItem } from '@/types'
 import { cn, formatCantidad } from '@/lib/utils'
 import { StockBadge } from './stock-badge'
+import { AutonomiaBar } from '@/components/ui/autonomia-bar'
 
 interface StockItemCardProps {
   item: StockItem
@@ -68,17 +69,22 @@ export function StockItemCard({ item, view, isSelected, onClick }: StockItemCard
       <h3 className="font-bold text-base leading-tight mb-1 line-clamp-2">{item.producto_nombre}</h3>
       <p className="text-[10px] font-mono opacity-40 uppercase mb-4 tracking-widest">#{item.codigo_interno}</p>
 
-      <div className="mt-auto pt-4 border-t border-base-200/50 flex items-end justify-between">
-        <div>
-          <p className="text-[10px] font-bold opacity-30 uppercase mb-1">Disponible</p>
-          <div className="flex items-baseline gap-1">
-            <span className="text-2xl font-bold tabular-nums leading-none">{Math.round(item.stock_total ?? 0)}</span>
-            <span className="text-xs opacity-40">{unitLabel}</span>
+      <div className="mt-auto pt-4 border-t border-base-200/50 flex flex-col gap-2">
+        <div className="flex items-end justify-between">
+          <div>
+            <p className="text-[10px] font-bold opacity-30 uppercase mb-1">Disponible</p>
+            <div className="flex items-baseline gap-1">
+              <span className="text-2xl font-bold tabular-nums leading-none">{Math.round(item.stock_total ?? 0)}</span>
+              <span className="text-xs opacity-40">{unitLabel}</span>
+            </div>
+          </div>
+          <div className="h-8 w-8 rounded-xl bg-base-200 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <ChevronRight className="w-4 h-4 opacity-40" />
           </div>
         </div>
-        <div className="h-8 w-8 rounded-xl bg-base-200 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-          <ChevronRight className="w-4 h-4 opacity-40" />
-        </div>
+        {item.dias_autonomia != null && (
+          <AutonomiaBar dias={item.dias_autonomia} showLabel />
+        )}
       </div>
     </button>
   )

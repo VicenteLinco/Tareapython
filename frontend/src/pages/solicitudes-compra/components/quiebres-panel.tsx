@@ -5,6 +5,8 @@ import { MetricTooltip } from '@/components/ui/metric-tooltip'
 import { cn, formatCantidad } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SolicitudBuscador } from './solicitud-buscador'
+import { UrgenciaTag } from '@/components/ui/urgencia-tag'
+import { AutonomiaBar } from '@/components/ui/autonomia-bar'
 import type { ItemRecomendado, Proveedor, Producto, SolicitudItem } from '@/types'
 
 type TabIzquierdo = 'quiebres' | 'buscar'
@@ -67,13 +69,8 @@ function RecCard({
         <p className="font-bold text-[11px] leading-snug line-clamp-2 flex-1 min-w-0">
           {r.producto_nombre}
         </p>
-        {!alreadyAdded && (isCritica || isAlta) && (
-          <span className={cn(
-            "shrink-0 text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full leading-tight",
-            isCritica ? "bg-error/15 text-error" : "bg-warning/15 text-warning"
-          )}>
-            {isCritica ? "crítico" : "alta"}
-          </span>
+        {!alreadyAdded && (
+          <UrgenciaTag valor={r.nivel_urgencia} size="sm" />
         )}
         {!alreadyAdded && (
           <span className="flex items-center gap-0.5 shrink-0">
@@ -89,6 +86,10 @@ function RecCard({
           </span>
         )}
       </div>
+
+      {r.autonomia_dias !== null && r.autonomia_dias !== undefined && (
+        <AutonomiaBar dias={r.autonomia_dias} showLabel />
+      )}
 
       <div className="flex items-center justify-between">
         <p className={cn(

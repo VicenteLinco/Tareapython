@@ -332,7 +332,7 @@ export function useCrearPresentacion() {
 export function useActualizarPresentacion() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, productoId, payload }: { id: number; productoId: string; payload: UpdatePresentacion }) =>
+    mutationFn: ({ id, payload }: { id: number; productoId: string; payload: UpdatePresentacion }) =>
       actualizarPresentacion(id, payload),
     onSuccess: (_data, { productoId }) => {
       qc.invalidateQueries({ queryKey: catalogosKeys.productos.presentaciones(productoId) })

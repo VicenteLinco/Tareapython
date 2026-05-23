@@ -49,16 +49,63 @@ pub enum AppError {
     },
 
     /// Lote ya agotado (cantidad == 0)
+    #[allow(dead_code)]
     #[error("Lote agotado: {lote_id}")]
     LoteAgotado { lote_id: Uuid },
 
     /// Lote vencido
+    #[allow(dead_code)]
     #[error("Lote vencido: {lote_id}")]
     LoteVencido { lote_id: Uuid },
 
     /// Conflicto de versión en optimistic locking
     #[error("Conflicto de versión: esperada {esperada}, actual {actual}")]
     VersionConflict { esperada: i64, actual: i64 },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+    use rust_decimal_macros::dec;
+
+    async fn response_json(error: AppError) -> (StatusCode, Value) {
+        let response = error.into_response();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("leer body");
+        let body = serde_json::from_slice(&bytes).expect("json valido");
+        (status, body)
+    }
+
+    #[tokio::test]
+    async fn stock_insuficiente_expone_codigo_y_detalles_tipados() {
+        let (status, body) = response_json(AppError::StockInsuficiente {
+            disponible: dec!(3.5),
+            solicitado: dec!(8),
+        })
+        .await;
+
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body["code"], "STOCK_INSUFICIENTE");
+        assert_eq!(body["details"]["disponible"], "3.5");
+        assert_eq!(body["details"]["solicitado"], "8");
+    }
+
+    #[tokio::test]
+    async fn version_conflict_expone_codigo_y_versiones() {
+        let (status, body) = response_json(AppError::VersionConflict {
+            esperada: 2,
+            actual: 3,
+        })
+        .await;
+
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["code"], "VERSION_CONFLICT");
+        assert_eq!(body["details"]["esperada"], 2);
+        assert_eq!(body["details"]["actual"], 3);
+    }
 }
 
 impl From<validator::ValidationErrors> for AppError {
@@ -204,4 +251,3 @@ pub fn validate_text_length(value: &str, field: &str, max: usize) -> Result<(), 
     }
     Ok(())
 }
-

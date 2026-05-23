@@ -298,7 +298,7 @@ async fn listar(
     .await?;
 
     let bajo_minimo: (i64,) = sqlx::query_as(
-        r#"SELECT COUNT(DISTINCT l.producto_id) FROM (
+        r#"SELECT COUNT(DISTINCT producto_id) FROM (
             SELECT l.producto_id FROM stock s
             JOIN lotes l ON l.id = s.lote_id
             JOIN productos p ON p.id = l.producto_id

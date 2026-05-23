@@ -5,7 +5,6 @@ use axum::extract::DefaultBodyLimit;
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
-use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
 mod auth;
@@ -28,6 +27,7 @@ async fn main() {
 
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
+        .json()
         .init();
 
     let config = config::AppConfig::from_env();
@@ -164,7 +164,10 @@ async fn main() {
         .layer(axum::middleware::from_fn(
             middleware::security_headers::security_headers,
         ))
-        .layer(TraceLayer::new_for_http())
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::request_logging::request_logging,
+        ))
         .layer(cors)
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024)) // 2MB max body
         .with_state(state);

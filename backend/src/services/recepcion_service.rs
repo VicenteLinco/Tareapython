@@ -193,7 +193,7 @@ pub async fn listar(
     let sql = format!(
         r#"SELECT
             r.id, r.numero_documento, p.nombre as proveedor_nombre, p.icono as proveedor_icono,
-            r.guia_despacho, r.estado, r.fecha_recepcion, u.nombre as usuario_nombre,
+            r.guia_despacho, r.estado::text AS estado, r.fecha_recepcion, u.nombre as usuario_nombre,
             r.created_at, r.guia_despacho_archivo IS NOT NULL as tiene_foto,
             r.solicitud_id,
             (SELECT STRING_AGG(DISTINCT a.nombre, ', ')
@@ -312,7 +312,7 @@ pub async fn crear_recepcion(
             let (lote_id, codigo_interno): (Uuid, String) = sqlx::query_as(
                 r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento, costo_unitario, codigo_interno)
                    VALUES ($1, $2, $3, $4, $5, 'L' || LPAD(nextval('seq_lot_numero')::text, 6, '0'))
-                   ON CONFLICT (producto_id, numero_lote)
+                   ON CONFLICT (producto_id, proveedor_id, numero_lote)
                    DO UPDATE SET fecha_vencimiento = EXCLUDED.fecha_vencimiento, costo_unitario = EXCLUDED.costo_unitario
                    RETURNING id, codigo_interno"#
             )

@@ -113,6 +113,7 @@ struct IdempotencyRow {
 
 /// Valida el formato de una idempotency key según las reglas del extractor.
 /// Lógica pura extraída para poder testearla sin DB.
+#[allow(dead_code)]
 pub fn validate_idempotency_key_format(key: &str) -> Result<(), AppError> {
     if key.is_empty() || key.len() > 256 {
         return Err(AppError::Validation(

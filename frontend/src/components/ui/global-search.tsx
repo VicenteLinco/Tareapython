@@ -106,7 +106,7 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
     type: 'recepcion' as const,
     title: r.numero_documento,
     subtitle: r.proveedor_nombre,
-    badge: r.estado === 'confirmada' || r.estado === 'completa' ? 'Confirmada' : 'Borrador',
+    badge: r.estado === 'completa' ? 'Confirmada' : 'Borrador',
     action: () => navAndClose(`/recepciones/${r.id}`),
   }))
 

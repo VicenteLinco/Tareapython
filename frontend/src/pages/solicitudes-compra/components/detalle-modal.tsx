@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog } from '@/components/ui/dialog'
 import { PageLoading } from '@/components/ui/page-state'
 import api from '@/lib/api'
+import { getApiErrorCode, getApiStatus, parseApiError } from '@/lib/api-error'
 import { exportarSolicitudPDF } from '@/lib/solicitud-pdf'
 import { formatPesos } from '../solicitud-utils'
 import type { SolicitudDetalle, CreateOrdenCompraRequest } from '@/types'
@@ -130,8 +131,7 @@ export function DetalleModal({
       setConfirmEnviar(false)
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      notify.error(msg ?? 'Error al marcar enviada')
+      notify.error(parseApiError(err) || 'Error al marcar enviada')
     },
   })
 
@@ -143,8 +143,7 @@ export function DetalleModal({
       setConfirmCompletar(false)
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      notify.error(msg ?? 'Error al completar solicitud')
+      notify.error(parseApiError(err) || 'Error al completar solicitud')
     },
   })
 
@@ -158,8 +157,7 @@ export function DetalleModal({
       setCancelMotivo('')
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      notify.error(msg ?? 'Error al cancelar solicitud')
+      notify.error(parseApiError(err) || 'Error al cancelar solicitud')
     },
   })
 
@@ -181,12 +179,11 @@ export function DetalleModal({
       setNotaEnvio('')
     },
     onError: (err: unknown) => {
-      const e = err as { response?: { status?: number; data?: { error?: { message?: string }; message?: string } } }
-      if (e.response?.status === 409) {
+      if (getApiErrorCode(err) === 'VERSION_CONFLICT' || getApiStatus(err) === 409) {
         notify.error('Version desactualizada, recarga la pagina')
         invalidate()
       } else {
-        notify.error(e.response?.data?.error?.message ?? e.response?.data?.message ?? 'Error registrando envio')
+        notify.error(parseApiError(err) || 'Error registrando envio')
       }
     },
   })
@@ -201,9 +198,8 @@ export function DetalleModal({
       invalidate()
     },
     onError: (err: unknown) => {
-      const e = err as { response?: { status?: number; data?: { error?: { message?: string }; message?: string } } }
-      if (e.response?.status === 409) notify.error('Version desactualizada, recarga la pagina')
-      else notify.error(e.response?.data?.error?.message ?? e.response?.data?.message ?? 'Error cancelando envio')
+      if (getApiErrorCode(err) === 'VERSION_CONFLICT' || getApiStatus(err) === 409) notify.error('Version desactualizada, recarga la pagina')
+      else notify.error(parseApiError(err) || 'Error cancelando envio')
       invalidate()
     },
   })

@@ -1,6 +1,6 @@
--- Migration 055: Mejorar v_stock_por_producto_area con nombre completo de unidad.
--- La vista anterior sólo incluía abreviatura; se agrega nombre y nombre_plural
--- para que las queries de stock no necesiten hacer JOIN adicional con unidades_basicas.
+-- Migration 055: Mejorar v_stock_por_producto_area con nombres de unidad.
+-- La columna abreviatura fue eliminada en la migration 006; la vista expone
+-- nombre singular y plural para evitar JOINs extra en consultas de stock.
 
 DROP VIEW IF EXISTS v_stock_por_producto_area;
 
@@ -14,7 +14,7 @@ SELECT
     SUM(s.cantidad)   AS stock_total,
     um.nombre         AS unidad_nombre,
     um.nombre_plural  AS unidad_nombre_plural,
-    um.abreviatura    AS unidad,
+    um.nombre         AS unidad,
     MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0) AS proximo_vencimiento
 FROM stock s
 JOIN lotes l    ON l.id = s.lote_id
@@ -24,4 +24,4 @@ JOIN unidades_basicas um ON um.id = p.unidad_base_id
 WHERE s.cantidad > 0
   AND p.activo = TRUE
 GROUP BY p.id, p.codigo_interno, p.nombre, a.id, a.nombre,
-         um.nombre, um.nombre_plural, um.abreviatura;
+         um.nombre, um.nombre_plural;

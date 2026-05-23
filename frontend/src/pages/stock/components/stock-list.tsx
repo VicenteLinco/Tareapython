@@ -1,7 +1,6 @@
 import { Package } from 'lucide-react'
 import { EmptyState } from '@/components/ui/page-state'
 import { Skeleton } from '@/components/ui/skeleton'
-import { cn } from '@/lib/utils'
 import type { StockItem } from '@/types'
 import { StockItemCard } from './stock-item-card'
 

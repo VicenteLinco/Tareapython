@@ -1606,6 +1606,7 @@ function EditProductoDialog({
                     }
                   </select>
                 </div>
+              </div>
 
               <div className="form-control">
                 <label className="label py-0.5">

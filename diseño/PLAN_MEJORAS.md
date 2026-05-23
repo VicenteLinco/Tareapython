@@ -174,18 +174,21 @@ Esfuerzo estimado: S = ½ día · M = 1-2 días · L = 3-5 días · XL = >1 sema
   - `forecast`: 3 escenarios (consumo estable, esporádico, sin historia).
   - `idempotency`: 2 escenarios (key reusada, key nueva).
 - **Criterio:** `cargo test` corre en CI y bloquea merge.
+- **Avance:** FEFO, forecast e idempotency tienen tests; `cargo test` pasa con unitarios de dominio, integraciones existentes y 2 tests DB de idempotency ignorados para ejecucion explicita.
 
 ### D7. CI básico (S)
 - GitHub Actions: `cargo build`, `cargo test`, `cargo clippy`, `tsc --noEmit`, `npm run build`.
+- **Avance:** workflow `.github/workflows/ci.yml` agregado con PostgreSQL 16, migraciones SQLx, build/test/clippy backend y typecheck/build frontend.
 
 ### D8. Errores tipados HTTP (M)
 - `enum DomainError` → mapeo a códigos HTTP + body `{code, message, details?}`.
 - Frontend distingue `LoteAgotado` vs `ConcurrenciaPerdida` sin parsear strings.
+- **Avance:** `AppError` responde `{code, message, details?}` para errores de dominio; `generated.ts` exporta `ApiErrorCode`/`ApiError`; `api-error.ts` centraliza parsing tipado y no quedan inspecciones manuales de `response.data` fuera del helper.
 
-### D9. Logging estructurado (S)
+### D9. Logging estructurado (S) ✅
 - `tracing` con JSON output. Cada request con `request_id`, `usuario_id`, `latencia`.
 
-### D10. Documentar deploy y backup (S)
+### D10. Documentar deploy y backup (S) ✅
 - `DEPLOY.md`: cómo se sirve frontend en prod, dónde van imágenes, cómo se hace `pg_dump`/restore, cómo aplicar migración nueva sin downtime.
 
 ---
@@ -242,9 +245,9 @@ Esfuerzo estimado: S = ½ día · M = 1-2 días · L = 3-5 días · XL = >1 sema
 - Enums de estado tipados end-to-end.
 - Descomponer `recepciones/nueva.tsx` y `stock/index.tsx`.
 - Capas API y hooks por dominio.
-- Tests de dominio crítico.
-- CI básico.
-- Errores HTTP tipados.
+- Tests de dominio crítico. [x]
+- CI básico. [x]
+- Errores HTTP tipados. [x] Backend + helpers frontend + barrido de casts manuales restantes.
 
 ### Backlog continuo
 B2, B4, B7, B9, C3, C4, D9, D10, bloque E.
@@ -255,9 +258,9 @@ B2, B4, B7, B9, C3, C4, D9, D10, bloque E.
 
 Creados pero no integrados aún:
 - `<CantidadConUnidad>`: reemplazar `formatCantidad(...)` directos en stock, solicitudes, recepciones.
-- `<EstadoBadge>`: reemplazar clases ad hoc en Recepciones, Solicitudes, Conteo, Audit log.
+- `<EstadoBadge>`: reemplazar clases ad hoc en Audit log. Avance: integrado en Recepciones, Solicitudes historial y Conteo.
 - `<UrgenciaTag>` / `<AutonomiaBar>`: integrar en Stock/index, Solicitudes y Dashboard.
-- `<EmptyState>`: reemplazar "sin resultados" genéricos en todos los módulos.
+- `<EmptyState>`: reemplazar "sin resultados" genéricos en todos los módulos. Avance: integrado en Recepciones, Solicitudes historial y Conteo.
 - `notify`: migrar llamadas directas a `toast()` para usar `notify`.
 - `<KeyboardLegend>`: extender a Recepciones y Conteo.
 - `.t-h1 / .t-h2 / .t-body`: aplicar en layout y páginas.

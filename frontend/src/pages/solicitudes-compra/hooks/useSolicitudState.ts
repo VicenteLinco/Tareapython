@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 import { notify } from '@/lib/notify'
 import api from '@/lib/api'
+import { getApiErrorCode, getApiStatus, parseApiError } from '@/lib/api-error'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import type {
   PaginatedResponse,
@@ -231,8 +232,7 @@ export function useSolicitudState() {
       notify.success('Borrador guardado')
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      notify.error(msg ?? 'Error al guardar borrador')
+      notify.error(parseApiError(err) || 'Error al guardar borrador')
     },
   })
 
@@ -276,10 +276,7 @@ export function useSolicitudState() {
       queryClient.invalidateQueries({ queryKey: ['solicitudes-historial'] })
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { error?: { message?: string }; message?: string } }; message?: string })?.response?.data?.error?.message
-        ?? (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
-        ?? (err as { message?: string })?.message
-      notify.error(msg ?? 'Error al guardar solicitud')
+      notify.error(parseApiError(err) || 'Error al guardar solicitud')
     },
   })
 
@@ -292,12 +289,11 @@ export function useSolicitudState() {
       notify.success(data.estado === 'enviada' ? 'Solicitud completamente enviada' : 'Envio registrado')
     },
     onError: (err: unknown) => {
-      const e = err as { response?: { status?: number; data?: { error?: { message?: string }; message?: string } } }
-      if (e.response?.status === 409) {
+      if (getApiErrorCode(err) === 'VERSION_CONFLICT' || getApiStatus(err) === 409) {
         if (selectedSolicitudId) queryClient.invalidateQueries({ queryKey: ['solicitud-detail', selectedSolicitudId] })
         notify.error('Version desactualizada, recarga la pagina')
       } else {
-        notify.error(e.response?.data?.error?.message ?? e.response?.data?.message ?? 'Error registrando envio')
+        notify.error(parseApiError(err) || 'Error registrando envio')
       }
     },
   })

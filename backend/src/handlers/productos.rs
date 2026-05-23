@@ -80,6 +80,7 @@ struct CreateProducto {
     descripcion: Option<String>,
     categoria_id: Option<i32>,
     unidad_base_id: i32,
+    proveedor_id: Option<i32>,
     codigo_maestro: Option<String>,
     stock_minimo: Option<Decimal>,
     ubicacion: Option<String>,
@@ -328,6 +329,19 @@ async fn crear(
         validate_text_length(desc, "descripcion", 1000)?;
     }
 
+    let proveedores = req.proveedores.or_else(|| {
+        req.proveedor_id.map(|proveedor_id| {
+            vec![ProveedorProductoInput {
+                proveedor_id,
+                es_principal: true,
+                codigo_proveedor: None,
+                precio_unidad: None,
+                lead_time_dias: None,
+                unidad_minima_pedido: None,
+            }]
+        })
+    });
+
     let producto = ProductoService::crear_producto(
         &state.pool,
         crate::services::producto_service::CrearProductoParams {
@@ -344,7 +358,7 @@ async fn crear(
             clase_riesgo: req.clase_riesgo,
             presentaciones: req.presentaciones,
             area_ids: req.area_ids,
-            proveedores: req.proveedores,
+            proveedores,
             usuario_id: claims.sub,
         },
     )

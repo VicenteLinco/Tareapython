@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { Search, Plus, FileDown, LayoutGrid, List as ListIcon, ChevronRight, Package, X } from 'lucide-react'
+import { Search, Plus, FileDown, LayoutGrid, List as ListIcon, X } from 'lucide-react'
 import api from '@/lib/api'
 import type { StockItem, PaginatedResponse } from '@/types'
 import { cn } from '@/lib/utils'

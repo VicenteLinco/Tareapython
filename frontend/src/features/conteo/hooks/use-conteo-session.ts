@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { notify } from '@/lib/notify'
 import api from '@/lib/api'
+import { getApiErrorCode, parseApiError } from '@/lib/api-error'
 import type { ConteoDetalle, ConteoItem } from '@/types'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -15,14 +16,6 @@ interface GuardarConteoItemPayload {
 
 interface ConfirmarConteoResponse {
   ajustes_generados: number
-}
-
-interface ApiError {
-  response?: {
-    data?: {
-      code?: string
-    }
-  }
 }
 
 export function useConteoSession(id: string | undefined) {
@@ -80,13 +73,13 @@ export function useConteoSession(id: string | undefined) {
       setLocalItems({})
       notify.success('Cambios guardados')
     },
-    onError: (err: ApiError) => {
-      if (err?.response?.data?.code === 'VERSION_CONFLICT') {
+    onError: (err: unknown) => {
+      if (getApiErrorCode(err) === 'VERSION_CONFLICT') {
         notify.error('Conflicto de versión. Recargando datos...')
         queryClient.invalidateQueries({ queryKey: ['conteo-detalle', id] })
         setLocalItems({})
       } else {
-        notify.error('Error al guardar')
+        notify.error(parseApiError(err))
       }
     },
   })
@@ -103,7 +96,7 @@ export function useConteoSession(id: string | undefined) {
       notify.success(`Conteo confirmado: ${res.ajustes_generados} ajustes generados`)
       navigate('/conteo')
     },
-    onError: () => notify.error('Error al confirmar el conteo'),
+    onError: (err) => notify.error(parseApiError(err)),
   })
 
   const actions = useMemo(() => ({

@@ -1,6 +1,6 @@
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::routing::{delete, get, post};
+use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -42,7 +42,7 @@ async fn obtener(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let recepcion = sqlx::query_as::<_, RecepcionConProveedor>(
-        "SELECT r.*, p.nombre as proveedor_nombre FROM recepciones r JOIN proveedores p ON p.id = r.proveedor_id WHERE r.id = $1"
+        "SELECT r.id, r.numero_documento, r.proveedor_id, p.nombre as proveedor_nombre, r.guia_despacho, r.estado::text AS estado, r.fecha_recepcion, r.usuario_id, r.nota, r.solicitud_id, r.created_at FROM recepciones r JOIN proveedores p ON p.id = r.proveedor_id WHERE r.id = $1"
     )
     .bind(id)
     .fetch_optional(&state.pool)
@@ -74,12 +74,11 @@ async fn crear(
         Some(idempotency::extract_idempotency_key(&headers)?)
     };
 
-    if let Some(key) = &idem_key {
-        if let Some((_status, body)) =
+    if let Some(key) = &idem_key
+        && let Some((_status, body)) =
             idempotency::try_claim(&state.pool, key, "POST /recepciones", claims.sub).await?
-        {
-            return Ok((StatusCode::CREATED, Json(body)));
-        }
+    {
+        return Ok((StatusCode::CREATED, Json(body)));
     }
 
     let (id, lotes) = match recepcion_service::crear_recepcion(&state.pool, req, claims.sub).await {

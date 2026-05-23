@@ -136,12 +136,12 @@ impl ConteoService {
                         "Cantidad requerida para ítems contados".into(),
                     ));
                 }
-                if let Some(c) = item.cantidad_contada {
-                    if c < Decimal::ZERO {
-                        return Err(AppError::Validation(
-                            "Cantidad no puede ser negativa".into(),
-                        ));
-                    }
+                if let Some(c) = item.cantidad_contada
+                    && c < Decimal::ZERO
+                {
+                    return Err(AppError::Validation(
+                        "Cantidad no puede ser negativa".into(),
+                    ));
                 }
             }
 

@@ -156,7 +156,6 @@ async fn crear_recepcion_sin_token_retorna_401(pool: PgPool) {
         .unwrap();
 
     use tower::ServiceExt;
-    use http_body_util::BodyExt;
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }

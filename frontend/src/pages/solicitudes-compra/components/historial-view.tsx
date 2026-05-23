@@ -2,8 +2,9 @@
 import { Search, ArrowRight, User } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { EmptyState, PageLoading } from '@/components/ui/page-state'
+import { PageLoading } from '@/components/ui/page-state'
+import { EmptyState } from '@/components/ui/empty-state'
+import { EstadoBadge } from '@/components/ui/estado-badge'
 import type { SolicitudResumen } from '@/types'
 
 interface HistorialViewProps {
@@ -25,22 +26,6 @@ const ESTADO_FILTROS: { value: string | null; label: string }[] = [
   { value: 'completada', label: 'Completadas' },
   { value: 'cancelada', label: 'Canceladas' },
 ]
-
-const estadoBadgeClass = (estado: string) =>
-  estado === 'completada' ? 'bg-success/10 text-success border-success/30' :
-  estado === 'guardada'   ? 'bg-warning/10 text-warning border-warning/30' :
-  estado === 'parcialmente_enviada' ? 'bg-info/10 text-info border-info/30' :
-  estado === 'parcialmente_recibida' ? 'bg-warning/10 text-warning border-warning/30' :
-  estado === 'cancelada'  ? 'bg-error/10 text-error border-error/30' :
-  estado === 'enviada'    ? 'bg-info/10 text-info border-info/30' :
-  estado === 'borrador'   ? 'bg-base-200 text-base-content/50 border-base-300' :
-  'bg-base-200 text-base-content/50 border-base-300'
-
-const estadoLabel = (estado: string) =>
-  estado === 'guardada' ? 'pendiente' :
-  estado === 'parcialmente_enviada' ? 'env. parcial' :
-  estado === 'parcialmente_recibida' ? 'rec. parcial' :
-  estado
 
 export function HistorialView({
   solicitudes,
@@ -88,8 +73,8 @@ export function HistorialView({
           <PageLoading label="Cargando historial..." />
         ) : (solicitudes?.length ?? 0) === 0 ? (
           <EmptyState
-            title="No hay solicitudes"
-            description="No se encontraron solicitudes para el filtro actual."
+            contexto="sin_solicitudes"
+            descripcion="No se encontraron solicitudes para el filtro actual."
             className="m-6"
           />
         ) : (
@@ -131,12 +116,7 @@ export function HistorialView({
                     </td>
                     <td className="text-center font-mono text-sm">{s.items_count}</td>
                     <td>
-                      <Badge variant="outline" className={cn(
-                        "capitalize font-bold px-3 py-1",
-                        estadoBadgeClass(s.estado)
-                      )}>
-                        {estadoLabel(s.estado)}
-                      </Badge>
+                      <EstadoBadge estado={s.estado} size="sm" />
                     </td>
                     <td className="text-right">
                       <button className="btn btn-ghost btn-sm btn-circle opacity-0 group-hover:opacity-100 transition-opacity">

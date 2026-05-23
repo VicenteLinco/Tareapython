@@ -289,7 +289,7 @@ async fn listar(
     State(state): State<AppState>,
     Query(params): Query<SolicitudListParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let per_page = params.per_page.unwrap_or(20).max(1).min(100);
+    let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
     let page = params.page.unwrap_or(1).max(1);
     let offset = (page - 1) * per_page;
 

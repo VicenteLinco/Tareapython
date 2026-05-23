@@ -3,7 +3,9 @@ import { Plus, ClipboardCheck, ChevronRight, CheckCircle2, Clock, XCircle, Alert
 import { useNavigate } from 'react-router-dom'
 import { useConteoList } from '@/features/conteo/hooks/use-conteo-list'
 import { formatDate, cn } from '@/lib/utils'
-import { EmptyState, PageLoading } from '@/components/ui/page-state'
+import { PageLoading } from '@/components/ui/page-state'
+import { EmptyState } from '@/components/ui/empty-state'
+import { EstadoBadge } from '@/components/ui/estado-badge'
 import type { SesionConteo } from '@/types'
 
 const ESTADO_CONFIG = {
@@ -170,9 +172,7 @@ export default function ConteoPage() {
           ))}
           {sesiones?.data.length === 0 && (
             <EmptyState
-              icon={<ClipboardCheck className="h-6 w-6" />}
-              title="No hay sesiones"
-              description="Crea una sesión para iniciar el conteo de inventario por área."
+              contexto="sin_conteos"
             />
           )}
         </div>
@@ -336,12 +336,7 @@ function SesionCard({ sesion, onClick }: { sesion: SesionConteo; onClick: () => 
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span
-              className={cn('badge badge-sm cursor-help', config.className)}
-              title={config.tooltip}
-            >
-              {config.label}
-            </span>
+            <EstadoBadge estado={sesion.estado} size="sm" className="cursor-help" title={config.tooltip} />
           </div>
           <p className="font-semibold text-base truncate">{sesion.area_nombre}</p>
           <p className="text-sm opacity-50 mt-0.5">

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use sqlx::Type as SqlxType;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, SqlxType)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
@@ -15,6 +16,7 @@ pub enum EstadoSolicitud {
     Cancelada,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, SqlxType)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
@@ -25,6 +27,7 @@ pub enum EstadoRecepcion {
     Rechazada,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, SqlxType)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
@@ -37,6 +40,7 @@ pub enum EstadoOrdenCompra {
 }
 
 // Estado de sesión de conteo
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, SqlxType)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
@@ -48,6 +52,7 @@ pub enum EstadoConteoSesion {
 }
 
 // Estado de ítem de conteo
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, SqlxType)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
@@ -70,6 +75,7 @@ pub enum EstadoEnvioProveedor {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, SqlxType)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
+#[allow(dead_code)]
 pub enum ConfianzaForecast {
     Alta,
     Media,
@@ -80,6 +86,7 @@ pub enum ConfianzaForecast {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, SqlxType)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
+#[allow(dead_code)]
 pub enum UrgenciaReposicion {
     Critica,
     Alta,

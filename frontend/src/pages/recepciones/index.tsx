@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
-import { Plus, Search, FileText, FileX, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, Package, Clock } from 'lucide-react'
+import { Plus, Search, FileText, FileX, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, Package } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
-import { EmptyState, PageLoading } from '@/components/ui/page-state'
+import { PageLoading } from '@/components/ui/page-state'
+import { EmptyState } from '@/components/ui/empty-state'
+import { EstadoBadge } from '@/components/ui/estado-badge'
 import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
 import type { Proveedor, RecepcionListItem } from '@/types'
@@ -109,12 +111,7 @@ function RecepcionDetailPanel({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Badge variant={esConfirmada ? 'success' : 'secondary'} className="text-[11px]">
-            {esConfirmada
-              ? <><CheckCircle2 className="inline h-3 w-3 mr-0.5" />Confirmada</>
-              : <><Clock className="inline h-3 w-3 mr-0.5" />Borrador</>
-            }
-          </Badge>
+          <EstadoBadge estado={esConfirmada ? 'confirmada' : 'borrador'} size="sm" />
           <button
             type="button"
             onClick={onClose}
@@ -444,9 +441,8 @@ export default function RecepcionesPage() {
                     <tr>
                       <td colSpan={tabActivo === 'borradores' ? 7 : 6} className="py-6">
                         <EmptyState
-                          icon={<FileText className="h-6 w-6" />}
-                          title="No hay recepciones"
-                          description="Ajusta los filtros o crea una nueva recepción."
+                          contexto="sin_recepciones"
+                          descripcion="Ajusta los filtros o crea una nueva recepción."
                           className="border-none bg-transparent p-6"
                         />
                       </td>
@@ -474,9 +470,7 @@ export default function RecepcionesPage() {
                         <td className="text-sm hidden md:table-cell">{item.usuario_nombre}</td>
                         <td>
                           <div className="flex flex-col gap-0.5">
-                            <Badge variant={item.estado === 'completa' || item.estado === 'confirmada' ? 'success' : 'secondary'}>
-                              {item.estado === 'completa' || item.estado === 'confirmada' ? 'Confirmada' : 'Borrador'}
-                            </Badge>
+                            <EstadoBadge estado={item.estado === 'completa' || String(item.estado) === 'confirmada' ? 'confirmada' : 'borrador'} size="sm" />
                             {/* Badge items/lotes */}
                             {item.items_count > 0 && (
                               <span className="text-[9px] text-base-content/40 font-medium">

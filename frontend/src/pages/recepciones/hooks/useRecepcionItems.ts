@@ -4,6 +4,7 @@ import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
 import api from '@/lib/api'
+import { parseApiError } from '@/lib/api-error'
 import { notify } from '@/lib/notify'
 import { useDialogState } from '@/hooks/useDialogState'
 import { type DetalleLineUI, type LoteLineUI } from '../components/item-card'
@@ -523,15 +524,7 @@ export function useRecepcionItems({
       }
     },
     onError: (err: unknown) => {
-      const data = (err as { response?: { data?: unknown } })?.response?.data
-      const msg = typeof data === 'string'
-        ? data
-        : typeof data === 'object' && data !== null
-          ? (data as Record<string, unknown>).error as string
-            || (data as Record<string, unknown>).message as string
-            || JSON.stringify(data)
-          : 'Error al confirmar recepción'
-      notify.error(String(msg))
+      notify.error(parseApiError(err))
     },
   })
 

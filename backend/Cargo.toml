@@ -30,7 +30,7 @@ rust_decimal = { version = "1", features = ["db-postgres", "serde-with-str"] }
 # Config & logging
 dotenvy = "0.15"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Utilities
 thiserror = "2"

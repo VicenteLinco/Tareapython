@@ -60,6 +60,8 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
         .nest("/ordenes-compra", handlers::ordenes_compra::routes())
         .nest("/descartes", handlers::descartes::routes())
         .nest("/conteo", handlers::conteo::routes())
+        // Reportes
+        .nest("/reportes", handlers::reportes::routes())
         // Ledger y audit (lectura)
         .nest("/movimientos", handlers::movimientos::routes())
         .nest("/audit-log", handlers::audit_log::routes())

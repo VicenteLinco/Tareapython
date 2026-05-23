@@ -14,6 +14,7 @@ pub mod presentaciones;
 pub mod productos;
 pub mod proveedores;
 pub mod recepciones;
+pub mod reportes;
 pub mod setup;
 pub mod solicitudes_compra;
 pub mod stock;

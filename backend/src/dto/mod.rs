@@ -4,6 +4,7 @@ pub mod descarte;
 pub mod pagination;
 pub mod proveedor;
 pub mod recepcion;
+pub mod reportes;
 pub mod solicitud;
 pub mod unidad_basica;
 pub mod usuario;

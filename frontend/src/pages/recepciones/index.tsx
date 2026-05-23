@@ -8,6 +8,8 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { EstadoBadge } from '@/components/ui/estado-badge'
 import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { KeyboardLegend } from '@/components/ui/keyboard-legend'
+import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut'
 import api from '@/lib/api'
 import type { Proveedor, RecepcionListItem } from '@/types'
 import { formatDate, daysUntil, cn } from '@/lib/utils'
@@ -266,6 +268,21 @@ export default function RecepcionesPage() {
   const queryClient = useQueryClient()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Atajos de teclado
+  useKeyboardShortcut({ key: 'n', onKeyDown: () => navigate('/recepciones/nueva') })
+  useKeyboardShortcut({
+    key: 'Escape',
+    ignoreInputs: false,
+    onKeyDown: () => {
+      if (hasRfActive || search || searchInput) {
+        clearRf()
+        setSearchInput('')
+        setSearch('')
+        setPage(1)
+      }
+    },
+  })
+
   // Debounce search input
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -355,10 +372,16 @@ export default function RecepcionesPage() {
       )}>
         <div className="flex items-center justify-between">
           <h1 className="t-h1">Recepciones</h1>
-          <button className="btn btn-primary" onClick={() => navigate('/recepciones/nueva')}>
-            <Plus className="h-4 w-4" />
-            Nueva Recepción
-          </button>
+          <div className="flex items-center gap-2">
+            <KeyboardLegend shortcuts={[
+              { keys: ['n'], description: 'Nueva recepción' },
+              { keys: ['Esc'], description: 'Limpiar búsqueda' },
+            ]} />
+            <button className="btn btn-primary" onClick={() => navigate('/recepciones/nueva')}>
+              <Plus className="h-4 w-4" />
+              Nueva Recepción
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}

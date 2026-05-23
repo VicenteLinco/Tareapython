@@ -6,6 +6,8 @@ import { formatDate, cn } from '@/lib/utils'
 import { PageLoading } from '@/components/ui/page-state'
 import { EmptyState } from '@/components/ui/empty-state'
 import { EstadoBadge } from '@/components/ui/estado-badge'
+import { KeyboardLegend } from '@/components/ui/keyboard-legend'
+import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut'
 import type { SesionConteo } from '@/types'
 
 const ESTADO_CONFIG = {
@@ -40,6 +42,21 @@ export default function ConteoPage() {
   const [selectedAreaIds, setSelectedAreaIds] = useState<number[]>([])
   const [ocultarSinStock, setOcultarSinStock] = useState(true)
 
+  // Atajos de teclado
+  useKeyboardShortcut({ key: 'n', onKeyDown: () => setShowModal(true) })
+  useKeyboardShortcut({
+    key: 'Escape',
+    ignoreInputs: false,
+    onKeyDown: () => {
+      if (showModal) {
+        setShowModal(false)
+        setSelectedAreaIds([])
+      } else if (filters.areaId !== null) {
+        actions.setArea(null)
+      }
+    },
+  })
+
   const toggleArea = (id: number) => {
     setSelectedAreaIds(prev =>
       prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]
@@ -60,12 +77,18 @@ export default function ConteoPage() {
   return (
     <div className="p-4 max-w-2xl mx-auto pb-24">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <ClipboardCheck className="h-6 w-6 text-primary" />
-        <div>
-          <h1 className="t-h1">Conteo de Inventario</h1>
-          <p className="text-sm opacity-50">Sesiones de conteo físico</p>
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <div className="flex items-center gap-3">
+          <ClipboardCheck className="h-6 w-6 text-primary" />
+          <div>
+            <h1 className="t-h1">Conteo de Inventario</h1>
+            <p className="text-sm opacity-50">Sesiones de conteo físico</p>
+          </div>
         </div>
+        <KeyboardLegend shortcuts={[
+          { keys: ['n'], description: 'Nueva sesión de conteo' },
+          { keys: ['Esc'], description: 'Cerrar modal / limpiar filtro de área' },
+        ]} />
       </div>
 
       {/* Áreas pendientes */}

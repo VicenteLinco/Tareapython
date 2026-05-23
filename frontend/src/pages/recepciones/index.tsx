@@ -9,7 +9,8 @@ import { EstadoBadge } from '@/components/ui/estado-badge'
 import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
 import type { Proveedor, RecepcionListItem } from '@/types'
-import { formatDate, daysUntil, cn, formatCantidad } from '@/lib/utils'
+import { formatDate, daysUntil, cn } from '@/lib/utils'
+import { CantidadConUnidad } from '@/components/ui/cantidad'
 import { notify } from '@/lib/notify'
 import { useFilterStorage } from '@/hooks/use-filter-storage'
 
@@ -196,12 +197,12 @@ function RecepcionDetailPanel({
                         <div className="flex flex-col items-end gap-0.5">
                           <span className="text-xs font-mono font-semibold">{qtyPresStr} {item.presentacion_nombre}</span>
                           <span className="text-[10px] text-base-content/40 font-mono">
-                            = {formatCantidad(qty, item.unidad_base_nombre, item.unidad_base_nombre_plural)}
+                            = <CantidadConUnidad qty={qty} unidad={item.unidad_base_nombre} pluralUnidad={item.unidad_base_nombre_plural} />
                           </span>
                         </div>
                       ) : (
                         <span className="text-xs font-mono font-semibold">
-                          {formatCantidad(qty, item.unidad_base_nombre, item.unidad_base_nombre_plural)}
+                          <CantidadConUnidad qty={qty} unidad={item.unidad_base_nombre} pluralUnidad={item.unidad_base_nombre_plural} />
                         </span>
                       )}
                       <p className="text-[10px] text-base-content/40 mt-0.5">{item.area_destino}</p>

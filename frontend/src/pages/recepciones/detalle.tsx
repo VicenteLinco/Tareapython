@@ -11,6 +11,7 @@ import { PageLoading } from '@/components/ui/page-state'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
 import { formatDate, daysUntil, cn, formatCantidad, getImageUrl } from '@/lib/utils'
+import { CantidadConUnidad } from '@/components/ui/cantidad'
 import { notify } from '@/lib/notify'
 
 interface RecepcionHeader {
@@ -461,12 +462,12 @@ export default function RecepcionDetallePage() {
                               {qtyPresStr} {item.presentacion_nombre}
                             </span>
                             <span className="text-[11px] text-base-content/40 font-mono">
-                              = {formatCantidad(qty, item.unidad_base_nombre, item.unidad_base_nombre_plural)}
+                              = <CantidadConUnidad qty={qty} unidad={item.unidad_base_nombre} pluralUnidad={item.unidad_base_nombre_plural} />
                             </span>
                           </div>
                         ) : (
                           <span className="font-mono font-semibold text-sm">
-                            {formatCantidad(qty, item.unidad_base_nombre, item.unidad_base_nombre_plural)}
+                            <CantidadConUnidad qty={qty} unidad={item.unidad_base_nombre} pluralUnidad={item.unidad_base_nombre_plural} />
                           </span>
                         )}
                       </td>

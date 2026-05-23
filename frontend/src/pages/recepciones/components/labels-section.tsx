@@ -1,7 +1,7 @@
 // frontend/src/pages/recepciones/components/labels-section.tsx
 import { useState } from 'react'
 import { Printer, ChevronDown, ChevronUp } from 'lucide-react'
-import { formatCantidad } from '@/lib/utils'
+import { CantidadConUnidad } from '@/components/ui/cantidad'
 import { Button } from '@/components/ui/button'
 import { imprimirEtiquetas, type LoteParaEtiqueta } from '@/lib/label-print'
 import { notify } from '@/lib/notify'
@@ -49,7 +49,7 @@ export function LabelsSection({ detalles, onToggleEtiqueta, onCantidadEtiqueta, 
         </div>
         <Button className="w-full" onClick={handlePrint} disabled={imprimiendo}>
           <Printer className="h-4 w-4 mr-2" />
-          {imprimiendo ? 'Generando…' : `Imprimir ${formatCantidad(total, 'etiqueta', 'etiquetas')}`}
+          {imprimiendo ? 'Generando…' : <span>Imprimir <CantidadConUnidad qty={total} unidad="etiqueta" pluralUnidad="etiquetas" /></span>}
         </Button>
       </div>
     )
@@ -134,7 +134,7 @@ export function LabelsSection({ detalles, onToggleEtiqueta, onCantidadEtiqueta, 
 
       {totalEtiquetas > 0 && (
         <p className="text-xs opacity-50 mt-2 text-right">
-          {formatCantidad(totalEtiquetas, 'etiqueta', 'etiquetas')} se imprimirán al confirmar
+          <CantidadConUnidad qty={totalEtiquetas} unidad="etiqueta" pluralUnidad="etiquetas" /> se imprimirán al confirmar
         </p>
       )}
     </div>

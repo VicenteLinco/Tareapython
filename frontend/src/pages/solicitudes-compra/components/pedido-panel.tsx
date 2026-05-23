@@ -1,7 +1,8 @@
 // frontend/src/pages/solicitudes-compra/components/pedido-panel.tsx
 import { ShoppingCart, Plus, Minus, Trash2, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { MetricTooltip } from '@/components/ui/metric-tooltip'
-import { cn, formatCantidad } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { CantidadConUnidad } from '@/components/ui/cantidad'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ProductoImage } from '@/components/ui/producto-image'
@@ -171,7 +172,7 @@ function PedidoItem({
               }
             </p>
             <p className="text-[9px] opacity-35 truncate">
-              {formatCantidad(item.cantidad * item.factor_conversion!, item.unidad_base, item.unidad_base_plural ?? undefined)}
+              <CantidadConUnidad qty={item.cantidad * item.factor_conversion!} unidad={item.unidad_base} pluralUnidad={item.unidad_base_plural ?? undefined} />
             </p>
           </>
         ) : (

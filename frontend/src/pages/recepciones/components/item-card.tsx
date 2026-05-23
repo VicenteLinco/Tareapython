@@ -4,6 +4,7 @@ import { Trash2, ChevronDown, ChevronUp, Plus, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ProductoImage } from '@/components/ui/producto-image'
 import { formatCantidad } from '@/lib/utils'
+import { CantidadConUnidad } from '@/components/ui/cantidad'
 import type { Area, Presentacion } from '@/types'
 import { isCardComplete } from './item-card-utils'
 
@@ -328,11 +329,7 @@ export function ReceptionItemCard({
           {/* Hint cantidad solicitada */}
           {d.cantidad_solicitada != null && (
             <p className="text-xs text-info">
-              Pedido: {formatCantidad(
-                d.cantidad_solicitada,
-                d.presentacion_nombre || d.unidad_base_nombre,
-                d.presentacion_nombre_plural || d.unidad_base_nombre_plural
-              )}
+              Pedido: <CantidadConUnidad qty={d.cantidad_solicitada} unidad={d.presentacion_nombre || d.unidad_base_nombre} pluralUnidad={d.presentacion_nombre_plural || d.unidad_base_nombre_plural} />
             </p>
           )}
 

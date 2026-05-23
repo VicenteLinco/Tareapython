@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
-import { formatDate, daysUntil, cn, formatCantidad } from '@/lib/utils'
+import { formatDate, daysUntil, cn } from '@/lib/utils'
+import { CantidadConUnidad } from '@/components/ui/cantidad'
 import { LOTE_ROW_COLORS, STOCK_ALERT_COLORS } from '@/lib/theme'
 import type { StockItem, Movimiento, PaginatedResponse } from '@/types'
 import { DiscardLoteDialog } from './discard-lote-dialog'
@@ -108,7 +109,7 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
         </div>
         <div className="flex items-center gap-1.5 mt-2">
           <p className="text-xs opacity-35">
-            Mínimo: {formatCantidad(minimoLabel, item.unidad, item.unidad_plural)}
+            Mínimo: <CantidadConUnidad qty={minimoLabel} unidad={item.unidad} pluralUnidad={item.unidad_plural} />
           </p>
           <MetricTooltip
             size="sm"
@@ -468,7 +469,7 @@ function ProductTimeline({ productoId, areaId, unidad }: { productoId: string; a
                       'px-1.5 py-0.5 rounded text-[10px] font-bold',
                       isEntrada ? 'bg-success/10 text-success' : 'bg-base-200 opacity-60'
                     )}>
-                      {isEntrada ? '+' : '-'}{formatCantidad(Math.round(ev.cantidad), ev.unidad_base_nombre ?? '', ev.unidad_base_nombre_plural ?? undefined)}
+                      {isEntrada ? '+' : '-'}<CantidadConUnidad qty={Math.round(ev.cantidad)} unidad={ev.unidad_base_nombre ?? ''} pluralUnidad={ev.unidad_base_nombre_plural ?? undefined} />
                     </div>
                   </div>
                   {ev.notas && (

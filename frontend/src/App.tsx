@@ -26,6 +26,7 @@ const AuditLogPage = lazy(() => import('@/pages/audit-log'))
 const OrdenesCompraPage = lazy(() => import('@/pages/ordenes-compra'))
 const OrdenCompraDetallePage = lazy(() => import('@/pages/ordenes-compra/detalle'))
 const ScanPage = lazy(() => import('./pages/scan/index'))
+const ReportesPage = lazy(() => import('@/pages/reportes'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -82,6 +83,7 @@ export default function App() {
                   <Route path="/usuarios" element={<UsuariosPage />} />
                   <Route path="/audit-log" element={<AuditLogPage />} />
                   <Route path="/setup" element={<SetupPage />} />
+                  <Route path="/reportes" element={<ReportesPage />} />
                 </Route>
                 <Route path="/scan/:token" element={<ScanPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />

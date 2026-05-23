@@ -27,6 +27,7 @@ import {
   Sun,
   Moon,
   ClipboardCheck,
+  BarChart3,
 } from 'lucide-react'
 import { useAuthStore } from '@/hooks/use-auth-store'
 
@@ -64,6 +65,7 @@ const navGroups = [
 const adminItems = [
   { to: '/creador-productos', icon: Settings, label: 'Creador de Productos' },
   { to: '/ordenes-compra', icon: ShoppingBag, label: 'Órdenes de Compra' },
+  { to: '/reportes', icon: BarChart3, label: 'Reportes' },
   { to: '/configuracion', icon: SlidersHorizontal, label: 'Configuración' },
   { to: '/usuarios', icon: Users, label: 'Usuarios' },
   { to: '/audit-log', icon: FileText, label: 'Audit Log' },

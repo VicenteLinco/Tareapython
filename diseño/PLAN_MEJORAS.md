@@ -258,8 +258,17 @@ Esfuerzo estimado: S = ½ día · M = 1-2 días · L = 3-5 días · XL = >1 sema
 - Errores HTTP tipados: `AppError` con variantes de dominio; `api-error.ts` centralizado; cero parseos manuales de error en páginas. ✅
 - EmptyState con contexto tipado en todos los módulos; EstadoBadge en todas las páginas. ✅
 
+### Sprint 5 — Administración y datos ✅ Completo
+**C3 ✅, B7 ✅, E1 ✅**
+- Sidebar responsivo: drawer en móvil con backdrop overlay. ✅
+- Responsive fixes en Solicitudes y Usuarios. ✅
+- Dashboard: toggle "Mis áreas / Todo el lab" con filtro de alertas por áreas del usuario. ✅
+- Backend: endpoint `/stock/alertas` soporta `area_ids` param. ✅
+- Backend: nuevo handler `/reportes` — consumo por área/mes y top descartados. ✅
+- Frontend: página `/reportes` con selector de rango, tablas y exportación a Excel (xlsx). ✅
+
 ### Backlog continuo
-B7, B9, C3, C4, bloque E.
+B9, C4, bloque E (E2, E4, E5).
 
 ---
 

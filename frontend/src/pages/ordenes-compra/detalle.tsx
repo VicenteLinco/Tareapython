@@ -9,13 +9,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
+import { EstadoBadge } from '@/components/ui/estado-badge'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { ESTADO_LABEL, ESTADO_BADGE_CLASS } from './utils'
-
-function recepcionEstadoBadgeClass(estado: string): string {
-  if (estado === 'confirmada' || estado === 'completa') return 'bg-success/10 text-success border-success/20'
-  return 'bg-base-200 text-base-content border-base-300'
-}
 
 export default function OrdenCompraDetallePage() {
   const { id } = useParams<{ id: string }>()
@@ -270,14 +266,10 @@ export default function OrdenCompraDetallePage() {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-base-content/50 hidden sm:block">{formatDate(rec.fecha_recepcion)}</span>
-                  <Badge
-                    className={cn(
-                      'uppercase text-[9px] font-bold px-2 py-0.5 rounded-lg',
-                      recepcionEstadoBadgeClass(rec.estado)
-                    )}
-                  >
-                    {rec.estado === 'confirmada' || rec.estado === 'completa' ? 'Confirmada' : rec.estado}
-                  </Badge>
+                  <EstadoBadge
+                    estado={rec.estado === 'completa' ? 'confirmada' : rec.estado}
+                    size="sm"
+                  />
                 </div>
               </li>
             ))}

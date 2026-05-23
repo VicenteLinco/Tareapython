@@ -16,6 +16,7 @@ import api from '@/lib/api'
 import type { PaginatedResponse } from '@/types'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/pagination'
+import { EmptyState } from '@/components/ui/empty-state'
 import { useFilterStorage } from '@/hooks/use-filter-storage'
 
 interface AuditLogItem {
@@ -353,9 +354,7 @@ export default function AuditLogPage() {
           ))}
         </div>
       ) : logs.length === 0 ? (
-        <div className="py-20 text-center bg-base-100 rounded-3xl border border-dashed border-base-300 text-base-content/30">
-          No se encontraron registros de auditoría
-        </div>
+        <EmptyState contexto="sin_resultados" descripcion="No se encontraron registros para los filtros aplicados." />
       ) : (
         <div className="flex flex-col gap-6">
           {groups.map(({ label, items }) => (

@@ -1,5 +1,4 @@
-import { Package } from 'lucide-react'
-import { EmptyState } from '@/components/ui/page-state'
+import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { StockItem } from '@/types'
 import { StockItemCard } from './stock-item-card'
@@ -24,9 +23,8 @@ export function StockList({ items, isLoading, view, selectedId, onSelect }: Stoc
   if (items.length === 0) {
     return (
       <EmptyState
-        icon={<Package className="h-6 w-6" />}
-        title="No se encontraron productos"
-        description="Ajusta la búsqueda o cambia los filtros para ver más resultados."
+        contexto="sin_resultados"
+        descripcion="Ajusta la búsqueda o cambia los filtros para ver más resultados."
       />
     )
   }

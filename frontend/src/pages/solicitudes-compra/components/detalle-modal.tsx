@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Dialog } from '@/components/ui/dialog'
 import { PageLoading } from '@/components/ui/page-state'
+import { EstadoBadge } from '@/components/ui/estado-badge'
 import api from '@/lib/api'
 import { getApiErrorCode, getApiStatus, parseApiError } from '@/lib/api-error'
 import { exportarSolicitudPDF } from '@/lib/solicitud-pdf'
@@ -29,21 +30,6 @@ interface DetalleModalProps {
   onClose: () => void
   onPdfFirmaChange: (v: string) => void
 }
-
-const estadoBadgeClass = (estado: string) =>
-  estado === 'completada' ? 'bg-success/10 text-success border-success/30' :
-  estado === 'guardada'   ? 'bg-warning/10 text-warning border-warning/30' :
-  estado === 'parcialmente_enviada' ? 'bg-info/10 text-info border-info/30' :
-  estado === 'parcialmente_recibida' ? 'bg-warning/10 text-warning border-warning/30' :
-  estado === 'cancelada'  ? 'bg-error/10 text-error border-error/30' :
-  estado === 'enviada'    ? 'bg-info/10 text-info border-info/30' :
-  'bg-base-200 text-base-content/50 border-base-300'
-
-const estadoLabel = (estado: string) =>
-  estado === 'guardada' ? 'pendiente' :
-  estado === 'parcialmente_enviada' ? 'env. parcial' :
-  estado === 'parcialmente_recibida' ? 'rec. parcial' :
-  estado
 
 export function DetalleModal({
   solicitudId,
@@ -287,12 +273,7 @@ export function DetalleModal({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-base-200/50 rounded-2xl">
               <div>
                 <p className="text-[10px] font-black uppercase opacity-40">Estado</p>
-                <span className={cn(
-                  'inline-block mt-0.5 px-2.5 py-0.5 rounded-full border text-xs font-bold capitalize',
-                  estadoBadgeClass(detail.estado)
-                )}>
-                  {estadoLabel(detail.estado)}
-                </span>
+                <EstadoBadge estado={detail.estado} size="sm" className="mt-0.5" />
               </div>
               <div>
                 <p className="text-[10px] font-black uppercase opacity-40">Solicitado por</p>

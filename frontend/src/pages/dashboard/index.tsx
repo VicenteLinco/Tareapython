@@ -12,6 +12,7 @@ import {
   PackageMinus,
   ShoppingCart,
   TrendingDown,
+  Users,
   X,
   Zap,
 } from 'lucide-react'
@@ -20,6 +21,7 @@ import api from '@/lib/api'
 import type { Alerta, PaginatedResponse } from '@/types'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/page-state'
+import { useAuthStore } from '@/hooks/use-auth-store'
 
 interface StatCardProps {
   label: string
@@ -88,6 +90,15 @@ function QuickAction({ label, description, icon, onClick }: QuickActionProps) {
 export default function DashboardPage() {
   const navigate = useNavigate()
 
+  const usuario = useAuthStore((s) => s.usuario)
+  const misAreaIds = usuario?.area_ids ?? []
+  const tieneMisAreas = misAreaIds.length > 0
+  const [filtrarMisAreas, setFiltrarMisAreas] = useState(true)
+
+  const areaIdsParam = filtrarMisAreas && tieneMisAreas
+    ? misAreaIds.join(',')
+    : undefined
+
   const [alertBannerDismissed, setAlertBannerDismissed] = useState(() =>
     sessionStorage.getItem('dashboard_alert_dismissed') === '1',
   )
@@ -104,9 +115,11 @@ export default function DashboardPage() {
           api.get<PaginatedResponse<unknown>>('/stock', { params: { per_page: 1 } }).then((r) => r.data),
       },
       {
-        queryKey: ['alertas'],
+        queryKey: ['alertas', areaIdsParam],
         queryFn: () =>
-          api.get<PaginatedResponse<Alerta>>('/stock/alertas', { params: { per_page: 200 } }).then((r) => r.data),
+          api.get<PaginatedResponse<Alerta>>('/stock/alertas', {
+            params: { per_page: 200, ...(areaIdsParam ? { area_ids: areaIdsParam } : {}) },
+          }).then((r) => r.data),
         refetchInterval: 60000,
         retry: 1,
       },
@@ -150,6 +163,19 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {tieneMisAreas && (
+            <button
+              type="button"
+              onClick={() => setFiltrarMisAreas((prev) => !prev)}
+              className={cn(
+                'btn btn-outline btn-sm gap-2',
+                filtrarMisAreas && 'btn-primary border-primary',
+              )}
+            >
+              <Users className="h-4 w-4" />
+              {filtrarMisAreas ? 'Mis áreas' : 'Todo el lab'}
+            </button>
+          )}
           <button type="button" onClick={() => navigate('/stock')} className="btn btn-outline btn-sm gap-2">
             <Package className="h-4 w-4" />
             Stock

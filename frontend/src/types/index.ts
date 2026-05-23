@@ -1,5 +1,8 @@
 export * from './generated'
-import type { Presentacion, EstadoSolicitud, EstadoRecepcion, EstadoOrdenCompra, SolicitudResumen as GeneratedSolicitudResumen, SolicitudDetalle as GeneratedSolicitudDetalle } from './generated'
+import type { Presentacion, EstadoSolicitud, EstadoRecepcion, EstadoOrdenCompra, SolicitudResumen as GeneratedSolicitudResumen, SolicitudDetalle as GeneratedSolicitudDetalle, Usuario as GeneratedUsuario } from './generated'
+
+// Usuario extendido con area_ids (viene de /auth/me y se persiste en el store)
+export type Usuario = GeneratedUsuario & { area_ids?: number[] }
 
 // --- Type Overrides (Narrowing) ---
 // Los tipos generados usan `estado: string`, pero aquí los especificamos con los enums correctos
@@ -27,6 +30,7 @@ export interface MeResponse {
   area_ids: number[]
   version: number
 }
+
 
 // --- Frontend Specific Models or Complex Joins ---
 

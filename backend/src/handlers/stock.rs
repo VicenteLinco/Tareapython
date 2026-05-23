@@ -529,6 +529,7 @@ struct AlertasParams {
     page: i64,
     #[serde(default = "default_per_page")]
     per_page: i64,
+    area_ids: Option<String>,
 }
 
 fn default_page() -> i64 {
@@ -593,6 +594,25 @@ async fn alertas(
     let per_page = params.per_page.clamp(1, 100);
     let page = params.page.max(1);
     let offset = (page - 1) * per_page;
+
+    // Filtro por área: solo productos con stock en las áreas indicadas
+    let area_filter = if let Some(ids_str) = &params.area_ids {
+        let ids: Vec<i32> = ids_str
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+        if ids.is_empty() {
+            String::new()
+        } else {
+            let arr = ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
+            format!(
+                "AND p.id IN (SELECT DISTINCT l.producto_id FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE s.area_id = ANY(ARRAY[{}]::integer[]) AND s.cantidad > 0)",
+                arr
+            )
+        }
+    } else {
+        String::new()
+    };
 
     let pedidos_cte = r#"pedidos_pendientes AS (
                SELECT
@@ -662,6 +682,7 @@ async fn alertas(
                LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
                LEFT JOIN pedidos_pendientes pp ON pp.producto_id = p.id
                WHERE p.activo = true
+               {}
            ),
            filtered_alertas AS (
                SELECT
@@ -726,7 +747,8 @@ async fn alertas(
                proxima_fecha_venc ASC NULLS LAST,
                nombre ASC
            LIMIT $1 OFFSET $2"#,
-        pedidos_cte
+        pedidos_cte,
+        area_filter
     );
 
     let rows = sqlx::query_as::<_, AlertaRow>(&sql)

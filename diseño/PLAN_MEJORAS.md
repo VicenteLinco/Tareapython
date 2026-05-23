@@ -89,9 +89,6 @@ Esfuerzo estimado: S = ½ día · M = 1-2 días · L = 3-5 días · XL = >1 sema
 - Permitir cambiar horizonte por item y ver antes/después de cantidad sugerida.
 - Persistir elección por usuario.
 
-### B4. Modo kiosk: feedback inmediato y deshacer (M)
-- Ventana de "deshacer último consumo" durante 10s después del registro.
-- Atajo físico configurable en lector HID.
 
 ### B5. Reconciliación post-recepción (M)
 - Al confirmar una recepción que cita una solicitud, mostrar diff "pediste X, llegó Y".
@@ -262,7 +259,7 @@ Esfuerzo estimado: S = ½ día · M = 1-2 días · L = 3-5 días · XL = >1 sema
 - EmptyState con contexto tipado en todos los módulos; EstadoBadge en todas las páginas. ✅
 
 ### Backlog continuo
-B2, B4, B7, B9, C3, C4, D9, D10, bloque E.
+B7, B9, C3, C4, bloque E.
 
 ---
 

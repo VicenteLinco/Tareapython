@@ -240,14 +240,15 @@ Esfuerzo estimado: S = ½ día · M = 1-2 días · L = 3-5 días · XL = >1 sema
 - Multi-proveedor solicitudes (spec completa: envíos granulares, PDF, detalle-modal). ✅
 - Integración recepción → solicitud con filtro por proveedor (deeplink `?solicitud_id&proveedor_id`). ✅
 
-### Sprint 3 — Calidad estructural (~12 días)
-**D2, D3 (2 páginas más críticas), D4, D5, D6, D7, D8**
-- Enums de estado tipados end-to-end.
-- Descomponer `recepciones/nueva.tsx` y `stock/index.tsx`.
-- Capas API y hooks por dominio.
-- Tests de dominio crítico. [x]
-- CI básico. [x]
-- Errores HTTP tipados. [x] Backend + helpers frontend + barrido de casts manuales restantes.
+### Sprint 3 — Calidad estructural ✅ Completo
+**D2 ✅, D3 ✅, D4 ✅, D5 ✅, D6 ✅, D7 ✅, D8 ✅**
+- Enums de estado tipados end-to-end (`domain/estados.rs` → `generated.ts` → EstadoBadge en todas las páginas). ✅
+- Descomponer `recepciones/nueva.tsx` (963→289) y `stock/index.tsx` (898→276). ✅
+- Capa API por dominio (`frontend/src/api/`); hooks por dominio usan capa API. ✅
+- Tests de dominio crítico (stock_ops FEFO, forecast, idempotency). ✅
+- CI básico con GitHub Actions (build/test/clippy backend + typecheck/build frontend). ✅
+- Errores HTTP tipados: `AppError` con variantes de dominio; `api-error.ts` centralizado; cero parseos manuales de error en páginas. ✅
+- EmptyState con contexto tipado en todos los módulos; EstadoBadge en todas las páginas. ✅
 
 ### Backlog continuo
 B2, B4, B7, B9, C3, C4, D9, D10, bloque E.

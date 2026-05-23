@@ -240,6 +240,17 @@ Esfuerzo estimado: S = ½ día · M = 1-2 días · L = 3-5 días · XL = >1 sema
 - Multi-proveedor solicitudes (spec completa: envíos granulares, PDF, detalle-modal). ✅
 - Integración recepción → solicitud con filtro por proveedor (deeplink `?solicitud_id&proveedor_id`). ✅
 
+### Sprint 4 — Integración, UX móvil y responsivo ✅ Completo
+**T1 ✅, T2 ✅, T3 ✅, T4 ✅, T5 ✅, T6 ✅, T7 ✅, T8 ✅**
+- `<CantidadConUnidad>` integrado en stock, recepciones y solicitudes. ✅
+- `<UrgenciaTag>` y `<AutonomiaBar>` integrados en quiebres-panel, revision-view y stock-item-card. ✅
+- Migración toast() → notify completada. ✅
+- `ConfirmDialog` con prop `impacto` en descartes y eliminar-borrador. ✅
+- Clases `.t-h1` y `.t-h2` aplicadas en `<h1>` y `<h2>` de 14 páginas. ✅
+- Atajos de teclado y `<KeyboardLegend>` extendidos a Recepciones y Conteo. ✅
+- Vista de conteo optimizada para móvil: un item a la vez, progreso, autoguardado (`MobileConteoView`). ✅
+- Barra CTA sticky en `recepciones/nueva` para mobile; overflow fixes en stock-detail. ✅
+
 ### Sprint 3 — Calidad estructural ✅ Completo
 **D2 ✅, D3 ✅, D4 ✅, D5 ✅, D6 ✅, D7 ✅, D8 ✅**
 - Enums de estado tipados end-to-end (`domain/estados.rs` → `generated.ts` → EstadoBadge en todas las páginas). ✅

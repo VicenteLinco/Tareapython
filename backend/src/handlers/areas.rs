@@ -66,7 +66,7 @@ async fn asignar_productos_area(
 ) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
     let count =
-        area_service::asignar_productos(&state.pool, id, req.producto_ids, claims.sub).await?;
+        area_service::asignar_productos(&state.pool, id, req.productos, claims.sub).await?;
     Ok(Json(json!({"asignados": count})))
 }
 

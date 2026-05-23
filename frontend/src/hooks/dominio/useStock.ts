@@ -10,6 +10,7 @@ import {
 } from '@/api'
 import type {
   StockQuery,
+  AlertasQuery,
   ConsumoRequest,
   ConsumoBatchRequest,
   DescartesHistorialQuery,
@@ -29,10 +30,10 @@ export function useStockList(params?: StockQuery) {
   })
 }
 
-export function useStockAlertas() {
+export function useStockAlertas(params?: AlertasQuery) {
   return useQuery({
-    queryKey: stockKeys.alertas(),
-    queryFn: () => obtenerAlertas(),
+    queryKey: [...stockKeys.alertas(), params],
+    queryFn: () => obtenerAlertas(params),
     staleTime: 2 * 60 * 1000,
   })
 }

@@ -104,9 +104,18 @@ async fn listar(
     let prov_filter = if let Some(prov_id) = params.proveedor_id {
         param_idx += 1;
         binds.push(prov_id.to_string());
-        format!("AND p.proveedor_id = ${}::integer", param_idx)
+        format!(
+            "AND EXISTS (SELECT 1 FROM producto_proveedor pp WHERE pp.producto_id = p.id AND pp.proveedor_id = ${}::integer AND pp.activo = TRUE)",
+            param_idx
+        )
     } else {
         "".to_string()
+    };
+
+    let stock_minimo_expr = if params.area_id.is_some() {
+        "COALESCE((SELECT pa.stock_minimo FROM producto_area pa WHERE pa.producto_id = p.id AND pa.area_id = $1::integer), p.stock_minimo, 0)"
+    } else {
+        "p.stock_minimo"
     };
 
     // Filter by type — `estado` param + legacy compat
@@ -208,12 +217,12 @@ async fn listar(
                    um.nombre_plural as unidad_plural,
                    COALESCE(ss.total, 0) as stock_total,
                    COALESCE(ss.lotes_con_stock, 0) as lotes_count,
-                   p.stock_minimo,
+                   {} AS stock_minimo,
                    p.lead_time_propio,
                    ss.proxima_fecha_venc as proximo_vencimiento,
                    fp.nombre as proveedor_nombre,
                    fp.icono as proveedor_icono,
-                   p.imagen_url,
+                   p.imagen_path AS imagen_url,
                    COALESCE(sr.serie, ARRAY[]::FLOAT8[]) as serie,
                    COALESCE(ms.dias_con_consumo, 0) as dias_con_consumo,
                    CASE
@@ -252,6 +261,7 @@ async fn listar(
         forecast_cfg.ventana_demanda_dias,
         area_filter,
         forecast_cfg.ventana_demanda_dias,
+        stock_minimo_expr,
         q_filter,
         cat_filter,
         prov_filter,
@@ -589,29 +599,60 @@ struct AlertaRow {
 /// GET /api/v1/stock/alertas — Productos que necesitan atención
 async fn alertas(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Query(params): Query<AlertasParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let per_page = params.per_page.clamp(1, 100);
     let page = params.page.max(1);
     let offset = (page - 1) * per_page;
 
-    // Filtro por área: solo productos con stock en las áreas indicadas
-    let area_filter = if let Some(ids_str) = &params.area_ids {
-        let ids: Vec<i32> = ids_str
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect();
-        if ids.is_empty() {
+    let requested_area_ids: Option<Vec<i32>> = params
+        .area_ids
+        .as_deref()
+        .map(|ids_str| {
+            ids_str
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| {
+                    s.parse::<i32>()
+                        .map_err(|_| AppError::Validation("area_ids debe contener solo enteros".into()))
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()?;
+
+    let effective_area_ids = if claims.rol == "admin" {
+        requested_area_ids.unwrap_or_default()
+    } else {
+        match requested_area_ids {
+            Some(ids) => {
+                if ids.iter().any(|id| !claims.area_ids.contains(id)) {
+                    return Err(AppError::Forbidden("Sin acceso a una de las áreas solicitadas".into()));
+                }
+                ids
+            }
+            None => claims.area_ids.clone(),
+        }
+    };
+
+    // Filtro por área: no-admin queda limitado por sus áreas del token.
+    let area_filter = if effective_area_ids.is_empty() {
+        if claims.rol == "admin" {
             String::new()
         } else {
-            let arr = ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
-            format!(
-                "AND p.id IN (SELECT DISTINCT l.producto_id FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE s.area_id = ANY(ARRAY[{}]::integer[]) AND s.cantidad > 0)",
-                arr
-            )
+            "AND FALSE".to_string()
         }
     } else {
-        String::new()
+        let arr = effective_area_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(
+            "AND p.id IN (SELECT DISTINCT l.producto_id FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE s.area_id = ANY(ARRAY[{}]::integer[]) AND s.cantidad > 0)",
+            arr
+        )
     };
 
     let pedidos_cte = r#"pedidos_pendientes AS (

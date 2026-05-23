@@ -11,6 +11,7 @@ pub mod lotes;
 pub mod movimientos;
 pub mod ordenes_compra;
 pub mod presentaciones;
+pub mod presentacion_formatos;
 pub mod productos;
 pub mod proveedores;
 pub mod recepciones;

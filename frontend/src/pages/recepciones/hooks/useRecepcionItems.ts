@@ -58,6 +58,8 @@ function buildScannedPresentacion(data: ScannedPresentacionData) {
     nombre_plural: data.presentacion_nombre ? `${data.presentacion_nombre}s` : '',
     factor_conversion: '1',
     codigo_barras: null,
+    gtin: null,
+    gs1_habilitado: false,
     activa: true,
     version: 1,
     created_at: '',

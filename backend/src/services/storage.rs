@@ -77,6 +77,48 @@ pub async fn save_base64_image(
     Ok(format!("{}/{}", directory, filename))
 }
 
+pub async fn save_image_bytes(
+    bytes: &[u8],
+    content_type: Option<&str>,
+    directory: &str,
+    prefix: &str,
+) -> Result<String, AppError> {
+    if bytes.len() > MAX_IMAGE_BYTES {
+        return Err(AppError::Validation(
+            "La imagen no puede superar 5 MB".into(),
+        ));
+    }
+
+    let extension = match content_type {
+        Some("image/jpeg") | Some("image/jpg") => "jpg",
+        Some("image/png") => "png",
+        _ => {
+            return Err(AppError::Validation("Solo se aceptan JPEG o PNG".into()));
+        }
+    };
+
+    if !validar_magic_bytes(bytes, extension) {
+        return Err(AppError::Validation(
+            "El contenido del archivo no corresponde al tipo declarado".into(),
+        ));
+    }
+
+    let filename = format!("{}_{}.{}", prefix, Uuid::new_v4(), extension);
+    let upload_dir = PathBuf::from("uploads").join(directory);
+    if !upload_dir.exists() {
+        fs::create_dir_all(&upload_dir).await.map_err(|e| {
+            AppError::Internal(format!("Error creando directorio de subida: {}", e))
+        })?;
+    }
+
+    let file_path = upload_dir.join(&filename);
+    fs::write(&file_path, bytes)
+        .await
+        .map_err(|e| AppError::Internal(format!("Error guardando archivo en disco: {}", e)))?;
+
+    Ok(format!("{}/{}", directory, filename))
+}
+
 pub async fn delete_image(path: &str) -> Result<(), AppError> {
     let full_path = PathBuf::from("uploads").join(path);
     if full_path.exists() {

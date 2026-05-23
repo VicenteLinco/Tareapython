@@ -18,6 +18,7 @@ pub struct Producto {
     pub precio_unidad: Option<Decimal>,
     pub lead_time_propio: Option<i32>,
     pub ubicacion: Option<String>,
+    pub imagen_path: Option<String>,
     pub temperatura_almacenamiento: Option<String>,
     pub requiere_cadena_frio: bool,
     pub dias_estabilidad_abierto: Option<i32>,

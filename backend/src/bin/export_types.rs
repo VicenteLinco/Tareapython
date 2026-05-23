@@ -3,7 +3,7 @@ use inventario_lab_backend::domain::{
     EstadoOrdenCompra, EstadoRecepcion, EstadoSolicitud, UrgenciaReposicion,
 };
 use inventario_lab_backend::dto::{
-    area::{AsignarProductosRequest, CreateArea, ProductoAreaRow, UpdateArea},
+    area::{AsignarProductosRequest, CreateArea, ProductoAreaConfigInput, ProductoAreaRow, UpdateArea},
     categoria::{CreateCategoria, UpdateCategoria},
     descarte::{DescarteItem, DescarteRequest, DescarteResponse},
     proveedor::{CreateProveedor, ProveedorQuery, UpdateProveedor},
@@ -91,6 +91,7 @@ fn main() {
     append!(CreateArea);
     append!(UpdateArea);
     append!(ProductoAreaRow);
+    append!(ProductoAreaConfigInput);
     append!(AsignarProductosRequest);
 
     // DTOs Proveedores

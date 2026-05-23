@@ -17,6 +17,8 @@ struct CreatePresentacion {
     nombre_plural: String,
     factor_conversion: Decimal,
     codigo_barras: Option<String>,
+    gtin: Option<String>,
+    gs1_habilitado: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,6 +27,8 @@ struct UpdatePresentacion {
     nombre_plural: Option<String>,
     factor_conversion: Option<Decimal>,
     codigo_barras: Option<String>,
+    gtin: Option<String>,
+    gs1_habilitado: Option<bool>,
     version: i32,
 }
 
@@ -62,6 +66,12 @@ async fn crear(
     if let Some(ref cb) = req.codigo_barras {
         validate_text_length(cb, "codigo_barras", 100)?;
     }
+    if let Some(ref gtin) = req.gtin {
+        validate_text_length(gtin, "gtin", 14)?;
+        if !gtin.chars().all(|c| c.is_ascii_digit()) || gtin.len() != 14 {
+            return Err(AppError::Validation("GTIN debe tener 14 digitos".into()));
+        }
+    }
     if req.factor_conversion <= Decimal::ZERO {
         return Err(AppError::Validation(
             "El factor de conversión debe ser mayor a 0".into(),
@@ -78,13 +88,15 @@ async fn crear(
     }
 
     let presentacion = sqlx::query_as::<_, Presentacion>(
-        "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+        "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
     )
     .bind(producto_id)
     .bind(&nombre)
     .bind(&nombre_plural)
     .bind(req.factor_conversion)
     .bind(&req.codigo_barras)
+    .bind(&req.gtin)
+    .bind(req.gs1_habilitado.unwrap_or(false))
     .fetch_one(&state.pool)
     .await?;
 
@@ -151,14 +163,22 @@ async fn actualizar(
         .map(str::trim)
         .unwrap_or(&anterior.nombre_plural);
     let factor = req.factor_conversion.unwrap_or(anterior.factor_conversion);
+    let gtin = req.gtin.as_deref().or(anterior.gtin.as_deref());
+    if let Some(gtin) = gtin
+        && (!gtin.chars().all(|c| c.is_ascii_digit()) || gtin.len() != 14)
+    {
+        return Err(AppError::Validation("GTIN debe tener 14 digitos".into()));
+    }
 
     let presentacion = sqlx::query_as::<_, Presentacion>(
-        "UPDATE presentaciones SET nombre = $1, nombre_plural = $2, factor_conversion = $3, codigo_barras = $4, version = version + 1 WHERE id = $5 AND version = $6 RETURNING *",
+        "UPDATE presentaciones SET nombre = $1, nombre_plural = $2, factor_conversion = $3, codigo_barras = $4, gtin = $5, gs1_habilitado = $6, version = version + 1 WHERE id = $7 AND version = $8 RETURNING *",
     )
     .bind(nombre)
     .bind(nombre_plural)
     .bind(factor)
     .bind(req.codigo_barras.as_deref().or(anterior.codigo_barras.as_deref()))
+    .bind(gtin)
+    .bind(req.gs1_habilitado.unwrap_or(anterior.gs1_habilitado))
     .bind(id)
     .bind(req.version)
     .fetch_optional(&state.pool)

@@ -1,4 +1,4 @@
-use crate::dto::area::{CreateArea, ProductoAreaRow, UpdateArea};
+use crate::dto::area::{CreateArea, ProductoAreaConfigInput, ProductoAreaRow, UpdateArea};
 use crate::errors::AppError;
 use crate::models::area::Area;
 use serde_json::json;
@@ -177,7 +177,8 @@ pub async fn listar_productos(
     }
 
     sqlx::query_as::<_, ProductoAreaRow>(
-        r#"SELECT p.id, p.codigo_interno, p.nombre
+        r#"SELECT p.id, p.codigo_interno, p.nombre,
+                  pa.stock_minimo, pa.stock_maximo, pa.punto_reorden
            FROM producto_area pa
            JOIN productos p ON p.id = pa.producto_id
            WHERE pa.area_id = $1 AND p.activo = true
@@ -192,7 +193,7 @@ pub async fn listar_productos(
 pub async fn asignar_productos(
     pool: &PgPool,
     area_id: i32,
-    producto_ids: Vec<Uuid>,
+    productos: Vec<ProductoAreaConfigInput>,
     usuario_id: Uuid,
 ) -> Result<usize, AppError> {
     let mut tx = pool.begin().await?;
@@ -208,12 +209,19 @@ pub async fn asignar_productos(
         .execute(&mut *tx)
         .await?;
 
-    for producto_id in &producto_ids {
-        sqlx::query("INSERT INTO producto_area (producto_id, area_id) VALUES ($1, $2)")
-            .bind(producto_id)
-            .bind(area_id)
-            .execute(&mut *tx)
-            .await?;
+    for producto in &productos {
+        sqlx::query(
+            r#"INSERT INTO producto_area
+               (producto_id, area_id, stock_minimo, stock_maximo, punto_reorden)
+               VALUES ($1, $2, $3, $4, $5)"#,
+        )
+        .bind(producto.producto_id)
+        .bind(area_id)
+        .bind(producto.stock_minimo)
+        .bind(producto.stock_maximo)
+        .bind(producto.punto_reorden)
+        .execute(&mut *tx)
+        .await?;
     }
 
     tx.commit().await?;
@@ -224,10 +232,10 @@ pub async fn asignar_productos(
         &area_id.to_string(),
         "ASSIGN_PRODUCTS",
         None,
-        Some(json!({"count": producto_ids.len()})),
+        Some(json!({"count": productos.len()})),
         usuario_id,
     )
     .await?;
 
-    Ok(producto_ids.len())
+    Ok(productos.len())
 }

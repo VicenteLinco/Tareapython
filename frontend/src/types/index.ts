@@ -195,9 +195,14 @@ export interface ProveedorProductoInput {
   proveedor_id: number
   es_principal: boolean
   codigo_proveedor?: string | null
+  codigo_maestro?: string | null
+  presentacion_id?: number | null
+  presentacion?: { nombre: string; nombre_plural: string; factor_conversion: number; codigo_barras?: string | null; gtin?: string | null; gs1_habilitado?: boolean | null } | null
   precio_unidad?: string | null
   lead_time_dias?: number | null
   unidad_minima_pedido?: string | null
+  imagen_url?: string | null
+  imagen_data_url?: string | null
 }
 
 export interface CreateProducto {
@@ -212,7 +217,7 @@ export interface CreateProducto {
   requiere_cadena_frio?: boolean
   dias_estabilidad_abierto?: number | null
   clase_riesgo?: string | null
-  presentaciones?: { nombre: string; nombre_plural: string; factor_conversion: number; codigo_barras?: string | null }[]
+  presentaciones?: { nombre: string; nombre_plural: string; factor_conversion: number; codigo_barras?: string | null; gtin?: string | null; gs1_habilitado?: boolean | null }[]
   area_ids?: number[]
   proveedores?: ProveedorProductoInput[]
 }

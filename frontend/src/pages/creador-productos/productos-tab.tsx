@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Search, Eye, Package, Tag, FileText, Camera, RotateCcw, ImagePlus, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Eye, Package, Tag, FileText, Camera, RotateCcw, ImagePlus, X, Copy, Download, LayoutGrid, Table2 } from 'lucide-react'
 import { comprimirImagen } from '@/lib/image-utils'
 import { ProductoImage } from '@/components/ui/producto-image'
 import { DataTable } from '@/components/ui/data-table'
@@ -17,7 +17,7 @@ import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
-import { getPresFormatos, type PresFormato } from '@/lib/pres-formatos'
+import type { PresFormato } from '@/lib/pres-formatos'
 import type {
   PaginatedResponse,
   Categoria,
@@ -51,9 +51,20 @@ interface ProveedorProductoItem {
   proveedor_icono?: string | null
   es_principal: boolean
   codigo_proveedor?: string | null
+  codigo_maestro?: string | null
+  presentacion_id?: number | null
+  presentacion?: Presentacion | null
+  pres_nombre?: string
+  pres_nombre_plural?: string
+  pres_factor?: string
+  pres_codigo_barras?: string
+  pres_gtin?: string
+  pres_gs1_habilitado?: boolean
   precio_unidad?: string | null
   lead_time_dias?: number | null
   unidad_minima_pedido?: string | null
+  imagen_url?: string | null
+  imagen_data_url?: string | null
   activo?: boolean
   version?: number
 }
@@ -82,6 +93,66 @@ interface ProductoDetailResponse {
   imagen_url?: string | null
 }
 
+type PresFormatoRow = PresFormato & { id: number }
+
+function proveedorPayload(pp: ProveedorProductoItem) {
+  const hasPres = !!pp.pres_nombre && !!pp.pres_factor
+  return {
+    proveedor_id: pp.proveedor_id,
+    es_principal: pp.es_principal,
+    codigo_proveedor: pp.codigo_proveedor || null,
+    codigo_maestro: pp.codigo_maestro || null,
+    presentacion_id: pp.presentacion_id ?? null,
+    presentacion: hasPres ? {
+      nombre: pp.pres_nombre!,
+      nombre_plural: pp.pres_nombre_plural || pp.pres_nombre!,
+      factor_conversion: Number(pp.pres_factor),
+      codigo_barras: pp.pres_codigo_barras || null,
+      gtin: pp.pres_gtin || null,
+      gs1_habilitado: pp.pres_gs1_habilitado ?? false,
+    } : null,
+    precio_unidad: pp.precio_unidad || null,
+    lead_time_dias: pp.lead_time_dias || null,
+    unidad_minima_pedido: pp.unidad_minima_pedido || null,
+    imagen_url: pp.imagen_url || null,
+    imagen_data_url: pp.imagen_data_url || null,
+  }
+}
+
+function proveedorFromDetalle(pp: ProveedorProductoItem): ProveedorProductoItem {
+  return {
+    ...pp,
+    pres_nombre: pp.presentacion?.nombre ?? '',
+    pres_nombre_plural: pp.presentacion?.nombre_plural ?? '',
+    pres_factor: pp.presentacion ? String(Math.round(Number(pp.presentacion.factor_conversion))) : '',
+    pres_codigo_barras: pp.presentacion?.codigo_barras ?? '',
+    pres_gtin: pp.presentacion?.gtin ?? '',
+    pres_gs1_habilitado: pp.presentacion?.gs1_habilitado ?? false,
+  }
+}
+
+interface PrecioHistorialItem {
+  id: number
+  proveedor_id: number | null
+  proveedor_nombre: string | null
+  precio_unidad: string
+  presentacion_id: number | null
+  presentacion_nombre: string | null
+  precio_presentacion: string | null
+  vigente_desde: string
+  fuente: string
+  nota: string | null
+  created_at: string
+}
+
+function isValidEan13(value: string) {
+  if (!/^\d{13}$/.test(value)) return false
+  const digits = value.split('').map(Number)
+  const check = digits.pop()!
+  const sum = digits.reduce((acc, n, i) => acc + n * (i % 2 === 0 ? 1 : 3), 0)
+  return (10 - (sum % 10)) % 10 === check
+}
+
 export default function ProductosTab() {
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -94,16 +165,20 @@ export default function ProductosTab() {
   const [areaId, setAreaId] = useState('')
   const [proveedorId, setProveedorId] = useState('')
   const [verInactivos, setVerInactivos] = useState(false)
+  const [sortBy, setSortBy] = useState('nombre')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [viewMode, setViewMode] = useState<'tabla' | 'tarjetas'>('tabla')
   const [page, setPage] = useState(1)
 
   const [createOpen, setCreateOpen] = useState(() => searchParams.get('nuevo') === 'true')
+  const [duplicateSource, setDuplicateSource] = useState<ProductoDetailResponse | null>(null)
   const [editId, setEditId] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ProductoListItem | null>(null)
   const [reactivateTarget, setReactivateTarget] = useState<ProductoListItem | null>(null)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['productos', { search, categoriaId, areaId, proveedorId, page, activo: !verInactivos }],
+    queryKey: ['productos', { search, categoriaId, areaId, proveedorId, page, activo: !verInactivos, sortBy, sortDir }],
     queryFn: () =>
       api.get<PaginatedResponse<ProductoListItem>>('/productos', {
         params: {
@@ -112,6 +187,8 @@ export default function ProductosTab() {
           area_id: areaId || undefined,
           proveedor_id: proveedorId || undefined,
           activo: !verInactivos,
+          sort_by: sortBy,
+          sort_dir: sortDir,
           page,
           per_page: 20,
         },
@@ -247,6 +324,13 @@ export default function ProductosTab() {
               <button className="btn btn-ghost btn-xs btn-square" onClick={() => setEditId(item.id)}>
                 <Pencil className="h-3.5 w-3.5 opacity-50" />
               </button>
+              <button className="btn btn-ghost btn-xs btn-square" title="Duplicar" onClick={async () => {
+                const res = await api.get<ProductoDetailResponse>(`/productos/${item.id}`)
+                setDuplicateSource(res.data)
+                setCreateOpen(true)
+              }}>
+                <Copy className="h-3.5 w-3.5 opacity-50" />
+              </button>
               <button className="btn btn-ghost btn-xs btn-square" onClick={() => setDeleteTarget(item)}>
                 <Trash2 className="h-3.5 w-3.5 opacity-50 hover:text-error" />
               </button>
@@ -262,6 +346,32 @@ export default function ProductosTab() {
   ]
 
   const productos = data?.data ?? []
+
+  function csvEscape(value: string | number | null | undefined) {
+    const text = value == null ? '' : String(value)
+    return `"${text.replace(/"/g, '""')}"`
+  }
+
+  function exportCurrentCsv() {
+    const header = ['codigo', 'nombre', 'categoria', 'proveedor', 'area', 'unidad', 'stock_minimo', 'estado']
+    const lines = productos.map((p) => [
+      p.codigo_interno,
+      p.nombre,
+      p.categoria?.nombre,
+      p.proveedor?.nombre,
+      p.area?.nombre,
+      p.unidad_base.nombre,
+      p.stock_minimo,
+      p.activo ? 'Activo' : 'Inactivo',
+    ].map(csvEscape).join(';'))
+    const blob = new Blob([[header.join(';'), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'productos.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   useEffect(() => { setSearchActiveIndex(-1) }, [search])
 
@@ -407,22 +517,75 @@ export default function ProductosTab() {
             />
             <span className="text-xs opacity-60">Ver inactivos</span>
           </label>
+          <select
+            className="select select-bordered select-sm h-9 w-36 text-sm"
+            value={sortBy}
+            onChange={(e) => { setSortBy(e.target.value); setPage(1) }}
+          >
+            <option value="nombre">Nombre</option>
+            <option value="codigo">Código</option>
+            <option value="categoria">Categoría</option>
+            <option value="proveedor">Proveedor</option>
+            <option value="stock_minimo">Stock mínimo</option>
+            <option value="estado">Estado</option>
+          </select>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost h-9"
+            onClick={() => { setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); setPage(1) }}
+          >
+            {sortDir === 'asc' ? 'Asc' : 'Desc'}
+          </button>
         </div>
-        <button className="btn btn-primary btn-sm gap-1.5" onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4" />
-          Nuevo producto
-        </button>
+        <div className="flex gap-1.5">
+          <button className="btn btn-ghost btn-sm btn-square" title={viewMode === 'tabla' ? 'Ver tarjetas' : 'Ver tabla'} onClick={() => setViewMode(viewMode === 'tabla' ? 'tarjetas' : 'tabla')}>
+            {viewMode === 'tabla' ? <LayoutGrid className="h-4 w-4" /> : <Table2 className="h-4 w-4" />}
+          </button>
+          <button className="btn btn-ghost btn-sm btn-square" title="Exportar CSV" onClick={exportCurrentCsv}>
+            <Download className="h-4 w-4" />
+          </button>
+          <button className="btn btn-primary btn-sm gap-1.5" onClick={() => { setDuplicateSource(null); setCreateOpen(true) }}>
+            <Plus className="h-4 w-4" />
+            Nuevo producto
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
         <PageLoading label="Cargando productos..." />
       ) : (
         <>
-          <DataTable
-            columns={columns}
-            data={data?.data ?? []}
-            emptyMessage="No hay productos registrados"
-          />
+          {viewMode === 'tabla' ? (
+            <DataTable
+              columns={columns}
+              data={data?.data ?? []}
+              emptyMessage="No hay productos registrados"
+            />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {productos.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="text-left border border-base-300 rounded-lg p-3 bg-base-100 hover:bg-base-200/60 transition-colors"
+                  onClick={() => setDetailId(item.id)}
+                >
+                  <div className="flex gap-3">
+                    <ProductoImage src={item.imagen_url ?? null} size="md" />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-sm truncate">{item.nombre}</p>
+                      <p className="text-[10px] font-mono opacity-40 truncate">{item.codigo_interno ?? '--'}</p>
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {item.categoria && <Badge variant="secondary">{item.categoria.nombre}</Badge>}
+                        {item.proveedor && <Badge variant="outline">{item.proveedor.nombre}</Badge>}
+                        <Badge variant={item.activo ? 'success' : 'outline'}>{item.activo ? 'Activo' : 'Inactivo'}</Badge>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
           <Pagination page={data?.page ?? 1} totalPages={data?.total_pages ?? 1} onPageChange={setPage} />
         </>
       )}
@@ -441,6 +604,7 @@ export default function ProductosTab() {
         unidades={unidades ?? []}
         areas={areas ?? []}
         proveedores={proveedores ?? []}
+        duplicateSource={duplicateSource}
       />
 
       {editId && (
@@ -663,7 +827,7 @@ function BarcodeScanner({ onScan, onClose }: { onScan: (code: string) => void; o
 // ── Create Dialog ────────────────────────────────────────────
 
 function CreateProductoDialog({
-  open, onClose, categorias, unidades, areas, proveedores,
+  open, onClose, categorias, unidades, areas, proveedores, duplicateSource,
 }: {
   open: boolean
   onClose: () => void
@@ -671,9 +835,13 @@ function CreateProductoDialog({
   unidades: UnidadBasica[]
   areas: Area[]
   proveedores: Proveedor[]
+  duplicateSource?: ProductoDetailResponse | null
 }) {
   const queryClient = useQueryClient()
-  const [presFormatos] = useState<PresFormato[]>(() => getPresFormatos())
+  const { data: presFormatos = [] } = useQuery({
+    queryKey: ['presentacion-formatos'],
+    queryFn: () => api.get<PresFormatoRow[]>('/presentacion-formatos').then((r) => r.data),
+  })
   const [form, setForm] = useState({
     nombre: '',
     descripcion: '',
@@ -704,6 +872,13 @@ function CreateProductoDialog({
         proveedor_nombre: nombre,
         es_principal: esPrimero,
         codigo_proveedor: null,
+        codigo_maestro: null,
+        pres_nombre: '',
+        pres_nombre_plural: '',
+        pres_factor: '',
+        pres_codigo_barras: '',
+        pres_gtin: '',
+        pres_gs1_habilitado: false,
         precio_unidad: null,
         lead_time_dias: null,
       }]
@@ -728,6 +903,30 @@ function CreateProductoDialog({
   const [newUnidadOpen, setNewUnidadOpen] = useState(false)
   const [newAreaOpen, setNewAreaOpen] = useState(false)
   const [scannerOpen, setScannerOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open || !duplicateSource) return
+    setForm((f) => ({
+      ...f,
+      nombre: `${duplicateSource.nombre} copia`,
+      descripcion: duplicateSource.descripcion ?? '',
+      categoria_id: duplicateSource.categoria?.id ? String(duplicateSource.categoria.id) : '',
+      unidad_base_id: duplicateSource.unidad_base?.id ? String(duplicateSource.unidad_base.id) : '',
+      area_id: duplicateSource.areas?.[0]?.id ? String(duplicateSource.areas[0].id) : '',
+      ubicacion: duplicateSource.ubicacion ?? '',
+      codigo_maestro: duplicateSource.codigo_maestro ?? '',
+      stock_minimo: String(Math.round(Number(duplicateSource.stock_minimo))),
+    }))
+    setProveedoresForm((duplicateSource.proveedores ?? []).map((p) => ({
+      ...proveedorFromDetalle(p),
+      id: undefined,
+      presentacion_id: null,
+    })))
+    setTemperaturaAlmacenamiento(duplicateSource.temperatura_almacenamiento ?? null)
+    setRequiereCadenaFrio(duplicateSource.requiere_cadena_frio ?? false)
+    setDiasEstabilidadAbierto(duplicateSource.dias_estabilidad_abierto ?? null)
+    setClaseRiesgo(duplicateSource.clase_riesgo ?? null)
+  }, [open, duplicateSource])
 
   const createMut = useMutation({
     mutationFn: (data: CreateProducto) => api.post('/productos', data),
@@ -760,33 +959,19 @@ function CreateProductoDialog({
     if (!form.unidad_base_id) { notify.error('Selecciona una unidad base'); return }
     if (!form.area_id) { notify.error('Selecciona un área'); return }
     if (proveedoresForm.length === 0) { notify.error('Agrega al menos un proveedor'); return }
-    const presentaciones =
-      form.pres_nombre && form.pres_factor
-        ? [{
-            nombre: form.pres_nombre,
-            nombre_plural: form.pres_nombre_plural || form.pres_nombre,
-            factor_conversion: Number(form.pres_factor),
-            codigo_barras: form.pres_codigo_barras.trim() || undefined,
-          }]
-        : undefined
+    const invalidEan = proveedoresForm.find(p => p.pres_codigo_barras && /^\d{13}$/.test(p.pres_codigo_barras) && !isValidEan13(p.pres_codigo_barras))
+    if (invalidEan) { notify.error('El EAN-13 ingresado no tiene un dígito de control válido'); return }
+    const invalidGtin = proveedoresForm.find(p => p.pres_gtin && !/^\d{14}$/.test(p.pres_gtin))
+    if (invalidGtin) { notify.error('GTIN debe tener 14 dígitos'); return }
     createMut.mutate({
       nombre: form.nombre.trim(),
       descripcion: form.descripcion.trim() || undefined,
       categoria_id: form.categoria_id ? Number(form.categoria_id) : undefined,
       unidad_base_id: Number(form.unidad_base_id),
-      codigo_maestro: form.codigo_maestro.trim() || undefined,
       stock_minimo: Number(form.stock_minimo) || 0,
       area_ids: [Number(form.area_id)],
       ubicacion: form.ubicacion.trim() || undefined,
-      presentaciones,
-      proveedores: proveedoresForm.map(pp => ({
-        proveedor_id: pp.proveedor_id,
-        es_principal: pp.es_principal,
-        codigo_proveedor: pp.codigo_proveedor || null,
-        precio_unidad: pp.precio_unidad || null,
-        lead_time_dias: pp.lead_time_dias || null,
-        unidad_minima_pedido: null,
-      })),
+      proveedores: proveedoresForm.map(proveedorPayload),
       temperatura_almacenamiento: temperaturaAlmacenamiento,
       requiere_cadena_frio: requiereCadenaFrio,
       dias_estabilidad_abierto: diasEstabilidadAbierto,
@@ -923,7 +1108,7 @@ function CreateProductoDialog({
                 Proveedores <span className="text-error">*</span>
               </label>
               {proveedoresForm.map((pp) => (
-                <div key={pp.proveedor_id} className="flex items-center gap-2 p-2 bg-base-200 rounded-lg">
+                <div key={pp.proveedor_id} className="flex flex-wrap items-center gap-2 p-2 bg-base-200 rounded-lg">
                   <div className="flex-1 min-w-0">
                     <span className="text-sm font-medium truncate">{pp.proveedor_nombre}</span>
                     {pp.es_principal && (
@@ -940,6 +1125,15 @@ function CreateProductoDialog({
                     className="input input-xs input-bordered w-28"
                   />
                   <input
+                    type="text"
+                    placeholder="Cód. maestro"
+                    value={pp.codigo_maestro ?? ''}
+                    onChange={e => setProveedoresForm(prev => prev.map(p =>
+                      p.proveedor_id === pp.proveedor_id ? { ...p, codigo_maestro: e.target.value || null } : p
+                    ))}
+                    className="input input-xs input-bordered w-28"
+                  />
+                  <input
                     type="number"
                     placeholder="Precio/u"
                     value={pp.precio_unidad ?? ''}
@@ -950,6 +1144,75 @@ function CreateProductoDialog({
                     min="0"
                     step="0.01"
                   />
+                  <select
+                    className="select select-xs bg-base-100 border border-base-300 w-32"
+                    value={pp.pres_nombre ?? ''}
+                    onChange={e => {
+                      const found = presFormatos.find(p => p.nombre === e.target.value)
+                      setProveedoresForm(prev => prev.map(p => p.proveedor_id === pp.proveedor_id ? {
+                        ...p,
+                        pres_nombre: e.target.value,
+                        pres_nombre_plural: found?.nombre_plural || '',
+                      } : p))
+                    }}
+                  >
+                    <option value="">Unidad base</option>
+                    {presFormatos.map(p => <option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
+                  </select>
+                  <input
+                    type="number"
+                    placeholder="Unid."
+                    value={pp.pres_factor ?? ''}
+                    onChange={e => setProveedoresForm(prev => prev.map(p =>
+                      p.proveedor_id === pp.proveedor_id ? { ...p, pres_factor: e.target.value } : p
+                    ))}
+                    className="input input-xs input-bordered w-20"
+                    min="1"
+                    disabled={!pp.pres_nombre}
+                  />
+                  <input
+                    type="text"
+                    placeholder="GTIN-14"
+                    value={pp.pres_gtin ?? ''}
+                    onChange={e => setProveedoresForm(prev => prev.map(p =>
+                      p.proveedor_id === pp.proveedor_id ? { ...p, pres_gtin: e.target.value.replace(/\D/g, '').slice(0, 14) } : p
+                    ))}
+                    className="input input-xs input-bordered w-28"
+                    disabled={!pp.pres_nombre}
+                  />
+                  <label className="flex items-center gap-1 text-[10px] font-bold uppercase opacity-60">
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-xs checkbox-primary"
+                      checked={pp.pres_gs1_habilitado ?? false}
+                      disabled={!pp.pres_nombre}
+                      onChange={e => setProveedoresForm(prev => prev.map(p =>
+                        p.proveedor_id === pp.proveedor_id ? { ...p, pres_gs1_habilitado: e.target.checked } : p
+                      ))}
+                    />
+                    GS1
+                  </label>
+                  <label className="btn btn-xs btn-outline">
+                    Imagen
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png"
+                      className="hidden"
+                      onChange={async e => {
+                        const file = e.target.files?.[0]
+                        e.target.value = ''
+                        if (!file) return
+                        try {
+                          const dataUrl = await comprimirImagen(file)
+                          setProveedoresForm(prev => prev.map(p =>
+                            p.proveedor_id === pp.proveedor_id ? { ...p, imagen_data_url: dataUrl } : p
+                          ))
+                        } catch (err) {
+                          notify.error(err instanceof Error ? err.message : 'Error cargando imagen')
+                        }
+                      }}
+                    />
+                  </label>
                   {!pp.es_principal && (
                     <button
                       type="button"
@@ -1000,7 +1263,7 @@ function CreateProductoDialog({
               />
             </div>
 
-            <div className="form-control">
+            <div className="form-control hidden">
               <label className="label py-0.5">
                 <span className="label-text text-sm font-medium">Código maestro bodega</span>
                 <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
@@ -1080,7 +1343,7 @@ function CreateProductoDialog({
           <div className="divider my-0" />
 
           {/* ── Presentación ── */}
-          <div className="space-y-3">
+          <div className="space-y-3 hidden">
             <div className="flex items-center gap-1.5">
               <Package className="h-3.5 w-3.5 text-base-content/30" />
               <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Presentación</span>
@@ -1126,7 +1389,7 @@ function CreateProductoDialog({
                 </div>
               </div>
 
-              <div className="form-control">
+              <div className="form-control hidden">
                 <label className="label py-0.5">
                   <span className="label-text text-sm font-medium">Plural del formato</span>
                   <span className="label-text-alt text-base-content/40 text-[10px]">ej: Cajas</span>
@@ -1141,7 +1404,7 @@ function CreateProductoDialog({
                 />
               </div>
 
-              <div className="form-control">
+              <div className="form-control hidden">
                 <label className="label py-0.5">
                   <span className="label-text text-sm font-medium">Código de barras</span>
                   <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
@@ -1236,7 +1499,10 @@ function EditProductoDialog({
   proveedores: Proveedor[]
 }) {
   const queryClient = useQueryClient()
-  const [presFormatos] = useState<PresFormato[]>(() => getPresFormatos())
+  const { data: presFormatos = [] } = useQuery({
+    queryKey: ['presentacion-formatos'],
+    queryFn: () => api.get<PresFormatoRow[]>('/presentacion-formatos').then((r) => r.data),
+  })
   const [newAreaOpen, setNewAreaOpen] = useState(false)
   const [scannerOpen, setScannerOpen] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
@@ -1279,6 +1545,13 @@ function EditProductoDialog({
         proveedor_nombre: nombre,
         es_principal: esPrimero,
         codigo_proveedor: null,
+        codigo_maestro: null,
+        pres_nombre: '',
+        pres_nombre_plural: '',
+        pres_factor: '',
+        pres_codigo_barras: '',
+        pres_gtin: '',
+        pres_gs1_habilitado: false,
         precio_unidad: null,
         lead_time_dias: null,
       }]
@@ -1321,7 +1594,7 @@ function EditProductoDialog({
         pres_factor: firstPres ? String(Math.round(Number(firstPres.factor_conversion))) : '',
         pres_codigo_barras: firstPres?.codigo_barras ?? '',
       })
-      setProveedoresFormEdit(producto.proveedores ?? [])
+      setProveedoresFormEdit((producto.proveedores ?? []).map(proveedorFromDetalle))
       setTemperaturaAlmacenamientoEdit(producto.temperatura_almacenamiento ?? null)
       setRequiereCadenaFrioEdit(producto.requiere_cadena_frio ?? false)
       setDiasEstabilidadAbiertoEdit(producto.dias_estabilidad_abierto ?? null)
@@ -1344,25 +1617,21 @@ function EditProductoDialog({
     e.preventDefault()
     if (!producto) return
     if (proveedoresForm.length === 0) { notify.error('Agrega al menos un proveedor'); return }
+    const invalidEan = proveedoresForm.find(p => p.pres_codigo_barras && /^\d{13}$/.test(p.pres_codigo_barras) && !isValidEan13(p.pres_codigo_barras))
+    if (invalidEan) { notify.error('El EAN-13 ingresado no tiene un dígito de control válido'); return }
+    const invalidGtin = proveedoresForm.find(p => p.pres_gtin && !/^\d{14}$/.test(p.pres_gtin))
+    if (invalidGtin) { notify.error('GTIN debe tener 14 dígitos'); return }
 
     // Build new presentacion if filled
-    const hasNewPres = form.pres_nombre && form.pres_factor
+    const hasNewPres = false
     const payload: UpdateProducto = {
       nombre: form.nombre.trim() || undefined,
       descripcion: form.descripcion.trim() || undefined,
       categoria_id: form.categoria_id ? Number(form.categoria_id) : undefined,
-      codigo_maestro: form.codigo_maestro.trim() || undefined,
       stock_minimo: Number(form.stock_minimo),
       area_ids: form.area_id ? [Number(form.area_id)] : undefined,
       ubicacion: form.ubicacion.trim() || null,
-      proveedores: proveedoresForm.map(pp => ({
-        proveedor_id: pp.proveedor_id,
-        es_principal: pp.es_principal,
-        codigo_proveedor: pp.codigo_proveedor || null,
-        precio_unidad: pp.precio_unidad || null,
-        lead_time_dias: pp.lead_time_dias || null,
-        unidad_minima_pedido: null,
-      })),
+      proveedores: proveedoresForm.map(proveedorPayload),
       temperatura_almacenamiento: temperaturaAlmacenamiento,
       requiere_cadena_frio: requiereCadenaFrio,
       dias_estabilidad_abierto: diasEstabilidadAbierto,
@@ -1420,8 +1689,11 @@ function EditProductoDialog({
     e.target.value = ''
     try {
       setUploadingImage(true)
-      const dataUrl = await comprimirImagen(file)
-      await api.put(`/productos/${productoId}/imagen`, { data_url: dataUrl })
+      const formData = new FormData()
+      formData.append('file', file)
+      await api.put(`/productos/${productoId}/imagen`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
       queryClient.invalidateQueries({ queryKey: ['productos'] })
       queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
       notify.success('Imagen actualizada')
@@ -1545,7 +1817,7 @@ function EditProductoDialog({
                     Proveedores <span className="text-error">*</span>
                   </label>
                   {proveedoresForm.map((pp) => (
-                    <div key={pp.proveedor_id} className="flex items-center gap-2 p-2 bg-base-200 rounded-lg">
+                    <div key={pp.proveedor_id} className="flex flex-wrap items-center gap-2 p-2 bg-base-200 rounded-lg">
                       <div className="flex-1 min-w-0">
                         <span className="text-sm font-medium truncate">{pp.proveedor_nombre}</span>
                         {pp.es_principal && (
@@ -1562,6 +1834,15 @@ function EditProductoDialog({
                         className="input input-xs input-bordered w-28"
                       />
                       <input
+                        type="text"
+                        placeholder="Cód. maestro"
+                        value={pp.codigo_maestro ?? ''}
+                        onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
+                          p.proveedor_id === pp.proveedor_id ? { ...p, codigo_maestro: e.target.value || null } : p
+                        ))}
+                        className="input input-xs input-bordered w-28"
+                      />
+                      <input
                         type="number"
                         placeholder="Precio/u"
                         value={pp.precio_unidad ?? ''}
@@ -1572,6 +1853,75 @@ function EditProductoDialog({
                         min="0"
                         step="0.01"
                       />
+                      <select
+                        className="select select-xs bg-base-100 border border-base-300 w-32"
+                        value={pp.pres_nombre ?? ''}
+                        onChange={e => {
+                          const found = presFormatos.find(p => p.nombre === e.target.value)
+                          setProveedoresFormEdit(prev => prev.map(p => p.proveedor_id === pp.proveedor_id ? {
+                            ...p,
+                            pres_nombre: e.target.value,
+                            pres_nombre_plural: found?.nombre_plural || '',
+                          } : p))
+                        }}
+                      >
+                        <option value="">Unidad base</option>
+                        {presFormatos.map(p => <option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
+                      </select>
+                      <input
+                        type="number"
+                        placeholder="Unid."
+                        value={pp.pres_factor ?? ''}
+                        onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
+                          p.proveedor_id === pp.proveedor_id ? { ...p, pres_factor: e.target.value } : p
+                        ))}
+                        className="input input-xs input-bordered w-20"
+                        min="1"
+                        disabled={!pp.pres_nombre}
+                      />
+                      <input
+                        type="text"
+                        placeholder="GTIN-14"
+                        value={pp.pres_gtin ?? ''}
+                        onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
+                          p.proveedor_id === pp.proveedor_id ? { ...p, pres_gtin: e.target.value.replace(/\D/g, '').slice(0, 14) } : p
+                        ))}
+                        className="input input-xs input-bordered w-28"
+                        disabled={!pp.pres_nombre}
+                      />
+                      <label className="flex items-center gap-1 text-[10px] font-bold uppercase opacity-60">
+                        <input
+                          type="checkbox"
+                          className="checkbox checkbox-xs checkbox-primary"
+                          checked={pp.pres_gs1_habilitado ?? false}
+                          disabled={!pp.pres_nombre}
+                          onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
+                            p.proveedor_id === pp.proveedor_id ? { ...p, pres_gs1_habilitado: e.target.checked } : p
+                          ))}
+                        />
+                        GS1
+                      </label>
+                      <label className="btn btn-xs btn-outline">
+                        Imagen
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png"
+                          className="hidden"
+                          onChange={async e => {
+                            const file = e.target.files?.[0]
+                            e.target.value = ''
+                            if (!file) return
+                            try {
+                              const dataUrl = await comprimirImagen(file)
+                              setProveedoresFormEdit(prev => prev.map(p =>
+                                p.proveedor_id === pp.proveedor_id ? { ...p, imagen_data_url: dataUrl } : p
+                              ))
+                            } catch (err) {
+                              notify.error(err instanceof Error ? err.message : 'Error cargando imagen')
+                            }
+                          }}
+                        />
+                      </label>
                       {!pp.es_principal && (
                         <button
                           type="button"
@@ -1623,7 +1973,7 @@ function EditProductoDialog({
                 />
               </div>
 
-              <div className="form-control">
+              <div className="form-control hidden">
                 <label className="label py-0.5">
                   <span className="label-text text-sm font-medium">Código maestro bodega</span>
                   <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
@@ -1720,7 +2070,7 @@ function EditProductoDialog({
             )}
 
             {/* ── Presentación / Agregar ── */}
-            <div className="space-y-3">
+            <div className="space-y-3 hidden">
               <div className="flex items-center gap-1.5">
                 <Package className="h-3.5 w-3.5 text-base-content/30" />
                 <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
@@ -1808,7 +2158,7 @@ function EditProductoDialog({
             <div className="divider my-0" />
 
             {/* ── Imagen ── */}
-            <div className="space-y-3">
+            <div className="space-y-3 hidden">
               <div className="flex items-center gap-1.5">
                 <ImagePlus className="h-3.5 w-3.5 text-base-content/30" />
                 <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Imagen del producto</span>
@@ -1913,6 +2263,10 @@ function ProductoDetail({ id }: { id: string }) {
     queryKey: ['producto-detail', id],
     queryFn: () => api.get<ProductoDetailResponse>(`/productos/${id}`).then((r) => r.data),
   })
+  const { data: historialPrecios = [] } = useQuery({
+    queryKey: ['producto-precios', id],
+    queryFn: () => api.get<PrecioHistorialItem[]>(`/productos/${id}/precios`).then((r) => r.data),
+  })
 
   if (isLoading) {
     return <PageLoading label="Cargando detalle..." size="md" />
@@ -1965,14 +2319,45 @@ function ProductoDetail({ id }: { id: string }) {
           <h4 className="text-xs font-semibold uppercase tracking-wider opacity-40 mb-2">Presentaciones</h4>
           <div className="space-y-1.5">
             {producto.presentaciones.map((p: Presentacion) => (
-              <div key={p.id} className="flex items-center justify-between bg-base-200/50 rounded-lg px-3 py-2">
-                <span className="text-sm font-medium">{p.nombre}</span>
-                <span className="text-xs font-mono opacity-50">x{Math.round(parseFloat(p.factor_conversion))}</span>
+              <div key={p.id} className="flex items-center justify-between gap-3 bg-base-200/50 rounded-lg px-3 py-2">
+                <div className="min-w-0">
+                  <span className="text-sm font-medium">{p.nombre}</span>
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {p.codigo_barras && <span className="text-[10px] font-mono opacity-45">CB {p.codigo_barras}</span>}
+                    {p.gtin && <span className="text-[10px] font-mono opacity-45">GTIN {p.gtin}</span>}
+                    {p.gs1_habilitado && <Badge variant="info">GS1</Badge>}
+                  </div>
+                </div>
+                <span className="text-xs font-mono opacity-50 shrink-0">x{Math.round(parseFloat(p.factor_conversion))}</span>
               </div>
             ))}
           </div>
         </div>
       )}
+
+      <div>
+        <h4 className="text-xs font-semibold uppercase tracking-wider opacity-40 mb-2">Historial de precios</h4>
+        {historialPrecios.length > 0 ? (
+          <div className="space-y-1.5">
+            {historialPrecios.slice(0, 8).map((h) => (
+              <div key={h.id} className="flex items-center justify-between gap-3 bg-base-200/50 rounded-lg px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{h.proveedor_nombre ?? 'Sin proveedor'}</p>
+                  <p className="text-[10px] opacity-45">
+                    {h.presentacion_nombre ?? 'Unidad base'} · {h.fuente}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-sm font-mono">${h.precio_unidad}</p>
+                  <p className="text-[10px] opacity-45">{h.vigente_desde}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm opacity-40">Sin precios registrados.</p>
+        )}
+      </div>
 
       {producto.areas && producto.areas.length > 0 && (
         <div>

@@ -1,4 +1,4 @@
-use axum::extract::{Path, Query, State};
+use axum::extract::{Multipart, Path, Query, State};
 use axum::routing::get;
 use axum::{Extension, Json, Router};
 use rust_decimal::Decimal;
@@ -21,6 +21,8 @@ struct ProductoQuery {
     area_id: Option<i32>,
     proveedor_id: Option<i32>,
     activo: Option<bool>,
+    sort_by: Option<String>,
+    sort_dir: Option<String>,
     page: Option<i64>,
     per_page: Option<i64>,
 }
@@ -99,6 +101,8 @@ pub struct CreatePresentacionInline {
     pub nombre_plural: String,
     pub factor_conversion: Decimal,
     pub codigo_barras: Option<String>,
+    pub gtin: Option<String>,
+    pub gs1_habilitado: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, specta::Type)]
@@ -106,9 +110,14 @@ pub struct ProveedorProductoInput {
     pub proveedor_id: i32,
     pub es_principal: bool,
     pub codigo_proveedor: Option<String>,
+    pub codigo_maestro: Option<String>,
+    pub presentacion_id: Option<i32>,
+    pub presentacion: Option<CreatePresentacionInline>,
     pub precio_unidad: Option<Decimal>,
     pub lead_time_dias: Option<i32>,
     pub unidad_minima_pedido: Option<Decimal>,
+    pub imagen_url: Option<String>,
+    pub imagen_data_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -181,7 +190,7 @@ async fn listar(
 
     if params.q.is_some() {
         conditions.push(format!(
-            "(p.nombre ILIKE ${0} OR p.codigo_interno ILIKE ${0} OR p.codigo_proveedor ILIKE ${0} OR p.codigo_maestro ILIKE ${0})",
+            "(p.search_vector @@ plainto_tsquery('simple', ${0}) OR p.nombre ILIKE '%' || ${0} || '%' OR p.codigo_interno ILIKE '%' || ${0} || '%' OR p.codigo_proveedor ILIKE '%' || ${0} || '%' OR p.codigo_maestro ILIKE '%' || ${0} || '%')",
             param_idx
         ));
         param_idx += 1;
@@ -206,11 +215,23 @@ async fn listar(
     }
 
     let where_clause = conditions.join(" AND ");
+    let sort_col = match params.sort_by.as_deref() {
+        Some("codigo") => "p.codigo_interno",
+        Some("categoria") => "c.nombre",
+        Some("proveedor") => "pr.nombre",
+        Some("stock_minimo") => "p.stock_minimo",
+        Some("estado") => "p.activo",
+        _ => "p.nombre",
+    };
+    let sort_dir = match params.sort_dir.as_deref() {
+        Some("desc") => "DESC",
+        _ => "ASC",
+    };
 
     let count_sql = format!("SELECT COUNT(*) FROM productos p WHERE {}", where_clause);
     let data_sql = format!(
         r#"SELECT p.id, p.codigo_interno, p.nombre, p.codigo_proveedor, p.codigo_maestro,
-                  p.stock_minimo, p.precio_unidad, p.lead_time_propio, p.activo, p.imagen_url,
+                  p.stock_minimo, p.precio_unidad, p.lead_time_propio, p.activo, p.imagen_path AS imagen_url,
                   c.id as cat_id, c.nombre as cat_nombre,
                   um.id as um_id, um.nombre as um_nombre, um.nombre_plural as um_nombre_plural,
                   pr.id as prov_id, pr.nombre as prov_nombre, pr.icono as prov_icono,
@@ -225,9 +246,11 @@ async fn listar(
            JOIN unidades_basicas um ON um.id = p.unidad_base_id
            LEFT JOIN proveedores pr ON pr.id = p.proveedor_id
            WHERE {}
-           ORDER BY p.nombre
+           ORDER BY {} {} NULLS LAST, p.nombre ASC
            LIMIT ${} OFFSET ${}"#,
         where_clause,
+        sort_col,
+        sort_dir,
         param_idx,
         param_idx + 1
     );
@@ -236,9 +259,8 @@ async fn listar(
     let mut data_query = sqlx::query_as::<_, ProductoRow>(&data_sql).bind(activo);
 
     if let Some(q) = &params.q {
-        let pattern = format!("%{}%", q);
-        count_query = count_query.bind(pattern.clone());
-        data_query = data_query.bind(pattern);
+        count_query = count_query.bind(q.clone());
+        data_query = data_query.bind(q.clone());
     }
     if let Some(cat_id) = params.categoria_id {
         count_query = count_query.bind(cat_id);
@@ -313,6 +335,14 @@ async fn obtener(
     Ok(Json(detalle))
 }
 
+async fn historial_precios(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<serde_json::Value>>, AppError> {
+    let historial = ProductoService::historial_precios(&state.pool, id).await?;
+    Ok(Json(historial))
+}
+
 async fn crear(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -335,9 +365,14 @@ async fn crear(
                 proveedor_id,
                 es_principal: true,
                 codigo_proveedor: None,
+                codigo_maestro: None,
+                presentacion_id: None,
+                presentacion: None,
                 precio_unidad: None,
                 lead_time_dias: None,
                 unidad_minima_pedido: None,
+                imagen_url: None,
+                imagen_data_url: None,
             }]
         })
     });
@@ -454,19 +489,14 @@ struct ScanQuery {
     codigo: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct SubirImagenInput {
-    data_url: String,
-}
-
 async fn subir_imagen(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(req): Json<SubirImagenInput>,
+    mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, AppError> {
     // Verificar que el producto existe y obtener imagen actual
     let imagen_actual: Option<String> =
-        sqlx::query_scalar("SELECT imagen_url FROM productos WHERE id = $1 AND activo = true")
+        sqlx::query_scalar("SELECT imagen_path FROM productos WHERE id = $1 AND activo = true")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?
@@ -489,13 +519,37 @@ async fn subir_imagen(
         crate::services::storage::delete_image(path).await?;
     }
 
-    // Guardar nueva imagen
-    let path =
-        crate::services::storage::save_base64_image(&req.data_url, "productos", &id.to_string())
-            .await?;
+    let mut path = None;
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| AppError::Validation("Multipart invalido".into()))?
+    {
+        if field.name() != Some("file") {
+            continue;
+        }
+
+        let content_type = field.content_type().map(str::to_string);
+        let bytes = field
+            .bytes()
+            .await
+            .map_err(|_| AppError::Validation("No se pudo leer la imagen".into()))?;
+        path = Some(
+            crate::services::storage::save_image_bytes(
+                &bytes,
+                content_type.as_deref(),
+                "productos",
+                &id.to_string(),
+            )
+            .await?,
+        );
+        break;
+    }
+
+    let path = path.ok_or_else(|| AppError::Validation("Archivo requerido".into()))?;
 
     // Actualizar base de datos
-    sqlx::query("UPDATE productos SET imagen_url = $1 WHERE id = $2")
+    sqlx::query("UPDATE productos SET imagen_path = $1 WHERE id = $2")
         .bind(&path)
         .bind(id)
         .execute(&state.pool)
@@ -511,7 +565,7 @@ async fn quitar_imagen(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let imagen_actual: Option<String> =
-        sqlx::query_scalar("SELECT imagen_url FROM productos WHERE id = $1")
+        sqlx::query_scalar("SELECT imagen_path FROM productos WHERE id = $1")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?
@@ -519,7 +573,7 @@ async fn quitar_imagen(
 
     if let Some(ref path) = imagen_actual {
         crate::services::storage::delete_image(path).await?;
-        sqlx::query("UPDATE productos SET imagen_url = NULL WHERE id = $1")
+        sqlx::query("UPDATE productos SET imagen_path = NULL WHERE id = $1")
             .bind(id)
             .execute(&state.pool)
             .await?;
@@ -532,6 +586,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
         .route("/scan", get(scan_barcode))
+        .route("/{id}/precios", get(historial_precios))
         .route("/{id}", get(obtener).put(actualizar).delete(eliminar))
         .route("/{id}/reactivar", axum::routing::post(reactivar))
         .route(

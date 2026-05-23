@@ -11,6 +11,8 @@ pub struct Presentacion {
     pub nombre_plural: String,
     pub factor_conversion: Decimal,
     pub codigo_barras: Option<String>,
+    pub gtin: Option<String>,
+    pub gs1_habilitado: bool,
     pub activa: bool,
     pub version: i32,
     pub created_at: DateTime<Utc>,

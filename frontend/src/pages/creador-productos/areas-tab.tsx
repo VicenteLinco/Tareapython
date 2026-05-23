@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, SlidersHorizontal } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
 import { PageLoading } from '@/components/ui/page-state'
 import { Badge } from '@/components/ui/badge'
@@ -11,6 +11,15 @@ import { parseApiError } from '@/lib/api-error'
 import { notify } from '@/lib/notify'
 import { cn } from '@/lib/utils'
 import type { Area, CreateArea, UpdateArea } from '@/types'
+
+interface ProductoAreaConfig {
+  id: string
+  codigo_interno: string
+  nombre: string
+  stock_minimo: string | null
+  stock_maximo: string | null
+  punto_reorden: string | null
+}
 
 function useIsDesktop() {
   const [isDesktop, setIsDesktop] = useState(false)
@@ -32,6 +41,7 @@ export default function AreasTab() {
   const [esBodega, setEsBodega] = useState(false)
   const [frecuenciaDias, setFrecuenciaDias] = useState(0)
   const [deleteTarget, setDeleteTarget] = useState<Area | null>(null)
+  const [configArea, setConfigArea] = useState<Area | null>(null)
 
   const { data: areas = [], isLoading } = useQuery({
     queryKey: ['areas'],
@@ -66,6 +76,35 @@ export default function AreasTab() {
       queryClient.invalidateQueries({ queryKey: ['areas'] })
       notify.success('Área eliminada')
       setDeleteTarget(null)
+    },
+    onError: (err) => notify.error(parseApiError(err)),
+  })
+
+  const { data: productosArea = [], isLoading: loadingProductosArea } = useQuery({
+    queryKey: ['area-productos-config', configArea?.id],
+    queryFn: () => api.get<ProductoAreaConfig[]>(`/areas/${configArea!.id}/productos`).then((r) => r.data),
+    enabled: !!configArea,
+  })
+
+  const [productosConfig, setProductosConfig] = useState<ProductoAreaConfig[]>([])
+
+  useEffect(() => {
+    setProductosConfig(productosArea)
+  }, [productosArea])
+
+  const saveAreaConfigMut = useMutation({
+    mutationFn: () => api.put(`/areas/${configArea!.id}/productos`, {
+      productos: productosConfig.map((p) => ({
+        producto_id: p.id,
+        stock_minimo: p.stock_minimo || null,
+        stock_maximo: p.stock_maximo || null,
+        punto_reorden: p.punto_reorden || null,
+      })),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['area-productos-config', configArea?.id] })
+      notify.success('Stock por área actualizado')
+      setConfigArea(null)
     },
     onError: (err) => notify.error(parseApiError(err)),
   })
@@ -207,6 +246,9 @@ export default function AreasTab() {
           <button className="btn btn-ghost btn-xs btn-square" onClick={() => openEdit(item)}>
             <Pencil className="h-3.5 w-3.5 opacity-50" />
           </button>
+          <button className="btn btn-ghost btn-xs btn-square" title="Stock por área" onClick={() => setConfigArea(item)}>
+            <SlidersHorizontal className="h-3.5 w-3.5 opacity-50" />
+          </button>
           <button className="btn btn-ghost btn-xs btn-square" onClick={() => setDeleteTarget(item)}>
             <Trash2 className="h-3.5 w-3.5 opacity-50 hover:text-error" />
           </button>
@@ -270,6 +312,58 @@ export default function AreasTab() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
       />
+
+      <Dialog open={!!configArea} onClose={() => setConfigArea(null)} title={`Stock por área: ${configArea?.nombre ?? ''}`} className="max-w-3xl">
+        {loadingProductosArea ? (
+          <PageLoading label="Cargando productos..." size="md" />
+        ) : (
+          <div className="space-y-3">
+            <div className="overflow-x-auto max-h-[60vh]">
+              <table className="table table-sm">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th className="w-28">Mín.</th>
+                    <th className="w-28">Máx.</th>
+                    <th className="w-32">Reorden</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {productosConfig.map((p) => (
+                    <tr key={p.id}>
+                      <td>
+                        <div className="font-medium text-sm">{p.nombre}</div>
+                        <div className="text-[10px] font-mono opacity-40">{p.codigo_interno}</div>
+                      </td>
+                      {(['stock_minimo', 'stock_maximo', 'punto_reorden'] as const).map((key) => (
+                        <td key={key}>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="input input-bordered input-xs w-full"
+                            value={productosConfig.find(x => x.id === p.id)?.[key] ?? ''}
+                            onChange={(e) => setProductosConfig(prev => prev.map(row => row.id === p.id ? { ...row, [key]: e.target.value || null } : row))}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {productosConfig.length === 0 && (
+                <p className="text-sm opacity-50 text-center py-6">No hay productos asignados a esta área.</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setConfigArea(null)}>Cancelar</button>
+              <button type="button" className="btn btn-primary btn-sm" disabled={saveAreaConfigMut.isPending} onClick={() => saveAreaConfigMut.mutate()}>
+                {saveAreaConfigMut.isPending ? <span className="loading loading-spinner loading-xs" /> : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Dialog>
     </div>
   )
 }

@@ -1,10 +1,146 @@
 use rust_decimal::Decimal;
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::errors::AppError;
 use crate::models::producto::Producto;
+
+#[derive(Debug, Clone)]
+struct Gs1Parsed {
+    gtin: String,
+    lote: Option<String>,
+    vencimiento: Option<chrono::NaiveDate>,
+}
+
+fn parse_gs1(codigo: &str) -> Option<Gs1Parsed> {
+    let raw = codigo.trim().replace(['(', ')'], "");
+    let mut i = 0usize;
+    let bytes = raw.as_bytes();
+    let mut gtin = None;
+    let mut lote = None;
+    let mut vencimiento = None;
+
+    while i + 2 <= raw.len() {
+        let ai = &raw[i..i + 2];
+        i += 2;
+        match ai {
+            "01" if i + 14 <= raw.len() => {
+                gtin = Some(raw[i..i + 14].to_string());
+                i += 14;
+            }
+            "17" if i + 6 <= raw.len() => {
+                let val = &raw[i..i + 6];
+                i += 6;
+                let year = 2000 + val[0..2].parse::<i32>().ok()?;
+                let month = val[2..4].parse::<u32>().ok()?;
+                let day = val[4..6].parse::<u32>().ok()?;
+                vencimiento = chrono::NaiveDate::from_ymd_opt(year, month, day);
+            }
+            "10" => {
+                let start = i;
+                while i + 2 <= raw.len() {
+                    let maybe_ai = &raw[i..i + 2];
+                    if matches!(maybe_ai, "01" | "17" | "21" | "30") {
+                        break;
+                    }
+                    if bytes[i] == 29 {
+                        break;
+                    }
+                    i += 1;
+                }
+                if i > start {
+                    lote = Some(raw[start..i].trim_matches(char::from(29)).to_string());
+                }
+            }
+            _ => break,
+        }
+    }
+
+    gtin.map(|gtin| Gs1Parsed {
+        gtin,
+        lote,
+        vencimiento,
+    })
+}
+
+async fn upsert_presentacion_proveedor(
+    tx: &mut Transaction<'_, Postgres>,
+    producto_id: Uuid,
+    prov: &crate::handlers::productos::ProveedorProductoInput,
+) -> Result<Option<i32>, AppError> {
+    if let Some(pres) = &prov.presentacion {
+        if let Some(id) = prov.presentacion_id {
+            sqlx::query(
+                r#"UPDATE presentaciones
+                   SET nombre = $1, nombre_plural = $2, factor_conversion = $3,
+                       codigo_barras = $4, gtin = $5, gs1_habilitado = $6
+                   WHERE id = $7 AND producto_id = $8"#,
+            )
+            .bind(pres.nombre.trim())
+            .bind(pres.nombre_plural.trim())
+            .bind(pres.factor_conversion)
+            .bind(&pres.codigo_barras)
+            .bind(&pres.gtin)
+            .bind(pres.gs1_habilitado.unwrap_or(false))
+            .bind(id)
+            .bind(producto_id)
+            .execute(&mut **tx)
+            .await?;
+
+            return Ok(Some(id));
+        }
+
+        let id: i32 = sqlx::query_scalar(
+            r#"INSERT INTO presentaciones
+               (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               RETURNING id"#,
+        )
+        .bind(producto_id)
+        .bind(pres.nombre.trim())
+        .bind(pres.nombre_plural.trim())
+        .bind(pres.factor_conversion)
+        .bind(&pres.codigo_barras)
+        .bind(&pres.gtin)
+        .bind(pres.gs1_habilitado.unwrap_or(false))
+        .fetch_one(&mut **tx)
+        .await?;
+
+        return Ok(Some(id));
+    }
+
+    Ok(prov.presentacion_id)
+}
+
+async fn guardar_imagen_proveedor(
+    tx: &mut Transaction<'_, Postgres>,
+    producto_id: Uuid,
+    prov: &crate::handlers::productos::ProveedorProductoInput,
+    imagen_previa: Option<String>,
+) -> Result<Option<String>, AppError> {
+    if let Some(data_url) = prov.imagen_data_url.as_deref() {
+        if let Some(ref path) = imagen_previa {
+            crate::services::storage::delete_image(path).await?;
+        }
+
+        let nombre_archivo = format!("{}-proveedor-{}", producto_id, prov.proveedor_id);
+        let path =
+            crate::services::storage::save_base64_image(data_url, "productos", &nombre_archivo)
+                .await?;
+        return Ok(Some(path));
+    }
+
+    let imagen_url = prov.imagen_url.clone().or(imagen_previa);
+    if let Some(ref path) = imagen_url {
+        sqlx::query("SELECT $1")
+            .bind(path)
+            .execute(&mut **tx)
+            .await?;
+    }
+
+    Ok(imagen_url)
+}
 
 pub struct ProductoService;
 
@@ -88,13 +224,15 @@ impl ProductoService {
         if let Some(pres_list) = params.presentaciones {
             for pres in pres_list {
                 sqlx::query(
-                    "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras) VALUES ($1, $2, $3, $4, $5)",
+                    "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado) VALUES ($1, $2, $3, $4, $5, $6, $7)",
                 )
                 .bind(producto.id)
                 .bind(pres.nombre.trim())
                 .bind(pres.nombre_plural.trim())
                 .bind(pres.factor_conversion)
                 .bind(&pres.codigo_barras)
+                .bind(&pres.gtin)
+                .bind(pres.gs1_habilitado.unwrap_or(false))
                 .execute(&mut *tx)
                 .await?;
             }
@@ -112,20 +250,42 @@ impl ProductoService {
 
         if let Some(provs) = params.proveedores {
             for prov in &provs {
+                let presentacion_id = upsert_presentacion_proveedor(&mut tx, producto.id, prov)
+                    .await?;
+                let imagen_url = guardar_imagen_proveedor(&mut tx, producto.id, prov, None).await?;
+
                 sqlx::query(
                     r#"INSERT INTO producto_proveedor
-                       (producto_id, proveedor_id, es_principal, codigo_proveedor, precio_unidad, lead_time_dias, unidad_minima_pedido)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
+                       (producto_id, proveedor_id, es_principal, codigo_proveedor, codigo_maestro, presentacion_id, precio_unidad, lead_time_dias, unidad_minima_pedido, imagen_url)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
                 )
                 .bind(producto.id)
                 .bind(prov.proveedor_id)
                 .bind(prov.es_principal)
                 .bind(&prov.codigo_proveedor)
+                .bind(&prov.codigo_maestro)
+                .bind(presentacion_id)
                 .bind(prov.precio_unidad)
                 .bind(prov.lead_time_dias)
                 .bind(prov.unidad_minima_pedido)
+                .bind(&imagen_url)
                 .execute(&mut *tx)
                 .await?;
+
+                if let Some(precio) = prov.precio_unidad {
+                    sqlx::query(
+                        r#"INSERT INTO producto_precio_historial
+                           (producto_id, proveedor_id, precio_unidad, presentacion_id, usuario_id, fuente, nota)
+                           VALUES ($1, $2, $3, $4, $5, 'manual', 'Precio inicial de proveedor')"#,
+                    )
+                    .bind(producto.id)
+                    .bind(prov.proveedor_id)
+                    .bind(precio)
+                    .bind(presentacion_id)
+                    .bind(params.usuario_id)
+                    .execute(&mut *tx)
+                    .await?;
+                }
             }
 
             if let Some(principal) = provs.iter().find(|p| p.es_principal) {
@@ -193,14 +353,31 @@ impl ProductoService {
                             'proveedor_icono',  prov.icono,
                             'es_principal',     pp.es_principal,
                             'codigo_proveedor', pp.codigo_proveedor,
+                            'codigo_maestro',   pp.codigo_maestro,
+                            'presentacion_id',  pp.presentacion_id,
+                            'presentacion', CASE WHEN pr.id IS NOT NULL THEN json_build_object(
+                                'id', pr.id,
+                                'producto_id', pr.producto_id,
+                                'nombre', pr.nombre,
+                                'nombre_plural', pr.nombre_plural,
+                                'factor_conversion', pr.factor_conversion,
+                                'codigo_barras', pr.codigo_barras,
+                                'gtin', pr.gtin,
+                                'gs1_habilitado', pr.gs1_habilitado,
+                                'activa', pr.activa,
+                                'version', pr.version,
+                                'created_at', pr.created_at
+                            ) ELSE NULL END,
                             'precio_unidad',    pp.precio_unidad,
                             'lead_time_dias',   pp.lead_time_dias,
                             'unidad_minima_pedido', pp.unidad_minima_pedido,
+                            'imagen_url',       pp.imagen_url,
                             'activo',           pp.activo,
                             'version',          pp.version
                         ) ORDER BY pp.es_principal DESC, prov.nombre
                     ) FROM producto_proveedor pp
                     JOIN proveedores prov ON prov.id = pp.proveedor_id
+                    LEFT JOIN presentaciones pr ON pr.id = pp.presentacion_id
                     WHERE pp.producto_id = p.id AND pp.activo = TRUE),
                     '[]'::json
                 ),
@@ -213,6 +390,8 @@ impl ProductoService {
                             'nombre_plural',    pr.nombre_plural,
                             'factor_conversion',pr.factor_conversion,
                             'codigo_barras',    pr.codigo_barras,
+                            'gtin',             pr.gtin,
+                            'gs1_habilitado',   pr.gs1_habilitado,
                             'activa',           pr.activa,
                             'version',          pr.version,
                             'created_at',       pr.created_at
@@ -241,6 +420,44 @@ impl ProductoService {
         .await?;
 
         result.ok_or(AppError::NotFound("Producto no encontrado".into()))
+    }
+
+    pub async fn historial_precios(
+        pool: &PgPool,
+        id: Uuid,
+    ) -> Result<Vec<serde_json::Value>, AppError> {
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1)")
+            .bind(id)
+            .fetch_one(pool)
+            .await?;
+        if !exists {
+            return Err(AppError::NotFound("Producto no encontrado".into()));
+        }
+
+        sqlx::query_scalar(
+            r#"SELECT json_build_object(
+                'id', h.id,
+                'proveedor_id', h.proveedor_id,
+                'proveedor_nombre', pr.nombre,
+                'precio_unidad', h.precio_unidad,
+                'presentacion_id', h.presentacion_id,
+                'presentacion_nombre', pres.nombre,
+                'precio_presentacion', h.precio_presentacion,
+                'vigente_desde', h.vigente_desde,
+                'fuente', h.fuente,
+                'nota', h.nota,
+                'created_at', h.created_at
+            )
+            FROM producto_precio_historial h
+            LEFT JOIN proveedores pr ON pr.id = h.proveedor_id
+            LEFT JOIN presentaciones pres ON pres.id = h.presentacion_id
+            WHERE h.producto_id = $1
+            ORDER BY h.vigente_desde DESC, h.created_at DESC, h.id DESC"#,
+        )
+        .bind(id)
+        .fetch_all(pool)
+        .await
+        .map_err(Into::into)
     }
 
     /// Actualiza un producto existente con control de concurrencia (versión)
@@ -309,20 +526,51 @@ impl ProductoService {
                 .await?;
 
             for prov in &provs {
+                let imagen_previa: Option<String> = sqlx::query_scalar(
+                    "SELECT imagen_url FROM producto_proveedor WHERE producto_id = $1 AND proveedor_id = $2",
+                )
+                .bind(params.id)
+                .bind(prov.proveedor_id)
+                .fetch_optional(&mut *tx)
+                .await?
+                .flatten();
+                let presentacion_id = upsert_presentacion_proveedor(&mut tx, params.id, prov)
+                    .await?;
+                let imagen_url =
+                    guardar_imagen_proveedor(&mut tx, params.id, prov, imagen_previa).await?;
+
                 sqlx::query(
                     r#"INSERT INTO producto_proveedor
-                       (producto_id, proveedor_id, es_principal, codigo_proveedor, precio_unidad, lead_time_dias, unidad_minima_pedido)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
+                       (producto_id, proveedor_id, es_principal, codigo_proveedor, codigo_maestro, presentacion_id, precio_unidad, lead_time_dias, unidad_minima_pedido, imagen_url)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
                 )
                 .bind(params.id)
                 .bind(prov.proveedor_id)
                 .bind(prov.es_principal)
                 .bind(&prov.codigo_proveedor)
+                .bind(&prov.codigo_maestro)
+                .bind(presentacion_id)
                 .bind(prov.precio_unidad)
                 .bind(prov.lead_time_dias)
                 .bind(prov.unidad_minima_pedido)
+                .bind(&imagen_url)
                 .execute(&mut *tx)
                 .await?;
+
+                if let Some(precio) = prov.precio_unidad {
+                    sqlx::query(
+                        r#"INSERT INTO producto_precio_historial
+                           (producto_id, proveedor_id, precio_unidad, presentacion_id, usuario_id, fuente, nota)
+                           VALUES ($1, $2, $3, $4, $5, 'manual', 'Precio actualizado desde producto')"#,
+                    )
+                    .bind(params.id)
+                    .bind(prov.proveedor_id)
+                    .bind(precio)
+                    .bind(presentacion_id)
+                    .bind(params.usuario_id)
+                    .execute(&mut *tx)
+                    .await?;
+                }
             }
 
             if let Some(principal) = provs.iter().find(|p| p.es_principal) {
@@ -448,7 +696,7 @@ impl ProductoService {
             proveedor_id: Option<i32>,
             unidad_base_nombre: String,
             unidad_base_nombre_plural: String,
-            presentacion_id: Uuid,
+            presentacion_id: i32,
             presentacion_nombre: String,
             factor_conversion: Decimal,
             stock_total: Option<Decimal>,
@@ -456,27 +704,30 @@ impl ProductoService {
         }
 
         // 1. Buscar por código de barras de presentación
+        let gs1 = parse_gs1(codigo);
+        let codigo_presentacion = gs1.as_ref().map(|g| g.gtin.as_str()).unwrap_or(codigo);
+
         let row = sqlx::query_as::<_, Row1>(
             r#"SELECT
                  p.id as producto_id, p.nombre as producto_nombre, p.proveedor_id,
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
                  pr.id as presentacion_id, pr.nombre as presentacion_nombre, pr.factor_conversion,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
-                 p.imagen_url
+                 p.imagen_path AS imagen_url
                FROM presentaciones pr
                JOIN productos p ON p.id = pr.producto_id
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-               WHERE pr.codigo_barras = $1 AND pr.activa = true AND p.activo = true
+               WHERE (pr.codigo_barras = $1 OR pr.gtin = $1) AND pr.activa = true AND p.activo = true
                LIMIT 1"#,
         )
-        .bind(codigo)
+        .bind(codigo_presentacion)
         .fetch_optional(pool)
         .await?;
 
         if let Some(r) = row {
-            return Ok(json!({
+            let mut out = json!({
                 "encontrado": true,
-                "tipo": "presentacion",
+                "tipo": if gs1.is_some() { "gs1" } else { "presentacion" },
                 "producto_id": r.producto_id,
                 "producto_nombre": r.producto_nombre,
                 "proveedor_id": r.proveedor_id,
@@ -487,6 +738,22 @@ impl ProductoService {
                 "factor_conversion": r.factor_conversion,
                 "stock_total": r.stock_total,
                 "imagen_url": r.imagen_url,
+            });
+            if let Some(gs1) = gs1 {
+                out["gs1"] = json!({
+                    "gtin": gs1.gtin,
+                    "numero_lote": gs1.lote,
+                    "fecha_vencimiento": gs1.vencimiento,
+                });
+            }
+            return Ok(out);
+        }
+
+        if parse_gs1(codigo).is_some() {
+            return Ok(json!({
+                "encontrado": false,
+                "tipo": "gs1",
+                "motivo": "GTIN no registrado",
             }));
         }
 
@@ -507,7 +774,7 @@ impl ProductoService {
                  p.id as producto_id, p.nombre as producto_nombre, p.proveedor_id,
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
-                 p.imagen_url
+                 p.imagen_path AS imagen_url
                FROM productos p
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
                WHERE p.codigo_interno = $1 AND p.activo = true
@@ -575,7 +842,7 @@ impl ProductoService {
                  (SELECT a.nombre FROM stock s JOIN areas a ON a.id = s.area_id
                   WHERE s.lote_id = l.id AND s.cantidad > 0
                   ORDER BY s.cantidad DESC LIMIT 1) as area_nombre,
-                 p.imagen_url
+                 p.imagen_path AS imagen_url
                FROM lotes l
                JOIN productos p ON p.id = l.producto_id
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id

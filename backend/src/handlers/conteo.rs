@@ -202,7 +202,7 @@ async fn obtener(
                   ub.nombre as unidad_base_nombre,
                   ub.nombre_plural as unidad_base_nombre_plural,
                   ci.stock_sistema, ci.cantidad_contada, ci.estado_item, ci.version,
-                  p.imagen_url
+                  p.imagen_path AS imagen_url
            FROM conteo_items ci
            JOIN lotes l ON l.id = ci.lote_id
            JOIN productos p ON p.id = l.producto_id

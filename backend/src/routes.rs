@@ -47,6 +47,10 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
             handlers::presentaciones::nested_routes(),
         )
         .nest("/presentaciones", handlers::presentaciones::direct_routes())
+        .nest(
+            "/presentacion-formatos",
+            handlers::presentacion_formatos::routes(),
+        )
         // Stock y lotes (lectura)
         .nest("/stock", handlers::stock::routes())
         .nest("/lotes", handlers::lotes::routes())

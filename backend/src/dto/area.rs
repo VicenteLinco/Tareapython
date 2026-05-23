@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use rust_decimal::Decimal;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -37,9 +38,20 @@ pub struct ProductoAreaRow {
     pub id: Uuid,
     pub codigo_interno: String,
     pub nombre: String,
+    pub stock_minimo: Option<Decimal>,
+    pub stock_maximo: Option<Decimal>,
+    pub punto_reorden: Option<Decimal>,
 }
 
 #[derive(Debug, Deserialize, Type)]
 pub struct AsignarProductosRequest {
-    pub producto_ids: Vec<Uuid>,
+    pub productos: Vec<ProductoAreaConfigInput>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Type)]
+pub struct ProductoAreaConfigInput {
+    pub producto_id: Uuid,
+    pub stock_minimo: Option<Decimal>,
+    pub stock_maximo: Option<Decimal>,
+    pub punto_reorden: Option<Decimal>,
 }

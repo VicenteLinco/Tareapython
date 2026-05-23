@@ -73,6 +73,12 @@ export interface DescartesHistorialQuery {
   per_page?: number
 }
 
+export interface AlertasQuery {
+  area_ids?: string | number[] | null
+  page?: number
+  per_page?: number
+}
+
 // ─── Stock ────────────────────────────────────────────────────────────────────
 
 /** GET /stock — Listar stock global con filtros opcionales */
@@ -88,8 +94,14 @@ export async function stockPorArea(areaId: number, params?: { page?: number; per
 }
 
 /** GET /stock/alertas — Alertas de stock (bajo mínimo, por vencer, vencidos) */
-export async function obtenerAlertas(): Promise<AlertasResponse> {
-  const { data } = await api.get<AlertasResponse>('/stock/alertas')
+export async function obtenerAlertas(params?: AlertasQuery): Promise<AlertasResponse> {
+  const apiParams = params
+    ? {
+        ...params,
+        area_ids: Array.isArray(params.area_ids) ? params.area_ids.join(',') : params.area_ids,
+      }
+    : undefined
+  const { data } = await api.get<AlertasResponse>('/stock/alertas', { params: apiParams })
   return data
 }
 

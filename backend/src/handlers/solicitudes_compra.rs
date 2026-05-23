@@ -103,7 +103,7 @@ async fn obtener_solicitud_por_id(
             d.precio_unitario,
             d.presentacion_id,
             d.cantidad_presentaciones,
-            p.imagen_url,
+            p.imagen_path AS imagen_url,
             d.horizonte_dias,
             d.horizonte_sugerido,
             d.horizonte_razon
@@ -396,7 +396,30 @@ pub async fn recomendaciones(
 
     // 2. Una sola query: por producto, devuelve la serie diaria de consumo
     //    de los últimos `ventana_demanda_dias` días + metadata.
-    let rows = sqlx::query!(
+    #[derive(sqlx::FromRow)]
+    struct RecomendacionRow {
+        producto_id: Uuid,
+        producto_nombre: String,
+        codigo_proveedor: Option<String>,
+        codigo_maestro: Option<String>,
+        proveedor_id: Option<i32>,
+        proveedor_nombre: Option<String>,
+        lead_time: i32,
+        stock_actual: f64,
+        stock_minimo: f64,
+        ya_pedido: f64,
+        serie: Vec<f64>,
+        presentacion_id: Option<i32>,
+        presentacion_nombre: Option<String>,
+        presentacion_nombre_plural: Option<String>,
+        factor_conversion: Option<f64>,
+        precio_ultimo: Option<f64>,
+        unidad_base: String,
+        unidad_base_plural: Option<String>,
+        imagen_url: Option<String>,
+    }
+
+    let rows = sqlx::query_as::<_, RecomendacionRow>(
         r#"
         WITH ventana AS (
             SELECT NOW() - ($1::int * INTERVAL '1 day') AS desde
@@ -481,27 +504,27 @@ pub async fn recomendaciones(
             ORDER BY producto_id, factor_conversion DESC
         )
         SELECT
-            p.id                                                              AS "producto_id!: Uuid",
-            p.nombre                                                          AS "producto_nombre!: String",
-            p.codigo_proveedor                                                AS "codigo_proveedor: String",
-            p.codigo_maestro                                                  AS "codigo_maestro: String",
-            prov.id                                                           AS "proveedor_id: i32",
-            prov.nombre                                                       AS "proveedor_nombre: String",
+            p.id                                                              AS producto_id,
+            p.nombre                                                          AS producto_nombre,
+            p.codigo_proveedor                                                AS codigo_proveedor,
+            p.codigo_maestro                                                  AS codigo_maestro,
+            prov.id                                                           AS proveedor_id,
+            prov.nombre                                                       AS proveedor_nombre,
             COALESCE(p.lead_time_propio,
                      prov.dias_despacho_tierra,
-                     prov.dias_despacho_aereo, 7)::INT                        AS "lead_time!: i32",
-            COALESCE(st.stock_actual, 0)::FLOAT8                              AS "stock_actual!: f64",
-            COALESCE(p.stock_minimo, 0)::FLOAT8                               AS "stock_minimo!: f64",
-            COALESCE(pev.cantidad_pedida, 0)::FLOAT8                          AS "ya_pedido!: f64",
-            s.serie                                                           AS "serie!: Vec<f64>",
-            pres.id                                                           AS "presentacion_id: i32",
-            pres.nombre                                                       AS "presentacion_nombre: String",
-            pres.nombre_plural                                                AS "presentacion_nombre_plural: String",
-            pres.factor_conversion::FLOAT8                                    AS "factor_conversion: f64",
-            COALESCE(up.precio_unitario, p.precio_unidad)::FLOAT8             AS "precio_ultimo: f64",
-            ub.nombre                                                         AS "unidad_base!: String",
-            ub.nombre_plural                                                  AS "unidad_base_plural: String",
-            p.imagen_url                                                      AS "imagen_url: String"
+                     prov.dias_despacho_aereo, 7)::INT                        AS lead_time,
+            COALESCE(st.stock_actual, 0)::FLOAT8                              AS stock_actual,
+            COALESCE(p.stock_minimo, 0)::FLOAT8                               AS stock_minimo,
+            COALESCE(pev.cantidad_pedida, 0)::FLOAT8                          AS ya_pedido,
+            s.serie                                                           AS serie,
+            pres.id                                                           AS presentacion_id,
+            pres.nombre                                                       AS presentacion_nombre,
+            pres.nombre_plural                                                AS presentacion_nombre_plural,
+            pres.factor_conversion::FLOAT8                                    AS factor_conversion,
+            COALESCE(up.precio_unitario, p.precio_unidad)::FLOAT8             AS precio_ultimo,
+            ub.nombre                                                         AS unidad_base,
+            ub.nombre_plural                                                  AS unidad_base_plural,
+            p.imagen_path                                                     AS imagen_url
         FROM productos p
         JOIN series s ON s.producto_id = p.id
         LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
@@ -512,8 +535,8 @@ pub async fn recomendaciones(
         LEFT JOIN pedidos_en_vuelo pev ON pev.producto_id = p.id
         WHERE p.activo = true
         "#,
-        cfg.ventana_demanda_dias
     )
+    .bind(cfg.ventana_demanda_dias)
     .fetch_all(&state.pool)
     .await?;
 

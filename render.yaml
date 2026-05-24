@@ -1,0 +1,40 @@
+# =============================================================================
+# Render Blueprint Specification
+# Este archivo permite desplegar toda la infraestructura en Render con un solo clic
+# (Base de Datos PostgreSQL + Servidor Web en Docker con base de datos vinculada)
+# =============================================================================
+
+services:
+  - type: web
+    name: inventario-laboratorio
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    numInstances: 1
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: RUST_LOG
+        value: info
+      - key: JWT_SECRET
+        generateValue: true # Render generará una clave aleatoria segura de forma automática
+      - key: DATABASE_URL
+        fromDatabase:
+          name: inventario-db
+          property: connectionString
+
+    # =========================================================================
+    # PERSISTENCIA DE IMÁGENES (Subidas / Uploads)
+    # El plan 'free' de Render no permite montar discos de almacenamiento.
+    # Si necesitas persistir las imágenes subidas entre reinicios, debes cambiar 
+    # el 'plan' del Web Service de 'free' a 'starter' y descomentar esta sección:
+    # =========================================================================
+    # disk:
+    #   name: inventario-uploads
+    #   mountPath: /app/uploads
+    #   sizeGB: 1
+
+databases:
+  - name: inventario-db
+    plan: free
+    postgresMajorVersion: 16

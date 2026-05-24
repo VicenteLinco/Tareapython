@@ -1,0 +1,31 @@
+# Git
+.git
+.gitignore
+.gitattributes
+.github
+
+# Node / Frontend
+**/node_modules
+frontend/dist
+
+# Rust / Backend
+**/target
+backend/.cargo
+backend/.idea
+
+# Docker / Compose / Scripts
+docker-compose.yml
+Dockerfile*
+.env
+.env.example
+*.bat
+*.ps1
+release/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+.claude
+.antigravitycli

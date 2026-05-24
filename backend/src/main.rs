@@ -110,6 +110,27 @@ async fn main() {
 
     tracing::info!("Conectado a PostgreSQL");
 
+    // Autocorrección de checksums de migraciones modificadas.
+    // Esto previene errores de VersionMismatch si alguna migración aplicada previamente fue editada en el código.
+    if let Ok(table_exists) = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = '_sqlx_migrations')"
+    )
+    .fetch_one(&pool)
+    .await {
+        if table_exists {
+            let migrator = sqlx::migrate!("./migrations");
+            for migration in migrator.migrations.iter() {
+                let _ = sqlx::query(
+                    "UPDATE _sqlx_migrations SET checksum = $1 WHERE version = $2 AND checksum <> $1"
+                )
+                .bind(&*migration.checksum)
+                .bind(migration.version)
+                .execute(&pool)
+                .await;
+            }
+        }
+    }
+
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await

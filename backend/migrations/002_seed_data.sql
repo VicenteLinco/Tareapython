@@ -46,3 +46,21 @@ INSERT INTO categorias (nombre, descripcion) VALUES
     ('Solución / Buffer',   'Diluyentes, soluciones de lavado y fijadores'),
     ('EPP',                 'Equipos de protección personal: guantes, mascarillas, lentes'),
     ('Papelería',           'Etiquetas, formularios y material administrativo');
+
+-- =========================
+-- Usuario admin inicial
+-- Contraseña: Admin123!
+-- Hash Argon2 de "Admin123!"
+-- =========================
+-- NOTA: Este hash se debe regenerar en producción.
+-- El hash de abajo corresponde a "Admin123!" con Argon2id.
+-- En el primer login, se debe cambiar la contraseña.
+INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES
+    ('Administrador', 'admin@laboratorio.cl', '$argon2id$v=19$m=19456,t=2,p=1$ohcOafUCERxCN4F0deHevg$hJNh8rweQwOhkhcc6E6KzmAPXdNZOtB34618gb16d40', 'admin');
+
+-- Dar acceso al admin a todas las áreas
+INSERT INTO usuario_area (usuario_id, area_id)
+SELECT u.id, a.id
+FROM usuarios u, areas a
+WHERE u.email = 'admin@laboratorio.cl';
+

@@ -71,21 +71,21 @@ function ProveedorCard({ proveedor, urgencias, criticos, lotesVenciendo, diasVen
       )}
     >
       {selected && (
-        <span className="absolute top-3 left-3 badge badge-primary badge-sm gap-1 font-bold">
+        <span className="absolute top-3 left-3 z-10 badge badge-primary badge-sm gap-1 font-bold">
           <CheckCircle2 className="h-3 w-3" /> Seleccionado
         </span>
       )}
 
       {hasCriticos ? (
-        <span className="absolute top-3 right-3 badge badge-error badge-sm font-bold gap-1">
+        <span className="absolute top-3 right-3 z-10 badge badge-error badge-sm font-bold gap-1">
           <span className="text-[9px]">●</span> {criticos} crítico{criticos !== 1 ? 's' : ''}
         </span>
       ) : hasUrgencias ? (
-        <span className="absolute top-3 right-3 badge badge-warning badge-sm font-bold gap-1">
+        <span className="absolute top-3 right-3 z-10 badge badge-warning badge-sm font-bold gap-1">
           <span className="text-[9px]">▲</span> {urgencias}
         </span>
       ) : (
-        <span className="absolute top-3 right-3 badge badge-success badge-sm font-bold text-[9px]">✓ OK</span>
+        <span className="absolute top-3 right-3 z-10 badge badge-success badge-sm font-bold text-[9px]">✓ OK</span>
       )}
 
       <ProveedorAvatar nombre={proveedor.nombre} icono={proveedor.icono} />

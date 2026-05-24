@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils'
+import { cn, formatStockHumano, formatCantidad } from '@/lib/utils'
 import type { DetalleLineUI } from './item-card'
 
 interface SolicitudItemSimple {
@@ -6,6 +6,12 @@ interface SolicitudItemSimple {
   producto_nombre: string
   cantidad_base: number
   unidad: string
+  unidad_plural?: string | null
+  presentacion_id?: number | null
+  presentacion_nombre?: string | null
+  presentacion_nombre_plural?: string | null
+  factor_conversion?: number | null
+  cantidad_presentaciones?: number | null
 }
 
 interface Props {
@@ -54,14 +60,23 @@ export function ReconciliacionModal({
 
   const filasExtra = Object.entries(recibidoMap)
     .filter(([productoId]) => !solicitadosSet.has(productoId))
-    .map(([productoId, recibido]) => ({
-      producto_id: productoId,
-      producto_nombre: recibidoNombreMap[productoId] ?? 'Producto no solicitado',
-      cantidad_base: 0,
-      unidad: 'no solicitado',
-      recibido,
-      estado: 'extra' as EstadoReconciliacion,
-    }))
+    .map(([productoId, recibido]) => {
+      const d = detalles.find(det => det.producto_id === productoId)
+      return {
+        producto_id: productoId,
+        producto_nombre: recibidoNombreMap[productoId] ?? 'Producto no solicitado',
+        cantidad_base: 0,
+        unidad: d?.unidad_base_nombre ?? 'no solicitado',
+        unidad_plural: d?.unidad_base_nombre_plural ?? null,
+        presentacion_id: d?.presentacion_id ?? null,
+        presentacion_nombre: d?.presentacion_nombre ?? null,
+        presentacion_nombre_plural: d?.presentacion_nombre_plural ?? null,
+        factor_conversion: d?.factor_conversion ?? 1,
+        cantidad_presentaciones: null,
+        recibido,
+        estado: 'extra' as EstadoReconciliacion,
+      }
+    })
 
   const filas = [...filasSolicitadas, ...filasExtra]
   const requiereNota = filas.some(f => f.estado !== 'ok')
@@ -79,6 +94,20 @@ export function ReconciliacionModal({
     estado === 'no_recibido' ? 'No recibido' :
     estado === 'sobrante' ? 'Sobrante' :
     'Extra'
+
+  const formatFilaQty = (total: number, item: typeof filas[0]) => {
+    const factor = item.factor_conversion ?? 1
+    const uBase = item.unidad || 'unidad'
+    const uBasePlural = item.unidad_plural || (uBase === 'unidad' ? 'unidades' : uBase)
+    const uPres = item.presentacion_nombre || ''
+    const uPresPlural = item.presentacion_nombre_plural || uPres
+
+    if (item.presentacion_id && factor > 1) {
+      const presText = formatStockHumano(total, factor, uBase, uBasePlural, uPres, uPresPlural)
+      return `${presText} (${total} ${total === 1 ? uBase : uBasePlural})`
+    }
+    return formatCantidad(total, uBase, uBasePlural)
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
@@ -98,12 +127,15 @@ export function ReconciliacionModal({
             >
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-bold truncate">{f.producto_nombre}</p>
-                <p className="text-[10px] opacity-40">{f.unidad}</p>
+                <p className="text-[10px] opacity-40">
+                  {f.presentacion_id && (f.factor_conversion ?? 1) > 1
+                    ? `${f.presentacion_nombre} (factor: ${f.factor_conversion})`
+                    : f.unidad}
+                </p>
               </div>
-              <div className="text-right text-xs tabular-nums">
-                <span className="opacity-50">Pedido: {Math.round(f.cantidad_base)}</span>
-                <span className="mx-1.5 opacity-30">·</span>
-                <span className="font-bold">Llegó: {Math.round(f.recibido)}</span>
+              <div className="text-right text-xs tabular-nums flex flex-col items-end gap-0.5">
+                <span className="opacity-50">Pedido: {formatFilaQty(f.cantidad_base, f)}</span>
+                <span className="font-bold">Llegó: {formatFilaQty(f.recibido, f)}</span>
               </div>
               <span className="text-[9px] font-black bg-base-100/70 px-1.5 py-0.5 rounded-full shrink-0">
                 {estadoLabel(f.estado)}

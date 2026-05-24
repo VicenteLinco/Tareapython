@@ -99,7 +99,7 @@ function RecepcionDetailPanel({
   }
 
   const { recepcion, nota, detalle } = recepcionData
-  const esConfirmada = recepcion.estado === 'completa' || recepcion.estado === 'confirmada'
+  const esConfirmada = recepcion.estado !== 'borrador'
 
   return (
     <div className="rounded-xl border border-base-200 bg-base-100 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
@@ -116,7 +116,7 @@ function RecepcionDetailPanel({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <EstadoBadge estado={esConfirmada ? 'confirmada' : 'borrador'} size="sm" />
+          <EstadoBadge estado={recepcion.estado === 'completa' ? 'confirmada' : recepcion.estado} size="sm" />
           <button
             type="button"
             onClick={onClose}
@@ -494,7 +494,7 @@ export default function RecepcionesPage() {
                         <td className="text-sm hidden md:table-cell">{item.usuario_nombre}</td>
                         <td>
                           <div className="flex flex-col gap-0.5">
-                            <EstadoBadge estado={item.estado === 'completa' || String(item.estado) === 'confirmada' ? 'confirmada' : 'borrador'} size="sm" />
+                            <EstadoBadge estado={item.estado === 'completa' ? 'confirmada' : item.estado} size="sm" />
                             {/* Badge items/lotes */}
                             {item.items_count > 0 && (
                               <span className="text-[9px] text-base-content/40 font-medium">

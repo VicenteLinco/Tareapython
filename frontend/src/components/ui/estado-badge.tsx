@@ -12,6 +12,7 @@ const ESTADO_CONFIG: Record<string, { label: string; cls: string }> = {
   guardada:              { label: 'Pendiente',         cls: 'badge-warning' },
   parcialmente_enviada:  { label: 'Env. parcial',      cls: 'badge-info' },
   parcialmente_recibida: { label: 'Rec. parcial',      cls: 'badge-warning' },
+  parcial:               { label: 'Parcial',           cls: 'badge-warning' },
   enviada:               { label: 'Enviada',           cls: 'badge-info' },
   /* ok / finalizado */
   confirmada:            { label: 'Confirmada',        cls: 'badge-success' },

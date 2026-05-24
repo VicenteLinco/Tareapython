@@ -153,9 +153,13 @@ pub async fn listar(
         param_idx += 1;
     }
     if let Some(ref estado) = params.estado {
-        conditions.push(format!("r.estado = ${}", param_idx));
-        estado_val = estado.clone();
-        param_idx += 1;
+        if estado == "confirmada" {
+            conditions.push("r.estado != 'borrador'".to_string());
+        } else {
+            conditions.push(format!("r.estado = ${}", param_idx));
+            estado_val = estado.clone();
+            param_idx += 1;
+        }
     }
     if let Some(desde) = params.desde {
         conditions.push(format!("r.fecha_recepcion >= ${}::date", param_idx));
@@ -218,17 +222,19 @@ pub async fn listar(
     if params.proveedor_id.is_some() {
         query = query.bind(pid_val);
     }
-    if params.estado.is_some() {
-        query = query.bind(estado_val);
+    if let Some(ref estado) = params.estado {
+        if estado != "confirmada" {
+            query = query.bind(estado_val.clone());
+        }
     }
     if params.desde.is_some() {
-        query = query.bind(desde_val);
+        query = query.bind(desde_val.clone());
     }
     if params.hasta.is_some() {
-        query = query.bind(hasta_val);
+        query = query.bind(hasta_val.clone());
     }
     if params.busqueda.is_some() {
-        query = query.bind(busqueda_val);
+        query = query.bind(busqueda_val.clone());
     }
     if params.area_id.is_some() {
         query = query.bind(aid_val);
@@ -236,9 +242,39 @@ pub async fn listar(
 
     let data = query.bind(per_page).bind(offset).fetch_all(pool).await?;
 
-    let total: i32 = sqlx::query_scalar("SELECT COUNT(*)::INT4 FROM recepciones")
-        .fetch_one(pool)
-        .await?;
+    let count_sql = format!(
+        r#"SELECT COUNT(*)::INT4
+           FROM recepciones r
+           JOIN proveedores p ON p.id = r.proveedor_id
+           JOIN usuarios u ON u.id = r.usuario_id
+           {}"#,
+        where_clause
+    );
+
+    let mut count_query = sqlx::query_scalar::<_, i32>(&count_sql);
+
+    if params.proveedor_id.is_some() {
+        count_query = count_query.bind(pid_val);
+    }
+    if let Some(ref estado) = params.estado {
+        if estado != "confirmada" {
+            count_query = count_query.bind(estado_val);
+        }
+    }
+    if params.desde.is_some() {
+        count_query = count_query.bind(desde_val);
+    }
+    if params.hasta.is_some() {
+        count_query = count_query.bind(hasta_val);
+    }
+    if params.busqueda.is_some() {
+        count_query = count_query.bind(busqueda_val);
+    }
+    if params.area_id.is_some() {
+        count_query = count_query.bind(aid_val);
+    }
+
+    let total = count_query.fetch_one(pool).await?;
 
     Ok(PaginatedRecepciones {
         data,

@@ -109,12 +109,27 @@ export default function NuevaRecepcionPage() {
         !proveedorId || it.proveedor_id === proveedorId
       )
       setSolicitudItemsRef(
-        itemsProveedor.map((it: { producto_id: string; producto_nombre: string; cantidad_sugerida: string; unidad: string }) => ({
-          producto_id: it.producto_id,
-          producto_nombre: it.producto_nombre,
-          cantidad_base: toNum(it.cantidad_sugerida),
-          unidad: it.unidad,
-        }))
+        itemsProveedor.map((it: any) => {
+          const factor = it.factor_conversion ? toNum(it.factor_conversion) : 1
+          const cantPres = it.cantidad_presentaciones ? toNum(it.cantidad_presentaciones) : null
+          const cantSugerida = toNum(it.cantidad_sugerida)
+          const hasPres = !!(it.presentacion_id && factor > 1)
+          const qtyBase = hasPres
+            ? (cantPres ?? cantSugerida) * factor
+            : cantSugerida
+          return {
+            producto_id: it.producto_id,
+            producto_nombre: it.producto_nombre,
+            cantidad_base: qtyBase,
+            unidad: it.unidad,
+            unidad_plural: it.unidad_plural,
+            presentacion_id: it.presentacion_id,
+            presentacion_nombre: it.presentacion_nombre,
+            presentacion_nombre_plural: it.presentacion_nombre_plural,
+            factor_conversion: factor,
+            cantidad_presentaciones: cantPres ?? (hasPres ? cantSugerida : null),
+          }
+        })
       )
       for (const item of itemsProveedor) {
         try {

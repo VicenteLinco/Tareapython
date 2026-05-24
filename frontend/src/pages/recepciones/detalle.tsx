@@ -256,7 +256,7 @@ export default function RecepcionDetallePage() {
   }
 
   const { recepcion, nota, foto_documento, foto_actualizada_at, detalle } = data
-  const esConfirmada = recepcion.estado === 'completa' || recepcion.estado === 'confirmada'
+  const esConfirmada = recepcion.estado !== 'borrador'
 
   const fotoEsPosterior = (() => {
     if (!foto_actualizada_at || !recepcion.created_at) return false
@@ -281,11 +281,20 @@ export default function RecepcionDetallePage() {
             <p className="text-xs opacity-45">{formatDate(recepcion.fecha_recepcion)}</p>
           </div>
           <div className="ml-auto shrink-0">
-            <Badge variant={esConfirmada ? 'success' : 'secondary'} className="text-sm px-3 py-1">
-              {esConfirmada
-                ? <><CheckCircle2 className="inline h-3.5 w-3.5 mr-1" />Confirmada</>
-                : <><Clock className="inline h-3.5 w-3.5 mr-1" />Borrador</>
+            <Badge
+              variant={
+                recepcion.estado === 'borrador' ? 'secondary' :
+                recepcion.estado === 'rechazada' ? 'destructive' :
+                recepcion.estado === 'parcial' ? 'warning' :
+                'success'
               }
+              className="text-sm px-3 py-1"
+            >
+              {recepcion.estado === 'borrador' && <><Clock className="inline h-3.5 w-3.5 mr-1" />Borrador</>}
+              {recepcion.estado === 'completa' && <><CheckCircle2 className="inline h-3.5 w-3.5 mr-1" />Confirmada</>}
+              {recepcion.estado === 'confirmada' && <><CheckCircle2 className="inline h-3.5 w-3.5 mr-1" />Confirmada</>}
+              {recepcion.estado === 'parcial' && <><CheckCircle2 className="inline h-3.5 w-3.5 mr-1" />Parcial</>}
+              {recepcion.estado === 'rechazada' && <><AlertTriangle className="inline h-3.5 w-3.5 mr-1" />Rechazada</>}
             </Badge>
           </div>
         </div>

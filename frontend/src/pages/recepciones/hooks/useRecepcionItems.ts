@@ -47,6 +47,12 @@ export interface SolicitudItemSimple {
   producto_nombre: string
   cantidad_base: number
   unidad: string
+  unidad_plural?: string | null
+  presentacion_id?: number | null
+  presentacion_nombre?: string | null
+  presentacion_nombre_plural?: string | null
+  factor_conversion?: number | null
+  cantidad_presentaciones?: number | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

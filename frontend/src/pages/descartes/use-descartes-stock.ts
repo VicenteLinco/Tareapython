@@ -6,6 +6,7 @@ interface DescartesStockParams {
   diasAlerta?: number
   areaId?: number | null
   proveedorId?: number | null
+  q?: string
 }
 
 export function useDescartesStock(params: DescartesStockParams) {
@@ -15,6 +16,7 @@ export function useDescartesStock(params: DescartesStockParams) {
       params.diasAlerta ?? 0,
       params.areaId,
       params.proveedorId,
+      params.q ?? '',
     ],
     queryFn: () =>
       api
@@ -23,6 +25,7 @@ export function useDescartesStock(params: DescartesStockParams) {
             dias_alerta: params.diasAlerta ?? 0,
             area_id: params.areaId ?? undefined,
             proveedor_id: params.proveedorId ?? undefined,
+            q: params.q || undefined,
           },
         })
         .then((r) => r.data),

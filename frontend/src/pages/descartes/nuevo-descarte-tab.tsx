@@ -70,6 +70,7 @@ interface NuevoDescarteTabProps {
 
 export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDescarte }: NuevoDescarteTabProps) {
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false)
   const [searchActiveIndex, setSearchActiveIndex] = useState(-1)
   const searchContainerRef = useRef<HTMLDivElement>(null)
@@ -87,6 +88,12 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
   const usuario = useAuthStore((s) => s.usuario)
   const searchTerm = search.trim()
   const canSearch = searchTerm.length >= MIN_SEARCH_CHARS
+
+  // Debounce de búsqueda para no saturar el backend
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(canSearch ? searchTerm : ''), 300)
+    return () => clearTimeout(timer)
+  }, [searchTerm, canSearch])
 
   const { data: areas } = useQuery({
     queryKey: ['areas'],
@@ -109,17 +116,8 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
     diasAlerta: filterIncluirProximos ? 30 : 0,
     areaId: filterAreaId,
     proveedorId: filterProveedorId,
+    q: debouncedSearch || undefined,
   })
-
-  const filteredStock = useMemo(() => {
-    if (!canSearch) return stock
-    const q = normalizeSearch(searchTerm)
-    return stock.filter(
-      (s) =>
-        normalizeSearch(s.producto_nombre).includes(q) ||
-        normalizeSearch(s.codigo_lote).includes(q)
-    )
-  }, [stock, searchTerm, canSearch])
 
   const selectedItems = Object.values(items)
   const totalSelected = selectedItems.length
@@ -157,9 +155,15 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
         })),
       }
       setItems({})
+      setShowMainConfirm(false)
+      setShowHealthyWarning(false)
       onDescarteCreado(session)
     },
-    onError: (err: unknown) => notify.error(parseApiError(err)),
+    onError: (err: unknown) => {
+      setShowMainConfirm(false)
+      setShowHealthyWarning(false)
+      notify.error(parseApiError(err))
+    },
   })
 
   const toggleItem = (stockItemKey: string) => {
@@ -223,6 +227,7 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
 
   const handleConfirm = () => {
     if (hasHealthyItems) {
+      setShowMainConfirm(false)
       setShowHealthyWarning(true)
     } else {
       executeDescarte()
@@ -504,16 +509,16 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
                     Error al cargar el stock. Intenta recargar la página.
                   </td>
                 </tr>
-              ) : filteredStock.length === 0 ? (
+              ) : stock.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-20 text-center opacity-40 italic text-sm">
-                    {stock.length === 0
-                      ? 'No hay ítems vencidos en este momento'
-                      : 'No se encontraron ítems con ese filtro'}
+                    {canSearch
+                      ? 'No se encontraron ítems con ese filtro'
+                      : 'No hay ítems vencidos en este momento'}
                   </td>
                 </tr>
               ) : (
-                filteredStock.flatMap((s) => {
+                stock.flatMap((s) => {
                   const days = daysUntil(s.fecha_vencimiento)
                   const isExpired = days !== null && days < 0
                   const isExpiring = days !== null && days >= 0 && days <= 30
@@ -719,7 +724,7 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
       <ConfirmDialog
         open={showMainConfirm}
         onClose={() => setShowMainConfirm(false)}
-        onConfirm={() => { setShowMainConfirm(false); handleConfirm() }}
+        onConfirm={handleConfirm}
         loading={descarteMutation.isPending}
         title="Confirmar descarte"
         description="Se registrarán movimientos de salida tipo DESCARTE para los siguientes ítems."

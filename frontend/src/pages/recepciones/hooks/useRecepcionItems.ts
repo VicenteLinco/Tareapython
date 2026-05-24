@@ -90,6 +90,14 @@ export interface UseRecepcionItemsParams {
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
+const MOTIVOS_RECHAZO = [
+  { id: 'temperatura', label: 'Cadena de frío rota' },
+  { id: 'embalaje', label: 'Embalaje dañado' },
+  { id: 'documentos', label: 'Documentos incorrectos' },
+  { id: 'cantidad', label: 'Cantidad no coincide' },
+  { id: 'no_solicitado', label: 'Producto no solicitado' },
+]
+
 export function useRecepcionItems({
   proveedorId,
   proveedores,
@@ -533,13 +541,7 @@ export function useRecepcionItems({
 
   // ─── handleConfirmar ─────────────────────────────────────────────────────────
 
-  const MOTIVOS_RECHAZO = [
-    { id: 'temperatura', label: 'Cadena de frío rota' },
-    { id: 'embalaje', label: 'Embalaje dañado' },
-    { id: 'documentos', label: 'Documentos incorrectos' },
-    { id: 'cantidad', label: 'Cantidad no coincide' },
-    { id: 'no_solicitado', label: 'Producto no solicitado' },
-  ]
+
 
   const handleConfirmar = useCallback(() => {
     if (!proveedorId) { notify.error('Selecciona un proveedor'); return }

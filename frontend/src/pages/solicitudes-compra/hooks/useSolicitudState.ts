@@ -535,9 +535,12 @@ export function useSolicitudState() {
 
   // ── Derived ──────────────────────────────────────────────────────────────────
 
-  const recsFiltered = proveedoresFiltro.length > 0
-    ? (recomendaciones ?? []).filter(r => proveedoresFiltro.some(p => p.id === r.proveedor_id))
-    : (recomendaciones ?? [])
+  const recsFiltered = useMemo(() =>
+    proveedoresFiltro.length > 0
+      ? (recomendaciones ?? []).filter(r => proveedoresFiltro.some(p => p.id === r.proveedor_id))
+      : (recomendaciones ?? []),
+    [recomendaciones, proveedoresFiltro]
+  )
 
   const recsByProveedor = useMemo(() => {
     const map = new Map<number, { proveedor_id: number; proveedor_nombre: string; recs: ItemRecomendado[] }>()

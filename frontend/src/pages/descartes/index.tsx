@@ -5,11 +5,14 @@ import { NuevoDescarteTab } from './nuevo-descarte-tab'
 import { HistorialTab } from './historial-tab'
 import { useQueryClient } from '@tanstack/react-query'
 import type { DescarteSession } from '@/types'
+import { useAuthStore } from '@/hooks/use-auth-store'
 
 type Tab = 'nuevo' | 'historial'
 
 export default function DescartesPage() {
-  const [tab, setTab] = useState<Tab>('nuevo')
+  const usuario = useAuthStore((s) => s.usuario)
+  const canCreate = usuario?.rol === 'admin' || usuario?.rol === 'tecnologo'
+  const [tab, setTab] = useState<Tab>(canCreate ? 'nuevo' : 'historial')
   const [successSession, setSuccessSession] = useState<DescarteSession | null>(null)
   const queryClient = useQueryClient()
 
@@ -36,18 +39,20 @@ export default function DescartesPage() {
         </div>
 
         <div className="tabs tabs-boxed bg-base-200 p-1 rounded-2xl">
-          <button
-            className={cn(
-              'tab gap-2 rounded-xl transition-all px-5 h-9',
-              tab === 'nuevo'
-                ? 'tab-active bg-error text-error-content font-bold shadow'
-                : 'hover:bg-base-300'
-            )}
-            onClick={goToNuevo}
-          >
-            <Plus className="w-4 h-4" />
-            Nuevo Descarte
-          </button>
+          {canCreate && (
+            <button
+              className={cn(
+                'tab gap-2 rounded-xl transition-all px-5 h-9',
+                tab === 'nuevo'
+                  ? 'tab-active bg-error text-error-content font-bold shadow'
+                  : 'hover:bg-base-300'
+              )}
+              onClick={goToNuevo}
+            >
+              <Plus className="w-4 h-4" />
+              Nuevo Descarte
+            </button>
+          )}
           <button
             className={cn(
               'tab gap-2 rounded-xl transition-all px-5 h-9',
@@ -64,7 +69,7 @@ export default function DescartesPage() {
       </div>
 
       {/* Contenido */}
-      {tab === 'nuevo' ? (
+      {tab === 'nuevo' && canCreate ? (
         <NuevoDescarteTab
           successSession={successSession}
           onDescarteCreado={handleDescarteCreado}

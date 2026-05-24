@@ -18,9 +18,8 @@ export function useInactivityTimeout() {
   const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const hiddenAtRef = useRef<number | null>(null)
-  const remainingWarningRef = useRef(INACTIVITY_WARNING_MS)
-  const remainingLogoutRef = useRef(WARNING_DURATION_MS)
+  const warningDeadlineRef = useRef<number | null>(null)
+  const logoutDeadlineRef = useRef<number | null>(null)
   const dialogOpenRef = useRef(false)  // ref espejo de dialogOpen para closures
 
   function clearAllTimers() {
@@ -38,22 +37,34 @@ export function useInactivityTimeout() {
     navigate('/login', { replace: true })
   }
 
-  function startLogoutCountdown(remainingMs: number) {
-    remainingLogoutRef.current = remainingMs
+  function updateCountdown() {
+    const deadline = logoutDeadlineRef.current
+    if (!deadline) return
+
+    const remainingMs = Math.max(0, deadline - Date.now())
+    setSecondsLeft(Math.ceil(remainingMs / 1000))
+
+    if (remainingMs <= 0) {
+      doLogout()
+    }
+  }
+
+  function startLogoutCountdown(remainingMs = WARNING_DURATION_MS) {
+    logoutDeadlineRef.current = Date.now() + remainingMs
+    warningDeadlineRef.current = null
     setSecondsLeft(Math.ceil(remainingMs / 1000))
     dialogOpenRef.current = true
     setDialogOpen(true)
 
     logoutTimerRef.current = setTimeout(doLogout, remainingMs)
-    countdownIntervalRef.current = setInterval(() => {
-      setSecondsLeft((prev) => (prev <= 1 ? 0 : prev - 1))
-    }, 1000)
+    countdownIntervalRef.current = setInterval(updateCountdown, 1000)
   }
 
   function startWarningTimer(delayMs: number) {
-    remainingWarningRef.current = delayMs
+    warningDeadlineRef.current = Date.now() + delayMs
+    logoutDeadlineRef.current = null
     warningTimerRef.current = setTimeout(() => {
-      startLogoutCountdown(WARNING_DURATION_MS)
+      startLogoutCountdown()
     }, delayMs)
   }
 
@@ -88,28 +99,25 @@ export function useInactivityTimeout() {
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === 'hidden') {
-        hiddenAtRef.current = Date.now()
         clearAllTimers()
       } else {
-        if (hiddenAtRef.current === null) return
-        const elapsed = Date.now() - hiddenAtRef.current
-        hiddenAtRef.current = null
+        const now = Date.now()
 
         if (dialogOpenRef.current) {
           // Estaba mostrando el dialog — descontar tiempo transcurrido del countdown
-          const newRemaining = Math.max(0, remainingLogoutRef.current - elapsed)
-          if (newRemaining <= 0) {
+          const deadline = logoutDeadlineRef.current
+          if (!deadline || now >= deadline) {
             doLogout()
           } else {
-            startLogoutCountdown(newRemaining)
+            startLogoutCountdown(deadline - now)
           }
         } else {
           // Estaba en el timer de warning — descontar tiempo transcurrido
-          const newRemaining = Math.max(0, remainingWarningRef.current - elapsed)
-          if (newRemaining <= 0) {
-            startLogoutCountdown(WARNING_DURATION_MS)
+          const deadline = warningDeadlineRef.current
+          if (!deadline || now >= deadline) {
+            startLogoutCountdown()
           } else {
-            startWarningTimer(newRemaining)
+            startWarningTimer(deadline - now)
           }
         }
       }

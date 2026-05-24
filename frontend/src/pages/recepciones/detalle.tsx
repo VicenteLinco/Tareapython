@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Package, FileDown, FileText, X, Upload, Info,
@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { PageLoading } from '@/components/ui/page-state'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
-import { formatDate, daysUntil, cn, formatCantidad, getImageUrl } from '@/lib/utils'
+import { formatDate, daysUntil, cn, formatCantidad } from '@/lib/utils'
 import { CantidadConUnidad } from '@/components/ui/cantidad'
 import { notify } from '@/lib/notify'
 
@@ -49,6 +49,45 @@ interface RecepcionDetalleResponse {
   detalle: DetalleItem[]
 }
 
+function AuthenticatedUploadImage({ path, alt, className }: { path: string; alt: string; className?: string }) {
+  const [src, setSrc] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (path.startsWith('data:image')) {
+      setSrc(path)
+      return
+    }
+
+    setSrc(null)
+    let objectUrl: string | null = null
+    let cancelled = false
+
+    api.get(`/uploads/${path}`, { responseType: 'blob' })
+      .then((res) => {
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(res.data)
+        setSrc(objectUrl)
+      })
+      .catch(() => {
+        if (!cancelled) notify.error('No se pudo cargar la foto')
+      })
+
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [path])
+
+  if (!src) {
+    return (
+      <div className={cn('flex items-center justify-center bg-base-200 text-sm opacity-60', className)}>
+        Cargando foto...
+      </div>
+    )
+  }
+
+  return <img src={src} alt={alt} className={className} />
+}
 
 export default function RecepcionDetallePage() {
   const { id } = useParams<{ id: string }>()
@@ -401,8 +440,8 @@ export default function RecepcionDetallePage() {
             >
               <X className="h-4 w-4" />
             </button>
-            <img
-              src={getImageUrl(foto_documento)}
+            <AuthenticatedUploadImage
+              path={foto_documento}
               alt="Guía de despacho"
               className="max-h-[85vh] max-w-[85vw] rounded-xl shadow-2xl object-contain"
             />

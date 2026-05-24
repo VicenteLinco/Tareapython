@@ -8,6 +8,9 @@ pub struct AppConfig {
     pub jwt_refresh_expiration: i64,
     pub port: u16,
     pub cors_origin: String,
+    pub allow_bootstrap_admin: bool,
+    pub setup_admin_email: Option<String>,
+    pub setup_admin_password: Option<String>,
 }
 
 impl AppConfig {
@@ -43,6 +46,19 @@ impl AppConfig {
         let cors_origin =
             env::var("CORS_ORIGIN").unwrap_or_else(|_| "http://localhost:5173".to_string());
 
+        let allow_bootstrap_admin = env::var("ALLOW_BOOTSTRAP_ADMIN")
+            .map(|v| matches!(v.trim().to_lowercase().as_str(), "1" | "true" | "yes"))
+            .unwrap_or(false);
+
+        let setup_admin_email = env::var("SETUP_ADMIN_EMAIL")
+            .ok()
+            .map(|v| v.trim().to_lowercase())
+            .filter(|v| !v.is_empty());
+
+        let setup_admin_password = env::var("SETUP_ADMIN_PASSWORD")
+            .ok()
+            .filter(|v| !v.is_empty());
+
         Ok(Self {
             database_url,
             jwt_secret,
@@ -50,6 +66,9 @@ impl AppConfig {
             jwt_refresh_expiration,
             port,
             cors_origin,
+            allow_bootstrap_admin,
+            setup_admin_email,
+            setup_admin_password,
         })
     }
 

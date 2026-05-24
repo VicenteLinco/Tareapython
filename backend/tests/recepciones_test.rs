@@ -9,11 +9,7 @@ use uuid::Uuid;
 /// Crea proveedor + producto (con proveedor) + obtiene presentacion_id.
 /// Retorna (proveedor_id, producto_uuid, presentacion_id).
 /// Usa area_id = 1 del seed (siempre disponible).
-async fn setup_base(
-    pool: &PgPool,
-    token: &str,
-    app: &axum::Router,
-) -> (i32, Uuid, i32) {
+async fn setup_base(pool: &PgPool, token: &str, app: &axum::Router) -> (i32, Uuid, i32) {
     let (_, prov) = common::post_json(
         app,
         "/api/v1/proveedores",
@@ -73,7 +69,11 @@ fn payload_recepcion(
 }
 
 /// Retorna el stock total del producto en el área (suma de todos los lotes).
-async fn stock_del_producto(pool: &PgPool, producto_id: Uuid, area_id: i32) -> rust_decimal::Decimal {
+async fn stock_del_producto(
+    pool: &PgPool,
+    producto_id: Uuid,
+    area_id: i32,
+) -> rust_decimal::Decimal {
     sqlx::query_scalar::<_, Option<rust_decimal::Decimal>>(
         "SELECT SUM(s.cantidad) FROM stock s
          JOIN lotes l ON l.id = s.lote_id
@@ -100,7 +100,14 @@ async fn listar_recepciones(pool: PgPool) {
         &app,
         "/api/v1/recepciones",
         &token,
-        payload_recepcion(proveedor_id, producto_id, presentacion_id, 1, "completa", 10.0),
+        payload_recepcion(
+            proveedor_id,
+            producto_id,
+            presentacion_id,
+            1,
+            "completa",
+            10.0,
+        ),
         &idem,
     )
     .await;
@@ -124,13 +131,21 @@ async fn obtener_recepcion_por_id(pool: PgPool) {
         &app,
         "/api/v1/recepciones",
         &token,
-        payload_recepcion(proveedor_id, producto_id, presentacion_id, 1, "completa", 10.0),
+        payload_recepcion(
+            proveedor_id,
+            producto_id,
+            presentacion_id,
+            1,
+            "completa",
+            10.0,
+        ),
         &idem,
     )
     .await;
     let id = created["id"].as_str().unwrap();
 
-    let (status, json) = common::get_json(&app, &format!("/api/v1/recepciones/{}", id), &token).await;
+    let (status, json) =
+        common::get_json(&app, &format!("/api/v1/recepciones/{}", id), &token).await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["recepcion"]["estado"], "completa");
@@ -149,9 +164,15 @@ async fn crear_recepcion_sin_token_retorna_401(pool: PgPool) {
         .header("Content-Type", "application/json")
         .header("X-Idempotency-Key", Uuid::new_v4().to_string())
         .body(axum::body::Body::from(
-            serde_json::to_string(
-                &payload_recepcion(proveedor_id, producto_id, presentacion_id, 1, "completa", 5.0)
-            ).unwrap()
+            serde_json::to_string(&payload_recepcion(
+                proveedor_id,
+                producto_id,
+                presentacion_id,
+                1,
+                "completa",
+                5.0,
+            ))
+            .unwrap(),
         ))
         .unwrap();
 
@@ -168,21 +189,34 @@ async fn consulta_no_puede_crear_recepcion(pool: PgPool) {
 
     // Crear usuario con rol consulta
     let config = common::test_config();
+    let password_hash = common::hash_test_password("TestConsultaFixture123!");
     let consulta_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES ('Consulta', 'consulta@test.cl', '$argon2id$v=19$m=19456,t=2,p=1$ohcOafUCERxCN4F0deHevg$hJNh8rweQwOhkhcc6E6KzmAPXdNZOtB34618gb16d40', 'consulta') RETURNING id"
+        "INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES ('Consulta', 'consulta@test.cl', $1, 'consulta') RETURNING id"
     )
+    .bind(password_hash)
     .fetch_one(&pool)
     .await
     .unwrap();
     let consulta_token = inventario_lab_backend::auth::jwt::create_access_token(
-        consulta_id, "consulta", vec![], &config
-    ).unwrap();
+        consulta_id,
+        "consulta",
+        vec![],
+        &config,
+    )
+    .unwrap();
 
     let (status, _) = common::post_json_idempotent(
         &app,
         "/api/v1/recepciones",
         &consulta_token,
-        payload_recepcion(proveedor_id, producto_id, presentacion_id, 1, "completa", 5.0),
+        payload_recepcion(
+            proveedor_id,
+            producto_id,
+            presentacion_id,
+            1,
+            "completa",
+            5.0,
+        ),
         &Uuid::new_v4().to_string(),
     )
     .await;
@@ -202,7 +236,14 @@ async fn confirmar_borrador_impacta_stock(pool: PgPool) {
         &app,
         "/api/v1/recepciones",
         &token,
-        payload_recepcion(proveedor_id, producto_id, presentacion_id, 1, "borrador", 30.0),
+        payload_recepcion(
+            proveedor_id,
+            producto_id,
+            presentacion_id,
+            1,
+            "borrador",
+            30.0,
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -227,13 +268,11 @@ async fn confirmar_borrador_impacta_stock(pool: PgPool) {
     assert_eq!(stock_despues.to_string(), "30.00");
 
     // Estado debe ser "completa"
-    let estado: String = sqlx::query_scalar(
-        "SELECT estado FROM recepciones WHERE id = $1"
-    )
-    .bind(recepcion_id.parse::<Uuid>().unwrap())
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let estado: String = sqlx::query_scalar("SELECT estado FROM recepciones WHERE id = $1")
+        .bind(recepcion_id.parse::<Uuid>().unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(estado, "completa");
 }
 
@@ -248,7 +287,14 @@ async fn confirmar_recepcion_no_borrador_retorna_409(pool: PgPool) {
         &app,
         "/api/v1/recepciones",
         &token,
-        payload_recepcion(proveedor_id, producto_id, presentacion_id, 1, "completa", 10.0),
+        payload_recepcion(
+            proveedor_id,
+            producto_id,
+            presentacion_id,
+            1,
+            "completa",
+            10.0,
+        ),
         &idem,
     )
     .await;
@@ -276,17 +322,20 @@ async fn eliminar_borrador_retorna_204(pool: PgPool) {
         &app,
         "/api/v1/recepciones",
         &token,
-        payload_recepcion(proveedor_id, producto_id, presentacion_id, 1, "borrador", 10.0),
+        payload_recepcion(
+            proveedor_id,
+            producto_id,
+            presentacion_id,
+            1,
+            "borrador",
+            10.0,
+        ),
     )
     .await;
     let id = json["id"].as_str().unwrap();
 
-    let (status, _) = common::delete_req(
-        &app,
-        &format!("/api/v1/recepciones/{}", id),
-        &token,
-    )
-    .await;
+    let (status, _) =
+        common::delete_req(&app, &format!("/api/v1/recepciones/{}", id), &token).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     // Ya no debe existir
@@ -309,18 +358,21 @@ async fn eliminar_recepcion_confirmada_retorna_409(pool: PgPool) {
         &app,
         "/api/v1/recepciones",
         &token,
-        payload_recepcion(proveedor_id, producto_id, presentacion_id, 1, "completa", 5.0),
+        payload_recepcion(
+            proveedor_id,
+            producto_id,
+            presentacion_id,
+            1,
+            "completa",
+            5.0,
+        ),
         &idem,
     )
     .await;
     let id = json["id"].as_str().unwrap();
 
-    let (status, json) = common::delete_req(
-        &app,
-        &format!("/api/v1/recepciones/{}", id),
-        &token,
-    )
-    .await;
+    let (status, json) =
+        common::delete_req(&app, &format!("/api/v1/recepciones/{}", id), &token).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(json["code"], "ESTADO_INVALIDO");
 }
@@ -334,10 +386,21 @@ async fn mismo_idempotency_key_no_duplica_stock(pool: PgPool) {
     let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
 
     let idem = Uuid::new_v4().to_string();
-    let body = payload_recepcion(proveedor_id, producto_id, presentacion_id, 1, "completa", 20.0);
+    let body = payload_recepcion(
+        proveedor_id,
+        producto_id,
+        presentacion_id,
+        1,
+        "completa",
+        20.0,
+    );
 
-    let (s1, _) = common::post_json_idempotent(&app, "/api/v1/recepciones", &token, body.clone(), &idem).await;
-    let (s2, _) = common::post_json_idempotent(&app, "/api/v1/recepciones", &token, body.clone(), &idem).await;
+    let (s1, _) =
+        common::post_json_idempotent(&app, "/api/v1/recepciones", &token, body.clone(), &idem)
+            .await;
+    let (s2, _) =
+        common::post_json_idempotent(&app, "/api/v1/recepciones", &token, body.clone(), &idem)
+            .await;
 
     assert_eq!(s1, StatusCode::CREATED);
     assert_eq!(s2, StatusCode::CREATED);
@@ -347,12 +410,11 @@ async fn mismo_idempotency_key_no_duplica_stock(pool: PgPool) {
     assert_eq!(stock.to_string(), "20.00");
 
     // Una sola recepción en DB
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM recepciones WHERE proveedor_id = $1")
-            .bind(proveedor_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM recepciones WHERE proveedor_id = $1")
+        .bind(proveedor_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(count, 1);
 }
 
@@ -360,11 +422,7 @@ async fn mismo_idempotency_key_no_duplica_stock(pool: PgPool) {
 
 /// Crea una solicitud con el producto dado y la guarda (estado "guardada").
 /// Retorna el solicitud_id.
-async fn setup_solicitud_guardada(
-    pool: &PgPool,
-    producto_id: Uuid,
-    app: &axum::Router,
-) -> Uuid {
+async fn setup_solicitud_guardada(pool: &PgPool, producto_id: Uuid, app: &axum::Router) -> Uuid {
     let tec_token = common::create_tecnologo_token(pool, &[1]).await;
 
     let (_, sol) = common::post_json(
@@ -399,18 +457,25 @@ async fn recepcion_completa_cierra_solicitud(pool: PgPool) {
 
     // Recepción que cubre todo lo solicitado (20 unidades)
     let idem = Uuid::new_v4().to_string();
-    let mut body = payload_recepcion(proveedor_id, producto_id, presentacion_id, 1, "completa", 20.0);
+    let mut body = payload_recepcion(
+        proveedor_id,
+        producto_id,
+        presentacion_id,
+        1,
+        "completa",
+        20.0,
+    );
     body["solicitud_id"] = serde_json::json!(sol_id);
 
-    let (status, _) = common::post_json_idempotent(&app, "/api/v1/recepciones", &token, body, &idem).await;
+    let (status, _) =
+        common::post_json_idempotent(&app, "/api/v1/recepciones", &token, body, &idem).await;
     assert_eq!(status, StatusCode::CREATED);
 
-    let estado: String =
-        sqlx::query_scalar("SELECT estado FROM solicitudes_compra WHERE id = $1")
-            .bind(sol_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let estado: String = sqlx::query_scalar("SELECT estado FROM solicitudes_compra WHERE id = $1")
+        .bind(sol_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(estado, "completada");
 }
 
@@ -424,18 +489,25 @@ async fn recepcion_parcial_deja_solicitud_parcialmente_recibida(pool: PgPool) {
 
     // Recepción con solo 5 de los 20 solicitados
     let idem = Uuid::new_v4().to_string();
-    let mut body = payload_recepcion(proveedor_id, producto_id, presentacion_id, 1, "completa", 5.0);
+    let mut body = payload_recepcion(
+        proveedor_id,
+        producto_id,
+        presentacion_id,
+        1,
+        "completa",
+        5.0,
+    );
     body["solicitud_id"] = serde_json::json!(sol_id);
 
-    let (status, _) = common::post_json_idempotent(&app, "/api/v1/recepciones", &token, body, &idem).await;
+    let (status, _) =
+        common::post_json_idempotent(&app, "/api/v1/recepciones", &token, body, &idem).await;
     assert_eq!(status, StatusCode::CREATED);
 
-    let estado: String =
-        sqlx::query_scalar("SELECT estado FROM solicitudes_compra WHERE id = $1")
-            .bind(sol_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let estado: String = sqlx::query_scalar("SELECT estado FROM solicitudes_compra WHERE id = $1")
+        .bind(sol_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(estado, "parcialmente_recibida");
 }
 
@@ -447,7 +519,14 @@ async fn crear_recepcion_estado_invalido_retorna_422(pool: PgPool) {
     let app = common::test_app(pool.clone());
     let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
 
-    let mut body = payload_recepcion(proveedor_id, producto_id, presentacion_id, 1, "completa", 5.0);
+    let mut body = payload_recepcion(
+        proveedor_id,
+        producto_id,
+        presentacion_id,
+        1,
+        "completa",
+        5.0,
+    );
     body["estado"] = serde_json::json!("estado_inexistente");
 
     let (status, _) = common::post_json_idempotent(

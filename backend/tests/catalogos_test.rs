@@ -285,7 +285,7 @@ async fn crear_usuario_email_duplicado(pool: PgPool) {
         &token,
         serde_json::json!({
             "nombre": "Otro Admin",
-            "email": "admin@laboratorio.cl",
+            "email": common::TEST_ADMIN_EMAIL,
             "password": "Password123!",
             "rol": "admin",
             "area_ids": []

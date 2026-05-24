@@ -5,6 +5,7 @@ use sqlx::PgPool;
 
 #[sqlx::test(migrations = "./migrations")]
 async fn login_exitoso(pool: PgPool) {
+    common::ensure_test_admin(&pool).await;
     let app = common::test_app(pool);
 
     let (status, json) = common::post_json(
@@ -12,8 +13,8 @@ async fn login_exitoso(pool: PgPool) {
         "/api/v1/auth/login",
         "",
         serde_json::json!({
-            "email": "admin@laboratorio.cl",
-            "password": "Admin123!"
+            "email": common::TEST_ADMIN_EMAIL,
+            "password": common::TEST_ADMIN_PASSWORD
         }),
     )
     .await;
@@ -26,6 +27,7 @@ async fn login_exitoso(pool: PgPool) {
 
 #[sqlx::test(migrations = "./migrations")]
 async fn login_password_incorrecto(pool: PgPool) {
+    common::ensure_test_admin(&pool).await;
     let app = common::test_app(pool);
 
     let (status, _) = common::post_json(
@@ -33,7 +35,7 @@ async fn login_password_incorrecto(pool: PgPool) {
         "/api/v1/auth/login",
         "",
         serde_json::json!({
-            "email": "admin@laboratorio.cl",
+            "email": common::TEST_ADMIN_EMAIL,
             "password": "WrongPassword"
         }),
     )
@@ -52,7 +54,7 @@ async fn login_email_inexistente(pool: PgPool) {
         "",
         serde_json::json!({
             "email": "noexiste@lab.cl",
-            "password": "Admin123!"
+            "password": common::TEST_ADMIN_PASSWORD
         }),
     )
     .await;
@@ -68,7 +70,7 @@ async fn me_retorna_usuario_autenticado(pool: PgPool) {
     let (status, json) = common::get_json(&app, "/api/v1/auth/me", &token).await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(json["email"], "admin@laboratorio.cl");
+    assert_eq!(json["email"], common::TEST_ADMIN_EMAIL);
     assert_eq!(json["rol"], "admin");
 }
 
@@ -83,6 +85,7 @@ async fn me_sin_token_retorna_401(pool: PgPool) {
 
 #[sqlx::test(migrations = "./migrations")]
 async fn refresh_token_funciona(pool: PgPool) {
+    common::ensure_test_admin(&pool).await;
     let app = common::test_app(pool.clone());
 
     // Login para obtener refresh token
@@ -91,8 +94,8 @@ async fn refresh_token_funciona(pool: PgPool) {
         "/api/v1/auth/login",
         "",
         serde_json::json!({
-            "email": "admin@laboratorio.cl",
-            "password": "Admin123!"
+            "email": common::TEST_ADMIN_EMAIL,
+            "password": common::TEST_ADMIN_PASSWORD
         }),
     )
     .await;
@@ -123,7 +126,7 @@ async fn cambiar_password(pool: PgPool) {
         "/api/v1/auth/cambiar-password",
         &token,
         serde_json::json!({
-            "password_actual": "Admin123!",
+            "password_actual": common::TEST_ADMIN_PASSWORD,
             "password_nueva": "NuevaPassword123!"
         }),
     )

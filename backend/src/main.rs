@@ -21,6 +21,76 @@ mod services;
 
 use middleware::rate_limit::RateLimiter;
 
+async fn bootstrap_admin_if_enabled(
+    pool: &sqlx::PgPool,
+    config: &config::AppConfig,
+) -> Result<(), String> {
+    if !config.allow_bootstrap_admin {
+        tracing::info!("Bootstrap admin deshabilitado");
+        return Ok(());
+    }
+
+    let email = config.setup_admin_email.as_deref().ok_or_else(|| {
+        "SETUP_ADMIN_EMAIL es obligatorio si ALLOW_BOOTSTRAP_ADMIN=true".to_string()
+    })?;
+    let password = config.setup_admin_password.as_deref().ok_or_else(|| {
+        "SETUP_ADMIN_PASSWORD es obligatorio si ALLOW_BOOTSTRAP_ADMIN=true".to_string()
+    })?;
+
+    if password.len() < 12 {
+        return Err("SETUP_ADMIN_PASSWORD debe tener al menos 12 caracteres".to_string());
+    }
+
+    use argon2::password_hash::SaltString;
+    use argon2::password_hash::rand_core::OsRng;
+    use argon2::{Argon2, PasswordHasher};
+
+    let salt = SaltString::generate(&mut OsRng);
+    let hash = Argon2::default()
+        .hash_password(password.as_bytes(), &salt)
+        .map_err(|e| format!("Error hasheando password de bootstrap: {}", e))?
+        .to_string();
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| format!("Error iniciando bootstrap admin: {}", e))?;
+
+    let user_id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO usuarios (nombre, email, password_hash, rol, activo) \
+         VALUES ('Administrador', $1, $2, 'admin', true) \
+         ON CONFLICT (email) DO UPDATE \
+         SET password_hash = EXCLUDED.password_hash, rol = 'admin', activo = true, updated_at = NOW() \
+         RETURNING id",
+    )
+    .bind(email)
+    .bind(hash)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| format!("Error creando/actualizando admin bootstrap: {}", e))?;
+
+    sqlx::query(
+        "INSERT INTO usuario_area (usuario_id, area_id) \
+         SELECT $1, id FROM areas \
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| format!("Error asignando areas al admin bootstrap: {}", e))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| format!("Error confirmando bootstrap admin: {}", e))?;
+
+    tracing::warn!(
+        "Bootstrap admin ejecutado para {}. Deshabilita ALLOW_BOOTSTRAP_ADMIN despues del setup inicial.",
+        email
+    );
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
@@ -47,46 +117,12 @@ async fn main() {
 
     tracing::info!("Migraciones ejecutadas");
 
-    // --- BLOQUE DE EMERGENCIA: Reset Admin ---
-    {
-        let email = "admin@laboratorio.cl";
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM usuarios WHERE email = $1)")
-                .bind(email)
-                .fetch_one(&pool)
-                .await
-                .unwrap_or(false);
-
-        if !exists {
-            use argon2::password_hash::SaltString;
-            use argon2::password_hash::rand_core::OsRng;
-            use argon2::{Argon2, PasswordHasher};
-
-            let salt = SaltString::generate(&mut OsRng);
-            let password = "Admin123!";
-            let hash = Argon2::default()
-                .hash_password(password.as_bytes(), &salt)
-                .expect("Error hasheando password de emergencia")
-                .to_string();
-
-            let res = sqlx::query(
-                "INSERT INTO usuarios (nombre, email, password_hash, rol) \
-                 VALUES ('Administrador', $1, $2, 'admin')",
-            )
-            .bind(email)
-            .bind(hash)
-            .execute(&pool)
-            .await;
-
-            match res {
-                Ok(_) => tracing::info!("Admin creado exitosamente"),
-                Err(e) => tracing::error!("Error creando admin: {}", e),
-            }
-        } else {
-            tracing::info!("Admin ya existe, saltando creación de emergencia");
-        }
-    }
-    // -----------------------------------------
+    bootstrap_admin_if_enabled(&pool, &config)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("Error en bootstrap admin: {}", e);
+            std::process::exit(1);
+        });
 
     // CORS: restringido al origen configurado
     let cors = if config.cors_origin == "*" {
@@ -143,6 +179,21 @@ async fn main() {
             c1.cleanup().await;
             c2.cleanup().await;
             c3.cleanup().await;
+        }
+    });
+
+    let idempotency_pool = pool.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            match services::idempotency::cleanup_expired(&idempotency_pool, 24).await {
+                Ok(deleted) if deleted > 0 => {
+                    tracing::info!("Idempotency keys antiguas eliminadas: {}", deleted)
+                }
+                Ok(_) => {}
+                Err(err) => tracing::warn!("No se pudo limpiar idempotency keys: {}", err),
+            }
         }
     });
 

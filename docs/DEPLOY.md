@@ -7,7 +7,8 @@ Guia operativa para desplegar el sistema con Docker Compose y mantener respaldos
 - PostgreSQL 16 corre como servicio `db` y persiste datos en el volumen Docker `pgdata`.
 - Backend Rust/Axum corre como servicio `backend` en el puerto `8080`.
 - Las imagenes subidas por usuarios se guardan en `/app/uploads` dentro del backend y persisten en el volumen Docker `uploads`.
-- El backend expone esas imagenes en `/api/v1/uploads`.
+- Las imagenes de producto se exponen publicamente en `/api/v1/uploads/productos/*` para que el navegador pueda renderizarlas.
+- Los demas uploads, como guias/fotos de recepcion, se sirven desde `/api/v1/uploads/*` solo con sesion autenticada.
 - El backend ejecuta migraciones SQLx al iniciar, desde `backend/migrations/`.
 - El frontend se compila con Vite. En produccion puede servirse de dos formas:
   - Recomendado: Nginx o Caddy sirviendo `frontend/dist/` y proxy a `/api` hacia `backend:8080`.
@@ -23,6 +24,7 @@ POSTGRES_USER=lab_user
 POSTGRES_PASSWORD=CHANGE_ME_password_seguro_aqui
 JWT_SECRET=CHANGE_ME_minimo_32_caracteres_clave_secreta_aqui
 RUST_LOG=info
+ALLOW_BOOTSTRAP_ADMIN=false
 ```
 
 Usar un `JWT_SECRET` aleatorio de al menos 32 caracteres. Ejemplo:
@@ -30,6 +32,16 @@ Usar un `JWT_SECRET` aleatorio de al menos 32 caracteres. Ejemplo:
 ```powershell
 openssl rand -hex 32
 ```
+
+Para crear o reparar el primer usuario admin en un ambiente nuevo, habilitar temporalmente:
+
+```env
+ALLOW_BOOTSTRAP_ADMIN=true
+SETUP_ADMIN_EMAIL=admin@laboratorio.cl
+SETUP_ADMIN_PASSWORD=CHANGE_ME_password_admin_temporal_largo
+```
+
+Después del primer login y cambio de clave, volver a dejar `ALLOW_BOOTSTRAP_ADMIN=false` y reiniciar backend.
 
 ## Primer despliegue
 
@@ -174,6 +186,10 @@ Luego reiniciar:
 ```powershell
 docker compose up -d backend
 ```
+
+## Limpieza automatica
+
+El backend elimina periodicamente claves antiguas de `idempotency_keys` con retencion de 24 horas. Esto mantiene protegido el flujo contra doble envio sin crecimiento indefinido de la tabla.
 
 ## Checklist minimo antes de entregar
 

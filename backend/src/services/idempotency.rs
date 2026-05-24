@@ -105,6 +105,17 @@ pub async fn cleanup_on_error(pool: &PgPool, key: &str) -> Result<(), AppError> 
     Ok(())
 }
 
+/// Elimina respuestas idempotentes antiguas para evitar crecimiento indefinido.
+pub async fn cleanup_expired(pool: &PgPool, retention_hours: i64) -> Result<u64, AppError> {
+    let result = sqlx::query(
+        "DELETE FROM idempotency_keys WHERE created_at < NOW() - ($1::text || ' hours')::interval",
+    )
+    .bind(retention_hours)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 #[derive(Debug, sqlx::FromRow)]
 struct IdempotencyRow {
     response_status: i16,
@@ -162,8 +173,7 @@ mod tests {
         let err =
             validate_idempotency_key_format("key con espacio").expect_err("espacios no permitidos");
         assert!(matches!(err, AppError::Validation(_)));
-        let err2 =
-            validate_idempotency_key_format("key@dominio").expect_err("@ no permitida");
+        let err2 = validate_idempotency_key_format("key@dominio").expect_err("@ no permitida");
         assert!(matches!(err2, AppError::Validation(_)));
     }
 
@@ -175,8 +185,8 @@ mod tests {
     #[tokio::test]
     #[ignore = "requiere DATABASE_URL y migraciones aplicadas"]
     async fn idempotency_key_nueva_permite_procesar() {
-        let database_url = std::env::var("DATABASE_URL")
-            .expect("DATABASE_URL debe estar definida para este test");
+        let database_url =
+            std::env::var("DATABASE_URL").expect("DATABASE_URL debe estar definida para este test");
         let pool = sqlx::PgPool::connect(&database_url)
             .await
             .expect("conectar a DB");
@@ -198,8 +208,8 @@ mod tests {
     #[tokio::test]
     #[ignore = "requiere DATABASE_URL y migraciones aplicadas"]
     async fn idempotency_key_reutilizada_despues_de_save() {
-        let database_url = std::env::var("DATABASE_URL")
-            .expect("DATABASE_URL debe estar definida para este test");
+        let database_url =
+            std::env::var("DATABASE_URL").expect("DATABASE_URL debe estar definida para este test");
         let pool = sqlx::PgPool::connect(&database_url)
             .await
             .expect("conectar a DB");

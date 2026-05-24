@@ -337,7 +337,10 @@ DECLARE
     v_rec4_id UUID;
     v_rec5_id UUID;
 BEGIN
-    SELECT id INTO v_admin_id FROM usuarios WHERE email = 'admin@laboratorio.cl';
+    SELECT id INTO v_admin_id FROM usuarios WHERE rol = 'admin' AND activo = true ORDER BY created_at LIMIT 1;
+    IF v_admin_id IS NULL THEN
+        RAISE EXCEPTION 'seed_demo requiere un usuario admin activo. Ejecuta el bootstrap admin antes de cargar datos demo.';
+    END IF;
     SELECT id INTO v_area_bodega_id FROM areas WHERE nombre = 'Bodega Insumos';
     SELECT id INTO v_prov_global FROM proveedores WHERE nombre = 'Global Medical Ltda.';
     SELECT id INTO v_prov_medsupply FROM proveedores WHERE nombre = 'MedSupply S.A.';

@@ -6,11 +6,25 @@ use http_body_util::BodyExt;
 use sqlx::PgPool;
 use tower::ServiceExt;
 
+use argon2::password_hash::SaltString;
+use argon2::password_hash::rand_core::OsRng;
+use argon2::{Argon2, PasswordHasher};
 use inventario_lab_backend::auth::jwt::create_access_token;
 use inventario_lab_backend::config::AppConfig;
 use inventario_lab_backend::db::AppState;
 use inventario_lab_backend::middleware::rate_limit::RateLimiter;
 use inventario_lab_backend::routes::create_routes;
+
+pub const TEST_ADMIN_EMAIL: &str = "admin.fixture@laboratorio.test";
+pub const TEST_ADMIN_PASSWORD: &str = "TestAdminFixture123!";
+
+pub fn hash_test_password(password: &str) -> String {
+    let salt = SaltString::generate(&mut OsRng);
+    Argon2::default()
+        .hash_password(password.as_bytes(), &salt)
+        .expect("Should hash test password")
+        .to_string()
+}
 
 /// Crea una config de prueba
 pub fn test_config() -> AppConfig {
@@ -21,6 +35,9 @@ pub fn test_config() -> AppConfig {
         jwt_refresh_expiration: 86400,
         port: 0,
         cors_origin: "*".to_string(),
+        allow_bootstrap_admin: false,
+        setup_admin_email: None,
+        setup_admin_password: None,
     }
 }
 
@@ -47,15 +64,41 @@ pub fn test_app(pool: PgPool) -> Router {
         .with_state(state)
 }
 
-/// Obtiene el ID del usuario admin del seed
-pub async fn get_admin_id(pool: &PgPool) -> uuid::Uuid {
-    sqlx::query_scalar("SELECT id FROM usuarios WHERE email = 'admin@laboratorio.cl'")
-        .fetch_one(pool)
-        .await
-        .expect("Admin user should exist from seed")
+/// Crea el admin de prueba y lo asigna a todas las areas.
+pub async fn ensure_test_admin(pool: &PgPool) -> uuid::Uuid {
+    let password_hash = hash_test_password(TEST_ADMIN_PASSWORD);
+    let admin_id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO usuarios (nombre, email, password_hash, rol, activo) \
+         VALUES ('Admin Fixture', $1, $2, 'admin', true) \
+         ON CONFLICT (email) DO UPDATE \
+         SET password_hash = EXCLUDED.password_hash, rol = 'admin', activo = true, updated_at = NOW() \
+         RETURNING id",
+    )
+    .bind(TEST_ADMIN_EMAIL)
+    .bind(password_hash)
+    .fetch_one(pool)
+    .await
+    .expect("Should create test admin");
+
+    sqlx::query(
+        "INSERT INTO usuario_area (usuario_id, area_id) \
+         SELECT $1, id FROM areas \
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(admin_id)
+    .execute(pool)
+    .await
+    .expect("Should assign all areas to test admin");
+
+    admin_id
 }
 
-/// Genera un access token para el admin del seed
+/// Obtiene el ID del usuario admin de prueba
+pub async fn get_admin_id(pool: &PgPool) -> uuid::Uuid {
+    ensure_test_admin(pool).await
+}
+
+/// Genera un access token para el admin de prueba
 pub async fn admin_access_token(pool: &PgPool) -> String {
     let admin_id = get_admin_id(pool).await;
     let config = test_config();
@@ -73,10 +116,12 @@ pub async fn admin_access_token(pool: &PgPool) -> String {
 /// Crea un usuario tecnólogo de prueba y retorna su access token
 pub async fn create_tecnologo_token(pool: &PgPool, area_ids: &[i32]) -> String {
     let config = test_config();
+    let password_hash = hash_test_password("TestTecnologoFixture123!");
 
     let user_id: uuid::Uuid = sqlx::query_scalar(
-        "INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES ('Test Tecnologo', 'tecnologo@test.cl', '$argon2id$v=19$m=19456,t=2,p=1$ohcOafUCERxCN4F0deHevg$hJNh8rweQwOhkhcc6E6KzmAPXdNZOtB34618gb16d40', 'tecnologo') RETURNING id"
+        "INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES ('Test Tecnologo', 'tecnologo@test.cl', $1, 'tecnologo') RETURNING id"
     )
+    .bind(password_hash)
     .fetch_one(pool)
     .await
     .expect("Should create tecnologo");

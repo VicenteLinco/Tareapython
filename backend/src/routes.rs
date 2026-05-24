@@ -73,6 +73,8 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
         .nest("/configuracion", handlers::configuracion::routes())
         // Setup (carga inicial)
         .nest("/setup", handlers::setup::routes())
+        // Uploads privados (documentos de recepcion, guias, etc.)
+        .nest("/uploads", handlers::uploads::routes())
         // Middleware de auth
         .route_layer(middleware::from_fn_with_state(state, require_auth));
 
@@ -81,6 +83,9 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .nest("/api/v1/auth", handlers::auth_handler::public_routes())
         .nest("/api/v1/auth", auth_protected)
+        .nest_service(
+            "/api/v1/uploads/productos",
+            ServeDir::new("uploads/productos"),
+        )
         .nest("/api/v1", protected)
-        .nest_service("/api/v1/uploads", ServeDir::new("uploads"))
 }

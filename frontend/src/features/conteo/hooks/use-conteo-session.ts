@@ -5,6 +5,7 @@ import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 import { getApiErrorCode, parseApiError } from '@/lib/api-error'
 import type { ConteoDetalle, ConteoItem } from '@/types'
+import { toDecimal, toNum } from '@/domain/parse'
 import { v4 as uuidv4 } from 'uuid'
 
 interface GuardarConteoItemPayload {
@@ -43,7 +44,7 @@ export function useConteoSession(id: string | undefined) {
       return {
         ...item,
         cantidad_contada: local.estado === 'contado' && local.cantidad !== ''
-          ? parseFloat(local.cantidad)
+          ? toNum(local.cantidad)
           : item.cantidad_contada,
         estado_item: local.estado as ConteoItem['estado_item'],
       }
@@ -57,9 +58,9 @@ export function useConteoSession(id: string | undefined) {
     const total = itemsConEdicion.length
     const progreso = total > 0 ? Math.round((contados / total) * 100) : 0
     
-    const sinDiff = itemsConEdicion.filter((i) => i.estado_item === 'contado' && Number(i.cantidad_contada) === Number(i.stock_sistema)).length
-    const negativo = itemsConEdicion.filter((i) => i.estado_item === 'contado' && i.cantidad_contada !== null && Number(i.cantidad_contada) < Number(i.stock_sistema)).length
-    const positivo = itemsConEdicion.filter((i) => i.estado_item === 'contado' && i.cantidad_contada !== null && Number(i.cantidad_contada) > Number(i.stock_sistema)).length
+    const sinDiff = itemsConEdicion.filter((i) => i.estado_item === 'contado' && toDecimal(i.cantidad_contada).eq(i.stock_sistema)).length
+    const negativo = itemsConEdicion.filter((i) => i.estado_item === 'contado' && i.cantidad_contada !== null && toDecimal(i.cantidad_contada).lt(i.stock_sistema)).length
+    const positivo = itemsConEdicion.filter((i) => i.estado_item === 'contado' && i.cantidad_contada !== null && toDecimal(i.cantidad_contada).gt(i.stock_sistema)).length
     const noContados = itemsConEdicion.filter((i) => i.estado_item === 'no_contado').length
 
     return { contados, total, progreso, sinDiff, negativo, positivo, noContados }
@@ -116,7 +117,7 @@ export function useConteoSession(id: string | undefined) {
     save: () => {
       const payload = Object.entries(localItems).map(([item_id, local]) => ({
         item_id,
-        cantidad_contada: local.estado === 'contado' && local.cantidad !== '' ? parseFloat(local.cantidad) : null,
+        cantidad_contada: local.estado === 'contado' && local.cantidad !== '' ? toNum(local.cantidad) : null,
         estado_item: local.estado,
         version: local.version,
       }))

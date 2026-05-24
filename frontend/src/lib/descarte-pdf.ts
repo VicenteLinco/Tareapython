@@ -74,7 +74,7 @@ export function exportarDescartePDF(
       item.codigo_lote,
       item.area_nombre,
       motivoLabel(item.tipo),
-      formatCantidad(Number(item.cantidad), item.unidad_base_nombre, item.unidad_base_nombre_plural),
+      formatCantidad(item.cantidad, item.unidad_base_nombre, item.unidad_base_nombre_plural),
       formatDate(item.fecha_vencimiento),
       item.nota ?? '',
     ]),
@@ -138,7 +138,7 @@ export function exportarDescartesRangoPDF(
         item.codigo_lote,
         item.area_nombre,
         motivoLabel(item.tipo),
-        formatCantidad(Number(item.cantidad), item.unidad_base_nombre, item.unidad_base_nombre_plural),
+        formatCantidad(item.cantidad, item.unidad_base_nombre, item.unidad_base_nombre_plural),
         formatDate(item.fecha_vencimiento),
         item.nota ?? '',
       ])

@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { toDecimal, toNum, type DecimalInput } from '@/domain/parse'
 
 /**
  * Convierte una ruta de imagen de la DB en una URL completa para el frontend.
@@ -18,30 +19,32 @@ export function getImageUrl(path: string | null | undefined): string {
  * Ej: 110 unidades con factor 100 -> "1 Caja + 10 Reacciones"
  */
 export function formatStockHumano(
-  total: number,
-  factor: number,
+  total: DecimalInput,
+  factor: DecimalInput,
   uBase: string,
   uBasePlural: string,
   uPres: string,
   uPresPlural: string
 ): string {
-  const t = Math.abs(total)
-  const isNeg = total < 0
+  const totalDecimal = toDecimal(total)
+  const factorDecimal = toDecimal(factor)
+  const t = totalDecimal.abs()
+  const isNeg = totalDecimal.lt(0)
   
-  if (factor <= 1) return formatCantidad(total, uBase, uBasePlural)
+  if (factorDecimal.lte(1)) return formatCantidad(total, uBase, uBasePlural)
 
-  const cajas = Math.floor(t / factor)
-  const sueltas = t % factor
+  const cajas = t.dividedToIntegerBy(factorDecimal)
+  const sueltas = t.mod(factorDecimal)
+  const cajasNum = cajas.toNumber()
 
-  const labelPres = cajas === 1 ? uPres : (uPresPlural || uPres)
-  const labelBase = sueltas === 1 ? uBase : (uBasePlural || uBase)
+  const labelPres = cajas.eq(1) ? uPres : (uPresPlural || uPres)
+  const labelBase = sueltas.eq(1) ? uBase : (uBasePlural || uBase)
 
   let result = ''
-  if (cajas > 0) result += `${cajas} ${labelPres}`
-  if (cajas > 0 && sueltas > 0) result += ' + '
-  if (sueltas > 0 || cajas === 0) {
-    const isInt = Math.abs(sueltas - Math.round(sueltas)) < 0.0001
-    const val = isInt ? Math.round(sueltas) : parseFloat(sueltas.toFixed(2))
+  if (cajas.gt(0)) result += `${cajasNum} ${labelPres}`
+  if (cajas.gt(0) && sueltas.gt(0)) result += ' + '
+  if (sueltas.gt(0) || cajas.eq(0)) {
+    const val = sueltas.toDecimalPlaces(2).toNumber()
     result += `${val} ${labelBase}`
   }
 
@@ -85,11 +88,25 @@ export function daysUntil(date: string | Date | null | undefined): number | null
  * - Enteros se muestran sin decimales (5 no 5.0)
  * - No-enteros con hasta 2 decimales significativos
  */
-export function formatCantidad(qty: number, singular: string, plural?: string | null): string {
-  const isInt = Math.abs(qty - Math.round(qty)) < 0.0001
-  const num = isInt ? Math.round(qty) : parseFloat(qty.toFixed(2))
-  const unit = (isInt && Math.round(qty) === 1) ? singular : (plural ?? singular)
+export function formatCantidad(qty: DecimalInput, singular: string, plural?: string | null): string {
+  const value = toDecimal(qty)
+  const rounded = value.toDecimalPlaces(0)
+  const isInt = value.minus(rounded).abs().lt(0.0001)
+  const num = isInt ? rounded.toNumber() : value.toDecimalPlaces(2).toNumber()
+  const unit = value.eq(1) ? singular : (plural ?? singular)
   return `${num} ${unit}`
+}
+
+export function formatPrecio(
+  value: DecimalInput,
+  currency = 'CLP',
+  locale = 'es-CL',
+): string {
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: currency === 'CLP' ? 0 : 2,
+  }).format(toNum(value))
 }
 
 /**

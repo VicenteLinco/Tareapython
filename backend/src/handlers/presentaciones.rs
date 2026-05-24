@@ -127,9 +127,10 @@ async fn actualizar(
         .ok_or(AppError::NotFound("Presentación no encontrada".into()))?;
 
     if req.version != anterior.version {
-        return Err(AppError::Conflict(
-            "El registro fue modificado por otro usuario".into(),
-        ));
+        return Err(AppError::VersionConflict {
+            esperada: req.version as i64,
+            actual: anterior.version as i64,
+        });
     }
 
     // No permitir cambiar factor_conversion si hay recepciones que la usaron
@@ -183,9 +184,10 @@ async fn actualizar(
     .bind(req.version)
     .fetch_optional(&state.pool)
     .await?
-    .ok_or(AppError::Conflict(
-        "El registro fue modificado por otro usuario. Recarga e intenta de nuevo.".into(),
-    ))?;
+    .ok_or(AppError::VersionConflict {
+        esperada: req.version as i64,
+        actual: anterior.version as i64,
+    })?;
 
     sqlx::query(
         "INSERT INTO audit_log (tabla, registro_id, accion, datos_anteriores, datos_nuevos, usuario_id) VALUES ('presentaciones', $1, 'UPDATE', $2, $3, $4)",

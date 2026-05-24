@@ -114,6 +114,70 @@ async fn refresh_token_funciona(pool: PgPool) {
 
     assert_eq!(status, StatusCode::OK);
     assert!(json["access_token"].is_string());
+    assert!(json["refresh_token"].is_string());
+    assert_ne!(json["refresh_token"], refresh_token);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn refresh_token_no_se_puede_reutilizar(pool: PgPool) {
+    common::ensure_test_admin(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (_, login_json) = common::post_json(
+        &app,
+        "/api/v1/auth/login",
+        "",
+        serde_json::json!({
+            "email": common::TEST_ADMIN_EMAIL,
+            "password": common::TEST_ADMIN_PASSWORD
+        }),
+    )
+    .await;
+
+    let refresh_token = login_json["refresh_token"].as_str().unwrap();
+    let body = serde_json::json!({ "refresh_token": refresh_token });
+
+    let (first_status, first_json) =
+        common::post_json(&app, "/api/v1/auth/refresh", "", body.clone()).await;
+    let (second_status, _) = common::post_json(&app, "/api/v1/auth/refresh", "", body).await;
+    let replacement_token = first_json["refresh_token"].as_str().unwrap();
+    let (replacement_status, _) = common::post_json(
+        &app,
+        "/api/v1/auth/refresh",
+        "",
+        serde_json::json!({ "refresh_token": replacement_token }),
+    )
+    .await;
+
+    assert_eq!(first_status, StatusCode::OK);
+    assert_eq!(second_status, StatusCode::UNAUTHORIZED);
+    assert_eq!(replacement_status, StatusCode::UNAUTHORIZED);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn logout_revoca_refresh_token(pool: PgPool) {
+    common::ensure_test_admin(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (_, login_json) = common::post_json(
+        &app,
+        "/api/v1/auth/login",
+        "",
+        serde_json::json!({
+            "email": common::TEST_ADMIN_EMAIL,
+            "password": common::TEST_ADMIN_PASSWORD
+        }),
+    )
+    .await;
+
+    let refresh_token = login_json["refresh_token"].as_str().unwrap();
+    let body = serde_json::json!({ "refresh_token": refresh_token });
+
+    let (logout_status, _) = common::post_json(&app, "/api/v1/auth/logout", "", body.clone()).await;
+    let (refresh_status, _) = common::post_json(&app, "/api/v1/auth/refresh", "", body).await;
+
+    assert_eq!(logout_status, StatusCode::OK);
+    assert_eq!(refresh_status, StatusCode::UNAUTHORIZED);
 }
 
 #[sqlx::test(migrations = "./migrations")]

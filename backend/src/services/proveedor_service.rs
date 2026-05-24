@@ -118,7 +118,10 @@ pub async fn actualizar(
     .bind(req.version)
     .fetch_optional(pool)
     .await?
-    .ok_or(AppError::Conflict("El registro fue modificado por otro usuario".into()))?;
+    .ok_or(AppError::VersionConflict {
+        esperada: req.version as i64,
+        actual: anterior.version as i64,
+    })?;
 
     crate::services::audit::registrar(
         pool,

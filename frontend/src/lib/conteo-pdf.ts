@@ -2,6 +2,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import api from '@/lib/api'
 import { formatCantidad, formatDate, formatDateTime } from '@/lib/utils'
+import { toDecimal } from '@/domain/parse'
 import type { ConteoDetalle, ConteoItem, PaginatedSesiones, SesionConteo } from '@/types'
 
 interface ConteoPdfOptions {
@@ -55,7 +56,7 @@ function isoDateLocal(date: string | Date): string {
 
 function diff(item: ConteoItem): number | null {
   if (item.estado_item !== 'contado' || item.cantidad_contada == null) return null
-  return Number(item.cantidad_contada) - Number(item.stock_sistema)
+  return toDecimal(item.cantidad_contada).minus(item.stock_sistema).toNumber()
 }
 
 function resumen(items: ConteoItem[]) {
@@ -183,7 +184,7 @@ function drawItemsTable(doc: jsPDF, detalle: ConteoDetalle, startY: number) {
       const d = diff(item)
       const contado = item.cantidad_contada == null
         ? '-'
-        : formatCantidad(Number(item.cantidad_contada), item.unidad_base_nombre, item.unidad_base_nombre_plural)
+        : formatCantidad(item.cantidad_contada, item.unidad_base_nombre, item.unidad_base_nombre_plural)
       const diferencia = d == null
         ? '-'
         : `${d > 0 ? '+' : ''}${formatCantidad(d, item.unidad_base_nombre, item.unidad_base_nombre_plural)}`
@@ -191,7 +192,7 @@ function drawItemsTable(doc: jsPDF, detalle: ConteoDetalle, startY: number) {
         item.producto_nombre,
         item.numero_lote,
         formatDate(item.fecha_vencimiento),
-        formatCantidad(Number(item.stock_sistema), item.unidad_base_nombre, item.unidad_base_nombre_plural),
+        formatCantidad(item.stock_sistema, item.unidad_base_nombre, item.unidad_base_nombre_plural),
         contado,
         diferencia,
         item.estado_item.replace('_', ' '),

@@ -13,6 +13,7 @@ import api from '@/lib/api'
 import { formatDate, daysUntil, cn, formatCantidad } from '@/lib/utils'
 import { CantidadConUnidad } from '@/components/ui/cantidad'
 import { notify } from '@/lib/notify'
+import { toDecimal, toNum } from '@/domain/parse'
 
 interface RecepcionHeader {
   id: string
@@ -145,11 +146,11 @@ export default function RecepcionDetallePage() {
     const esConfirmada = recepcion.estado === 'completa' || recepcion.estado === 'confirmada'
 
     const filas = detalle.map((item) => {
-      const qty = parseFloat(item.cantidad_unidades_base)
-      const qtyPres = parseFloat(item.cantidad_presentaciones)
-      const factor = parseFloat(item.factor_conversion_usado)
-      const qtyPresStr = Math.abs(qtyPres - Math.round(qtyPres)) < 0.0001 ? Math.round(qtyPres).toString() : qtyPres.toFixed(2)
-      const cantidadCell = factor !== 1
+      const qty = toNum(item.cantidad_unidades_base)
+      const qtyPres = toDecimal(item.cantidad_presentaciones)
+      const factor = toDecimal(item.factor_conversion_usado)
+      const qtyPresStr = qtyPres.toDecimalPlaces(2).toString()
+      const cantidadCell = !factor.eq(1)
         ? `<div style="font-weight:600">${qtyPresStr} ${item.presentacion_nombre}</div>
            <div style="color:#6b7280;font-size:11px;margin-top:1px">= ${formatCantidad(qty, item.unidad_base_nombre, item.unidad_base_nombre_plural)}</div>`
         : `<div style="font-weight:600">${formatCantidad(qty, item.unidad_base_nombre, item.unidad_base_nombre_plural)}</div>`
@@ -475,11 +476,11 @@ export default function RecepcionDetallePage() {
                   const days = daysUntil(item.fecha_vencimiento)
                   const isExpired = days !== null && days <= 0
                   const isSoon = days !== null && days > 0 && days <= 30
-                  const qty = parseFloat(item.cantidad_unidades_base)
-                  const qtyPres = parseFloat(item.cantidad_presentaciones)
-                  const factor = parseFloat(item.factor_conversion_usado)
-                  const qtyPresStr = Math.abs(qtyPres - Math.round(qtyPres)) < 0.0001 ? Math.round(qtyPres).toString() : qtyPres.toFixed(2)
-                  const tienePresent = factor !== 1
+                  const qty = toNum(item.cantidad_unidades_base)
+                  const qtyPres = toDecimal(item.cantidad_presentaciones)
+                  const factor = toDecimal(item.factor_conversion_usado)
+                  const qtyPresStr = qtyPres.toDecimalPlaces(2).toString()
+                  const tienePresent = !factor.eq(1)
 
                   return (
                     <tr key={item.id} className="hover:bg-base-200/30 border-base-200/60">

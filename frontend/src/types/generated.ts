@@ -75,6 +75,10 @@ export type ApiErrorCode =
   | "UNAUTHORIZED"
   | "RATE_LIMITED"
   | "INTERNAL_ERROR"
+  | "UNIQUE_VIOLATION"
+  | "FOREIGN_KEY_VIOLATION"
+  | "CHECK_VIOLATION"
+  | "NOT_NULL_VIOLATION"
   | "STOCK_INSUFICIENTE"
   | "STOCK_INSUFICIENTE_BATCH"
   | "LOTE_AGOTADO"
@@ -87,4 +91,3 @@ export interface ApiError {
   message: string;
   details?: Record<string, unknown>;
 }
-

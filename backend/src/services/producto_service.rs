@@ -472,9 +472,10 @@ impl ProductoService {
             .ok_or(AppError::NotFound("Producto no encontrado".into()))?;
 
         if params.version_esperada != anterior.version {
-            return Err(AppError::Conflict(
-                "El registro fue modificado por otro usuario".into(),
-            ));
+            return Err(AppError::VersionConflict {
+                esperada: params.version_esperada as i64,
+                actual: anterior.version as i64,
+            });
         }
 
         let mut tx = pool.begin().await?;
@@ -503,7 +504,10 @@ impl ProductoService {
         .bind(params.version_esperada)
         .fetch_optional(&mut *tx)
         .await?
-        .ok_or(AppError::Conflict("Error de concurrencia al actualizar".into()))?;
+        .ok_or(AppError::VersionConflict {
+            esperada: params.version_esperada as i64,
+            actual: anterior.version as i64,
+        })?;
 
         if let Some(ids) = params.area_ids {
             sqlx::query("DELETE FROM producto_area WHERE producto_id = $1")

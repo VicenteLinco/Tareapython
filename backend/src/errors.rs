@@ -4,6 +4,78 @@ use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+fn sqlx_database_error_response(err: &sqlx::Error) -> Option<(StatusCode, &'static str, String)> {
+    let db_err = match err {
+        sqlx::Error::Database(db_err) => db_err,
+        _ => return None,
+    };
+
+    let constraint = db_err.constraint().unwrap_or_default();
+    let code = db_err.code().unwrap_or_default();
+    match code.as_ref() {
+        "23505" => Some((
+            StatusCode::CONFLICT,
+            "UNIQUE_VIOLATION",
+            unique_violation_message(constraint),
+        )),
+        "23503" => Some((
+            StatusCode::CONFLICT,
+            "FOREIGN_KEY_VIOLATION",
+            foreign_key_violation_message(constraint),
+        )),
+        "23514" => Some((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "CHECK_VIOLATION",
+            check_violation_message(constraint),
+        )),
+        "23502" => Some((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "NOT_NULL_VIOLATION",
+            "Falta un campo obligatorio.".to_string(),
+        )),
+        _ => None,
+    }
+}
+
+fn unique_violation_message(constraint: &str) -> String {
+    match constraint {
+        "usuarios_email_key" => "Ya existe un usuario con ese email.".to_string(),
+        "categorias_nombre_key" => "Ya existe una categoria con ese nombre.".to_string(),
+        "unidades_basicas_nombre_key" => "Ya existe una unidad con ese nombre.".to_string(),
+        "proveedores_nombre_key" => "Ya existe un proveedor con ese nombre.".to_string(),
+        "productos_codigo_interno_key" => {
+            "Ya existe un producto con ese codigo interno.".to_string()
+        }
+        "presentaciones_codigo_barras_key" => {
+            "Ya existe una presentacion con ese codigo de barras.".to_string()
+        }
+        "refresh_sessions_token_hash_key" => "La sesion ya fue registrada.".to_string(),
+        _ => "El registro duplica un valor unico existente.".to_string(),
+    }
+}
+
+fn foreign_key_violation_message(constraint: &str) -> String {
+    match constraint {
+        "productos_categoria_id_fkey" => "La categoria seleccionada no existe.".to_string(),
+        "productos_unidad_base_id_fkey" => "La unidad seleccionada no existe.".to_string(),
+        "productos_proveedor_id_fkey" => "El proveedor seleccionado no existe.".to_string(),
+        "presentaciones_producto_id_fkey" => "El producto seleccionado no existe.".to_string(),
+        "recepciones_proveedor_id_fkey" => "El proveedor seleccionado no existe.".to_string(),
+        _ => "El registro referencia datos que ya no existen.".to_string(),
+    }
+}
+
+fn check_violation_message(constraint: &str) -> String {
+    match constraint {
+        "productos_stock_minimo_check" => "El stock minimo no puede ser negativo.".to_string(),
+        "presentaciones_factor_conversion_check" => {
+            "El factor de conversion debe ser mayor a cero.".to_string()
+        }
+        "stock_cantidad_check" => "El stock no puede quedar negativo.".to_string(),
+        _ => "Los datos no cumplen una regla de validacion.".to_string(),
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("No encontrado: {0}")]
@@ -106,6 +178,22 @@ mod tests {
         assert_eq!(body["details"]["esperada"], 2);
         assert_eq!(body["details"]["actual"], 3);
     }
+
+    #[test]
+    fn mensajes_sql_tipados_para_restricciones_conocidas() {
+        assert_eq!(
+            unique_violation_message("usuarios_email_key"),
+            "Ya existe un usuario con ese email."
+        );
+        assert_eq!(
+            foreign_key_violation_message("productos_proveedor_id_fkey"),
+            "El proveedor seleccionado no existe."
+        );
+        assert_eq!(
+            check_violation_message("presentaciones_factor_conversion_check"),
+            "El factor de conversion debe ser mayor a cero."
+        );
+    }
 }
 
 impl From<validator::ValidationErrors> for AppError {
@@ -183,12 +271,16 @@ impl IntoResponse for AppError {
             }
             AppError::Sqlx(err) => {
                 tracing::error!("Error de base de datos: {}", err);
+                if let Some((status, code, message)) = sqlx_database_error_response(&err) {
+                    (status, code, message, None)
+                } else {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "INTERNAL_ERROR",
                     "Error interno del servidor".to_string(),
                     None,
                 )
+                }
             }
             AppError::StockInsuficiente {
                 disponible,

@@ -905,9 +905,10 @@ async fn registrar_envio(
         .await?;
 
         if ya_existe {
-            return Err(AppError::Conflict(
-                "Version del envio desactualizada, recarga la pagina".into(),
-            ));
+            return Err(AppError::VersionConflict {
+                esperada: req.version as i64,
+                actual: 1,
+            });
         }
     }
 
@@ -934,9 +935,10 @@ async fn registrar_envio(
     .await?;
 
     if updated.rows_affected() == 0 {
-        return Err(AppError::Conflict(
-            "Version del envio desactualizada, recarga la pagina".into(),
-        ));
+        return Err(AppError::VersionConflict {
+            esperada: req.version as i64,
+            actual: req.version as i64 + 1,
+        });
     }
 
     recalcular_estado_solicitud(&mut tx, id).await?;
@@ -977,9 +979,10 @@ async fn cancelar_envio(
     .await?;
 
     if updated.rows_affected() == 0 {
-        return Err(AppError::Conflict(
-            "Version del envio desactualizada, recarga la pagina".into(),
-        ));
+        return Err(AppError::VersionConflict {
+            esperada: req.version as i64,
+            actual: req.version as i64 + 1,
+        });
     }
 
     recalcular_estado_solicitud(&mut tx, id).await?;

@@ -15,6 +15,7 @@ import api from '@/lib/api'
 import { getApiErrorCode, getApiStatus, parseApiError } from '@/lib/api-error'
 import { exportarSolicitudPDF } from '@/lib/solicitud-pdf'
 import { formatPesos } from '../solicitud-utils'
+import { toDecimal, toNum } from '@/domain/parse'
 import type { SolicitudDetalle, CreateOrdenCompraRequest } from '@/types'
 import { useAuthStore } from '@/hooks/use-auth-store'
 
@@ -77,15 +78,15 @@ export function DetalleModal({
 
   const calcTotal = (items: SolicitudDetalle['items']) =>
     items.reduce((acc, i) => {
-      const fc = i.factor_conversion ? parseFloat(i.factor_conversion) : null
-      const pu = i.precio_unitario ? parseFloat(i.precio_unitario) : 0
+      const fc = i.factor_conversion ? toDecimal(i.factor_conversion) : null
+      const pu = toDecimal(i.precio_unitario)
       const hasPres = !!(i.presentacion_id && i.cantidad_presentaciones && fc)
       const qty = hasPres
-        ? parseFloat(i.cantidad_presentaciones!)
-        : parseFloat(i.cantidad_sugerida)
-      const price = hasPres ? pu * fc! : pu
-      return acc + qty * price
-    }, 0)
+        ? toDecimal(i.cantidad_presentaciones)
+        : toDecimal(i.cantidad_sugerida)
+      const price = hasPres ? pu.times(fc!) : pu
+      return acc.plus(qty.times(price))
+    }, toDecimal(0)).toNumber()
 
   const invalidate = () => {
     if (solicitudId) queryClient.invalidateQueries({ queryKey: ['solicitud-detail', solicitudId] })
@@ -197,7 +198,7 @@ export function DetalleModal({
 
     const mapItem = (i: SolicitudDetalle['items'][number]) => ({
       producto_nombre: i.producto_nombre,
-      cantidad_sugerida: parseFloat(i.cantidad_sugerida),
+      cantidad_sugerida: toNum(i.cantidad_sugerida),
       unidad: i.unidad,
       unidad_plural: i.unidad_plural,
       codigo_maestro: i.codigo_maestro,
@@ -205,9 +206,9 @@ export function DetalleModal({
       proveedor_nombre: i.proveedor_nombre,
       presentacion_nombre: i.presentacion_nombre,
       presentacion_nombre_plural: i.presentacion_nombre_plural,
-      factor_conversion: i.factor_conversion ? parseFloat(i.factor_conversion) : null,
-      cantidad_presentaciones: i.cantidad_presentaciones ? parseFloat(i.cantidad_presentaciones) : null,
-      precio_unitario: i.precio_unitario ? parseFloat(i.precio_unitario) : null,
+      factor_conversion: i.factor_conversion ? toNum(i.factor_conversion) : null,
+      cantidad_presentaciones: i.cantidad_presentaciones ? toNum(i.cantidad_presentaciones) : null,
+      precio_unitario: i.precio_unitario ? toNum(i.precio_unitario) : null,
     })
 
     // Agrupar items por proveedor para el PDF multi-proveedor
@@ -215,11 +216,11 @@ export function DetalleModal({
     for (const i of detail.items) {
       const provNombre = i.proveedor_nombre || 'Sin proveedor'
       const current = gruposMap.get(provNombre) ?? { items: [], subtotal_neto: 0 }
-      const fc = i.factor_conversion ? parseFloat(i.factor_conversion) : null
-      const pu = i.precio_unitario ? parseFloat(i.precio_unitario) : 0
+      const fc = i.factor_conversion ? toDecimal(i.factor_conversion) : null
+      const pu = toDecimal(i.precio_unitario)
       const hasPres = !!(i.presentacion_id && i.cantidad_presentaciones && fc)
-      const qty = hasPres ? parseFloat(i.cantidad_presentaciones!) : parseFloat(i.cantidad_sugerida)
-      const neto = qty * (hasPres ? pu * fc! : pu)
+      const qty = hasPres ? toDecimal(i.cantidad_presentaciones) : toDecimal(i.cantidad_sugerida)
+      const neto = qty.times(hasPres ? pu.times(fc!) : pu).toNumber()
       current.items.push(i)
       current.subtotal_neto += neto
       gruposMap.set(provNombre, current)
@@ -323,11 +324,11 @@ export function DetalleModal({
                 </thead>
                 <tbody>
                   {detail.items.map((item, idx) => {
-                    const cant = parseFloat(item.cantidad_sugerida)
-                    const fc = item.factor_conversion ? parseFloat(item.factor_conversion) : null
+                    const cant = toNum(item.cantidad_sugerida)
+                    const fc = item.factor_conversion ? toDecimal(item.factor_conversion) : null
                     const hasPres = !!(item.presentacion_id && fc)
-                    const puBase = item.precio_unitario ? parseFloat(item.precio_unitario) : 0
-                    const precioUnit = hasPres ? puBase * fc! : puBase
+                    const puBase = toDecimal(item.precio_unitario)
+                    const precioUnit = hasPres ? puBase.times(fc!) : puBase
                     return (
                       <tr key={idx}>
                         <td className="font-bold text-xs">{item.producto_nombre}</td>
@@ -342,15 +343,15 @@ export function DetalleModal({
                         </td>
                         <td className="text-right">
                           <p className="font-mono text-[11px] font-bold">
-                            {precioUnit > 0 ? fmt(precioUnit) : <span className="opacity-30">—</span>}
+                            {precioUnit.gt(0) ? fmt(precioUnit.toNumber()) : <span className="opacity-30">—</span>}
                           </p>
-                          {precioUnit > 0 && (
+                          {precioUnit.gt(0) && (
                             <p className="text-[9px] opacity-35 font-medium">
                               / {hasPres ? (item.presentacion_nombre ?? 'pres.') : item.unidad}
                             </p>
                           )}
                         </td>
-                        <td className="text-right font-bold text-xs">{fmt(cant * precioUnit)}</td>
+                        <td className="text-right font-bold text-xs">{fmt(toDecimal(cant).times(precioUnit).toNumber())}</td>
                       </tr>
                     )
                   })}
@@ -742,8 +743,8 @@ export function DetalleModal({
                   items: detail.items.map(i => ({
                     producto_id: i.producto_id,
                     presentacion_id: i.presentacion_id ?? undefined,
-                    cantidad_solicitada: parseFloat(i.cantidad_sugerida),
-                    precio_unitario: i.precio_unitario ? parseFloat(i.precio_unitario) : undefined,
+                    cantidad_solicitada: toNum(i.cantidad_sugerida),
+                    precio_unitario: i.precio_unitario ? toNum(i.precio_unitario) : undefined,
                     unidad: i.unidad,
                   })),
                 }

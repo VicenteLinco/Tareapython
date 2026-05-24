@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { SolicitudBuscador } from './solicitud-buscador'
 import { UrgenciaTag } from '@/components/ui/urgencia-tag'
 import { AutonomiaBar } from '@/components/ui/autonomia-bar'
+import { toDecimal, toNum } from '@/domain/parse'
 import type { ItemRecomendado, Proveedor, Producto, SolicitudItem } from '@/types'
 
 type TabIzquierdo = 'quiebres' | 'buscar'
@@ -35,11 +36,11 @@ function RecCard({
     : confianza === 'media'
     ? 'Historial parcial (14–29 días). La cantidad sugerida es orientativa; se recomienda revisar.'
     : 'Historial insuficiente (<14 días con consumo). No se genera cantidad automática; ingresar manualmente.'
-  const yaPedido = parseFloat(r.ya_pedido_unidades)
-  const sugBase = parseFloat(r.cantidad_sugerida_base)
+  const yaPedido = toNum(r.ya_pedido_unidades)
+  const sugBase = toNum(r.cantidad_sugerida_base)
   const sugLabel = r.cantidad_sugerida_presentacion
     ? formatCantidad(
-        Math.ceil(parseFloat(r.cantidad_sugerida_presentacion)),
+        toDecimal(r.cantidad_sugerida_presentacion).ceil().toNumber(),
         r.presentacion_nombre ?? r.unidad_base,
         r.presentacion_nombre_plural ?? undefined
       )
@@ -94,9 +95,9 @@ function RecCard({
       <div className="flex items-center justify-between">
         <p className={cn(
           "text-[9px] font-medium tabular-nums",
-          parseFloat(r.stock_actual) === 0 ? "text-error font-bold" : "text-base-content/40"
+          toDecimal(r.stock_actual).eq(0) ? "text-error font-bold" : "text-base-content/40"
         )}>
-          Stock: {parseFloat(r.stock_actual)} / {parseFloat(r.stock_seguridad)}
+          Stock: {toNum(r.stock_actual)} / {toNum(r.stock_seguridad)}
         </p>
         {yaPedido === 0 && (
           <p className="text-[9px] text-base-content/35 font-medium" title={r.razon ?? ''}>Sug: {sugLabel}</p>

@@ -49,6 +49,7 @@ pub struct CambiarPasswordRequest {
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct RefreshClaims {
     pub sub: Uuid,
+    pub jti: Uuid,
     pub token_type: String,
     pub exp: i64,
     pub iat: i64,

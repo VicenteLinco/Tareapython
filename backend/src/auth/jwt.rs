@@ -34,6 +34,7 @@ pub fn create_refresh_token(user_id: Uuid, config: &AppConfig) -> Result<String,
     let now = Utc::now().timestamp();
     let claims = RefreshClaims {
         sub: user_id,
+        jti: Uuid::new_v4(),
         token_type: "refresh".to_string(),
         exp: now + config.jwt_refresh_expiration,
         iat: now,
@@ -63,7 +64,7 @@ pub fn verify_access_token(token: &str, secret: &str) -> Result<Claims, AppError
 
 pub fn verify_refresh_token(token: &str, secret: &str) -> Result<RefreshClaims, AppError> {
     let mut validation = Validation::new(Algorithm::HS256);
-    validation.set_required_spec_claims(&["exp", "iat", "sub"]);
+    validation.set_required_spec_claims(&["exp", "iat", "sub", "jti"]);
 
     let token_data = decode::<RefreshClaims>(
         token,

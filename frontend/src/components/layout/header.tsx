@@ -1,4 +1,5 @@
 import { LogOut, Search } from 'lucide-react'
+import axios from 'axios'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { useNavigate } from 'react-router-dom'
 import { clearDeviceMode } from '@/lib/device-mode'
@@ -8,13 +9,19 @@ interface HeaderProps {
 }
 
 export function Header({ onOpenSearch }: HeaderProps) {
-  const { usuario, logout } = useAuthStore()
+  const { usuario, refreshToken, logout } = useAuthStore()
   const navigate = useNavigate()
 
-  const handleLogout = () => {
-    logout()
-    clearDeviceMode()
-    navigate('/login')
+  const handleLogout = async () => {
+    try {
+      if (refreshToken) {
+        await axios.post('/api/v1/auth/logout', { refresh_token: refreshToken })
+      }
+    } finally {
+      logout()
+      clearDeviceMode()
+      navigate('/login')
+    }
   }
 
   return (

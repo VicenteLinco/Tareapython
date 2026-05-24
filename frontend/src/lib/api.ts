@@ -13,6 +13,32 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+let refreshPromise: Promise<string> | null = null
+
+async function refreshAccessToken() {
+  if (!refreshPromise) {
+    const refreshToken = useAuthStore.getState().refreshToken
+    if (!refreshToken) {
+      return Promise.reject(new Error('No refresh token available'))
+    }
+
+    refreshPromise = axios
+      .post('/api/v1/auth/refresh', {
+        refresh_token: refreshToken,
+      })
+      .then((res) => {
+        const { access_token, refresh_token } = res.data
+        useAuthStore.getState().setTokens(access_token, refresh_token)
+        return access_token as string
+      })
+      .finally(() => {
+        refreshPromise = null
+      })
+  }
+
+  return refreshPromise
+}
+
 api.interceptors.request.use((config: IdempotentRequestConfig) => {
   const token = useAuthStore.getState().accessToken
   if (token) {
@@ -40,21 +66,11 @@ api.interceptors.response.use(
     if (!original) return Promise.reject(error)
     if (error.response?.status === 401 && !original._retry) {
       original._retry = true
-      const refreshToken = useAuthStore.getState().refreshToken
-      if (refreshToken) {
-        try {
-          const res = await axios.post('/api/v1/auth/refresh', {
-            refresh_token: refreshToken,
-          })
-          const { access_token, refresh_token } = res.data
-          useAuthStore.getState().setTokens(access_token, refresh_token)
-          original.headers.Authorization = `Bearer ${access_token}`
-          return api(original)
-        } catch {
-          useAuthStore.getState().logout()
-          window.location.href = '/login'
-        }
-      } else {
+      try {
+        const accessToken = await refreshAccessToken()
+        original.headers.Authorization = `Bearer ${accessToken}`
+        return api(original)
+      } catch {
         useAuthStore.getState().logout()
         window.location.href = '/login'
       }

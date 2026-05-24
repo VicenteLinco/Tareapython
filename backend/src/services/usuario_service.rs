@@ -220,7 +220,10 @@ pub async fn actualizar(
     .bind(req.version)
     .fetch_optional(&mut *tx)
     .await?
-    .ok_or(AppError::Conflict("El usuario ha sido modificado por otro usuario".into()))?;
+    .ok_or(AppError::VersionConflict {
+        esperada: req.version as i64,
+        actual: anterior.version as i64,
+    })?;
 
     if let Some(area_ids) = &req.area_ids {
         sqlx::query("DELETE FROM usuario_area WHERE usuario_id = $1")

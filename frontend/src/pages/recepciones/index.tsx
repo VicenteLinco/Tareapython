@@ -16,6 +16,7 @@ import { formatDate, daysUntil, cn } from '@/lib/utils'
 import { CantidadConUnidad } from '@/components/ui/cantidad'
 import { notify } from '@/lib/notify'
 import { useFilterStorage } from '@/hooks/use-filter-storage'
+import { toDecimal, toNum } from '@/domain/parse'
 
 const PAGE_SIZE = 15
 
@@ -168,13 +169,11 @@ function RecepcionDetailPanel({
                 const days = daysUntil(item.fecha_vencimiento)
                 const isExpired = days !== null && days <= 0
                 const isSoon = days !== null && days > 0 && days <= 30
-                const qty = parseFloat(item.cantidad_unidades_base)
-                const qtyPres = parseFloat(item.cantidad_presentaciones)
-                const factor = parseFloat(item.factor_conversion_usado)
-                const qtyPresStr = Math.abs(qtyPres - Math.round(qtyPres)) < 0.0001
-                  ? Math.round(qtyPres).toString()
-                  : qtyPres.toFixed(2)
-                const tienePresent = factor !== 1
+                const qty = toNum(item.cantidad_unidades_base)
+                const qtyPres = toDecimal(item.cantidad_presentaciones)
+                const factor = toDecimal(item.factor_conversion_usado)
+                const qtyPresStr = qtyPres.toDecimalPlaces(2).toString()
+                const tienePresent = !factor.eq(1)
 
                 return (
                   <div

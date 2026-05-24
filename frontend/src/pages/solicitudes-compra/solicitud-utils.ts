@@ -1,8 +1,8 @@
 // frontend/src/pages/solicitudes-compra/solicitud-utils.ts
-import { formatCantidad } from '@/lib/utils'
+import { formatCantidad, formatPrecio } from '@/lib/utils'
 import type { SolicitudItem } from '@/types'
 import api from '@/lib/api'
-import { toDecimal, toNum, type DecimalInput } from '@/domain/parse'
+import { toDecimal, type DecimalInput } from '@/domain/parse'
 
 export const HORIZONTE_CHIPS = [7, 15, 30, 90, 180, 365] as const
 export type HorizonChip = typeof HORIZONTE_CHIPS[number]
@@ -69,7 +69,7 @@ export function unidadLabel(item: SolicitudItem, qty: number): string {
 
 /** Formatea un valor como moneda. */
 export function formatPesos(val: DecimalInput, monedaCodigo = 'CLP'): string {
-  return new Intl.NumberFormat('es-CL', { style: 'currency', currency: monedaCodigo }).format(toNum(val))
+  return formatPrecio(val, monedaCodigo)
 }
 
 /** Llama al backend para obtener el horizonte sugerido de un producto. */

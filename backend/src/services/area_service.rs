@@ -104,7 +104,10 @@ pub async fn actualizar(
         }
         _ => e.into(),
     })?
-    .ok_or(AppError::Conflict("El área ha sido modificada por otro usuario (error de versión)".into()))?;
+    .ok_or(AppError::VersionConflict {
+        esperada: req.version as i64,
+        actual: anterior.version as i64,
+    })?;
 
     crate::services::audit::registrar(
         pool, "areas", &id.to_string(), "UPDATE",

@@ -18,11 +18,28 @@ Avance 2026-05-23:
 - `recepciones/nueva.tsx` y `recepciones/hooks/useRecepcionItems.ts` usan la capa Decimal para cantidades vinculadas desde solicitudes, factores de presentacion y precio unitario.
 - Verificado con `npm.cmd run build` y `npm.cmd run lint` en frontend. Lint queda con 2 warnings no bloqueantes de hooks.
 
-Pendiente para cerrar P1:
+Avance 2026-05-24:
 
-- Terminar de reemplazar `parseFloat` y `Number(...)` sobre cantidades fuera de la capa Decimal.
-- Revisar pantallas con calculos de stock, forecast, solicitudes, recepciones y reportes.
-- Criterio de cierre: las cantidades criticas no se calculan con conversiones sueltas en componentes.
+- `formatCantidad` y `formatStockHumano` operan sobre la capa Decimal.
+- Se agrego `formatPrecio` centralizado y `formatPesos` delega en ese formatter.
+- Solicitudes de compra reemplazo conversiones sueltas en revision, quiebres y detalle/PDF multi-proveedor por `toDecimal`/`toNum`.
+- Conteo y PDFs de conteo/descarte usan la capa Decimal para diferencias y cantidades mostradas.
+- Recepciones lista/detalle usan Decimal para cantidades recibidas, presentaciones y factores de conversion.
+- Verificado con `npm.cmd run build` y `npm.cmd run lint`.
+
+Estado: cerrado para los flujos criticos de stock, forecast, solicitudes, recepciones, conteo y reportes PDF. Quedan conversiones numericas permitidas para IDs, filtros, contadores y controles simples.
+
+### Fase 1. Consistencia de datos y errores
+
+Origen: `mejoras vicente.md` seccion 12.
+
+Completado 2026-05-24:
+
+- Decimal frontend cerrado en flujos criticos.
+- Errores SQL mapeados a codigos de dominio (`UNIQUE_VIOLATION`, `FOREIGN_KEY_VIOLATION`, `CHECK_VIOLATION`, `NOT_NULL_VIOLATION`).
+- Formatters de cantidad/precio centralizados.
+- Conflictos de version normalizados como `VERSION_CONFLICT` en catalogos, productos, presentaciones, usuarios y envios de solicitudes.
+- Tests agregados para errores tipados y validados tests de auth/catalogos/productos/solicitudes.
 
 ### P2. Impresion de etiquetas agrupada
 

@@ -5,6 +5,7 @@ import { MetricTooltip } from '@/components/ui/metric-tooltip'
 import { cn, formatCantidad } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { UrgenciaTag } from '@/components/ui/urgencia-tag'
+import { toDecimal, toNum } from '@/domain/parse'
 import type { ItemRecomendado, SolicitudItem } from '@/types'
 
 interface RevisionViewProps {
@@ -59,7 +60,7 @@ export function RevisionView({
 
   const getCantidadInput = (r: ItemRecomendado): string => {
     if (r.producto_id in cantidadesPendientes) return cantidadesPendientes[r.producto_id]
-    return r.confianza !== 'baja' ? String(Math.ceil(parseFloat(r.cantidad_sugerida_base))) : ''
+    return r.confianza !== 'baja' ? String(toDecimal(r.cantidad_sugerida_base).ceil().toNumber()) : ''
   }
 
   const setCantidad = (productoId: string, val: string) =>
@@ -67,8 +68,8 @@ export function RevisionView({
 
   const handleAgregarAlPedido = (r: ItemRecomendado) => {
     const raw = getCantidadInput(r)
-    const val = parseFloat(raw)
-    if (!isNaN(val) && val > 0) {
+    const val = toNum(raw)
+    if (val > 0) {
       onAceptarConCantidad(r, val)
       setCantidadesPendientes(prev => { const next = { ...prev }; delete next[r.producto_id]; return next })
     }
@@ -76,10 +77,10 @@ export function RevisionView({
 
   const handleAceptarCriticos = () => {
     for (const r of criticosPendientes) {
-      const sugBase = Math.ceil(parseFloat(r.cantidad_sugerida_base))
+      const sugBase = toDecimal(r.cantidad_sugerida_base).ceil().toNumber()
       const cantInput = getCantidadInput(r)
-      const val = parseFloat(cantInput)
-      onAceptarConCantidad(r, !isNaN(val) && val > 0 ? val : sugBase)
+      const val = toNum(cantInput)
+      onAceptarConCantidad(r, val > 0 ? val : sugBase)
     }
   }
 
@@ -110,9 +111,9 @@ export function RevisionView({
   const renderFila = (r: ItemRecomendado, estado: 'pendiente' | 'aceptado' | 'descartado') => {
     const isCritica = r.nivel_urgencia === 'critica' || r.nivel_urgencia === 'critico'
     const isAlta = r.nivel_urgencia === 'alta'
-    const stockActual = parseFloat(r.stock_actual)
-    const stockMin = parseFloat(r.stock_seguridad)
-    const consumoDiario = parseFloat(r.consumo_diario)
+    const stockActual = toNum(r.stock_actual)
+    const stockMin = toNum(r.stock_seguridad)
+    const consumoDiario = toNum(r.consumo_diario)
     const autonomia = r.autonomia_dias
     const cf = confianzaInfo(r.confianza ?? 'baja')
 
@@ -120,7 +121,7 @@ export function RevisionView({
     const cantidadAceptada = itemEnPedido?.cantidad ?? 0
 
     const cantidadInput = getCantidadInput(r)
-    const cantidadInputValida = !isNaN(parseFloat(cantidadInput)) && parseFloat(cantidadInput) > 0
+    const cantidadInputValida = toNum(cantidadInput) > 0
 
     return (
       <div
@@ -200,7 +201,7 @@ export function RevisionView({
                   <button
                     className="btn btn-ghost btn-xs p-0 h-5 w-5 min-h-0 rounded-lg"
                     onClick={() => {
-                      const v = parseFloat(cantidadInput) || 0
+                      const v = toNum(cantidadInput)
                       if (v > 1) setCantidad(r.producto_id, String(v - 1))
                     }}
                   >
@@ -220,13 +221,13 @@ export function RevisionView({
                   <button
                     className="btn btn-ghost btn-xs p-0 h-5 w-5 min-h-0 rounded-lg"
                     onClick={() => {
-                      const v = parseFloat(cantidadInput) || 0
+                      const v = toNum(cantidadInput)
                       setCantidad(r.producto_id, String(v + 1))
                     }}
                   >
                     <Plus className="h-3 w-3" />
                   </button>
-                  <span className="text-[9px] text-base-content/40 ml-0.5">{unitLabel(parseFloat(cantidadInput) || 0, r.unidad_base, r.unidad_base_plural)}</span>
+                  <span className="text-[9px] text-base-content/40 ml-0.5">{unitLabel(toNum(cantidadInput), r.unidad_base, r.unidad_base_plural)}</span>
                 </div>
                 <button
                   className={cn(
@@ -273,8 +274,8 @@ export function RevisionView({
                   value={cantidadAceptada}
                   min={1}
                   onChange={e => {
-                    const v = parseFloat(e.target.value)
-                    if (!isNaN(v) && v > 0) onUpdateQty(r.producto_id, v)
+                    const v = toNum(e.target.value)
+                    if (v > 0) onUpdateQty(r.producto_id, v)
                   }}
                 />
                 <button

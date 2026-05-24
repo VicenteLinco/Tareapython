@@ -153,6 +153,10 @@ fn main() {
     writeln!(output, r#"  | "UNAUTHORIZED""#).unwrap();
     writeln!(output, r#"  | "RATE_LIMITED""#).unwrap();
     writeln!(output, r#"  | "INTERNAL_ERROR""#).unwrap();
+    writeln!(output, r#"  | "UNIQUE_VIOLATION""#).unwrap();
+    writeln!(output, r#"  | "FOREIGN_KEY_VIOLATION""#).unwrap();
+    writeln!(output, r#"  | "CHECK_VIOLATION""#).unwrap();
+    writeln!(output, r#"  | "NOT_NULL_VIOLATION""#).unwrap();
     writeln!(output, r#"  | "STOCK_INSUFICIENTE""#).unwrap();
     writeln!(output, r#"  | "STOCK_INSUFICIENTE_BATCH""#).unwrap();
     writeln!(output, r#"  | "LOTE_AGOTADO""#).unwrap();

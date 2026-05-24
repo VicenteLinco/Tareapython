@@ -2,7 +2,7 @@
 import { formatCantidad } from '@/lib/utils'
 import type { SolicitudItem } from '@/types'
 import api from '@/lib/api'
-import Decimal from 'decimal.js'
+import { toDecimal, toNum, type DecimalInput } from '@/domain/parse'
 
 export const HORIZONTE_CHIPS = [7, 15, 30, 90, 180, 365] as const
 export type HorizonChip = typeof HORIZONTE_CHIPS[number]
@@ -10,35 +10,38 @@ export type HorizonChip = typeof HORIZONTE_CHIPS[number]
 /** Calcula unidades a pedir dado un horizonte de cobertura. */
 export function calcularCantidad(
   horizonte: number,
-  consumoDiario: number,
+  consumoDiario: DecimalInput,
   leadTime: number,
-  stockMinimo: number,
-  stockActual: number,
-  factorConversion?: number | null,
+  stockMinimo: DecimalInput,
+  stockActual: DecimalInput,
+  factorConversion?: DecimalInput,
 ): number {
-  const base = Decimal.max(
-    1,
-    new Decimal(stockMinimo)
-      .plus(new Decimal(consumoDiario).times(leadTime + horizonte))
-      .minus(stockActual)
-      .ceil(),
-  )
-  if (factorConversion && factorConversion > 0) {
-    return Decimal.max(1, base.dividedBy(factorConversion).ceil()).toNumber()
+  const base = toDecimal(stockMinimo)
+    .plus(toDecimal(consumoDiario).times(leadTime + horizonte))
+    .minus(toDecimal(stockActual))
+    .ceil()
+  const requerido = base.lt(1) ? toDecimal(1) : base
+  const fc = toDecimal(factorConversion)
+
+  if (fc.gt(0)) {
+    const presentaciones = requerido.dividedBy(fc).ceil()
+    return (presentaciones.lt(1) ? toDecimal(1) : presentaciones).toNumber()
   }
-  return base.toNumber()
+
+  return requerido.toNumber()
 }
 
-/** Días de stock cubiertos con la cantidad actual del ítem. */
+/** Dias de stock cubiertos con la cantidad actual del item. */
 export function calcularDiasCubiertos(item: SolicitudItem): number | null {
-  if (item.consumo_diario <= 0) return null
+  const consumoDiario = toDecimal(item.consumo_diario)
+  if (consumoDiario.lte(0)) return null
   const unidadesBase = item.factor_conversion
-    ? item.cantidad * item.factor_conversion
-    : item.cantidad
-  return Math.round(unidadesBase / item.consumo_diario)
+    ? toDecimal(item.cantidad).times(item.factor_conversion)
+    : toDecimal(item.cantidad)
+  return unidadesBase.dividedBy(consumoDiario).round().toNumber()
 }
 
-/** Clases CSS del pill de cobertura según días cubiertos. */
+/** Clases CSS del pill de cobertura segun dias cubiertos. */
 export function pillClasses(dias: number | null, personalizado: boolean): string {
   if (personalizado) return 'bg-purple-500/10 text-purple-300 border-purple-500/30'
   if (dias === null)  return 'bg-base-200 text-base-content/40 border-base-300'
@@ -54,7 +57,7 @@ export function pillText(dias: number | null, personalizado: boolean): string {
   return personalizado ? `📌 ~${dias} días` : `📅 ~${dias} días`
 }
 
-/** Etiqueta de unidad para un ítem (presentación o unidad base). */
+/** Etiqueta de unidad para un item (presentacion o unidad base). */
 export function unidadLabel(item: SolicitudItem, qty: number): string {
   if (item.presentacion_nombre) {
     return formatCantidad(qty, item.presentacion_nombre, item.presentacion_nombre_plural ?? undefined)
@@ -65,10 +68,8 @@ export function unidadLabel(item: SolicitudItem, qty: number): string {
 }
 
 /** Formatea un valor como moneda. */
-export function formatPesos(val: number | string | null, monedaCodigo = 'CLP'): string {
-  if (val === null) return '$0'
-  const n = typeof val === 'string' ? parseFloat(val) : val
-  return new Intl.NumberFormat('es-CL', { style: 'currency', currency: monedaCodigo }).format(n)
+export function formatPesos(val: DecimalInput, monedaCodigo = 'CLP'): string {
+  return new Intl.NumberFormat('es-CL', { style: 'currency', currency: monedaCodigo }).format(toNum(val))
 }
 
 /** Llama al backend para obtener el horizonte sugerido de un producto. */
@@ -95,12 +96,12 @@ export async function fetchHorizonte(productoId: string, proveedorId: number | n
     stock_actual: number
     stock_minimo: number
   }>('/solicitudes-compra/horizonte', {
-    params: { producto_id: productoId, proveedor_id: proveedorId }
+    params: { producto_id: productoId, proveedor_id: proveedorId },
   })
   return res.data
 }
 
-/** Etiqueta legible para un número de días de horizonte. */
+/** Etiqueta legible para un numero de dias de horizonte. */
 export function horizonLabel(d: number): string {
   if (d >= 365) return '1 año'
   if (d >= 180) return '6m'

@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { notify } from '@/lib/notify'
+import { toNum } from '@/domain/parse'
 import { imprimirEtiquetas } from '@/lib/label-print'
 import { useAreas, useProveedores, useConfiguracion } from '@/hooks/dominio'
 import { LabelsSection } from './components/labels-section'
@@ -111,7 +112,7 @@ export default function NuevaRecepcionPage() {
         itemsProveedor.map((it: { producto_id: string; producto_nombre: string; cantidad_sugerida: string; unidad: string }) => ({
           producto_id: it.producto_id,
           producto_nombre: it.producto_nombre,
-          cantidad_base: parseFloat(it.cantidad_sugerida) || 0,
+          cantidad_base: toNum(it.cantidad_sugerida),
           unidad: it.unidad,
         }))
       )
@@ -120,9 +121,9 @@ export default function NuevaRecepcionPage() {
           const p = productos?.find((x: Producto) => String(x.id) === String(item.producto_id))
           if (p) {
             const qty = item.cantidad_presentaciones
-              ? Number(item.cantidad_presentaciones)
+              ? toNum(item.cantidad_presentaciones)
               : item.cantidad_sugerida
-                ? Number(item.cantidad_sugerida)
+                ? toNum(item.cantidad_sugerida)
                 : undefined
             await addProducto(p, item.presentacion_id ?? undefined, qty)
           }

@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 import { notify } from '@/lib/notify'
 import api from '@/lib/api'
+import { toDecimal, toNum } from '@/domain/parse'
 import { getApiErrorCode, getApiStatus, parseApiError } from '@/lib/api-error'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import type {
@@ -183,11 +184,11 @@ export function useSolicitudState() {
           presentacion_id: item.presentacion_id,
           presentacion_nombre: item.presentacion_nombre,
           presentacion_nombre_plural: item.presentacion_nombre_plural,
-          factor_conversion: item.factor_conversion ? parseFloat(item.factor_conversion) : null,
+          factor_conversion: item.factor_conversion ? toNum(item.factor_conversion) : null,
           unidad_base: item.unidad,
           unidad_base_plural: item.unidad_plural ?? item.unidad,
-          cantidad: parseFloat(item.cantidad_sugerida),
-          precio_unitario: item.precio_unitario ? parseFloat(item.precio_unitario) : 0,
+          cantidad: toNum(item.cantidad_sugerida),
+          precio_unitario: item.precio_unitario ? toNum(item.precio_unitario) : 0,
           imagen_url: item.imagen_url,
           consumo_diario: 0,
           stock_actual: 0,
@@ -321,10 +322,10 @@ export function useSolicitudState() {
       return
     }
     const horizData = await fetchHorizonte(r.producto_id, proveedorId)
-    const consumoDiario = parseFloat(r.consumo_diario.toString())
-    const stockActual = parseFloat(r.stock_actual.toString())
-    const stockMinimo = parseFloat(r.stock_seguridad.toString())
-    const factorConv = r.factor_conversion ? parseFloat(r.factor_conversion.toString()) : null
+    const consumoDiario = toNum(r.consumo_diario)
+    const stockActual = toNum(r.stock_actual)
+    const stockMinimo = toNum(r.stock_seguridad)
+    const factorConv = r.factor_conversion ? toNum(r.factor_conversion) : null
     const cantidadCalc = calcularCantidad(horizonteGlobal, consumoDiario, r.lead_time, stockMinimo, stockActual, factorConv)
     const cantidad = r.confianza === 'baja' ? 0 : cantidadCalc
 
@@ -343,7 +344,7 @@ export function useSolicitudState() {
       unidad_base: r.unidad_base,
       unidad_base_plural: r.unidad_base_plural || r.unidad_base,
       cantidad,
-      precio_unitario: r.precio_ultima_recepcion ? parseFloat(r.precio_ultima_recepcion.toString()) : 0,
+      precio_unitario: r.precio_ultima_recepcion ? toNum(r.precio_ultima_recepcion) : 0,
       imagen_url: r.imagen_url,
       consumo_diario: consumoDiario,
       stock_actual: stockActual,
@@ -367,7 +368,7 @@ export function useSolicitudState() {
       return
     }
     const horizData = await fetchHorizonte(r.producto_id, proveedorId)
-    const factorConv = r.factor_conversion ? parseFloat(r.factor_conversion.toString()) : null
+    const factorConv = r.factor_conversion ? toNum(r.factor_conversion) : null
     setItems(prev => [...prev, {
       producto_id: r.producto_id,
       producto_nombre: r.producto_nombre,
@@ -383,11 +384,11 @@ export function useSolicitudState() {
       unidad_base: r.unidad_base,
       unidad_base_plural: r.unidad_base_plural || r.unidad_base,
       cantidad,
-      precio_unitario: r.precio_ultima_recepcion ? parseFloat(r.precio_ultima_recepcion.toString()) : 0,
+      precio_unitario: r.precio_ultima_recepcion ? toNum(r.precio_ultima_recepcion) : 0,
       imagen_url: r.imagen_url,
-      consumo_diario: parseFloat(r.consumo_diario.toString()),
-      stock_actual: parseFloat(r.stock_actual.toString()),
-      stock_minimo: parseFloat(r.stock_seguridad.toString()),
+      consumo_diario: toNum(r.consumo_diario),
+      stock_actual: toNum(r.stock_actual),
+      stock_minimo: toNum(r.stock_seguridad),
       horizonte_dias: horizonteGlobal,
       horizonte_sugerido: horizData.horizonte_sugerido,
       horizonte_razon: horizData.razon,
@@ -404,7 +405,7 @@ export function useSolicitudState() {
     const px = p as ProductoExt
     const proveedorId = px.proveedor?.id ?? selectedProveedor?.id ?? null
     const horizData = await fetchHorizonte(p.id, proveedorId)
-    const factorConvSearch = px.pres_factor ? parseFloat(px.pres_factor) : null
+    const factorConvSearch = px.pres_factor ? toNum(px.pres_factor) : null
     const cantidad = calcularCantidad(
       horizonteGlobal, horizData.consumo_diario, p.lead_time_propio || 0,
       horizData.stock_minimo, horizData.stock_actual, factorConvSearch
@@ -424,7 +425,7 @@ export function useSolicitudState() {
       unidad_base: px.unidad_base?.nombre ?? 'u',
       unidad_base_plural: px.unidad_base?.nombre_plural ?? 'u',
       cantidad,
-      precio_unitario: p.precio_unidad ? parseFloat(String(p.precio_unidad)) : 0,
+      precio_unitario: p.precio_unidad ? toNum(p.precio_unidad) : 0,
       imagen_url: px.imagen_url ?? null,
       consumo_diario: horizData.consumo_diario,
       stock_actual: horizData.stock_actual,
@@ -565,10 +566,10 @@ export function useSolicitudState() {
         subtotal: 0,
       }
       const precio = item.presentacion_id && item.factor_conversion
-        ? item.precio_unitario * item.factor_conversion
-        : item.precio_unitario
+        ? toDecimal(item.precio_unitario).times(item.factor_conversion)
+        : toDecimal(item.precio_unitario)
       current.items.push(item)
-      current.subtotal += item.cantidad * precio
+      current.subtotal = toDecimal(current.subtotal).plus(toDecimal(item.cantidad).times(precio)).toNumber()
       map.set(proveedorId, current)
     }
     return Array.from(map.entries())

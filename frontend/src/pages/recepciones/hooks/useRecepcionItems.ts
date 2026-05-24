@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import { notify } from '@/lib/notify'
+import { mulDecimal, toNum } from '@/domain/parse'
 import { useDialogState } from '@/hooks/useDialogState'
 import { type DetalleLineUI, type LoteLineUI } from '../components/item-card'
 import { isCardComplete, isLoteComplete } from '../components/item-card-utils'
@@ -93,9 +94,7 @@ export function useRecepcionItems({
   proveedorId,
   proveedores,
   productos,
-  monedaSimbolo: _monedaSimbolo,
   solicitudId,
-  setSolicitudId: _setSolicitudId,
   guiaDespacho,
   guiaProvisoria,
   fechaRecepcion,
@@ -170,13 +169,15 @@ export function useRecepcionItems({
         presentacion_nombre: pres?.nombre || '',
         presentacion_nombre_plural: pres?.nombre_plural || '',
         cantidad_solicitada: overrideQuantity ?? null,
-        factor_conversion: Number(pres?.factor_conversion || 1),
+        factor_conversion: toNum(pres?.factor_conversion || 1),
         unidad_base_nombre: full.unidad_base?.nombre || '',
         unidad_base_nombre_plural: full.unidad_base?.nombre_plural || '',
         area_destino_id: catalogoArea?.id ?? null,
         area_destino_nombre: catalogoArea?.nombre ?? '',
         presentaciones,
-        precio_unitario: full.precio_unidad ? String(Math.round(full.precio_unidad * Number(pres?.factor_conversion || 1))) : '',
+        precio_unitario: full.precio_unidad
+          ? mulDecimal(full.precio_unidad, pres?.factor_conversion || 1).toDecimalPlaces(0).toString()
+          : '',
         imagen_url: full.imagen_url,
         lotes: [{
           id: uuidv4(),
@@ -387,14 +388,14 @@ export function useRecepcionItems({
         presentacion_nombre: pres?.nombre || '',
         presentacion_nombre_plural: pres?.nombre_plural || '',
         cantidad_solicitada: null,
-        factor_conversion: Number(pres?.factor_conversion || 1),
+        factor_conversion: toNum(pres?.factor_conversion || 1),
         unidad_base_nombre: full.unidad_base?.nombre || '',
         unidad_base_nombre_plural: full.unidad_base?.nombre_plural || '',
         area_destino_id: catalogoArea?.id ?? pendingScan.areaId ?? null,
         area_destino_nombre: catalogoArea?.nombre ?? pendingScan.areaNombre ?? '',
         presentaciones,
         precio_unitario: full.precio_unidad
-          ? String(Math.round(full.precio_unidad * Number(pres?.factor_conversion || 1)))
+          ? mulDecimal(full.precio_unidad, pres?.factor_conversion || 1).toDecimalPlaces(0).toString()
           : '',
         imagen_url: full.imagen_url,
         lotes: [{
@@ -595,7 +596,7 @@ export function useRecepcionItems({
             presentacion_id: d.presentacion_id,
             cantidad_presentaciones: l.cantidad_presentacion,
             area_destino_id: d.area_destino_id!,
-            precio_unitario: d.precio_unitario ? parseFloat(d.precio_unitario) : undefined,
+            precio_unitario: d.precio_unitario ? toNum(d.precio_unitario) : undefined,
           }))
       ),
     } as const

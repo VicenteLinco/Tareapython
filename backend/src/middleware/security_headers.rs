@@ -25,7 +25,7 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
     );
     headers.insert(
         HeaderName::from_static("permissions-policy"),
-        HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
+        HeaderValue::from_static("camera=(self), microphone=(), geolocation=()"),
     );
     headers.insert(
         HeaderName::from_static("cache-control"),

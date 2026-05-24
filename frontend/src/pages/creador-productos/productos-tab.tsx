@@ -1108,124 +1108,191 @@ function CreateProductoDialog({
                 Proveedores <span className="text-error">*</span>
               </label>
               {proveedoresForm.map((pp) => (
-                <div key={pp.proveedor_id} className="flex flex-wrap items-center gap-2 p-2 bg-base-200 rounded-lg">
-                  <div className="flex-1 min-w-0">
-                    <span className="text-sm font-medium truncate">{pp.proveedor_nombre}</span>
-                    {pp.es_principal && (
-                      <span className="ml-2 text-[10px] font-bold uppercase text-primary">Principal</span>
-                    )}
+                <div key={pp.proveedor_id} className="p-3 bg-base-200 rounded-xl space-y-3 border border-base-300">
+                  {/* Header del Proveedor */}
+                  <div className="flex items-center justify-between border-b border-base-300/50 pb-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-bold text-sm truncate">{pp.proveedor_nombre}</span>
+                      {pp.es_principal && (
+                        <span className="badge badge-primary badge-xs py-1.5 px-2 font-bold uppercase tracking-wider">Principal</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {!pp.es_principal && (
+                        <button
+                          type="button"
+                          onClick={() => marcarPrincipalCreate(pp.proveedor_id)}
+                          className="btn btn-ghost btn-xs text-warning hover:bg-warning/10 font-bold"
+                          title="Marcar como principal"
+                        >
+                          ★ Principal
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => eliminarProveedorCreate(pp.proveedor_id)}
+                        className="btn btn-ghost btn-xs text-error hover:bg-error/10 font-semibold"
+                        title="Eliminar proveedor"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </div>
-                  <input
-                    type="text"
-                    placeholder="Cód. proveedor"
-                    value={pp.codigo_proveedor ?? ''}
-                    onChange={e => setProveedoresForm(prev => prev.map(p =>
-                      p.proveedor_id === pp.proveedor_id ? { ...p, codigo_proveedor: e.target.value || null } : p
-                    ))}
-                    className="input input-xs input-bordered w-28"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Cód. maestro"
-                    value={pp.codigo_maestro ?? ''}
-                    onChange={e => setProveedoresForm(prev => prev.map(p =>
-                      p.proveedor_id === pp.proveedor_id ? { ...p, codigo_maestro: e.target.value || null } : p
-                    ))}
-                    className="input input-xs input-bordered w-28"
-                  />
-                  <input
-                    type="number"
-                    placeholder="Precio/u"
-                    value={pp.precio_unidad ?? ''}
-                    onChange={e => setProveedoresForm(prev => prev.map(p =>
-                      p.proveedor_id === pp.proveedor_id ? { ...p, precio_unidad: e.target.value || null } : p
-                    ))}
-                    className="input input-xs input-bordered w-24"
-                    min="0"
-                    step="0.01"
-                  />
-                  <select
-                    className="select select-xs bg-base-100 border border-base-300 w-32"
-                    value={pp.pres_nombre ?? ''}
-                    onChange={e => {
-                      const found = presFormatos.find(p => p.nombre === e.target.value)
-                      setProveedoresForm(prev => prev.map(p => p.proveedor_id === pp.proveedor_id ? {
-                        ...p,
-                        pres_nombre: e.target.value,
-                        pres_nombre_plural: found?.nombre_plural || '',
-                      } : p))
-                    }}
-                  >
-                    <option value="">Unidad base</option>
-                    {presFormatos.map(p => <option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
-                  </select>
-                  <input
-                    type="number"
-                    placeholder="Unid."
-                    value={pp.pres_factor ?? ''}
-                    onChange={e => setProveedoresForm(prev => prev.map(p =>
-                      p.proveedor_id === pp.proveedor_id ? { ...p, pres_factor: e.target.value } : p
-                    ))}
-                    className="input input-xs input-bordered w-20"
-                    min="1"
-                    disabled={!pp.pres_nombre}
-                  />
-                  <input
-                    type="text"
-                    placeholder="GTIN-14"
-                    value={pp.pres_gtin ?? ''}
-                    onChange={e => setProveedoresForm(prev => prev.map(p =>
-                      p.proveedor_id === pp.proveedor_id ? { ...p, pres_gtin: e.target.value.replace(/\D/g, '').slice(0, 14) } : p
-                    ))}
-                    className="input input-xs input-bordered w-28"
-                    disabled={!pp.pres_nombre}
-                  />
-                  <label className="flex items-center gap-1 text-[10px] font-bold uppercase opacity-60">
-                    <input
-                      type="checkbox"
-                      className="checkbox checkbox-xs checkbox-primary"
-                      checked={pp.pres_gs1_habilitado ?? false}
-                      disabled={!pp.pres_nombre}
-                      onChange={e => setProveedoresForm(prev => prev.map(p =>
-                        p.proveedor_id === pp.proveedor_id ? { ...p, pres_gs1_habilitado: e.target.checked } : p
-                      ))}
-                    />
-                    GS1
-                  </label>
-                  <label className="btn btn-xs btn-outline">
-                    Imagen
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png"
-                      className="hidden"
-                      onChange={async e => {
-                        const file = e.target.files?.[0]
-                        e.target.value = ''
-                        if (!file) return
-                        try {
-                          const dataUrl = await comprimirImagen(file)
-                          setProveedoresForm(prev => prev.map(p =>
-                            p.proveedor_id === pp.proveedor_id ? { ...p, imagen_data_url: dataUrl } : p
-                          ))
-                        } catch (err) {
-                          notify.error(err instanceof Error ? err.message : 'Error cargando imagen')
-                        }
-                      }}
-                    />
-                  </label>
-                  {!pp.es_principal && (
-                    <button
-                      type="button"
-                      onClick={() => marcarPrincipalCreate(pp.proveedor_id)}
-                      className="btn btn-xs btn-ghost text-xs"
-                      title="Marcar como principal"
-                    >★</button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => eliminarProveedorCreate(pp.proveedor_id)}
-                    className="btn btn-xs btn-ghost text-error"
-                  >✕</button>
+
+                  {/* Grid de Inputs */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                    {/* Cód. Proveedor */}
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Cód. proveedor</span>
+                      <input
+                        type="text"
+                        placeholder="Ej: PROV-123"
+                        value={pp.codigo_proveedor ?? ''}
+                        onChange={e => setProveedoresForm(prev => prev.map(p =>
+                          p.proveedor_id === pp.proveedor_id ? { ...p, codigo_proveedor: e.target.value || null } : p
+                        ))}
+                        className="input input-xs input-bordered w-full"
+                      />
+                    </div>
+
+                    {/* Cód. Maestro */}
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Cód. maestro</span>
+                      <input
+                        type="text"
+                        placeholder="Ej: MST-999"
+                        value={pp.codigo_maestro ?? ''}
+                        onChange={e => setProveedoresForm(prev => prev.map(p =>
+                          p.proveedor_id === pp.proveedor_id ? { ...p, codigo_maestro: e.target.value || null } : p
+                        ))}
+                        className="input input-xs input-bordered w-full"
+                      />
+                    </div>
+
+                    {/* Precio/u */}
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Precio/unidad</span>
+                      <input
+                        type="number"
+                        placeholder="0.00"
+                        value={pp.precio_unidad ?? ''}
+                        onChange={e => setProveedoresForm(prev => prev.map(p =>
+                          p.proveedor_id === pp.proveedor_id ? { ...p, precio_unidad: e.target.value || null } : p
+                        ))}
+                        className="input input-xs input-bordered w-full"
+                        min="0"
+                        step="0.01"
+                      />
+                    </div>
+
+                    {/* Unidad base */}
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Formato / Pres.</span>
+                      <select
+                        className="select select-xs select-bordered bg-base-100 w-full"
+                        value={pp.pres_nombre ?? ''}
+                        onChange={e => {
+                          const found = presFormatos.find(p => p.nombre === e.target.value)
+                          setProveedoresForm(prev => prev.map(p => p.proveedor_id === pp.proveedor_id ? {
+                            ...p,
+                            pres_nombre: e.target.value,
+                            pres_nombre_plural: found?.nombre_plural || '',
+                          } : p))
+                        }}
+                      >
+                        <option value="">Unidad base</option>
+                        {presFormatos.map(p => <option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
+                      </select>
+                    </div>
+
+                    {/* Unid. (Factor) */}
+                    <div className="flex flex-col gap-0.5" title={!pp.pres_nombre 
+                      ? "Bloqueado: La Unidad base siempre equivale a 1 unidad. Selecciona un formato (ej: Caja) para cambiarlo"
+                      : `Cantidad de unidades individuales contenidas en esta presentación (Ej: si la presentación es por ${pp.pres_nombre || 'envase'} y contiene 10 unidades base, el factor es 10)`
+                    }>
+                      <span className={cn(
+                        "text-[9px] uppercase font-bold tracking-wider cursor-help transition-opacity duration-200",
+                        !pp.pres_nombre ? "opacity-30" : "opacity-60"
+                      )}>
+                        Unidades por {pp.pres_nombre || 'Envase'} {!pp.pres_nombre ? '🔒' : '🛈'}
+                      </span>
+                      <input
+                        type="number"
+                        placeholder={!pp.pres_nombre ? "1" : "Ej: 10"}
+                        value={!pp.pres_nombre ? "1" : (pp.pres_factor ?? '')}
+                        onChange={e => setProveedoresForm(prev => prev.map(p =>
+                          p.proveedor_id === pp.proveedor_id ? { ...p, pres_factor: e.target.value } : p
+                        ))}
+                        className="input input-xs input-bordered w-full disabled:bg-base-300/60 disabled:text-base-content/40 disabled:cursor-not-allowed"
+                        min="1"
+                        disabled={!pp.pres_nombre}
+                      />
+                    </div>
+
+                    {/* GTIN-14 */}
+                    <div className="flex flex-col gap-0.5" title="Global Trade Item Number de 14 dígitos. Código de barras global que identifica la caja/envase completo de esta presentación.">
+                      <span className="text-[9px] uppercase font-bold tracking-wider opacity-60 cursor-help">Código GTIN-14 🛈</span>
+                      <input
+                        type="text"
+                        placeholder="14 dígitos"
+                        value={pp.pres_gtin ?? ''}
+                        onChange={e => setProveedoresForm(prev => prev.map(p =>
+                          p.proveedor_id === pp.proveedor_id ? { ...p, pres_gtin: e.target.value.replace(/\D/g, '').slice(0, 14) } : p
+                        ))}
+                        className="input input-xs input-bordered w-full"
+                        disabled={!pp.pres_nombre}
+                        title="Global Trade Item Number de 14 dígitos. Código de barras global que identifica la caja/envase completo de esta presentación."
+                      />
+                    </div>
+
+                    {/* Imagen / GS1 Habilitado */}
+                    <div className="col-span-2 flex items-center justify-between gap-4 mt-2 bg-base-300/40 p-1.5 px-3 rounded-lg">
+                      <label 
+                        className="flex items-center gap-1.5 text-[10px] font-bold uppercase opacity-80 cursor-help select-none"
+                        title="Si se habilita, al escanear el código de barras en recepciones se extraerán de forma automática el Lote y Fecha de Vencimiento de este producto."
+                      >
+                        <input
+                          type="checkbox"
+                          className="checkbox checkbox-xs checkbox-primary"
+                          checked={pp.pres_gs1_habilitado ?? false}
+                          disabled={!pp.pres_nombre}
+                          onChange={e => setProveedoresForm(prev => prev.map(p =>
+                            p.proveedor_id === pp.proveedor_id ? { ...p, pres_gs1_habilitado: e.target.checked } : p
+                          ))}
+                        />
+                        GS1 Habilitado 🛈
+                      </label>
+
+                      <div className="flex items-center gap-2">
+                        {pp.imagen_data_url && (
+                          <div className="w-6 h-6 rounded bg-base-100 overflow-hidden border border-base-300">
+                            <img src={pp.imagen_data_url} alt="Vista previa" className="w-full h-full object-cover" />
+                          </div>
+                        )}
+                        <label className="btn btn-xs btn-outline font-semibold gap-1">
+                          {pp.imagen_data_url ? 'Cambiar Foto' : 'Subir Foto'}
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png"
+                            className="hidden"
+                            onChange={async e => {
+                              const file = e.target.files?.[0]
+                              e.target.value = ''
+                              if (!file) return
+                              try {
+                                const dataUrl = await comprimirImagen(file)
+                                setProveedoresForm(prev => prev.map(p =>
+                                  p.proveedor_id === pp.proveedor_id ? { ...p, imagen_data_url: dataUrl } : p
+                                ))
+                              } catch (err) {
+                                notify.error(err instanceof Error ? err.message : 'Error cargando imagen')
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ))}
               <select
@@ -1817,124 +1884,191 @@ function EditProductoDialog({
                     Proveedores <span className="text-error">*</span>
                   </label>
                   {proveedoresForm.map((pp) => (
-                    <div key={pp.proveedor_id} className="flex flex-wrap items-center gap-2 p-2 bg-base-200 rounded-lg">
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium truncate">{pp.proveedor_nombre}</span>
-                        {pp.es_principal && (
-                          <span className="ml-2 text-[10px] font-bold uppercase text-primary">Principal</span>
-                        )}
+                    <div key={pp.proveedor_id} className="p-3 bg-base-200 rounded-xl space-y-3 border border-base-300">
+                      {/* Header del Proveedor */}
+                      <div className="flex items-center justify-between border-b border-base-300/50 pb-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-bold text-sm truncate">{pp.proveedor_nombre}</span>
+                          {pp.es_principal && (
+                            <span className="badge badge-primary badge-xs py-1.5 px-2 font-bold uppercase tracking-wider">Principal</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {!pp.es_principal && (
+                            <button
+                              type="button"
+                              onClick={() => marcarPrincipalEdit(pp.proveedor_id)}
+                              className="btn btn-ghost btn-xs text-warning hover:bg-warning/10 font-bold"
+                              title="Marcar como principal"
+                            >
+                              ★ Principal
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => eliminarProveedorEdit(pp.proveedor_id)}
+                            className="btn btn-ghost btn-xs text-error hover:bg-error/10 font-semibold"
+                            title="Eliminar proveedor"
+                          >
+                            ✕
+                          </button>
+                        </div>
                       </div>
-                      <input
-                        type="text"
-                        placeholder="Cód. proveedor"
-                        value={pp.codigo_proveedor ?? ''}
-                        onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
-                          p.proveedor_id === pp.proveedor_id ? { ...p, codigo_proveedor: e.target.value || null } : p
-                        ))}
-                        className="input input-xs input-bordered w-28"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Cód. maestro"
-                        value={pp.codigo_maestro ?? ''}
-                        onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
-                          p.proveedor_id === pp.proveedor_id ? { ...p, codigo_maestro: e.target.value || null } : p
-                        ))}
-                        className="input input-xs input-bordered w-28"
-                      />
-                      <input
-                        type="number"
-                        placeholder="Precio/u"
-                        value={pp.precio_unidad ?? ''}
-                        onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
-                          p.proveedor_id === pp.proveedor_id ? { ...p, precio_unidad: e.target.value || null } : p
-                        ))}
-                        className="input input-xs input-bordered w-24"
-                        min="0"
-                        step="0.01"
-                      />
-                      <select
-                        className="select select-xs bg-base-100 border border-base-300 w-32"
-                        value={pp.pres_nombre ?? ''}
-                        onChange={e => {
-                          const found = presFormatos.find(p => p.nombre === e.target.value)
-                          setProveedoresFormEdit(prev => prev.map(p => p.proveedor_id === pp.proveedor_id ? {
-                            ...p,
-                            pres_nombre: e.target.value,
-                            pres_nombre_plural: found?.nombre_plural || '',
-                          } : p))
-                        }}
-                      >
-                        <option value="">Unidad base</option>
-                        {presFormatos.map(p => <option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
-                      </select>
-                      <input
-                        type="number"
-                        placeholder="Unid."
-                        value={pp.pres_factor ?? ''}
-                        onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
-                          p.proveedor_id === pp.proveedor_id ? { ...p, pres_factor: e.target.value } : p
-                        ))}
-                        className="input input-xs input-bordered w-20"
-                        min="1"
-                        disabled={!pp.pres_nombre}
-                      />
-                      <input
-                        type="text"
-                        placeholder="GTIN-14"
-                        value={pp.pres_gtin ?? ''}
-                        onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
-                          p.proveedor_id === pp.proveedor_id ? { ...p, pres_gtin: e.target.value.replace(/\D/g, '').slice(0, 14) } : p
-                        ))}
-                        className="input input-xs input-bordered w-28"
-                        disabled={!pp.pres_nombre}
-                      />
-                      <label className="flex items-center gap-1 text-[10px] font-bold uppercase opacity-60">
-                        <input
-                          type="checkbox"
-                          className="checkbox checkbox-xs checkbox-primary"
-                          checked={pp.pres_gs1_habilitado ?? false}
-                          disabled={!pp.pres_nombre}
-                          onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
-                            p.proveedor_id === pp.proveedor_id ? { ...p, pres_gs1_habilitado: e.target.checked } : p
-                          ))}
-                        />
-                        GS1
-                      </label>
-                      <label className="btn btn-xs btn-outline">
-                        Imagen
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png"
-                          className="hidden"
-                          onChange={async e => {
-                            const file = e.target.files?.[0]
-                            e.target.value = ''
-                            if (!file) return
-                            try {
-                              const dataUrl = await comprimirImagen(file)
-                              setProveedoresFormEdit(prev => prev.map(p =>
-                                p.proveedor_id === pp.proveedor_id ? { ...p, imagen_data_url: dataUrl } : p
-                              ))
-                            } catch (err) {
-                              notify.error(err instanceof Error ? err.message : 'Error cargando imagen')
-                            }
-                          }}
-                        />
-                      </label>
-                      {!pp.es_principal && (
-                        <button
-                          type="button"
-                          onClick={() => marcarPrincipalEdit(pp.proveedor_id)}
-                          className="btn btn-xs btn-ghost text-xs"
-                          title="Marcar como principal"
-                        >★</button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => eliminarProveedorEdit(pp.proveedor_id)}
-                        className="btn btn-xs btn-ghost text-error"
-                      >✕</button>
+
+                      {/* Grid de Inputs */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                        {/* Cód. Proveedor */}
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Cód. proveedor</span>
+                          <input
+                            type="text"
+                            placeholder="Ej: PROV-123"
+                            value={pp.codigo_proveedor ?? ''}
+                            onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
+                              p.proveedor_id === pp.proveedor_id ? { ...p, codigo_proveedor: e.target.value || null } : p
+                            ))}
+                            className="input input-xs input-bordered w-full"
+                          />
+                        </div>
+
+                        {/* Cód. Maestro */}
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Cód. maestro</span>
+                          <input
+                            type="text"
+                            placeholder="Ej: MST-999"
+                            value={pp.codigo_maestro ?? ''}
+                            onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
+                              p.proveedor_id === pp.proveedor_id ? { ...p, codigo_maestro: e.target.value || null } : p
+                            ))}
+                            className="input input-xs input-bordered w-full"
+                          />
+                        </div>
+
+                        {/* Precio/u */}
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Precio/unidad</span>
+                          <input
+                            type="number"
+                            placeholder="0.00"
+                            value={pp.precio_unidad ?? ''}
+                            onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
+                              p.proveedor_id === pp.proveedor_id ? { ...p, precio_unidad: e.target.value || null } : p
+                            ))}
+                            className="input input-xs input-bordered w-full"
+                            min="0"
+                            step="0.01"
+                          />
+                        </div>
+
+                        {/* Unidad base */}
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Formato / Pres.</span>
+                          <select
+                            className="select select-xs select-bordered bg-base-100 w-full"
+                            value={pp.pres_nombre ?? ''}
+                            onChange={e => {
+                              const found = presFormatos.find(p => p.nombre === e.target.value)
+                              setProveedoresFormEdit(prev => prev.map(p => p.proveedor_id === pp.proveedor_id ? {
+                                ...p,
+                                pres_nombre: e.target.value,
+                                pres_nombre_plural: found?.nombre_plural || '',
+                              } : p))
+                            }}
+                          >
+                            <option value="">Unidad base</option>
+                            {presFormatos.map(p => <option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
+                          </select>
+                        </div>
+
+                        {/* Unid. (Factor) */}
+                        <div className="flex flex-col gap-0.5" title={!pp.pres_nombre 
+                          ? "Bloqueado: La Unidad base siempre equivale a 1 unidad. Selecciona un formato (ej: Caja) para cambiarlo"
+                          : `Cantidad de unidades individuales contenidas en esta presentación (Ej: si la presentación es por ${pp.pres_nombre || 'envase'} y contiene 10 unidades base, el factor es 10)`
+                        }>
+                          <span className={cn(
+                            "text-[9px] uppercase font-bold tracking-wider cursor-help transition-opacity duration-200",
+                            !pp.pres_nombre ? "opacity-30" : "opacity-60"
+                          )}>
+                            Unidades por {pp.pres_nombre || 'Envase'} {!pp.pres_nombre ? '🔒' : '🛈'}
+                          </span>
+                          <input
+                            type="number"
+                            placeholder={!pp.pres_nombre ? "1" : "Ej: 10"}
+                            value={!pp.pres_nombre ? "1" : (pp.pres_factor ?? '')}
+                            onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
+                              p.proveedor_id === pp.proveedor_id ? { ...p, pres_factor: e.target.value } : p
+                            ))}
+                            className="input input-xs input-bordered w-full disabled:bg-base-300/60 disabled:text-base-content/40 disabled:cursor-not-allowed"
+                            min="1"
+                            disabled={!pp.pres_nombre}
+                          />
+                        </div>
+
+                        {/* GTIN-14 */}
+                        <div className="flex flex-col gap-0.5" title="Global Trade Item Number de 14 dígitos. Código de barras global que identifica la caja/envase completo de esta presentación.">
+                          <span className="text-[9px] uppercase font-bold tracking-wider opacity-60 cursor-help">Código GTIN-14 🛈</span>
+                          <input
+                            type="text"
+                            placeholder="14 dígitos"
+                            value={pp.pres_gtin ?? ''}
+                            onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
+                              p.proveedor_id === pp.proveedor_id ? { ...p, pres_gtin: e.target.value.replace(/\D/g, '').slice(0, 14) } : p
+                            ))}
+                            className="input input-xs input-bordered w-full"
+                            disabled={!pp.pres_nombre}
+                            title="Global Trade Item Number de 14 dígitos. Código de barras global que identifica la caja/envase completo de esta presentación."
+                          />
+                        </div>
+
+                        {/* Imagen / GS1 Habilitado */}
+                        <div className="col-span-2 flex items-center justify-between gap-4 mt-2 bg-base-300/40 p-1.5 px-3 rounded-lg">
+                          <label 
+                            className="flex items-center gap-1.5 text-[10px] font-bold uppercase opacity-80 cursor-help select-none"
+                            title="Si se habilita, al escanear el código de barras en recepciones se extraerán de forma automática el Lote y Fecha de Vencimiento de este producto."
+                          >
+                            <input
+                              type="checkbox"
+                              className="checkbox checkbox-xs checkbox-primary"
+                              checked={pp.pres_gs1_habilitado ?? false}
+                              disabled={!pp.pres_nombre}
+                              onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
+                                p.proveedor_id === pp.proveedor_id ? { ...p, pres_gs1_habilitado: e.target.checked } : p
+                              ))}
+                            />
+                            GS1 Habilitado 🛈
+                          </label>
+
+                          <div className="flex items-center gap-2">
+                            {pp.imagen_data_url && (
+                              <div className="w-6 h-6 rounded bg-base-100 overflow-hidden border border-base-300">
+                                <img src={pp.imagen_data_url} alt="Vista previa" className="w-full h-full object-cover" />
+                              </div>
+                            )}
+                            <label className="btn btn-xs btn-outline font-semibold gap-1">
+                              {pp.imagen_data_url ? 'Cambiar Foto' : 'Subir Foto'}
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png"
+                                className="hidden"
+                                onChange={async e => {
+                                  const file = e.target.files?.[0]
+                                  e.target.value = ''
+                                  if (!file) return
+                                  try {
+                                    const dataUrl = await comprimirImagen(file)
+                                    setProveedoresFormEdit(prev => prev.map(p =>
+                                      p.proveedor_id === pp.proveedor_id ? { ...p, imagen_data_url: dataUrl } : p
+                                    ))
+                                  } catch (err) {
+                                    notify.error(err instanceof Error ? err.message : 'Error cargando imagen')
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   ))}
                   <select

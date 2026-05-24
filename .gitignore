@@ -33,3 +33,8 @@ backend/build_output.txt
 # Archivos de brainstorming y planes internos
 .superpowers/
 docs/superpowers/
+
+# Agent tools/worktrees
+.claude/
+.antigravitycli/
+

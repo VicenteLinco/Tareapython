@@ -107,14 +107,14 @@ pub fn winsorize_p95(serie: &[f64]) -> Vec<f64> {
 /// Estima el consumo diario base usando la ventana real desde el primer consumo.
 /// Sin factor de descuento: divide el total consumido entre los días transcurridos
 /// desde el primer evento, no entre toda la ventana de observación.
-/// Devuelve 0.0 si no hay consumo o solo hay un evento (insuficiente para proyectar).
+/// Devuelve 0.0 si no hay consumo (insuficiente para proyectar).
 pub fn consumo_base_adaptivo(serie: &[f64]) -> f64 {
     let total: f64 = serie.iter().sum();
     if total <= 0.0 {
         return 0.0;
     }
     let dias_con_consumo = serie.iter().filter(|&&v| v > 0.0).count();
-    if dias_con_consumo < 2 {
+    if dias_con_consumo < 1 {
         return 0.0;
     }
     let primer_idx = serie.iter().position(|&v| v > 0.0).unwrap_or(serie.len());
@@ -379,10 +379,10 @@ mod tests {
     }
 
     #[test]
-    fn consumo_base_adaptivo_un_evento_devuelve_cero() {
+    fn consumo_base_adaptivo_un_evento_devuelve_estimado() {
         let mut s = vec![0.0; 59];
         s.push(100.0);
-        assert_eq!(consumo_base_adaptivo(&s), 0.0);
+        assert_eq!(consumo_base_adaptivo(&s), 100.0);
     }
 
     #[test]

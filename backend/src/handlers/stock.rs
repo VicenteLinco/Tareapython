@@ -231,11 +231,11 @@ async fn listar(
                        ELSE COALESCE(ms.consumo_diario_ponderado, 0)::NUMERIC(15,4)
                    END AS consumo_diario_ajustado,
                    -- consumo_base_estimado replica la lógica de calcular_autonomia en Rust:
-                   -- ≥14 días con consumo → ponderado; 2-13 → total/días_reales; <2 → 0
+                   -- ≥14 días con consumo → ponderado; 1-13 → total/días_reales; <1 → 0
                    CASE
                        WHEN COALESCE(ms.dias_con_consumo, 0) >= 14
                            THEN COALESCE(ms.consumo_diario_ponderado, 0)::FLOAT8
-                       WHEN COALESCE(ms.dias_con_consumo, 0) >= 2
+                       WHEN COALESCE(ms.dias_con_consumo, 0) >= 1
                            THEN COALESCE(ms.total_consumo_ventana, 0) / GREATEST(ms.dias_vida_sistema::FLOAT8, 1)
                        ELSE 0.0
                    END AS consumo_base_estimado

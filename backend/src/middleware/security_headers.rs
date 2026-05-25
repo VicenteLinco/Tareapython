@@ -28,6 +28,12 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
         HeaderValue::from_static("camera=(self), microphone=(), geolocation=()"),
     );
     headers.insert(
+        HeaderName::from_static("content-security-policy"),
+        HeaderValue::from_static(
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        ),
+    );
+    headers.insert(
         HeaderName::from_static("cache-control"),
         HeaderValue::from_static("no-store"),
     );

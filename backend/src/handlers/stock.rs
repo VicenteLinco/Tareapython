@@ -836,7 +836,7 @@ struct LoteVencidoItem {
 
 async fn lotes_vencidos(
     State(state): State<AppState>,
-    Extension(_claims): Extension<Claims>,
+    Extension(claims): Extension<Claims>,
     Query(params): Query<LotesVencidosQuery>,
 ) -> Result<Json<Vec<LoteVencidoItem>>, AppError> {
     let dias = params.dias_alerta.unwrap_or(0);
@@ -861,6 +861,21 @@ async fn lotes_vencidos(
         "p.activo = true".to_string(),
     ];
     let mut param_idx = 2u32;
+    let allowed_area_ids = if claims.rol == "admin" {
+        None
+    } else if let Some(area_id) = params.area_id {
+        if !claims.area_ids.contains(&area_id) {
+            return Err(AppError::Forbidden("Sin acceso al area solicitada".into()));
+        }
+        None
+    } else if claims.area_ids.is_empty() {
+        conditions.push("FALSE".to_string());
+        None
+    } else {
+        param_idx += 1;
+        conditions.push(format!("s.area_id = ANY(${})", param_idx));
+        Some(claims.area_ids.clone())
+    };
 
     if params.area_id.is_some() {
         param_idx += 1;
@@ -898,7 +913,12 @@ async fn lotes_vencidos(
         where_clause
     );
 
-    let mut query = sqlx::query_as::<_, LoteVencidoItem>(&sql).bind(dias).bind(q);
+    let mut query = sqlx::query_as::<_, LoteVencidoItem>(&sql)
+        .bind(dias)
+        .bind(q);
+    if let Some(ids) = allowed_area_ids {
+        query = query.bind(ids);
+    }
     if let Some(v) = params.area_id {
         query = query.bind(v);
     }

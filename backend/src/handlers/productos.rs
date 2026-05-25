@@ -491,9 +491,12 @@ struct ScanQuery {
 
 async fn subir_imagen(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Path(id): Path<Uuid>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    crate::auth::middleware::require_role(&["admin"])(&claims)?;
+
     // Verificar que el producto existe y obtener imagen actual
     let imagen_actual: Option<String> =
         sqlx::query_scalar("SELECT imagen_path FROM productos WHERE id = $1 AND activo = true")
@@ -562,8 +565,11 @@ async fn subir_imagen(
 
 async fn quitar_imagen(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    crate::auth::middleware::require_role(&["admin"])(&claims)?;
+
     let imagen_actual: Option<String> =
         sqlx::query_scalar("SELECT imagen_path FROM productos WHERE id = $1")
             .bind(id)

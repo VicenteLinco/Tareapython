@@ -8,6 +8,10 @@ pub struct AppConfig {
     pub jwt_refresh_expiration: i64,
     pub port: u16,
     pub cors_origin: String,
+    pub enable_swagger: bool,
+    pub login_rate_limit_per_minute: usize,
+    pub mutation_rate_limit_per_minute: usize,
+    pub read_rate_limit_per_minute: usize,
     pub allow_bootstrap_admin: bool,
     pub setup_admin_email: Option<String>,
     pub setup_admin_password: Option<String>,
@@ -46,6 +50,25 @@ impl AppConfig {
         let cors_origin =
             env::var("CORS_ORIGIN").unwrap_or_else(|_| "http://localhost:5173".to_string());
 
+        let enable_swagger = env::var("ENABLE_SWAGGER")
+            .map(|v| matches!(v.trim().to_lowercase().as_str(), "1" | "true" | "yes"))
+            .unwrap_or(false);
+
+        let login_rate_limit_per_minute = env::var("LOGIN_RATE_LIMIT_PER_MINUTE")
+            .unwrap_or_else(|_| "10".to_string())
+            .parse::<usize>()
+            .map_err(|_| "LOGIN_RATE_LIMIT_PER_MINUTE debe ser un numero entero".to_string())?;
+
+        let mutation_rate_limit_per_minute = env::var("MUTATION_RATE_LIMIT_PER_MINUTE")
+            .unwrap_or_else(|_| "120".to_string())
+            .parse::<usize>()
+            .map_err(|_| "MUTATION_RATE_LIMIT_PER_MINUTE debe ser un numero entero".to_string())?;
+
+        let read_rate_limit_per_minute = env::var("READ_RATE_LIMIT_PER_MINUTE")
+            .unwrap_or_else(|_| "600".to_string())
+            .parse::<usize>()
+            .map_err(|_| "READ_RATE_LIMIT_PER_MINUTE debe ser un numero entero".to_string())?;
+
         let allow_bootstrap_admin = env::var("ALLOW_BOOTSTRAP_ADMIN")
             .map(|v| matches!(v.trim().to_lowercase().as_str(), "1" | "true" | "yes"))
             .unwrap_or(false);
@@ -66,6 +89,10 @@ impl AppConfig {
             jwt_refresh_expiration,
             port,
             cors_origin,
+            enable_swagger,
+            login_rate_limit_per_minute,
+            mutation_rate_limit_per_minute,
+            read_rate_limit_per_minute,
             allow_bootstrap_admin,
             setup_admin_email,
             setup_admin_password,

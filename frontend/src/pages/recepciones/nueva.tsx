@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { notify } from '@/lib/notify'
 import { toNum } from '@/domain/parse'
+import type { DecimalInput } from '@/domain/parse'
 import { imprimirEtiquetas } from '@/lib/label-print'
 import { useAreas, useProveedores, useConfiguracion } from '@/hooks/dominio'
 import { LabelsSection } from './components/labels-section'
@@ -23,6 +24,20 @@ import { ItemsStep } from './steps/ItemsStep'
 import { ConfirmStep } from './steps/ConfirmStep'
 import { isCardComplete } from './components/item-card-utils'
 import type { Producto } from '@/types'
+
+interface SolicitudItemVinculada {
+  proveedor_id?: number | null
+  factor_conversion?: DecimalInput | null
+  cantidad_presentaciones?: DecimalInput | null
+  cantidad_sugerida: DecimalInput
+  presentacion_id?: number | null
+  producto_id: string
+  producto_nombre: string
+  unidad: string
+  unidad_plural?: string | null
+  presentacion_nombre?: string | null
+  presentacion_nombre_plural?: string | null
+}
 
 export default function NuevaRecepcionPage() {
   const navigate = useNavigate()
@@ -105,11 +120,11 @@ export default function NuevaRecepcionPage() {
       setSolicitudNumero(numero || res.data.numero_documento || id)
       solicitudModal.onClose()
       if (!silent) notify.success('Solicitud vinculada')
-      const itemsProveedor = (res.data.items ?? []).filter((it: { proveedor_id?: number | null }) =>
+      const itemsProveedor = ((res.data.items ?? []) as SolicitudItemVinculada[]).filter((it) =>
         !proveedorId || it.proveedor_id === proveedorId
       )
       setSolicitudItemsRef(
-        itemsProveedor.map((it: any) => {
+        itemsProveedor.map((it) => {
           const factor = it.factor_conversion ? toNum(it.factor_conversion) : 1
           const cantPres = it.cantidad_presentaciones ? toNum(it.cantidad_presentaciones) : null
           const cantSugerida = toNum(it.cantidad_sugerida)

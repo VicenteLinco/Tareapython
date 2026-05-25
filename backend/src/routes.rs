@@ -26,6 +26,7 @@ use crate::handlers;
 struct ApiDoc;
 
 pub fn create_routes(state: AppState) -> Router<AppState> {
+    let enable_swagger = state.config.enable_swagger;
     // Auth protegido (bajo /api/v1/auth)
     let auth_protected = Router::new()
         .merge(handlers::auth_handler::protected_routes())
@@ -78,14 +79,20 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
         // Middleware de auth
         .route_layer(middleware::from_fn_with_state(state, require_auth));
 
-    Router::new()
+    let mut router = Router::new()
         .merge(handlers::health::routes())
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .nest("/api/v1/auth", handlers::auth_handler::public_routes())
         .nest("/api/v1/auth", auth_protected)
         .nest_service(
             "/api/v1/uploads/productos",
             ServeDir::new("uploads/productos"),
         )
-        .nest("/api/v1", protected)
+        .nest("/api/v1", protected);
+
+    if enable_swagger {
+        router = router
+            .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()));
+    }
+
+    router
 }

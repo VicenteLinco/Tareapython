@@ -1,7 +1,7 @@
 use axum::{
+    Extension, Json, Router,
     extract::{Query, State},
     routing::get,
-    Extension, Json, Router,
 };
 use chrono::{Duration, NaiveDate, Utc};
 
@@ -34,12 +34,21 @@ fn parse_rango(params: &ReporteParams) -> (NaiveDate, NaiveDate) {
 
 async fn consumo_por_area(
     State(state): State<AppState>,
-    Extension(_claims): Extension<Claims>,
+    Extension(claims): Extension<Claims>,
     Query(params): Query<ReporteParams>,
 ) -> Result<Json<Vec<ConsumoAreaRow>>, AppError> {
     let (desde, hasta) = parse_rango(&params);
+    if claims.rol != "admin" && claims.area_ids.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
 
-    let rows = sqlx::query_as::<_, ConsumoAreaRow>(
+    let area_filter = if claims.rol == "admin" {
+        ""
+    } else {
+        "AND m.area_id = ANY($3)"
+    };
+
+    let sql = format!(
         r#"
         SELECT
             a.id AS area_id,
@@ -54,27 +63,41 @@ async fn consumo_por_area(
         WHERE m.tipo = 'CONSUMO'
           AND m.created_at::date >= $1
           AND m.created_at::date <= $2
+          {}
         GROUP BY a.id, a.nombre, DATE_TRUNC('month', m.created_at)
         ORDER BY mes DESC, total_consumido DESC
         "#,
-    )
-    .bind(desde)
-    .bind(hasta)
-    .fetch_all(&state.pool)
-    .await?;
+        area_filter
+    );
 
-    Ok(Json(rows))
+    let mut query = sqlx::query_as::<_, ConsumoAreaRow>(&sql)
+        .bind(desde)
+        .bind(hasta);
+    if claims.rol != "admin" {
+        query = query.bind(claims.area_ids.clone());
+    }
+
+    Ok(Json(query.fetch_all(&state.pool).await?))
 }
 
 async fn top_descartados(
     State(state): State<AppState>,
-    Extension(_claims): Extension<Claims>,
+    Extension(claims): Extension<Claims>,
     Query(params): Query<ReporteParams>,
 ) -> Result<Json<Vec<TopDescartadoRow>>, AppError> {
     let (desde, hasta) = parse_rango(&params);
     let limit = params.limit.unwrap_or(20).clamp(1, 100);
+    if claims.rol != "admin" && claims.area_ids.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
 
-    let rows = sqlx::query_as::<_, TopDescartadoRow>(
+    let area_filter = if claims.rol == "admin" {
+        ""
+    } else {
+        "AND m.area_id = ANY($4)"
+    };
+
+    let sql = format!(
         r#"
         SELECT
             p.id::text AS producto_id,
@@ -89,16 +112,21 @@ async fn top_descartados(
         WHERE m.tipo IN ('DESCARTE_VENCIDO', 'DESCARTE_DAÑADO')
           AND m.created_at::date >= $1
           AND m.created_at::date <= $2
+          {}
         GROUP BY p.id, p.nombre, ub.nombre
         ORDER BY total_descartado DESC
         LIMIT $3
         "#,
-    )
-    .bind(desde)
-    .bind(hasta)
-    .bind(limit)
-    .fetch_all(&state.pool)
-    .await?;
+        area_filter
+    );
 
-    Ok(Json(rows))
+    let mut query = sqlx::query_as::<_, TopDescartadoRow>(&sql)
+        .bind(desde)
+        .bind(hasta)
+        .bind(limit);
+    if claims.rol != "admin" {
+        query = query.bind(claims.area_ids.clone());
+    }
+
+    Ok(Json(query.fetch_all(&state.pool).await?))
 }

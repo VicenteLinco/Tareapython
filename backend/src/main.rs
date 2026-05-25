@@ -182,10 +182,9 @@ async fn main() {
             ])
     };
 
-    // Rate limiters: aumentados para desarrollo
-    let login_limiter = RateLimiter::new(100, 60); // Auth: 100 req/min
-    let mutation_limiter = RateLimiter::new(200, 60); // Mutaciones: 200 req/min
-    let read_limiter = RateLimiter::new(1000, 60); // Lecturas: 1000 req/min
+    let login_limiter = RateLimiter::new(config.login_rate_limit_per_minute, 60);
+    let mutation_limiter = RateLimiter::new(config.mutation_rate_limit_per_minute, 60);
+    let read_limiter = RateLimiter::new(config.read_rate_limit_per_minute, 60);
 
     // Tarea de limpieza periódica de los rate limiters
     let (c1, c2, c3) = (

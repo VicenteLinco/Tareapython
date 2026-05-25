@@ -1,11 +1,12 @@
 use axum::extract::{Path, Query, State};
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::dto::pagination::{PaginatedResponse, PaginationParams};
 use crate::errors::AppError;
@@ -146,9 +147,38 @@ fn dimension_sql(agrupar_por: &str) -> Result<(&'static str, &'static str), AppE
     }
 }
 
+fn restrict_area_filter(
+    claims: &Claims,
+    requested_area_id: Option<i32>,
+    table_alias: &str,
+    param_idx: &mut u32,
+) -> Result<Option<(String, Vec<i32>)>, AppError> {
+    if claims.rol == "admin" {
+        return Ok(None);
+    }
+
+    if let Some(area_id) = requested_area_id {
+        if !claims.area_ids.contains(&area_id) {
+            return Err(AppError::Forbidden("Sin acceso al area solicitada".into()));
+        }
+        return Ok(None);
+    }
+
+    if claims.area_ids.is_empty() {
+        return Ok(Some(("FALSE".to_string(), Vec::new())));
+    }
+
+    *param_idx += 1;
+    Ok(Some((
+        format!("{}.area_id = ANY(${})", table_alias, *param_idx),
+        claims.area_ids.clone(),
+    )))
+}
+
 /// GET /api/v1/movimientos/tendencias-consumo
 async fn tendencias_consumo(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Query(params): Query<TendenciaConsumoQuery>,
 ) -> Result<Json<TendenciaConsumoResponse>, AppError> {
     let granularidad = params.granularidad.unwrap_or_else(|| "mes".to_string());
@@ -169,6 +199,10 @@ async fn tendencias_consumo(
     if params.area_id.is_some() {
         param_idx += 1;
         conditions.push(format!("m.area_id = ${}", param_idx));
+    }
+    let area_scope = restrict_area_filter(&claims, params.area_id, "m", &mut param_idx)?;
+    if let Some((condition, _)) = &area_scope {
+        conditions.push(condition.clone());
     }
     if !producto_ids.is_empty() {
         param_idx += 1;
@@ -208,6 +242,11 @@ async fn tendencias_consumo(
     let mut query = sqlx::query_as::<_, TendenciaConsumoRow>(&sql).bind(movement_types);
     if let Some(v) = params.area_id {
         query = query.bind(v);
+    }
+    if let Some((_, allowed_area_ids)) = area_scope {
+        if !allowed_area_ids.is_empty() {
+            query = query.bind(allowed_area_ids);
+        }
     }
     if !producto_ids.is_empty() {
         query = query.bind(producto_ids);
@@ -260,6 +299,7 @@ async fn tendencias_consumo(
 /// GET /api/v1/movimientos
 async fn listar(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Query(params): Query<MovimientoQuery>,
 ) -> Result<Json<PaginatedResponse<MovimientoListItem>>, AppError> {
     let pagination = PaginationParams {
@@ -275,6 +315,10 @@ async fn listar(
     if params.area_id.is_some() {
         param_idx += 1;
         conditions.push(format!("m.area_id = ${}", param_idx));
+    }
+    let area_scope = restrict_area_filter(&claims, params.area_id, "m", &mut param_idx)?;
+    if let Some((condition, _)) = &area_scope {
+        conditions.push(condition.clone());
     }
     if params.producto_id.is_some() {
         param_idx += 1;
@@ -342,6 +386,12 @@ async fn listar(
         count_query = count_query.bind(v);
         data_query = data_query.bind(v);
     }
+    if let Some((_, allowed_area_ids)) = area_scope {
+        if !allowed_area_ids.is_empty() {
+            count_query = count_query.bind(allowed_area_ids.clone());
+            data_query = data_query.bind(allowed_area_ids);
+        }
+    }
     if let Some(v) = params.producto_id {
         count_query = count_query.bind(v);
         data_query = data_query.bind(v);
@@ -404,9 +454,19 @@ async fn listar(
 /// GET /api/v1/movimientos/:id
 async fn obtener(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let mut mov = sqlx::query_as::<_, MovimientoListItem>(
+    if claims.rol != "admin" && claims.area_ids.is_empty() {
+        return Err(AppError::Forbidden("Sin acceso a movimientos".into()));
+    }
+
+    let area_filter = if claims.rol == "admin" {
+        ""
+    } else {
+        " AND m.area_id = ANY($2)"
+    };
+    let sql = format!(
         r#"SELECT m.id, m.numero_documento, m.grupo_movimiento, m.tipo,
                   m.cantidad, m.cantidad_resultante,
                   l.numero_lote as lote_numero, p.nombre as producto_nombre,
@@ -419,12 +479,17 @@ async fn obtener(
            JOIN areas a ON a.id = m.area_id
            JOIN usuarios u ON u.id = m.usuario_id
            JOIN unidades_basicas um ON um.id = p.unidad_base_id
-           WHERE m.id = $1"#,
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(AppError::NotFound("Movimiento no encontrado".into()))?;
+           WHERE m.id = $1{}"#,
+        area_filter
+    );
+    let mut mov = sqlx::query_as::<_, MovimientoListItem>(&sql).bind(id);
+    if claims.rol != "admin" {
+        mov = mov.bind(claims.area_ids.clone());
+    }
+    let mut mov = mov
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(AppError::NotFound("Movimiento no encontrado".into()))?;
 
     // Normalizar tipo
     mov.tipo = match mov.tipo.as_str() {

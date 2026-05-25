@@ -130,7 +130,6 @@ export function isSafeIconUrl(url: string | null | undefined): boolean {
     'data:image/jpg',
     'data:image/webp',
     'data:image/gif',
-    'data:image/svg+xml', // Permitir SVG pero con cautela (se puede restringir más luego)
   ]
   return safeDataPrefixes.some((prefix) => url.startsWith(prefix))
 }

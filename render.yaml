@@ -1,7 +1,6 @@
 # =============================================================================
-# Render Blueprint Specification (Sin Base de Datos interna)
-# Este archivo permite desplegar el Web Service en Render vinculándolo a tu
-# base de datos externa de Neon.tech.
+# Render Blueprint Specification (sin base de datos interna)
+# Este archivo despliega el Web Service en Render y usa una DB externa de Neon.
 # =============================================================================
 
 services:
@@ -17,6 +16,12 @@ services:
       - key: RUST_LOG
         value: info
       - key: JWT_SECRET
-        generateValue: true # Render generará una clave aleatoria segura de forma automática
+        generateValue: true
       - key: DATABASE_URL
-        sync: false # Render te pedirá que pegues tu URL de Neon en la interfaz web al desplegar
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: ENABLE_SWAGGER
+        value: false
+      - key: LOGIN_RATE_LIMIT_PER_MINUTE
+        value: 10

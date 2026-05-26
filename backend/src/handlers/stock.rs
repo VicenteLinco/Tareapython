@@ -117,6 +117,11 @@ async fn listar(
     } else {
         "p.stock_minimo"
     };
+    let inicializado_expr = if params.area_id.is_some() {
+        "EXISTS (SELECT 1 FROM movimientos mi JOIN lotes li ON li.id = mi.lote_id WHERE li.producto_id = p.id AND mi.area_id = $1::integer)"
+    } else {
+        "EXISTS (SELECT 1 FROM movimientos mi JOIN lotes li ON li.id = mi.lote_id WHERE li.producto_id = p.id)"
+    };
 
     // Filter by type — `estado` param + legacy compat
     let stock_bajo_estado = estado == "bajo" || params.stock_bajo == Some(true);
@@ -125,17 +130,19 @@ async fn listar(
         "critico" => {
             // Usa consumo_base_estimado (espejo de calcular_autonomia en Rust) y lead_time_propio
             // para que el filtro coincida con el badge "Crítico" del frontend.
-            "AND ((stock_total <= 0 AND stock_minimo > 0) OR (stock_minimo > 0 AND stock_total < stock_minimo) OR (consumo_base_estimado > 0.0001 AND (stock_total / consumo_base_estimado) <= COALESCE(lead_time_propio, 3)))"
+            "AND ((inicializado AND stock_total <= 0 AND stock_minimo > 0) OR (stock_minimo > 0 AND stock_total < stock_minimo AND (stock_total > 0 OR inicializado)) OR (consumo_base_estimado > 0.0001 AND (stock_total / consumo_base_estimado) <= COALESCE(lead_time_propio, 3)))"
         }
         "vencimiento" => {
             "AND (proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days' AND proximo_vencimiento >= CURRENT_DATE)"
         }
         "vencidos" => "AND proximo_vencimiento < CURRENT_DATE",
-        "sin-stock" => "AND stock_total <= 0 AND stock_minimo > 0",
+        "sin-stock" => "AND inicializado AND stock_total <= 0 AND stock_minimo > 0",
         _ if params.con_alertas == Some(true) => {
-            "AND ((stock_total < stock_minimo AND stock_minimo > 0) OR proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days')"
+            "AND ((stock_total < stock_minimo AND stock_minimo > 0 AND (stock_total > 0 OR inicializado)) OR proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days')"
         }
-        _ if stock_bajo_estado => "AND stock_total < stock_minimo AND stock_minimo > 0",
+        _ if stock_bajo_estado => {
+            "AND stock_total < stock_minimo AND stock_minimo > 0 AND (stock_total > 0 OR inicializado)"
+        }
         _ if normal_estado => "AND (stock_minimo = 0 OR stock_total >= stock_minimo)",
         _ => "",
     };
@@ -218,6 +225,7 @@ async fn listar(
                    COALESCE(ss.total, 0) as stock_total,
                    COALESCE(ss.lotes_con_stock, 0) as lotes_count,
                    {} AS stock_minimo,
+                   {} AS inicializado,
                    p.lead_time_propio,
                    ss.proxima_fecha_venc as proximo_vencimiento,
                    fp.nombre as proveedor_nombre,
@@ -262,6 +270,7 @@ async fn listar(
         area_filter,
         forecast_cfg.ventana_demanda_dias,
         stock_minimo_expr,
+        inicializado_expr,
         q_filter,
         cat_filter,
         prov_filter,
@@ -270,7 +279,7 @@ async fn listar(
             && params.categoria_id.is_none()
             && params.proveedor_id.is_none()
         {
-            "AND (stock_total > 0 OR stock_minimo > 0)"
+            "AND (stock_total > 0 OR (stock_minimo > 0 AND inicializado))"
         } else {
             ""
         },
@@ -355,6 +364,9 @@ struct StockItemRow {
     stock_total: Option<Decimal>,
     lotes_count: i64,
     stock_minimo: Decimal,
+    #[serde(skip)]
+    #[allow(dead_code)]
+    inicializado: bool,
     proximo_vencimiento: Option<NaiveDate>,
     proveedor_nombre: Option<String>,
     proveedor_icono: Option<String>,
@@ -615,8 +627,9 @@ async fn alertas(
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(|s| {
-                    s.parse::<i32>()
-                        .map_err(|_| AppError::Validation("area_ids debe contener solo enteros".into()))
+                    s.parse::<i32>().map_err(|_| {
+                        AppError::Validation("area_ids debe contener solo enteros".into())
+                    })
                 })
                 .collect::<Result<Vec<_>, _>>()
         })
@@ -628,7 +641,9 @@ async fn alertas(
         match requested_area_ids {
             Some(ids) => {
                 if ids.iter().any(|id| !claims.area_ids.contains(id)) {
-                    return Err(AppError::Forbidden("Sin acceso a una de las áreas solicitadas".into()));
+                    return Err(AppError::Forbidden(
+                        "Sin acceso a una de las áreas solicitadas".into(),
+                    ));
                 }
                 ids
             }
@@ -636,24 +651,27 @@ async fn alertas(
         }
     };
 
-    // Filtro por área: no-admin queda limitado por sus áreas del token.
-    let area_filter = if effective_area_ids.is_empty() {
-        if claims.rol == "admin" {
-            String::new()
+    // Limita el stock usado por las alertas sin exigir stock positivo; si no,
+    // los productos quebrados desaparecen precisamente cuando deben alertar.
+    let (stock_area_filter, movement_area_filter, product_area_filter) =
+        if effective_area_ids.is_empty() {
+            if claims.rol == "admin" {
+                (String::new(), String::new(), String::new())
+            } else {
+                (String::new(), String::new(), "AND FALSE".to_string())
+            }
         } else {
-            "AND FALSE".to_string()
-        }
-    } else {
-        let arr = effective_area_ids
-            .iter()
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        format!(
-            "AND p.id IN (SELECT DISTINCT l.producto_id FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE s.area_id = ANY(ARRAY[{}]::integer[]) AND s.cantidad > 0)",
-            arr
-        )
-    };
+            let arr = effective_area_ids
+                .iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            (
+                format!("AND s.area_id = ANY(ARRAY[{}]::integer[])", arr),
+                format!("AND m.area_id = ANY(ARRAY[{}]::integer[])", arr),
+                String::new(),
+            )
+        };
 
     let pedidos_cte = r#"pedidos_pendientes AS (
                SELECT
@@ -670,10 +688,16 @@ async fn alertas(
                SELECT
                    p.id as producto_id,
                    COALESCE(SUM(s.cantidad), 0) AS total,
-                   MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0) AS proxima_fecha_venc
+                   MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0) AS proxima_fecha_venc,
+                   EXISTS (
+                       SELECT 1
+                       FROM movimientos m
+                       JOIN lotes lm ON lm.id = m.lote_id
+                       WHERE lm.producto_id = p.id {}
+                   ) AS inicializado
                FROM productos p
                LEFT JOIN lotes l ON l.producto_id = p.id
-               LEFT JOIN stock s ON s.lote_id = l.id
+               LEFT JOIN stock s ON s.lote_id = l.id {}
                WHERE p.activo = true
                GROUP BY p.id
            ),
@@ -707,6 +731,7 @@ async fn alertas(
                    ub.nombre AS unidad,
                    ub.nombre_plural AS unidad_plural,
                    COALESCE(ss.total, 0) AS total,
+                   COALESCE(ss.inicializado, false) AS inicializado,
                    COALESCE(pp.total_en_camino, 0) AS total_en_camino,
                    ss.proxima_fecha_venc,
                    ms.ultimo_movimiento,
@@ -754,9 +779,7 @@ async fn alertas(
                CROSS JOIN LATERAL (
                    SELECT 'vencido' as tipo WHERE proxima_fecha_venc < CURRENT_DATE
                    UNION ALL
-                   SELECT 'sin_stock' WHERE total <= 0 AND stock_minimo > 0 AND NOT (
-                       ultimo_movimiento IS NULL AND created_at >= NOW() - INTERVAL '7 days'
-                   )
+                   SELECT 'sin_stock' WHERE inicializado AND total <= 0 AND stock_minimo > 0
                    UNION ALL
                    SELECT 'agotamiento_proximo' WHERE consumo_diario_ajustado > 0.0001 AND dias_con_consumo >= 3 AND (total / consumo_diario_ajustado) <= COALESCE(dias_despacho, 7) AND total > 0
                    UNION ALL
@@ -788,8 +811,7 @@ async fn alertas(
                proxima_fecha_venc ASC NULLS LAST,
                nombre ASC
            LIMIT $1 OFFSET $2"#,
-        pedidos_cte,
-        area_filter
+        movement_area_filter, stock_area_filter, pedidos_cte, product_area_filter
     );
 
     let rows = sqlx::query_as::<_, AlertaRow>(&sql)

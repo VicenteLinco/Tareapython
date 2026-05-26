@@ -40,6 +40,7 @@ interface ProductoListItem {
   area: { id: number; nombre: string } | null
   stock_minimo: string
   activo: boolean
+  estado_stock?: 'activo' | 'inactivo' | 'pendiente_inicializar' | 'sin_stock'
   version: number
   imagen_url?: string | null
 }
@@ -94,6 +95,24 @@ interface ProductoDetailResponse {
 }
 
 type PresFormatoRow = PresFormato & { id: number }
+
+function productoEstadoBadge(item: ProductoListItem) {
+  if (item.estado_stock === 'pendiente_inicializar') {
+    return <Badge variant="warning">Pendiente inicializar</Badge>
+  }
+  if (item.estado_stock === 'sin_stock') {
+    return <Badge variant="destructive">Sin stock</Badge>
+  }
+  return item.activo
+    ? <Badge variant="success">Activo</Badge>
+    : <Badge variant="outline">Inactivo</Badge>
+}
+
+function productoEstadoTexto(item: ProductoListItem) {
+  if (item.estado_stock === 'pendiente_inicializar') return 'Pendiente inicializar'
+  if (item.estado_stock === 'sin_stock') return 'Sin stock'
+  return item.activo ? 'Activo' : 'Inactivo'
+}
 
 function proveedorPayload(pp: ProveedorProductoItem) {
   const hasPres = !!pp.pres_nombre && !!pp.pres_factor
@@ -304,11 +323,7 @@ export default function ProductosTab() {
     {
       key: 'activo',
       header: 'Estado',
-      render: (item: ProductoListItem) => (
-        item.activo
-          ? <Badge variant="success">Activo</Badge>
-          : <Badge variant="outline">Inactivo</Badge>
-      ),
+      render: (item: ProductoListItem) => productoEstadoBadge(item),
     },
     {
       key: 'acciones',
@@ -362,7 +377,7 @@ export default function ProductosTab() {
       p.area?.nombre,
       p.unidad_base.nombre,
       p.stock_minimo,
-      p.activo ? 'Activo' : 'Inactivo',
+      productoEstadoTexto(p),
     ].map(csvEscape).join(';'))
     const blob = new Blob([[header.join(';'), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -578,7 +593,7 @@ export default function ProductosTab() {
                       <div className="flex flex-wrap gap-1.5 mt-2">
                         {item.categoria && <Badge variant="secondary">{item.categoria.nombre}</Badge>}
                         {item.proveedor && <Badge variant="outline">{item.proveedor.nombre}</Badge>}
-                        <Badge variant={item.activo ? 'success' : 'outline'}>{item.activo ? 'Activo' : 'Inactivo'}</Badge>
+                        {productoEstadoBadge(item)}
                       </div>
                     </div>
                   </div>

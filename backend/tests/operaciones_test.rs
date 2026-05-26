@@ -455,6 +455,58 @@ async fn alertas_stock(pool: PgPool) {
     assert!(json["page"].is_number());
 }
 
+#[sqlx::test(migrations = "./migrations")]
+async fn producto_sin_historial_queda_pendiente_y_no_alerta_dashboard(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let producto_id = Uuid::new_v4();
+
+    sqlx::query(
+        r#"INSERT INTO productos
+           (id, codigo_interno, nombre, categoria_id, unidad_base_id, stock_minimo, activo)
+           VALUES ($1, 'SIN-STOCK-001', 'Producto sin stock test', 1, 1, 10, true)"#,
+    )
+    .bind(producto_id)
+    .execute(&pool)
+    .await
+    .expect("debe crear producto sin stock");
+
+    let (status, json) = common::get_json(&app, "/api/v1/stock/alertas?area_ids=1", &token).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let alertas = json["data"].as_array().unwrap();
+    assert!(
+        !alertas.iter().any(|a| {
+            a["nombre"] == "Producto sin stock test" && a["tipo_alerta"] == "sin_stock"
+        }),
+        "el producto activo sin historial debe quedar fuera del dashboard: {json}"
+    );
+
+    let (status, json) = common::get_json(&app, "/api/v1/stock?per_page=1", &token).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json["total"], 0,
+        "el producto pendiente no debe contar como insumo activo del dashboard: {json}"
+    );
+
+    let (status, json) = common::get_json(
+        &app,
+        "/api/v1/productos?q=Producto%20sin%20stock%20test",
+        &token,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let productos = json["data"].as_array().unwrap();
+    assert!(
+        productos.iter().any(|p| {
+            p["nombre"] == "Producto sin stock test" && p["estado_stock"] == "pendiente_inicializar"
+        }),
+        "el creador de productos debe mostrar el estado pendiente_inicializar: {json}"
+    );
+}
+
 // ==========================================
 // MOVIMIENTOS
 // ==========================================

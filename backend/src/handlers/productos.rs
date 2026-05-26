@@ -43,6 +43,7 @@ struct ProductoListItem {
     precio_unidad: Option<Decimal>,
     lead_time_propio: Option<i32>,
     activo: bool,
+    estado_stock: String,
     imagen_url: Option<String>,
     pres_id: Option<i32>,
     pres_nombre: Option<String>,
@@ -150,6 +151,7 @@ struct ProductoRow {
     precio_unidad: Option<Decimal>,
     lead_time_propio: Option<i32>,
     activo: bool,
+    estado_stock: String,
     cat_id: Option<i32>,
     cat_nombre: Option<String>,
     um_id: i32,
@@ -231,7 +233,19 @@ async fn listar(
     let count_sql = format!("SELECT COUNT(*) FROM productos p WHERE {}", where_clause);
     let data_sql = format!(
         r#"SELECT p.id, p.codigo_interno, p.nombre, p.codigo_proveedor, p.codigo_maestro,
-                  p.stock_minimo, p.precio_unidad, p.lead_time_propio, p.activo, p.imagen_path AS imagen_url,
+                  p.stock_minimo, p.precio_unidad, p.lead_time_propio, p.activo,
+                  CASE
+                      WHEN NOT p.activo THEN 'inactivo'
+                      WHEN p.stock_minimo > 0
+                           AND COALESCE((SELECT SUM(s.cantidad) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = p.id), 0) <= 0
+                           AND NOT EXISTS (SELECT 1 FROM movimientos m JOIN lotes lm ON lm.id = m.lote_id WHERE lm.producto_id = p.id)
+                          THEN 'pendiente_inicializar'
+                      WHEN p.stock_minimo > 0
+                           AND COALESCE((SELECT SUM(s.cantidad) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = p.id), 0) <= 0
+                          THEN 'sin_stock'
+                      ELSE 'activo'
+                  END AS estado_stock,
+                  p.imagen_path AS imagen_url,
                   c.id as cat_id, c.nombre as cat_nombre,
                   um.id as um_id, um.nombre as um_nombre, um.nombre_plural as um_nombre_plural,
                   pr.id as prov_id, pr.nombre as prov_nombre, pr.icono as prov_icono,
@@ -311,6 +325,7 @@ async fn listar(
             precio_unidad: r.precio_unidad,
             lead_time_propio: r.lead_time_propio,
             activo: r.activo,
+            estado_stock: r.estado_stock,
             imagen_url: r.imagen_url,
             pres_id: r.pres_id,
             pres_nombre: r.pres_nombre,

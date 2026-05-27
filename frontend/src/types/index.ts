@@ -383,6 +383,8 @@ export interface RecepcionVinculada {
   estado: string
   fecha_recepcion: string
   usuario_nombre: string
+  guia_despacho?: string | null
+  guia_despacho_archivo?: string | null
 }
 
 export interface OrdenCompraDetalle {

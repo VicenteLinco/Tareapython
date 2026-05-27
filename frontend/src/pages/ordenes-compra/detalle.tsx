@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Send, XCircle, PackageCheck } from 'lucide-react'
+import { ArrowLeft, Send, XCircle, PackageCheck, Image as ImageIcon, X } from 'lucide-react'
 import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 import type { OrdenCompraDetalle } from '@/types'
@@ -12,12 +13,16 @@ import { Progress } from '@/components/ui/progress'
 import { EstadoBadge } from '@/components/ui/estado-badge'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { ESTADO_LABEL, ESTADO_BADGE_CLASS } from './utils'
+import { AuthenticatedUploadImage } from '@/components/ui/authenticated-image'
 
 export default function OrdenCompraDetallePage() {
   const { id } = useParams<{ id: string }>()
   const queryClient = useQueryClient()
   const usuario = useAuthStore((s) => s.usuario)
   const isAdmin = usuario?.rol === 'admin'
+
+  const [selectedFotoPath, setSelectedFotoPath] = useState<string | null>(null)
+  const [selectedFotoTitle, setSelectedFotoTitle] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['ordenes-compra', id],
@@ -263,9 +268,27 @@ export default function OrdenCompraDetallePage() {
                     {rec.numero_documento}
                   </Link>
                   <span className="text-xs text-base-content/50">{rec.usuario_nombre}</span>
+                  {rec.guia_despacho && (
+                    <span className="text-xs text-base-content/50 font-medium">
+                      &bull; Guía: {rec.guia_despacho}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-base-content/50 hidden sm:block">{formatDate(rec.fecha_recepcion)}</span>
+                  {rec.guia_despacho_archivo && (
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-outline btn-primary gap-1 font-bold rounded-lg"
+                      onClick={() => {
+                        setSelectedFotoPath(rec.guia_despacho_archivo!)
+                        setSelectedFotoTitle(rec.guia_despacho || rec.numero_documento)
+                      }}
+                    >
+                      <ImageIcon className="h-3 w-3" />
+                      Ver Guía
+                    </button>
+                  )}
                   <EstadoBadge
                     estado={rec.estado === 'completa' ? 'confirmada' : rec.estado}
                     size="sm"
@@ -274,6 +297,37 @@ export default function OrdenCompraDetallePage() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Lightbox para visor de fotos */}
+      {selectedFotoPath && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 transition-opacity"
+          onClick={() => {
+            setSelectedFotoPath(null)
+            setSelectedFotoTitle(null)
+          }}
+        >
+          <div className="relative max-h-[90vh] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+            <div className="absolute -top-12 left-0 right-0 flex items-center justify-between text-white px-2">
+              <span className="font-semibold text-sm">Guía: {selectedFotoTitle}</span>
+              <button
+                className="btn btn-circle btn-sm btn-error"
+                onClick={() => {
+                  setSelectedFotoPath(null)
+                  setSelectedFotoTitle(null)
+                }}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <AuthenticatedUploadImage
+              path={selectedFotoPath}
+              alt="Guía de despacho"
+              className="max-h-[80vh] max-w-[85vw] rounded-xl shadow-2xl object-contain border border-base-200/20"
+            />
+          </div>
         </div>
       )}
     </div>

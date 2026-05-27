@@ -91,6 +91,7 @@ export default function NuevaRecepcionPage() {
     motivoOtro,
     nota,
     setPasoActual,
+    fotoGuia: wizard.fotoGuia,
   })
 
   const {

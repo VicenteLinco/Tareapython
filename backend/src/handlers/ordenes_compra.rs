@@ -75,6 +75,8 @@ pub struct RecepcionVinculadaRow {
     pub estado: String,
     pub fecha_recepcion: DateTime<Utc>,
     pub usuario_nombre: String,
+    pub guia_despacho: Option<String>,
+    pub guia_despacho_archivo: Option<String>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -344,7 +346,9 @@ async fn obtener(
                r.numero_documento,
                r.estado,
                r.fecha_recepcion,
-               u.nombre AS usuario_nombre
+               u.nombre AS usuario_nombre,
+               r.guia_despacho,
+               r.guia_despacho_archivo
            FROM recepciones r
            JOIN usuarios u ON u.id = r.usuario_id
            WHERE r.orden_compra_id = $1

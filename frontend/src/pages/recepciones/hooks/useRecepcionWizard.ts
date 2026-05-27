@@ -21,6 +21,7 @@ export function useRecepcionWizard() {
   const [guiaProvisoria, setGuiaProvisoria] = useState(false)
   const [fechaRecepcion, setFechaRecepcion] = useState(() => new Date().toISOString().slice(0, 16))
   const [fechaExpanded, setFechaExpanded] = useState(false)
+  const [fotoGuia, setFotoGuia] = useState<string | null>(null)
 
   // Solicitud
   const [solicitudId, setSolicitudId] = useState<string | null>(null)
@@ -56,6 +57,7 @@ export function useRecepcionWizard() {
     guiaProvisoria, setGuiaProvisoria,
     fechaRecepcion, setFechaRecepcion,
     fechaExpanded, setFechaExpanded,
+    fotoGuia, setFotoGuia,
     solicitudId, setSolicitudId, solicitudNumero, setSolicitudNumero, solicitudModal,
     solicitudesPendientes,
     decision, setDecision,

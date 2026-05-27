@@ -19,13 +19,17 @@ pub struct RecepcionConProveedor {
     pub numero_documento: String,
     pub proveedor_id: i32,
     pub proveedor_nombre: String,
+    pub proveedor_icono: Option<String>,
     pub guia_despacho: Option<String>,
     pub estado: EstadoRecepcion,
     pub fecha_recepcion: DateTime<Utc>,
     pub usuario_id: Uuid,
+    pub usuario_nombre: String,
     pub nota: Option<String>,
     pub solicitud_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
+    pub guia_despacho_archivo: Option<String>,
+    pub foto_actualizada_at: Option<DateTime<Utc>>,
 }
 
 async fn listar(
@@ -42,7 +46,26 @@ async fn obtener(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let recepcion = sqlx::query_as::<_, RecepcionConProveedor>(
-        "SELECT r.id, r.numero_documento, r.proveedor_id, p.nombre as proveedor_nombre, r.guia_despacho, r.estado::text AS estado, r.fecha_recepcion, r.usuario_id, r.nota, r.solicitud_id, r.created_at FROM recepciones r JOIN proveedores p ON p.id = r.proveedor_id WHERE r.id = $1"
+        "SELECT 
+            r.id, 
+            r.numero_documento, 
+            r.proveedor_id, 
+            p.nombre as proveedor_nombre, 
+            p.icono as proveedor_icono,
+            r.guia_despacho, 
+            r.estado::text AS estado, 
+            r.fecha_recepcion, 
+            r.usuario_id, 
+            u.nombre as usuario_nombre,
+            r.nota, 
+            r.solicitud_id, 
+            r.created_at,
+            r.guia_despacho_archivo,
+            r.foto_actualizada_at 
+         FROM recepciones r 
+         JOIN proveedores p ON p.id = r.proveedor_id 
+         JOIN usuarios u ON u.id = r.usuario_id
+         WHERE r.id = $1"
     )
     .bind(id)
     .fetch_optional(&state.pool)
@@ -118,7 +141,7 @@ async fn subir_foto(
 
     let path = storage::save_base64_image(&req.data_url, "recepciones", &id.to_string()).await?;
 
-    sqlx::query("UPDATE recepciones SET guia_despacho_archivo = $1 WHERE id = $2")
+    sqlx::query("UPDATE recepciones SET guia_despacho_archivo = $1, foto_actualizada_at = NOW() WHERE id = $2")
         .bind(&path)
         .bind(id)
         .execute(&state.pool)
@@ -243,7 +266,7 @@ pub fn routes() -> Router<AppState> {
         .route("/", get(listar).post(crear))
         .route("/{id}", get(obtener).delete(eliminar_borrador_handler))
         .route("/{id}/confirmar", post(confirmar))
-        .route("/{id}/foto", post(subir_foto))
+        .route("/{id}/foto", post(subir_foto).put(subir_foto))
         .route("/scanner-session", post(crear_scanner_session))
         .route("/scanner-session/{token}/scan", post(scan_codigo))
         .route("/scanner-session/{token}/items", get(get_scanner_items))

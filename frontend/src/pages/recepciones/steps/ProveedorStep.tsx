@@ -1,5 +1,6 @@
 // frontend/src/pages/recepciones/steps/ProveedorStep.tsx
-import { ShoppingCart, X } from 'lucide-react'
+import { useRef } from 'react'
+import { ShoppingCart, X, Upload, Image as ImageIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ProveedorSelect } from '@/components/ui/proveedor-select'
 import type { Proveedor } from '@/types'
@@ -20,7 +21,21 @@ export function ProveedorStep({ wizard, proveedores, onVincularClick }: Props) {
     fechaExpanded, setFechaExpanded,
     solicitudId, setSolicitudId, setSolicitudNumero, solicitudNumero,
     setPasoActual,
+    fotoGuia, setFotoGuia,
   } = wizard
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFotoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      setFotoGuia(ev.target?.result as string)
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
 
   return (
     <div className="space-y-4">
@@ -68,6 +83,43 @@ export function ProveedorStep({ wizard, proveedores, onVincularClick }: Props) {
               onChange={e => setGuiaDespacho(e.target.value)}
             />
           )}
+        </div>
+
+        {/* Foto de la guía */}
+        <div>
+          <label className="label py-0.5">
+            <span className="label-text text-xs">Foto de la Guía de Despacho</span>
+          </label>
+          {fotoGuia ? (
+            <div className="flex items-center gap-2 bg-base-200 p-2 rounded-xl border border-base-300">
+              <div className="flex-1 truncate text-xs font-semibold text-primary flex items-center gap-1.5">
+                <ImageIcon className="h-4 w-4" /> Imagen cargada
+              </div>
+              <button
+                type="button"
+                className="btn btn-xs btn-ghost btn-circle text-error"
+                onClick={() => setFotoGuia(null)}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline btn-ghost w-full border-dashed flex items-center justify-center gap-2 rounded-xl"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Adjuntar foto
+            </button>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleFotoFile}
+          />
         </div>
 
         <div>

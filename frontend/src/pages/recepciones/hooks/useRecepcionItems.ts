@@ -92,6 +92,7 @@ export interface UseRecepcionItemsParams {
   motivoOtro: string
   nota: string
   setPasoActual: (p: 1 | 2 | 3) => void
+  fotoGuia: string | null
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -116,6 +117,7 @@ export function useRecepcionItems({
   motivosSeleccionados,
   motivoOtro,
   nota,
+  fotoGuia,
 }: UseRecepcionItemsParams) {
   const navigate = useNavigate()
 
@@ -533,11 +535,17 @@ export function useRecepcionItems({
   // ─── Mutación confirmar ──────────────────────────────────────────────────────
 
   const confirmarMutation = useMutation({
-    mutationFn: (payload: object) => api.post('/recepciones', payload, {
-      headers: { 'x-idempotency-key': uuidv4() }
-    }),
-    onSuccess: (res) => {
-      const lotes: LoteConfirmadoApi[] = res.data.lotes ?? []
+    mutationFn: async (payload: object) => {
+      const res = await api.post('/recepciones', payload, {
+        headers: { 'x-idempotency-key': uuidv4() }
+      })
+      if (fotoGuia) {
+        await api.put(`/recepciones/${res.data.id}/foto`, { data_url: fotoGuia })
+      }
+      return res.data
+    },
+    onSuccess: (data) => {
+      const lotes: LoteConfirmadoApi[] = data.lotes ?? []
       const paraImprimir: LoteParaEtiqueta[] = lotes
         .map<LoteParaEtiqueta | null>(l => {
           for (const d of detalles) {

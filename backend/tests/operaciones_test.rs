@@ -456,6 +456,52 @@ async fn alertas_stock(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn filtro_por_vencer_no_incluye_sin_stock(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (vence_uuid, vence_id) = setup_stock(&pool, &token, &app, 1, 100.0).await;
+    sqlx::query(
+        "UPDATE lotes SET fecha_vencimiento = CURRENT_DATE + INTERVAL '10 days' WHERE producto_id = $1",
+    )
+    .bind(vence_uuid)
+    .execute(&pool)
+    .await
+    .expect("debe marcar el lote como proximo a vencer");
+
+    let (_, sin_stock_id) = setup_stock(&pool, &token, &app, 1, 100.0).await;
+    let idem_key = Uuid::new_v4().to_string();
+    let (status, _) = common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos",
+        &token,
+        serde_json::json!({
+            "producto_id": sin_stock_id,
+            "area_id": 1,
+            "cantidad": 100,
+            "unidad": "base",
+        }),
+        &idem_key,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, json) =
+        common::get_json(&app, "/api/v1/stock?estado=vence_pronto&area_id=1", &token).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let items = json["data"].as_array().unwrap();
+    assert!(
+        items.iter().any(|i| i["producto_id"] == vence_id),
+        "el filtro por vencer debe incluir el producto con lote vigente proximo a vencer: {json}"
+    );
+    assert!(
+        !items.iter().any(|i| i["producto_id"] == sin_stock_id),
+        "el filtro por vencer no debe incluir productos sin stock: {json}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn producto_sin_historial_queda_pendiente_y_no_alerta_dashboard(pool: PgPool) {
     let token = common::admin_access_token(&pool).await;
     let app = common::test_app(pool.clone());

@@ -21,42 +21,7 @@ export function StockBadge({ item }: { item: StockItem }) {
     </div>
   )
 
-  // 2. Crítico: días base <= lead time
-  if (dias !== null && dias <= leadTime) return (
-    <div className="flex flex-col items-end gap-1">
-      <Badge variant="destructive" className="gap-1 text-[10px] font-bold uppercase px-2 animate-pulse">
-        <AlertTriangle className="h-3 w-3" /> Crítico
-      </Badge>
-      <span className="text-[9px] font-bold text-error opacity-70 uppercase tracking-tighter">Quedan ~{Math.round(dias)} días</span>
-    </div>
-  )
-
-  // 3. Reponer pronto: días base <= lead time + 7
-  if (dias !== null && dias <= leadTime + 7) return (
-    <div className="flex flex-col items-end gap-1">
-      <Badge variant="warning" className="gap-1 text-[10px] font-bold uppercase px-2">
-        <Clock className="h-3 w-3" /> Reponer
-      </Badge>
-      <span className="text-[9px] font-bold text-warning opacity-70 uppercase tracking-tighter">Quedan ~{Math.round(dias)} días</span>
-    </div>
-  )
-
-  // 4. Pico posible: días normales OK pero en pico entraría en zona crítica
-  if (dias !== null && diasPico !== null && diasPico <= leadTime + 7) {
-    const tooltip = `En tu mayor pico reciente agotarías el stock en ~${diasPico} días.\nConsumo normal: ~${dias} días.`
-    return (
-      <div className="flex flex-col items-end gap-1" title={tooltip}>
-        <Badge variant="warning" className="gap-1 text-[10px] font-bold uppercase px-2 border-warning/30 bg-warning/10 text-warning">
-          <TrendingUp className="h-3 w-3" /> Pico posible
-        </Badge>
-        <span className="text-[9px] font-bold text-warning opacity-80 uppercase tracking-tighter">
-          Normal ~{Math.round(dias)} · Pico ~{Math.round(diasPico)} d
-        </span>
-      </div>
-    )
-  }
-
-  // 5. Vencido / por vencer
+  // 2. Vencido / por vencer
   if (item.proximo_vencimiento) {
     const days = daysUntil(item.proximo_vencimiento)
     if (days !== null && days <= 0) return (
@@ -73,6 +38,41 @@ export function StockBadge({ item }: { item: StockItem }) {
           <Clock className="h-3 w-3" /> Riesgo
         </Badge>
         <span className="text-[9px] font-bold text-warning uppercase">Vence en {days} días</span>
+      </div>
+    )
+  }
+
+  // 3. Crítico: días base <= lead time
+  if (dias !== null && dias <= leadTime) return (
+    <div className="flex flex-col items-end gap-1">
+      <Badge variant="destructive" className="gap-1 text-[10px] font-bold uppercase px-2 animate-pulse">
+        <AlertTriangle className="h-3 w-3" /> Crítico
+      </Badge>
+      <span className="text-[9px] font-bold text-error opacity-70 uppercase tracking-tighter">Quedan ~{Math.round(dias)} días</span>
+    </div>
+  )
+
+  // 4. Reponer pronto: días base <= lead time + 7
+  if (dias !== null && dias <= leadTime + 7) return (
+    <div className="flex flex-col items-end gap-1">
+      <Badge variant="warning" className="gap-1 text-[10px] font-bold uppercase px-2">
+        <Clock className="h-3 w-3" /> Reponer
+      </Badge>
+      <span className="text-[9px] font-bold text-warning opacity-70 uppercase tracking-tighter">Quedan ~{Math.round(dias)} días</span>
+    </div>
+  )
+
+  // 5. Pico posible: días normales OK pero en pico entraría en zona crítica
+  if (dias !== null && diasPico !== null && diasPico <= leadTime + 7) {
+    const tooltip = `En tu mayor pico reciente agotarías el stock en ~${diasPico} días.\nConsumo normal: ~${dias} días.`
+    return (
+      <div className="flex flex-col items-end gap-1" title={tooltip}>
+        <Badge variant="warning" className="gap-1 text-[10px] font-bold uppercase px-2 border-warning/30 bg-warning/10 text-warning">
+          <TrendingUp className="h-3 w-3" /> Pico posible
+        </Badge>
+        <span className="text-[9px] font-bold text-warning opacity-80 uppercase tracking-tighter">
+          Normal ~{Math.round(dias)} · Pico ~{Math.round(diasPico)} d
+        </span>
       </div>
     )
   }

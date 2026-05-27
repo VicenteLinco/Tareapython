@@ -64,6 +64,7 @@ async fn listar(
         match estado {
             "critico" => "bajo",
             "sin_stock" => "sin-stock",
+            "vence_pronto" => "vencimiento",
             _ => params.filter.as_deref().unwrap_or(""),
         }
     } else {
@@ -124,7 +125,8 @@ async fn listar(
     };
 
     // Filter by type — `estado` param + legacy compat
-    let stock_bajo_estado = estado == "bajo" || estado == "critico" || params.stock_bajo == Some(true);
+    let stock_bajo_estado =
+        estado == "bajo" || estado == "critico" || params.stock_bajo == Some(true);
     let normal_estado = estado == "normal";
     let type_filter = match filter {
         "vencimiento" => {
@@ -135,9 +137,7 @@ async fn listar(
         _ if params.con_alertas == Some(true) => {
             "AND ((stock_total < stock_minimo AND stock_minimo > 0) OR proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days')"
         }
-        _ if stock_bajo_estado => {
-            "AND stock_total < stock_minimo AND stock_minimo > 0"
-        }
+        _ if stock_bajo_estado => "AND stock_total < stock_minimo AND stock_minimo > 0",
         _ if normal_estado => "AND (stock_minimo = 0 OR stock_total >= stock_minimo)",
         _ => "",
     };

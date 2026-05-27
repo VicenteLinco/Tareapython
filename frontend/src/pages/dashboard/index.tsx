@@ -144,7 +144,7 @@ export default function DashboardPage() {
   )
   const hayUrgencias = alerts.length > 0
   const severidadBanner = alertasCriticas.length > 0 ? 'critica' : 'warning'
-  const alertasMostradas = alertasCriticas.length > 0 ? alertasCriticas : alertasWarning
+  const alertasMostradas = [...alertasCriticas, ...alertasWarning]
   const totalAlertasPrioritarias = alerts.length
 
   return (

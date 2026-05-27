@@ -1,5 +1,2 @@
-[build]
-target-dir = "C:/Users/Desarrollo/Documents/14 marzo inventario/backend/target"
-
 [env]
 SQLX_OFFLINE = "true"

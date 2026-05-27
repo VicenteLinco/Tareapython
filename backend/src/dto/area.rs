@@ -1,6 +1,6 @@
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use rust_decimal::Decimal;
 use uuid::Uuid;
 use validator::Validate;
 

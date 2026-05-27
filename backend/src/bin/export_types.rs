@@ -3,7 +3,9 @@ use inventario_lab_backend::domain::{
     EstadoOrdenCompra, EstadoRecepcion, EstadoSolicitud, UrgenciaReposicion,
 };
 use inventario_lab_backend::dto::{
-    area::{AsignarProductosRequest, CreateArea, ProductoAreaConfigInput, ProductoAreaRow, UpdateArea},
+    area::{
+        AsignarProductosRequest, CreateArea, ProductoAreaConfigInput, ProductoAreaRow, UpdateArea,
+    },
     categoria::{CreateCategoria, UpdateCategoria},
     descarte::{DescarteItem, DescarteRequest, DescarteResponse},
     proveedor::{CreateProveedor, ProveedorQuery, UpdateProveedor},
@@ -38,8 +40,7 @@ use std::path::Path;
 
 fn main() {
     let conf = Typescript::default();
-    let out_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../frontend/src/types/generated.ts");
+    let out_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../frontend/src/types/generated.ts");
 
     let mut output = String::new();
     writeln!(

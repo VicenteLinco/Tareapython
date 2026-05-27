@@ -250,8 +250,8 @@ impl ProductoService {
 
         if let Some(provs) = params.proveedores {
             for prov in &provs {
-                let presentacion_id = upsert_presentacion_proveedor(&mut tx, producto.id, prov)
-                    .await?;
+                let presentacion_id =
+                    upsert_presentacion_proveedor(&mut tx, producto.id, prov).await?;
                 let imagen_url = guardar_imagen_proveedor(&mut tx, producto.id, prov, None).await?;
 
                 sqlx::query(
@@ -427,10 +427,11 @@ impl ProductoService {
         pool: &PgPool,
         id: Uuid,
     ) -> Result<Vec<serde_json::Value>, AppError> {
-        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1)")
-            .bind(id)
-            .fetch_one(pool)
-            .await?;
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1)")
+                .bind(id)
+                .fetch_one(pool)
+                .await?;
         if !exists {
             return Err(AppError::NotFound("Producto no encontrado".into()));
         }
@@ -498,7 +499,11 @@ impl ProductoService {
         .bind(&params.codigo_maestro)
         .bind(&params.ubicacion)
         .bind(&params.temperatura_almacenamiento)
-        .bind(params.requiere_cadena_frio.unwrap_or(anterior.requiere_cadena_frio))
+        .bind(
+            params
+                .requiere_cadena_frio
+                .unwrap_or(anterior.requiere_cadena_frio),
+        )
         .bind(params.dias_estabilidad_abierto)
         .bind(&params.clase_riesgo)
         .bind(params.id)
@@ -539,8 +544,8 @@ impl ProductoService {
                 .fetch_optional(&mut *tx)
                 .await?
                 .flatten();
-                let presentacion_id = upsert_presentacion_proveedor(&mut tx, params.id, prov)
-                    .await?;
+                let presentacion_id =
+                    upsert_presentacion_proveedor(&mut tx, params.id, prov).await?;
                 let imagen_url =
                     guardar_imagen_proveedor(&mut tx, params.id, prov, imagen_previa).await?;
 

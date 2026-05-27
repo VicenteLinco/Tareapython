@@ -62,7 +62,13 @@ mod tests {
     #[test]
     fn safe_upload_path_acepta_rutas_relativas_normales() {
         let path = safe_upload_path("recepciones/foto.jpg").expect("ruta valida");
-        assert!(path.ends_with(PathBuf::from("uploads").join("recepciones").join("foto.jpg")));
+        assert!(
+            path.ends_with(
+                PathBuf::from("uploads")
+                    .join("recepciones")
+                    .join("foto.jpg")
+            )
+        );
     }
 
     #[test]

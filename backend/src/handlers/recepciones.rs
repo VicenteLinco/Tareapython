@@ -65,7 +65,7 @@ async fn obtener(
          FROM recepciones r 
          JOIN proveedores p ON p.id = r.proveedor_id 
          JOIN usuarios u ON u.id = r.usuario_id
-         WHERE r.id = $1"
+         WHERE r.id = $1",
     )
     .bind(id)
     .fetch_optional(&state.pool)

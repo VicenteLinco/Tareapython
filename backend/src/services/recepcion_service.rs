@@ -597,11 +597,10 @@ pub async fn obtener_detalles(
 }
 
 pub async fn eliminar_borrador(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    let estado: Option<String> =
-        sqlx::query_scalar("SELECT estado FROM recepciones WHERE id = $1")
-            .bind(id)
-            .fetch_optional(pool)
-            .await?;
+    let estado: Option<String> = sqlx::query_scalar("SELECT estado FROM recepciones WHERE id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
 
     let estado = estado.ok_or(AppError::NotFound("Recepción no encontrada".into()))?;
 

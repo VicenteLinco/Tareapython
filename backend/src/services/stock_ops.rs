@@ -269,8 +269,8 @@ mod tests {
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();
         let lotes = vec![
-            make_lote(id1, dec!(0)),   // agotado: la DB filtra con cantidad > 0,
-                                        // pero si llega con 0, debe ignorarse
+            make_lote(id1, dec!(0)), // agotado: la DB filtra con cantidad > 0,
+            // pero si llega con 0, debe ignorarse
             make_lote(id2, dec!(50)),
         ];
         let plan = distribuir_fefo(&lotes, dec!(30)).expect("debe distribuir");
@@ -289,7 +289,10 @@ mod tests {
         ];
         let err = distribuir_fefo(&lotes, dec!(50)).expect_err("debe fallar");
         match err {
-            AppError::StockInsuficiente { disponible, solicitado } => {
+            AppError::StockInsuficiente {
+                disponible,
+                solicitado,
+            } => {
                 assert_eq!(disponible, dec!(25));
                 assert_eq!(solicitado, dec!(50));
             }

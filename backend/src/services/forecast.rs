@@ -101,7 +101,10 @@ pub fn winsorize_p95(serie: &[f64]) -> Vec<f64> {
         .saturating_sub(1)
         .min(n - 1);
     let p95 = ordenado[idx];
-    serie.iter().map(|&v| if v > 0.0 { v.min(p95) } else { 0.0 }).collect()
+    serie
+        .iter()
+        .map(|&v| if v > 0.0 { v.min(p95) } else { 0.0 })
+        .collect()
 }
 
 /// Estima el consumo diario base usando la ventana real desde el primer consumo.
@@ -339,7 +342,10 @@ mod tests {
         let w = winsorize_p95(&s);
         // p95 de [5×19, 100]: índice 18 de 20 sorted = 5... wait, sorted=[5,5,...,5,100]
         // p95 = sorted[ceil(0.95*20)-1] = sorted[18] = 5
-        assert_eq!(w[19], 5.0, "el outlier real debe quedar recortado al p95 de no-ceros");
+        assert_eq!(
+            w[19], 5.0,
+            "el outlier real debe quedar recortado al p95 de no-ceros"
+        );
     }
 
     #[test]
@@ -353,7 +359,10 @@ mod tests {
         // p95 de no-ceros [10,30,100]: índice 2 de 3 = 100
         assert_eq!(w[57], 10.0);
         assert_eq!(w[58], 30.0);
-        assert_eq!(w[59], 100.0, "los consumos reales no deben recortarse en serie esparsa");
+        assert_eq!(
+            w[59], 100.0,
+            "los consumos reales no deben recortarse en serie esparsa"
+        );
     }
 
     #[test]
@@ -368,10 +377,10 @@ mod tests {
         let mut s = vec![0.0; 54];
         s.push(100.0); // día 54
         s.push(0.0);
-        s.push(30.0);  // día 56
+        s.push(30.0); // día 56
         s.push(0.0);
         s.push(0.0);
-        s.push(10.0);  // día 59
+        s.push(10.0); // día 59
         assert_eq!(s.len(), 60);
         let c = consumo_base_adaptivo(&s);
         // dias_reales = 60 - 54 = 6, total = 140 → 140/6 ≈ 23.33
@@ -549,9 +558,20 @@ mod tests {
         let serie = vec![10.0; 60];
         let cfg = ForecastConfig::default();
         let r = compute_forecast(&serie, 50.0, 0.0, 0.0, 7, cfg);
-        assert_eq!(r.confianza, Confianza::Alta, "consumo estable debe dar confianza Alta");
-        assert!(r.mu > 9.5 && r.mu < 10.5, "μ debe estar cerca de 10, dio {}", r.mu);
-        assert!(r.cantidad_sugerida > 0.0, "debe sugerir compra cuando stock < target");
+        assert_eq!(
+            r.confianza,
+            Confianza::Alta,
+            "consumo estable debe dar confianza Alta"
+        );
+        assert!(
+            r.mu > 9.5 && r.mu < 10.5,
+            "μ debe estar cerca de 10, dio {}",
+            r.mu
+        );
+        assert!(
+            r.cantidad_sugerida > 0.0,
+            "debe sugerir compra cuando stock < target"
+        );
     }
 
     /// D6-F2: Consumo esporádico (muchos ceros) → confianza Baja o Media según
@@ -585,7 +605,11 @@ mod tests {
         let cfg = ForecastConfig::default();
         // stock_actual=0, stock_minimo=100 → debe sugerir 100
         let r = compute_forecast(&serie, 0.0, 100.0, 0.0, 7, cfg);
-        assert_eq!(r.confianza, Confianza::Baja, "sin historia debe dar confianza Baja");
+        assert_eq!(
+            r.confianza,
+            Confianza::Baja,
+            "sin historia debe dar confianza Baja"
+        );
         assert_eq!(r.dias_con_consumo, 0);
         assert_eq!(r.mu, 0.0);
         // cantidad_sugerida = stock_minimo - stock_actual - ya_pedido = 100 - 0 - 0 = 100

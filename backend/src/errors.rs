@@ -1,7 +1,7 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use rust_decimal::Decimal;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 fn sqlx_database_error_response(err: &sqlx::Error) -> Option<(StatusCode, &'static str, String)> {
@@ -112,7 +112,6 @@ pub enum AppError {
     Sqlx(#[from] sqlx::Error),
 
     // --- Variantes de dominio tipadas ---
-
     /// Stock insuficiente al consumir o descartar
     #[error("Stock insuficiente: disponible {disponible}, solicitado {solicitado}")]
     StockInsuficiente {
@@ -220,7 +219,8 @@ impl From<validator::ValidationErrors> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         // (status, code, message, details)
-        let (status, code, message, details): (StatusCode, &str, String, Option<Value>) = match self {
+        let (status, code, message, details): (StatusCode, &str, String, Option<Value>) = match self
+        {
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg, None),
             AppError::Validation(msg) => (
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -274,12 +274,12 @@ impl IntoResponse for AppError {
                 if let Some((status, code, message)) = sqlx_database_error_response(&err) {
                     (status, code, message, None)
                 } else {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "INTERNAL_ERROR",
-                    "Error interno del servidor".to_string(),
-                    None,
-                )
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "INTERNAL_ERROR",
+                        "Error interno del servidor".to_string(),
+                        None,
+                    )
                 }
             }
             AppError::StockInsuficiente {

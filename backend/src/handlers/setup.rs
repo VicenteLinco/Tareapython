@@ -194,7 +194,10 @@ async fn importar_productos(
             });
             continue;
         }
-        let codigo_generado = format!("IMP-{}", uuid::Uuid::new_v4().to_string()[..8].to_uppercase());
+        let codigo_generado = format!(
+            "IMP-{}",
+            uuid::Uuid::new_v4().to_string()[..8].to_uppercase()
+        );
         let codigo_interno = if codigo_interno_csv.is_empty() {
             codigo_generado.as_str()
         } else {

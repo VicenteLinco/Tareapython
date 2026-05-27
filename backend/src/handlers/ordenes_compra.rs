@@ -105,7 +105,9 @@ async fn crear(
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
     if payload.items.is_empty() {
-        return Err(AppError::Validation("La orden debe tener al menos un ítem".into()));
+        return Err(AppError::Validation(
+            "La orden debe tener al menos un ítem".into(),
+        ));
     }
 
     for item in &payload.items {
@@ -128,12 +130,20 @@ async fn crear(
 
         match estado_sol.as_deref() {
             None => {
-                return Err(AppError::NotFound("Solicitud de compra no encontrada".into()));
+                return Err(AppError::NotFound(
+                    "Solicitud de compra no encontrada".into(),
+                ));
             }
-            Some("guardada") | Some("parcialmente_enviada") | Some("enviada") | Some("parcialmente_recibida") => {}
+            Some("guardada")
+            | Some("parcialmente_enviada")
+            | Some("enviada")
+            | Some("parcialmente_recibida") => {}
             Some(e) => {
                 return Err(AppError::BusinessLogic(
-                    format!("No se puede crear una orden de compra desde una solicitud en estado '{}'", e),
+                    format!(
+                        "No se puede crear una orden de compra desde una solicitud en estado '{}'",
+                        e
+                    ),
                     "SOLICITUD_ESTADO_INVALIDO".into(),
                 ));
             }
@@ -243,7 +253,9 @@ async fn listar(
            {}
            ORDER BY oc.fecha_emision DESC
            LIMIT ${} OFFSET ${}"#,
-        where_clause, next_param, next_param + 1
+        where_clause,
+        next_param,
+        next_param + 1
     );
 
     macro_rules! bind_params {
@@ -269,12 +281,16 @@ async fn listar(
     // For data query: bind filter params THEN pagination params
     let data = {
         let mut q = sqlx::query_as::<_, OrdenCompraResumen>(&data_sql);
-        if let Some(v) = params.proveedor_id { q = q.bind(v); }
-        if let Some(ref v) = params.estado { q = q.bind(v.clone()); }
-        if let Some(v) = params.solicitud_id { q = q.bind(v); }
-        q.bind(per_page).bind(offset)
-            .fetch_all(&state.pool)
-            .await?
+        if let Some(v) = params.proveedor_id {
+            q = q.bind(v);
+        }
+        if let Some(ref v) = params.estado {
+            q = q.bind(v.clone());
+        }
+        if let Some(v) = params.solicitud_id {
+            q = q.bind(v);
+        }
+        q.bind(per_page).bind(offset).fetch_all(&state.pool).await?
     };
 
     let total_pages = ((total as f64) / (per_page as f64)).ceil() as i64;
@@ -374,19 +390,23 @@ async fn marcar_enviada(
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
     // Check existence and current state
-    let estado: Option<String> = sqlx::query_scalar(
-        "SELECT estado FROM ordenes_compra WHERE id = $1"
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let estado: Option<String> =
+        sqlx::query_scalar("SELECT estado FROM ordenes_compra WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     match estado.as_deref() {
         None => return Err(AppError::NotFound("Orden de compra no encontrada".into())),
-        Some(e) if e != "borrador" => return Err(AppError::BusinessLogic(
-            format!("Solo se pueden enviar órdenes en estado 'borrador', está en '{}'", e),
-            "ESTADO_INVALIDO".into(),
-        )),
+        Some(e) if e != "borrador" => {
+            return Err(AppError::BusinessLogic(
+                format!(
+                    "Solo se pueden enviar órdenes en estado 'borrador', está en '{}'",
+                    e
+                ),
+                "ESTADO_INVALIDO".into(),
+            ));
+        }
         _ => {}
     }
 
@@ -395,7 +415,9 @@ async fn marcar_enviada(
         .execute(&state.pool)
         .await?;
 
-    Ok(Json(serde_json::json!({ "status": "success", "estado": "enviada" })))
+    Ok(Json(
+        serde_json::json!({ "status": "success", "estado": "enviada" }),
+    ))
 }
 
 /// POST /api/v1/ordenes-compra/:id/cancelar — Cancelar orden (admin only)
@@ -406,19 +428,23 @@ async fn cancelar(
 ) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
-    let estado: Option<String> = sqlx::query_scalar(
-        "SELECT estado FROM ordenes_compra WHERE id = $1"
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let estado: Option<String> =
+        sqlx::query_scalar("SELECT estado FROM ordenes_compra WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     match estado.as_deref() {
         None => return Err(AppError::NotFound("Orden de compra no encontrada".into())),
-        Some(e) if e != "borrador" && e != "enviada" => return Err(AppError::BusinessLogic(
-            format!("Solo se pueden cancelar órdenes en estado 'borrador' o 'enviada', está en '{}'", e),
-            "ESTADO_INVALIDO".into(),
-        )),
+        Some(e) if e != "borrador" && e != "enviada" => {
+            return Err(AppError::BusinessLogic(
+                format!(
+                    "Solo se pueden cancelar órdenes en estado 'borrador' o 'enviada', está en '{}'",
+                    e
+                ),
+                "ESTADO_INVALIDO".into(),
+            ));
+        }
         _ => {}
     }
 
@@ -427,7 +453,9 @@ async fn cancelar(
         .execute(&state.pool)
         .await?;
 
-    Ok(Json(serde_json::json!({ "status": "success", "estado": "cancelada" })))
+    Ok(Json(
+        serde_json::json!({ "status": "success", "estado": "cancelada" }),
+    ))
 }
 
 pub fn routes() -> Router<AppState> {

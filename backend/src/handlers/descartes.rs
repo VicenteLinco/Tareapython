@@ -175,7 +175,11 @@ async fn listar(
         })
         .collect();
 
-    let total_pages = if limit > 0 { (total + limit - 1) / limit } else { 1 };
+    let total_pages = if limit > 0 {
+        (total + limit - 1) / limit
+    } else {
+        1
+    };
     Ok(Json(serde_json::json!({
         "data": data,
         "total": total,
@@ -186,6 +190,5 @@ async fn listar(
 }
 
 pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/", get(listar).post(crear))
+    Router::new().route("/", get(listar).post(crear))
 }

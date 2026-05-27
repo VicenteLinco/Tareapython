@@ -138,11 +138,12 @@ pub async fn actualizar(
 }
 
 pub async fn eliminar(pool: &PgPool, id: i32, usuario_id: Uuid) -> Result<(), AppError> {
-    let result =
-        sqlx::query("UPDATE proveedores SET activa = false, deleted_at = NOW() WHERE id = $1 AND activa = true")
-            .bind(id)
-            .execute(pool)
-            .await?;
+    let result = sqlx::query(
+        "UPDATE proveedores SET activa = false, deleted_at = NOW() WHERE id = $1 AND activa = true",
+    )
+    .bind(id)
+    .execute(pool)
+    .await?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Proveedor no encontrado".into()));

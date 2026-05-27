@@ -84,7 +84,10 @@ pub async fn listar(pool: &PgPool, params: UsuarioQuery) -> Result<Vec<UsuarioRe
         areas_map
             .entry(row.usuario_id)
             .or_default()
-            .push(AreaSimple { id: row.id, nombre: row.nombre });
+            .push(AreaSimple {
+                id: row.id,
+                nombre: row.nombre,
+            });
     }
 
     Ok(usuarios

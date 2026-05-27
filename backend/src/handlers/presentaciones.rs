@@ -137,19 +137,18 @@ async fn actualizar(
     if let Some(new_factor) = req.factor_conversion
         && new_factor != anterior.factor_conversion
     {
-            let used: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM recepcion_detalle WHERE presentacion_id = $1)",
-            )
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
+        let used: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM recepcion_detalle WHERE presentacion_id = $1)",
+        )
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
 
-            if used {
-                return Err(AppError::BusinessLogic(
-                    "No se puede cambiar el factor de conversión: ya fue usada en recepciones"
-                        .into(),
-                    "FACTOR_EN_USO".into(),
-                ));
+        if used {
+            return Err(AppError::BusinessLogic(
+                "No se puede cambiar el factor de conversión: ya fue usada en recepciones".into(),
+                "FACTOR_EN_USO".into(),
+            ));
         }
     }
 

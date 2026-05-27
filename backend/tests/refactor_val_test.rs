@@ -102,14 +102,13 @@ async fn test_integridad_stock_y_servicios_refactorizados(pool: sqlx::PgPool) {
     );
 
     // 4. Realizar Descarte (Salida de Stock)
-    let lote_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM lotes WHERE producto_id = $1 AND numero_lote = $2",
-    )
-    .bind(producto_id)
-    .bind(num_lote)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let lote_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM lotes WHERE producto_id = $1 AND numero_lote = $2")
+            .bind(producto_id)
+            .bind(num_lote)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
 
     let req_descarte = DescarteRequest {
         items: vec![DescarteItem {

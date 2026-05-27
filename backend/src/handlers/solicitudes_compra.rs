@@ -806,20 +806,19 @@ async fn enviar(
         Some("guardada") | Some("parcialmente_enviada") => {}
         _ => {
             return Err(AppError::BusinessLogic(
-                "Solo se puede marcar como enviada una solicitud guardada o parcialmente enviada".into(),
+                "Solo se puede marcar como enviada una solicitud guardada o parcialmente enviada"
+                    .into(),
                 "ESTADO_INVALIDO".into(),
             ));
         }
     }
 
     // Actualizar metodo_envio en la cabecera (el estado lo calcula recalcular_estado_solicitud)
-    sqlx::query(
-        "UPDATE solicitudes_compra SET metodo_envio = $2 WHERE id = $1",
-    )
-    .bind(id)
-    .bind(req.metodo_envio.as_deref())
-    .execute(&mut *tx)
-    .await?;
+    sqlx::query("UPDATE solicitudes_compra SET metodo_envio = $2 WHERE id = $1")
+        .bind(id)
+        .bind(req.metodo_envio.as_deref())
+        .execute(&mut *tx)
+        .await?;
 
     // Insertar envios solo para proveedores que no los tengan ya
     // ON CONFLICT DO NOTHING preserva los envios granulares ya registrados
@@ -1013,7 +1012,8 @@ async fn completar(
 
     if rows.rows_affected() == 0 {
         return Err(AppError::BusinessLogic(
-            "Para completar una solicitud primero debe existir una recepcion completa vinculada".into(),
+            "Para completar una solicitud primero debe existir una recepcion completa vinculada"
+                .into(),
             "ESTADO_INVALIDO".into(),
         ));
     }

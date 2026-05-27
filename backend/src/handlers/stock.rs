@@ -133,7 +133,7 @@ async fn listar(
             "AND (proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days' AND proximo_vencimiento >= CURRENT_DATE)"
         }
         "vencidos" => "AND proximo_vencimiento < CURRENT_DATE",
-        "sin-stock" => "AND stock_total <= 0 AND stock_minimo > 0",
+        "sin-stock" => "AND stock_total <= 0 AND inicializado",
         _ if params.con_alertas == Some(true) => {
             "AND ((stock_total < stock_minimo AND stock_minimo > 0) OR proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days')"
         }
@@ -794,7 +794,7 @@ async fn alertas(
                CROSS JOIN LATERAL (
                    SELECT 'vencido' as tipo WHERE proxima_fecha_venc < CURRENT_DATE
                    UNION ALL
-                   SELECT 'sin_stock' WHERE total <= 0 AND stock_minimo > 0
+                   SELECT 'sin_stock' WHERE inicializado AND total <= 0
                    UNION ALL
                    SELECT 'vence_30d' WHERE proxima_fecha_venc >= CURRENT_DATE AND proxima_fecha_venc <= CURRENT_DATE + INTERVAL '30 days'
                    UNION ALL

@@ -502,6 +502,45 @@ async fn filtro_por_vencer_no_incluye_sin_stock(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn filtro_sin_stock_incluye_agotados_sin_minimo(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (producto_uuid, producto_id) = setup_stock(&pool, &token, &app, 1, 100.0).await;
+    sqlx::query("UPDATE productos SET stock_minimo = 0 WHERE id = $1")
+        .bind(producto_uuid)
+        .execute(&pool)
+        .await
+        .expect("debe dejar el minimo en cero");
+
+    let idem_key = Uuid::new_v4().to_string();
+    let (status, _) = common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos",
+        &token,
+        serde_json::json!({
+            "producto_id": producto_id,
+            "area_id": 1,
+            "cantidad": 100,
+            "unidad": "base",
+        }),
+        &idem_key,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, json) =
+        common::get_json(&app, "/api/v1/stock?estado=sin_stock&area_id=1", &token).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let items = json["data"].as_array().unwrap();
+    assert!(
+        items.iter().any(|i| i["producto_id"] == producto_id),
+        "el filtro sin_stock debe incluir productos inicializados agotados aunque no tengan minimo: {json}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn producto_sin_historial_queda_pendiente_y_no_alerta_dashboard(pool: PgPool) {
     let token = common::admin_access_token(&pool).await;
     let app = common::test_app(pool.clone());

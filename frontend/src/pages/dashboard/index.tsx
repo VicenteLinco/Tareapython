@@ -133,21 +133,19 @@ export default function DashboardPage() {
   const alerts = alertasQ.data?.data ?? []
 
   const sinStock = alerts.filter((a) => a.tipo_alerta === 'sin_stock').length
-  const criticos = alerts.filter(
-    (a) => a.tipo_alerta === 'agotamiento_proximo' || a.tipo_alerta === 'bajo_minimo',
-  ).length
+  const stockBajo = alerts.filter((a) => a.tipo_alerta === 'bajo_minimo').length
   const porVencer = alerts.filter(
     (a) => a.tipo_alerta === 'vencido' || a.tipo_alerta === 'vence_30d' || a.tipo_alerta === 'vence_90d',
   ).length
 
   const alertasCriticas = alerts.filter((a) => ['sin_stock', 'vencido'].includes(a.tipo_alerta))
   const alertasWarning = alerts.filter((a) =>
-    ['agotamiento_proximo', 'bajo_minimo', 'vence_30d'].includes(a.tipo_alerta),
+    ['bajo_minimo', 'vence_30d', 'vence_90d'].includes(a.tipo_alerta),
   )
-  const hayUrgencias = alertasCriticas.length > 0 || alertasWarning.length > 0
+  const hayUrgencias = alerts.length > 0
   const severidadBanner = alertasCriticas.length > 0 ? 'critica' : 'warning'
   const alertasMostradas = alertasCriticas.length > 0 ? alertasCriticas : alertasWarning
-  const totalAlertasPrioritarias = alertasCriticas.length + alertasWarning.length
+  const totalAlertasPrioritarias = alerts.length
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -285,13 +283,13 @@ export default function DashboardPage() {
           onClick={() => navigate('/stock?estado=sin_stock')}
         />
         <StatCard
-          label="Stock crítico"
-          value={criticos}
+          label="Stock bajo"
+          value={stockBajo}
           icon={<TrendingDown className="h-4 w-4" />}
           tone="warning"
           loading={alertasQ.isLoading}
           alert
-          onClick={() => navigate('/stock?estado=critico')}
+          onClick={() => navigate('/stock?estado=bajo')}
         />
         <StatCard
           label="Por vencer"

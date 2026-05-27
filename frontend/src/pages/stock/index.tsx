@@ -42,10 +42,11 @@ export default function StockPage() {
   } = useStockFilters()
 
   const usuario = useAuthStore(s => s.usuario)
+  const showAlertas = searchParams.get('alertas') === 'true'
 
   // Queries
   const { data: stockResponse, isLoading } = useQuery({
-    queryKey: ['stock', { search, categoriaId, proveedorId, areaId, estado }],
+    queryKey: ['stock', { search, categoriaId, proveedorId, areaId, estado, showAlertas }],
     queryFn: () =>
       api.get<PaginatedResponse<StockItem>>('/stock', {
         params: {
@@ -54,6 +55,7 @@ export default function StockPage() {
           proveedor_id: proveedorId || undefined,
           area_id: areaId || undefined,
           estado: estado !== 'todos' ? estado : undefined,
+          con_alertas: showAlertas || undefined,
           per_page: 100
         },
       }).then((r) => r.data),
@@ -93,8 +95,7 @@ export default function StockPage() {
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-3">
             <h1 className="t-h1 tracking-tight text-base-content">
-              {estado === 'critico' ? 'Riesgo de Quiebre' :
-               estado === 'bajo'    ? 'Stock Bajo' :
+              {estado === 'bajo'    ? 'Stock Bajo' :
                estado === 'sin_stock' ? 'Stock Quebrado' :
                estado === 'normal'  ? 'Stock Normal' : 'Inventario Global'}
             </h1>
@@ -173,8 +174,6 @@ export default function StockPage() {
         }
         activeSecondaryCount={activeSecondaryCount}
         chips={[
-          { label: 'Crítico', value: 'critico', active: estado === 'critico',
-            onClick: () => setEstado(estado === 'critico' ? 'todos' : 'critico') },
           { label: 'Stock bajo', value: 'bajo', active: estado === 'bajo',
             onClick: () => setEstado(estado === 'bajo' ? 'todos' : 'bajo') },
           { label: 'Sin stock', value: 'sin_stock', active: estado === 'sin_stock',
@@ -260,7 +259,7 @@ export default function StockPage() {
                   q: search || undefined,
                   categoria_id: categoriaId?.toString() || undefined,
                   proveedor_id: proveedorId?.toString() || undefined,
-                  stock_bajo: estado === 'bajo' || estado === 'critico',
+                  stock_bajo: estado === 'bajo',
                 }
               })
               setShowPdfModal(false)

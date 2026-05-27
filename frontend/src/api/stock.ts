@@ -17,6 +17,8 @@ export interface StockQuery {
   categoria_id?: number | null
   q?: string | null
   bajo_minimo?: boolean
+  con_alertas?: boolean
+  estado?: 'todos' | 'normal' | 'bajo' | 'sin_stock' | 'vence_pronto'
   page?: number
   per_page?: number
 }

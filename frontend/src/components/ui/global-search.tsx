@@ -9,7 +9,6 @@ import { cn } from '@/lib/utils'
 
 const ACCIONES_RAPIDAS = [
   { id: 'a1', title: 'Nueva recepción', subtitle: 'Registrar entrada de insumos', path: '/recepciones/nueva', keywords: ['nueva', 'recepcion', 'entrada'] },
-  { id: 'a2', title: 'Stock crítico', subtitle: 'Productos con riesgo de quiebre', path: '/stock?estado=critico', keywords: ['critico', 'quiebre', 'urgente', 'stock'] },
   { id: 'a3', title: 'Stock bajo mínimo', subtitle: 'Productos bajo el mínimo de stock', path: '/stock?estado=bajo', keywords: ['bajo', 'minimo', 'alerta'] },
   { id: 'a4', title: 'Nueva solicitud de compra', subtitle: 'Crear pedido a proveedor', path: '/solicitudes-compra', keywords: ['solicitud', 'compra', 'pedido', 'proveedor'] },
   { id: 'a5', title: 'Registrar consumo', subtitle: 'Consumir insumos del stock', path: '/consumos', keywords: ['consumo', 'consumir', 'usar', 'salida'] },

@@ -70,7 +70,7 @@ export interface StockPorArea {
 }
 
 export interface Alerta {
-  tipo_alerta: 'bajo_minimo' | 'vence_30d' | 'vence_90d' | 'vencido' | 'dead_stock' | 'anomalia_consumo' | 'agotamiento_proximo' | 'sin_stock'
+  tipo_alerta: 'bajo_minimo' | 'vence_30d' | 'vence_90d' | 'vencido' | 'sin_stock'
   producto_id: string
   nombre: string
   proxima_fecha_venc: string | null

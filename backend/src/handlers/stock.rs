@@ -62,7 +62,7 @@ async fn listar(
     let filter = if !estado.is_empty() {
         // Mapear estado → valor de filter legacy
         match estado {
-            "critico" => "critico",
+            "critico" => "bajo",
             "sin_stock" => "sin-stock",
             _ => params.filter.as_deref().unwrap_or(""),
         }
@@ -124,24 +124,19 @@ async fn listar(
     };
 
     // Filter by type — `estado` param + legacy compat
-    let stock_bajo_estado = estado == "bajo" || params.stock_bajo == Some(true);
+    let stock_bajo_estado = estado == "bajo" || estado == "critico" || params.stock_bajo == Some(true);
     let normal_estado = estado == "normal";
     let type_filter = match filter {
-        "critico" => {
-            // Usa consumo_base_estimado (espejo de calcular_autonomia en Rust) y lead_time_propio
-            // para que el filtro coincida con el badge "Crítico" del frontend.
-            "AND ((inicializado AND stock_total <= 0 AND stock_minimo > 0) OR (stock_minimo > 0 AND stock_total < stock_minimo AND (stock_total > 0 OR inicializado)) OR (consumo_base_estimado > 0.0001 AND (stock_total / consumo_base_estimado) <= COALESCE(lead_time_propio, 3)))"
-        }
         "vencimiento" => {
             "AND (proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days' AND proximo_vencimiento >= CURRENT_DATE)"
         }
         "vencidos" => "AND proximo_vencimiento < CURRENT_DATE",
-        "sin-stock" => "AND inicializado AND stock_total <= 0 AND stock_minimo > 0",
+        "sin-stock" => "AND stock_total <= 0 AND stock_minimo > 0",
         _ if params.con_alertas == Some(true) => {
-            "AND ((stock_total < stock_minimo AND stock_minimo > 0 AND (stock_total > 0 OR inicializado)) OR proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days')"
+            "AND ((stock_total < stock_minimo AND stock_minimo > 0) OR proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days')"
         }
         _ if stock_bajo_estado => {
-            "AND stock_total < stock_minimo AND stock_minimo > 0 AND (stock_total > 0 OR inicializado)"
+            "AND stock_total < stock_minimo AND stock_minimo > 0"
         }
         _ if normal_estado => "AND (stock_minimo = 0 OR stock_total >= stock_minimo)",
         _ => "",
@@ -673,6 +668,26 @@ async fn alertas(
             )
         };
 
+    let stock_minimo_expr = if effective_area_ids.is_empty() {
+        "p.stock_minimo".to_string()
+    } else {
+        let arr = effective_area_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(
+            "COALESCE((
+                SELECT SUM(pa.stock_minimo)
+                FROM producto_area pa
+                WHERE pa.producto_id = p.id
+                  AND pa.area_id = ANY(ARRAY[{}]::integer[])
+                  AND pa.stock_minimo > 0
+            ), p.stock_minimo)",
+            arr
+        )
+    };
+
     let pedidos_cte = r#"pedidos_pendientes AS (
                SELECT
                    producto_id,
@@ -714,7 +729,7 @@ async fn alertas(
                    (COALESCE(SUM(CASE WHEN m.tipo = 'CONSUMO' AND m.created_at >= NOW() - INTERVAL '7 days' THEN m.cantidad ELSE 0 END), 0) / 7.0)::DECIMAL AS consumo_7d
                FROM productos p
                LEFT JOIN lotes l ON l.producto_id = p.id
-               LEFT JOIN movimientos m ON m.lote_id = l.id
+               LEFT JOIN movimientos m ON m.lote_id = l.id {}
                GROUP BY p.id
            ),
            {}
@@ -722,7 +737,7 @@ async fn alertas(
                SELECT
                    p.id as producto_id,
                    p.nombre,
-                   p.stock_minimo,
+                   {} AS stock_minimo,
                    p.lead_time_propio,
                    p.created_at,
                    p.proveedor_id,
@@ -779,19 +794,13 @@ async fn alertas(
                CROSS JOIN LATERAL (
                    SELECT 'vencido' as tipo WHERE proxima_fecha_venc < CURRENT_DATE
                    UNION ALL
-                   SELECT 'sin_stock' WHERE inicializado AND total <= 0 AND stock_minimo > 0
-                   UNION ALL
-                   SELECT 'agotamiento_proximo' WHERE consumo_diario_ajustado > 0.0001 AND dias_con_consumo >= 3 AND (total / consumo_diario_ajustado) <= COALESCE(dias_despacho, 7) AND total > 0
+                   SELECT 'sin_stock' WHERE total <= 0 AND stock_minimo > 0
                    UNION ALL
                    SELECT 'vence_30d' WHERE proxima_fecha_venc >= CURRENT_DATE AND proxima_fecha_venc <= CURRENT_DATE + INTERVAL '30 days'
                    UNION ALL
                    SELECT 'bajo_minimo' WHERE stock_minimo > 0 AND total < stock_minimo AND total > 0
                    UNION ALL
-                   SELECT 'dead_stock' WHERE total > 0 AND (ultimo_movimiento <= NOW() - INTERVAL '90 days' OR ultimo_movimiento IS NULL)
-                   UNION ALL
                    SELECT 'vence_90d' WHERE proxima_fecha_venc > CURRENT_DATE + INTERVAL '30 days' AND proxima_fecha_venc <= CURRENT_DATE + INTERVAL '90 days'
-                   UNION ALL
-                   SELECT 'anomalia_consumo' WHERE es_anomalia
                ) alerta
            ),
            total_count AS (
@@ -804,14 +813,19 @@ async fn alertas(
            ORDER BY
                CASE WHEN tipo_alerta = 'vencido' THEN 0
                     WHEN tipo_alerta = 'sin_stock' THEN 1
-                    WHEN tipo_alerta = 'agotamiento_proximo' THEN 2
-                    WHEN tipo_alerta = 'vence_30d' THEN 3
-                    WHEN tipo_alerta = 'bajo_minimo' THEN 4
+                    WHEN tipo_alerta = 'vence_30d' THEN 2
+                    WHEN tipo_alerta = 'bajo_minimo' THEN 3
+                    WHEN tipo_alerta = 'vence_90d' THEN 4
                     ELSE 5 END,
                proxima_fecha_venc ASC NULLS LAST,
                nombre ASC
            LIMIT $1 OFFSET $2"#,
-        movement_area_filter, stock_area_filter, pedidos_cte, product_area_filter
+        movement_area_filter,
+        stock_area_filter,
+        movement_area_filter,
+        pedidos_cte,
+        stock_minimo_expr,
+        product_area_filter
     );
 
     let rows = sqlx::query_as::<_, AlertaRow>(&sql)

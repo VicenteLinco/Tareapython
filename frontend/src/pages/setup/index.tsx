@@ -35,6 +35,10 @@ interface SetupResumen {
 
 type Paso = 'bienvenida' | 'productos' | 'resultado-productos' | 'stock' | 'resultado-stock' | 'resumen'
 
+function productoCargadoLabel(cantidad: number) {
+  return cantidad === 1 ? 'producto cargado' : 'productos cargados'
+}
+
 // ─── Plantillas CSV ───────────────────────────────────────────────────────────
 
 const CSV_STOCK = `producto_nombre_o_codigo,numero_lote,fecha_vencimiento,area,cantidad,costo_unitario
@@ -325,7 +329,7 @@ export default function SetupPage() {
               <div className="alert alert-warning py-2">
                 <AlertTriangle className="w-4 h-4" />
                 <span className="text-sm">
-                  Ya hay <strong>{estado.productos_cargados}</strong> productos cargados.
+                  Ya hay <strong>{estado.productos_cargados}</strong> {productoCargadoLabel(estado.productos_cargados)}.
                   Puedes continuar importando o ir directo al paso de stock.
                 </span>
               </div>

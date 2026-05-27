@@ -13,6 +13,7 @@ pub struct RecepcionQuery {
     pub estado: Option<String>,
     pub desde: Option<NaiveDate>,
     pub hasta: Option<NaiveDate>,
+    #[serde(alias = "q")]
     pub busqueda: Option<String>,
     pub area_id: Option<i32>,
     pub page: Option<i32>,

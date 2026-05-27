@@ -332,6 +332,7 @@ impl ProductoService {
                 'dias_estabilidad_abierto',   p.dias_estabilidad_abierto,
                 'clase_riesgo',               p.clase_riesgo,
                 'activo',          p.activo,
+                'precio_unidad',   p.precio_unidad,
                 'version',         p.version,
                 'created_at',      p.created_at,
                 'updated_at',      p.updated_at,
@@ -705,6 +706,7 @@ impl ProductoService {
             factor_conversion: Decimal,
             stock_total: Option<Decimal>,
             imagen_url: Option<String>,
+            precio_unidad: Option<Decimal>,
         }
 
         // 1. Buscar por código de barras de presentación
@@ -717,7 +719,8 @@ impl ProductoService {
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
                  pr.id as presentacion_id, pr.nombre as presentacion_nombre, pr.factor_conversion,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
-                 p.imagen_path AS imagen_url
+                 p.imagen_path AS imagen_url,
+                 p.precio_unidad
                FROM presentaciones pr
                JOIN productos p ON p.id = pr.producto_id
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
@@ -742,6 +745,7 @@ impl ProductoService {
                 "factor_conversion": r.factor_conversion,
                 "stock_total": r.stock_total,
                 "imagen_url": r.imagen_url,
+                "precio_unidad": r.precio_unidad,
             });
             if let Some(gs1) = gs1 {
                 out["gs1"] = json!({
@@ -770,6 +774,7 @@ impl ProductoService {
             unidad_base_nombre_plural: String,
             stock_total: Option<Decimal>,
             imagen_url: Option<String>,
+            precio_unidad: Option<Decimal>,
         }
 
         // 2. Buscar por código interno del producto
@@ -778,7 +783,8 @@ impl ProductoService {
                  p.id as producto_id, p.nombre as producto_nombre, p.proveedor_id,
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
-                 p.imagen_path AS imagen_url
+                 p.imagen_path AS imagen_url,
+                 p.precio_unidad
                FROM productos p
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
                WHERE p.codigo_interno = $1 AND p.activo = true
@@ -802,6 +808,7 @@ impl ProductoService {
                 "factor_conversion": null,
                 "stock_total": r.stock_total,
                 "imagen_url": r.imagen_url,
+                "precio_unidad": r.precio_unidad,
             }));
         }
 
@@ -819,9 +826,11 @@ impl ProductoService {
             unidad_base_nombre_plural: String,
             presentacion_id: Option<i32>,
             presentacion_nombre: Option<String>,
+            factor_conversion: Option<Decimal>,
             area_id: Option<i32>,
             area_nombre: Option<String>,
             imagen_url: Option<String>,
+            precio_unidad: Option<Decimal>,
         }
 
         let row3 = sqlx::query_as::<_, Row3>(
@@ -841,12 +850,16 @@ impl ProductoService {
                  (SELECT pr.nombre FROM presentaciones pr
                   WHERE pr.producto_id = p.id AND pr.activa = true
                   ORDER BY pr.id ASC LIMIT 1) as presentacion_nombre,
+                 (SELECT pr.factor_conversion FROM presentaciones pr
+                  WHERE pr.producto_id = p.id AND pr.activa = true
+                  ORDER BY pr.id ASC LIMIT 1) as factor_conversion,
                  (SELECT s.area_id FROM stock s WHERE s.lote_id = l.id AND s.cantidad > 0
                   ORDER BY s.cantidad DESC LIMIT 1) as area_id,
                  (SELECT a.nombre FROM stock s JOIN areas a ON a.id = s.area_id
                   WHERE s.lote_id = l.id AND s.cantidad > 0
                   ORDER BY s.cantidad DESC LIMIT 1) as area_nombre,
-                 p.imagen_path AS imagen_url
+                 p.imagen_path AS imagen_url,
+                 p.precio_unidad
                FROM lotes l
                JOIN productos p ON p.id = l.producto_id
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
@@ -872,9 +885,11 @@ impl ProductoService {
                 "unidad_base_nombre_plural": r.unidad_base_nombre_plural,
                 "presentacion_id": r.presentacion_id,
                 "presentacion_nombre": r.presentacion_nombre,
+                "factor_conversion": r.factor_conversion,
                 "area_id": r.area_id,
                 "area_nombre": r.area_nombre,
                 "imagen_url": r.imagen_url,
+                "precio_unidad": r.precio_unidad,
             }));
         }
 

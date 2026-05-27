@@ -3,7 +3,10 @@
 -- ============================================================
 ALTER TABLE unidades_medida ADD COLUMN nombre_plural VARCHAR(50) NOT NULL DEFAULT '';
 
--- Poblar con valores iniciales (plural simple agregando 's')
-UPDATE unidades_medida SET nombre_plural = nombre || 's';
+-- Poblar con valores iniciales (plural simple agregando 's', con excepción para 'unidad')
+UPDATE unidades_medida SET nombre_plural = CASE 
+    WHEN nombre = 'unidad' THEN 'unidades'
+    ELSE nombre || 's'
+END;
 
 ALTER TABLE unidades_medida ALTER COLUMN nombre_plural DROP DEFAULT;

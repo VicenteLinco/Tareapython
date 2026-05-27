@@ -192,6 +192,10 @@ export function useRecepcionItems({
         precio_unitario: full.precio_unidad
           ? mulDecimal(full.precio_unidad, pres?.factor_conversion || 1).toDecimalPlaces(0).toString()
           : '',
+        precio_anterior: full.precio_unidad
+          ? mulDecimal(full.precio_unidad, pres?.factor_conversion || 1).toDecimalPlaces(0).toString()
+          : '',
+        precio_base: full.precio_unidad ? String(full.precio_unidad) : '',
         imagen_url: full.imagen_url,
         lotes: [{
           id: uuidv4(),
@@ -265,13 +269,19 @@ export function useRecepcionItems({
           presentacion_id: data.presentacion_id || null,
           presentacion_nombre: data.presentacion_nombre || '',
           presentacion_nombre_plural: data.presentacion_nombre ? data.presentacion_nombre + 's' : '',
-          factor_conversion: 1,
+          factor_conversion: data.factor_conversion ? toNum(data.factor_conversion) : 1,
           unidad_base_nombre: data.unidad_base_nombre || '',
           unidad_base_nombre_plural: data.unidad_base_nombre_plural || '',
           area_destino_id: data.area_id || null,
           area_destino_nombre: data.area_nombre || '',
           presentaciones: pres,
-          precio_unitario: '',
+          precio_unitario: data.precio_unidad
+            ? mulDecimal(data.precio_unidad, data.factor_conversion || 1).toDecimalPlaces(0).toString()
+            : '',
+          precio_anterior: data.precio_unidad
+            ? mulDecimal(data.precio_unidad, data.factor_conversion || 1).toDecimalPlaces(0).toString()
+            : '',
+          precio_base: data.precio_unidad ? String(data.precio_unidad) : '',
           imagen_url: data.imagen_url || null,
           lotes: [nuevoLote],
           collapsed: false,
@@ -347,13 +357,19 @@ export function useRecepcionItems({
           presentacion_nombre: data.presentacion_nombre || '',
           presentacion_nombre_plural: data.presentacion_nombre ? data.presentacion_nombre + 's' : '',
           cantidad_solicitada: null,
-          factor_conversion: 1,
+          factor_conversion: data.factor_conversion ? toNum(data.factor_conversion) : 1,
           unidad_base_nombre: data.unidad_base_nombre || '',
           unidad_base_nombre_plural: data.unidad_base_nombre_plural || '',
           area_destino_id: data.area_id || null,
           area_destino_nombre: data.area_nombre || '',
           presentaciones: pres,
-          precio_unitario: '',
+          precio_unitario: data.precio_unidad
+            ? mulDecimal(data.precio_unidad, data.factor_conversion || 1).toDecimalPlaces(0).toString()
+            : '',
+          precio_anterior: data.precio_unidad
+            ? mulDecimal(data.precio_unidad, data.factor_conversion || 1).toDecimalPlaces(0).toString()
+            : '',
+          precio_base: data.precio_unidad ? String(data.precio_unidad) : '',
           imagen_url: data.imagen_url || null,
           lotes: [nuevoLote],
           collapsed: false,
@@ -411,6 +427,10 @@ export function useRecepcionItems({
         precio_unitario: full.precio_unidad
           ? mulDecimal(full.precio_unidad, pres?.factor_conversion || 1).toDecimalPlaces(0).toString()
           : '',
+        precio_anterior: full.precio_unidad
+          ? mulDecimal(full.precio_unidad, pres?.factor_conversion || 1).toDecimalPlaces(0).toString()
+          : '',
+        precio_base: full.precio_unidad ? String(full.precio_unidad) : '',
         imagen_url: full.imagen_url,
         lotes: [{
           id: uuidv4(),
@@ -443,7 +463,16 @@ export function useRecepcionItems({
   const handleChange = useCallback((id: string, patch: Partial<Omit<DetalleLineUI, 'lotes'>>) => {
     setDetalles(prev => prev.map(d => {
       if (d.id !== id) return d
-      const updated = { ...d, ...patch }
+      let extraPatch: Partial<DetalleLineUI> = {}
+      if (patch.factor_conversion !== undefined && d.precio_base) {
+        const newFactor = patch.factor_conversion
+        const newPrice = mulDecimal(d.precio_base, newFactor).toDecimalPlaces(0).toString()
+        extraPatch = {
+          precio_unitario: newPrice,
+          precio_anterior: newPrice,
+        }
+      }
+      const updated = { ...d, ...patch, ...extraPatch }
       const wasComplete = isCardComplete(d)
       const nowComplete = isCardComplete(updated)
       const collapsed =

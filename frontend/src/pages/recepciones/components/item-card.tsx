@@ -34,6 +34,8 @@ export interface DetalleLineUI {
   area_destino_nombre: string
   presentaciones: Presentacion[]
   precio_unitario: string
+  precio_anterior?: string
+  precio_base?: string
   imagen_url?: string | null
   cantidad_solicitada?: number | null
   lotes: LoteLineUI[]
@@ -371,12 +373,12 @@ export function ReceptionItemCard({
           </button>
 
           {/* Precio unitario */}
-          <div className="flex items-center gap-2 pt-2 border-t border-base-200">
+          <div className="flex items-center gap-2 pt-2 border-t border-base-200 flex-wrap">
             <label className="text-xs opacity-60 shrink-0">Precio unit.:</label>
             <input
               type="text"
               inputMode="numeric"
-              className="input input-sm input-bordered w-36"
+              className="input input-sm input-bordered w-36 font-mono"
               placeholder={`${monedaSimbolo}0`}
               value={precioFocus
                 ? rawPrecio
@@ -386,6 +388,19 @@ export function ReceptionItemCard({
               onBlur={() => setPrecioFocus(false)}
               onChange={e => onChange(d.id, { precio_unitario: e.target.value.replace(/\D/g, '') })}
             />
+            {d.precio_anterior && (
+              d.precio_unitario === d.precio_anterior ? (
+                <span className="text-[11px] text-success font-medium flex items-center gap-1.5 bg-success/5 px-2 py-0.5 rounded border border-success/10">
+                  <span className="w-1.5 h-1.5 rounded-full bg-success"></span>
+                  Precio anterior
+                </span>
+              ) : (
+                <span className="text-[11px] text-warning font-medium flex items-center gap-1.5 bg-warning/5 px-2 py-0.5 rounded border border-warning/10" title={`Precio anterior: ${formatPrecioDisplay(d.precio_anterior, monedaSimbolo)}`}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse"></span>
+                  Modificado (Anterior: {formatPrecioDisplay(d.precio_anterior, monedaSimbolo)})
+                </span>
+              )
+            )}
           </div>
         </div>
       )}

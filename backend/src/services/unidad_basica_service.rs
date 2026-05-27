@@ -119,6 +119,23 @@ pub async fn actualizar(
         .map(str::trim)
         .unwrap_or(&anterior.nombre_plural);
 
+    if nombre != anterior.nombre {
+        let existente = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM unidades_basicas WHERE nombre = $1 AND id <> $2 AND activo = true)",
+        )
+        .bind(nombre)
+        .bind(id)
+        .fetch_one(pool)
+        .await?;
+
+        if existente {
+            return Err(AppError::Conflict(format!(
+                "La unidad básica '{}' ya existe",
+                nombre
+            )));
+        }
+    }
+
     let unidad = sqlx::query_as::<_, UnidadBasica>(
         "UPDATE unidades_basicas SET nombre = $1, nombre_plural = $2, version = version + 1 \
          WHERE id = $3 AND version = $4 \

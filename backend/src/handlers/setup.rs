@@ -229,27 +229,41 @@ async fn importar_productos(
             continue;
         }
 
+        let lower_unidad = unidad_nombre.to_lowercase();
+        let normalized_unidad_nombre = match lower_unidad.as_str() {
+            "unidad" | "unidades" | "unidads" | "u" => "unidad",
+            "mililitro" | "mililitros" | "ml" => "mililitro",
+            "gramo" | "gramos" | "g" => "gramo",
+            "litro" | "litros" | "l" => "litro",
+            "kilogramo" | "kilogramos" | "kg" => "kilogramo",
+            "prueba" | "pruebas" | "test" | "tests" => "prueba",
+            other => other,
+        };
+
         // Buscar/crear unidad
         let unidad_id: Option<i32> = sqlx::query_scalar(
             "SELECT id FROM unidades_basicas WHERE nombre = $1 OR nombre_plural = $1",
         )
-        .bind(unidad_nombre)
+        .bind(normalized_unidad_nombre)
         .fetch_optional(&state.pool)
         .await?;
 
         let u_id = match unidad_id {
             Some(id) => id,
-            None if !unidad_nombre.is_empty() => sqlx::query_scalar(
-                "INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ($1, $2) RETURNING id",
-            )
-            .bind(unidad_nombre)
-            .bind(if unidad_plural.is_empty() {
-                None
-            } else {
-                Some(unidad_plural)
-            })
-            .fetch_one(&state.pool)
-            .await?,
+            None if !unidad_nombre.is_empty() => {
+                let plural_val = if unidad_plural.is_empty() {
+                    format!("{}s", normalized_unidad_nombre)
+                } else {
+                    unidad_plural.to_string()
+                };
+                sqlx::query_scalar(
+                    "INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ($1, $2) RETURNING id",
+                )
+                .bind(normalized_unidad_nombre)
+                .bind(plural_val)
+                .fetch_one(&state.pool)
+                .await?
+            }
             None => {
                 errores.push(ImportError {
                     fila: fila_num,

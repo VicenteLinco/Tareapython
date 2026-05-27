@@ -250,7 +250,7 @@ function RecepcionDetailPanel({
 // ── Página principal ───────────────────────────────────────────────────────
 
 export default function RecepcionesPage() {
-  const REC_FILTER_DEFAULTS = { tabActivo: 'borradores' as TabActivo, proveedorFiltro: null as number | null }
+  const REC_FILTER_DEFAULTS = { tabActivo: 'todas' as TabActivo, proveedorFiltro: null as number | null }
   const { filters: rf, setFilters: setRf, clearFilters: clearRf, hasActiveFilters: hasRfActive } = useFilterStorage('recepciones', REC_FILTER_DEFAULTS)
   const tabActivo = rf.tabActivo
   const proveedorFiltro = rf.proveedorFiltro
@@ -302,7 +302,7 @@ export default function RecepcionesPage() {
         params: {
           estado: tabActivo === 'borradores' ? 'borrador' :
                   tabActivo === 'confirmadas' ? 'confirmada' : undefined,
-          q: search || undefined,
+          busqueda: search || undefined,
           proveedor_id: proveedorFiltro || undefined,
           per_page: PAGE_SIZE,
           page,
@@ -466,7 +466,20 @@ export default function RecepcionesPage() {
                       <td colSpan={tabActivo === 'borradores' ? 7 : 6} className="py-6">
                         <EmptyState
                           contexto="sin_recepciones"
-                          descripcion="Ajusta los filtros o crea una nueva recepción."
+                          titulo={
+                            tabActivo === 'borradores'
+                              ? 'Sin borradores'
+                              : tabActivo === 'confirmadas'
+                              ? 'Sin recepciones confirmadas'
+                              : 'Sin recepciones registradas'
+                          }
+                          descripcion={
+                            tabActivo === 'borradores'
+                              ? 'No tienes ninguna recepción en borrador.'
+                              : tabActivo === 'confirmadas'
+                              ? 'No hay recepciones confirmadas registradas.'
+                              : 'Ajusta los filtros o registra la primera recepción.'
+                          }
                           className="border-none bg-transparent p-6"
                         />
                       </td>

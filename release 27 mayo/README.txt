@@ -2,47 +2,40 @@
      SISTEMA DE INVENTARIO - LABORATORIO CLINICO (RELEASE LOCAL)
 ======================================================================
 
-Este paquete contiene la versión ejecutable del sistema lista para
-ser utilizada localmente sin necesidad de instalar entornos de desarrollo
-o exponer el código fuente de la aplicación.
+Este paquete contiene la version ejecutable del sistema lista para
+ser utilizada localmente sin instalar entornos de desarrollo ni exponer
+el codigo fuente de la aplicacion.
 
 ----------------------------------------------------------------------
-REQUISITOS DEL SISTEMA:
+REQUISITOS DEL SISTEMA
 ----------------------------------------------------------------------
-- Sistema Operativo: Windows (10, 11 o superior).
-- Docker Desktop: Requerido para ejecutar la base de datos (PostgreSQL).
-  * Descárgalo de: https://www.docker.com/products/docker-desktop/
-  * Asegúrate de iniciar Docker Desktop antes de arrancar los servicios.
+- Windows 10, 11 o superior.
+- Docker Desktop para ejecutar PostgreSQL.
+  Descarga: https://www.docker.com/products/docker-desktop/
 
 ----------------------------------------------------------------------
-CÓMO USAR EL SISTEMA:
+COMO USAR EL SISTEMA
 ----------------------------------------------------------------------
-1. Para Iniciar el Sistema:
-   - Haz doble clic sobre el archivo "INICIAR SERVICIO.bat".
-   - Esto iniciará la base de datos en Docker, levantará el servidor
-     de la aplicación y abrirá automáticamente tu navegador web en:
-     http://localhost:8080
+1. Iniciar:
+   - Haz doble clic en "INICIAR SERVICIO.bat".
+   - Se iniciara PostgreSQL en Docker, luego el servidor de la app.
+   - El navegador abrira http://localhost:8080
 
-2. Credenciales del Administrador Inicial:
-   - Al arrancar por primera vez, el sistema autogenerará una cuenta
-     de administrador inicial:
-     * Correo: admin@laboratorio.com
-     * Contraseña: admin123456789
-   - IMPORTANTE: Modifica esta contraseña después del primer inicio
-     de sesión desde el módulo de configuración de usuarios.
+2. Credenciales iniciales:
+   - Si ALLOW_BOOTSTRAP_ADMIN=true, el sistema creara/actualizara el
+     administrador configurado en .env.example / .env.
+   - Cambia la clave despues del primer inicio de sesion.
 
-3. Para Detener el Sistema:
-   - Cuando termines de trabajar, haz doble clic sobre el archivo
-     "DETENER SERVICIO.bat".
-   - Esto detendrá la base de datos de Docker y cerrará el servidor
-     liberando los puertos utilizados.
+3. Detener:
+   - Haz doble clic en "DETENER SERVICIO.bat".
 
 ----------------------------------------------------------------------
-ESTRUCTURA DE ARCHIVOS (No modificar ni eliminar):
+ESTRUCTURA
 ----------------------------------------------------------------------
-- inventario-lab-backend.exe : Servidor backend del sistema (Rust).
-- static/                     : Archivos de la interfaz web (React).
-- docker-compose.yml          : Configuración de la Base de Datos en Docker.
-- .env                        : Variables de configuración del sistema.
-- README.txt                  : Este archivo de instrucciones.
+- inventario-lab-backend.exe : servidor backend y frontend estatico.
+- static/                    : interfaz web compilada.
+- migrations/                : migraciones de base de datos.
+- docker-compose.yml         : PostgreSQL local.
+- .env.example               : variables de entorno de ejemplo.
+- README.txt                 : este archivo.
 ======================================================================

@@ -313,7 +313,6 @@ export default function RecepcionesPage() {
   const [borradorAEliminar, setBorradorAEliminar] = useState<string | null>(null)
   const [borradorItemAEliminar, setBorradorItemAEliminar] = useState<RecepcionListItem | null>(null)
   const [fotoOpen, setFotoOpen] = useState(false)
-  const [confirmReplace, setConfirmReplace] = useState(false)
   
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -405,7 +404,6 @@ export default function RecepcionesPage() {
       queryClient.invalidateQueries({ queryKey: ['recepcion-detalle-inline', selectedId] })
       queryClient.invalidateQueries({ queryKey: ['recepciones'] })
       notify.success('Guía de despacho actualizada')
-      setConfirmReplace(false)
     },
     onError: () => notify.error('No se pudo guardar la foto'),
   })

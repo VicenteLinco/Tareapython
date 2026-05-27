@@ -541,6 +541,53 @@ async fn filtro_sin_stock_incluye_agotados_sin_minimo(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn filtro_sin_stock_incluye_stock_directo_en_cero(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let producto_id = Uuid::new_v4();
+    let lote_id = Uuid::new_v4();
+
+    sqlx::query(
+        r#"INSERT INTO productos
+           (id, codigo_interno, nombre, categoria_id, unidad_base_id, stock_minimo, activo)
+           VALUES ($1, 'ZERO-DIRECT-001', 'Producto directo en cero', 1, 1, 0, true)"#,
+    )
+    .bind(producto_id)
+    .execute(&pool)
+    .await
+    .expect("debe crear producto");
+
+    sqlx::query(
+        r#"INSERT INTO lotes
+           (id, producto_id, numero_lote, fecha_vencimiento, codigo_interno)
+           VALUES ($1, $2, 'ZERO-DIRECT-LOT', CURRENT_DATE + INTERVAL '180 days', 'ZERO-DIRECT-LOT')"#,
+    )
+    .bind(lote_id)
+    .bind(producto_id)
+    .execute(&pool)
+    .await
+    .expect("debe crear lote");
+
+    sqlx::query("INSERT INTO stock (lote_id, area_id, cantidad) VALUES ($1, 1, 0)")
+        .bind(lote_id)
+        .execute(&pool)
+        .await
+        .expect("debe crear stock cero");
+
+    let (status, json) =
+        common::get_json(&app, "/api/v1/stock?estado=sin_stock&area_id=1", &token).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let items = json["data"].as_array().unwrap();
+    assert!(
+        items
+            .iter()
+            .any(|i| i["producto_id"] == producto_id.to_string()),
+        "el filtro sin_stock debe incluir productos con fila de stock en cero aunque no tengan movimientos: {json}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn producto_sin_historial_queda_pendiente_y_no_alerta_dashboard(pool: PgPool) {
     let token = common::admin_access_token(&pool).await;
     let app = common::test_app(pool.clone());

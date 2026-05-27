@@ -119,9 +119,11 @@ async fn listar(
         "p.stock_minimo"
     };
     let inicializado_expr = if params.area_id.is_some() {
-        "EXISTS (SELECT 1 FROM movimientos mi JOIN lotes li ON li.id = mi.lote_id WHERE li.producto_id = p.id AND mi.area_id = $1::integer)"
+        "(EXISTS (SELECT 1 FROM movimientos mi JOIN lotes li ON li.id = mi.lote_id WHERE li.producto_id = p.id AND mi.area_id = $1::integer)
+          OR EXISTS (SELECT 1 FROM stock si JOIN lotes lsi ON lsi.id = si.lote_id WHERE lsi.producto_id = p.id AND si.area_id = $1::integer))"
     } else {
-        "EXISTS (SELECT 1 FROM movimientos mi JOIN lotes li ON li.id = mi.lote_id WHERE li.producto_id = p.id)"
+        "(EXISTS (SELECT 1 FROM movimientos mi JOIN lotes li ON li.id = mi.lote_id WHERE li.producto_id = p.id)
+          OR EXISTS (SELECT 1 FROM stock si JOIN lotes lsi ON lsi.id = si.lote_id WHERE lsi.producto_id = p.id))"
     };
 
     // Filter by type — `estado` param + legacy compat
@@ -709,6 +711,11 @@ async fn alertas(
                        FROM movimientos m
                        JOIN lotes lm ON lm.id = m.lote_id
                        WHERE lm.producto_id = p.id {}
+                   ) OR EXISTS (
+                       SELECT 1
+                       FROM stock si
+                       JOIN lotes lsi ON lsi.id = si.lote_id
+                       WHERE lsi.producto_id = p.id {}
                    ) AS inicializado
                FROM productos p
                LEFT JOIN lotes l ON l.producto_id = p.id
@@ -821,6 +828,7 @@ async fn alertas(
                nombre ASC
            LIMIT $1 OFFSET $2"#,
         movement_area_filter,
+        stock_area_filter,
         stock_area_filter,
         movement_area_filter,
         pedidos_cte,

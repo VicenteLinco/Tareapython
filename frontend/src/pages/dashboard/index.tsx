@@ -18,8 +18,8 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
-import type { Alerta, PaginatedResponse, StockItem } from '@/types'
-import { cn, daysUntil } from '@/lib/utils'
+import type { Alerta, PaginatedResponse } from '@/types'
+import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/page-state'
 import { useAuthStore } from '@/hooks/use-auth-store'
 
@@ -110,9 +110,12 @@ export default function DashboardPage() {
   const results = useQueries({
     queries: [
       {
-        queryKey: ['stock-summary'],
+        queryKey: ['stock-summary', areaIdsParam],
         queryFn: () =>
-          api.get<PaginatedResponse<unknown>>('/stock', { params: { per_page: 1 } }).then((r) => r.data),
+          api.get<PaginatedResponse<unknown>>('/stock', {
+            params: { per_page: 1, ...(areaIdsParam ? { area_ids: areaIdsParam } : {}) },
+          }).then((r) => r.data),
+        staleTime: 30000,
       },
       {
         queryKey: ['alertas', areaIdsParam],
@@ -122,55 +125,16 @@ export default function DashboardPage() {
           }).then((r) => r.data),
         refetchInterval: 60000,
         retry: 1,
-      },
-      {
-        queryKey: ['stock-vence-pronto', areaIdsParam],
-        queryFn: () =>
-          api.get<PaginatedResponse<StockItem>>('/stock', {
-            params: {
-              estado: 'vence_pronto',
-              per_page: 200,
-              ...(filtrarMisAreas && misAreaIds.length === 1 ? { area_id: misAreaIds[0] } : {}),
-            },
-          }).then((r) => r.data),
-        refetchInterval: 60000,
-        retry: 1,
+        staleTime: 30000,
       },
     ],
   })
 
-  const [stockQ, alertasQ, vencimientosQ] = results
+  const [stockQ, alertasQ] = results
   const loading = results.some((r) => r.isLoading)
 
   const totalItems = stockQ.data?.total ?? 0
-  const alertasBase = alertasQ.data?.data ?? []
-  const vencimientosDesdeInventario: Alerta[] = (vencimientosQ.data?.data ?? [])
-    .filter((item) => item.proximo_vencimiento && (item.stock_total ?? 0) > 0)
-    .map((item) => {
-      const dias = daysUntil(item.proximo_vencimiento)
-      const tipo_alerta: Alerta['tipo_alerta'] =
-        dias !== null && dias < 0 ? 'vencido' : dias !== null && dias <= 30 ? 'vence_30d' : 'vence_90d'
-      return {
-        tipo_alerta,
-        producto_id: item.producto_id,
-        nombre: item.producto_nombre,
-        proxima_fecha_venc: item.proximo_vencimiento,
-        stock_minimo: item.stock_minimo,
-        total: item.stock_total,
-        unidad: item.unidad,
-        unidad_plural: item.unidad_plural,
-        dias_autonomia: item.dias_autonomia ?? undefined,
-        dias_con_consumo: item.dias_con_consumo,
-        proveedor_nombre: item.proveedor_nombre,
-      }
-    })
-
-  const alerts = [
-    ...alertasBase,
-    ...vencimientosDesdeInventario.filter((v) =>
-      !alertasBase.some((a) => a.producto_id === v.producto_id && a.tipo_alerta === v.tipo_alerta),
-    ),
-  ]
+  const alerts = alertasQ.data?.data ?? []
 
   const sinStock = alerts.filter((a) => a.tipo_alerta === 'sin_stock').length
   const stockBajo = alerts.filter((a) => a.tipo_alerta === 'bajo_minimo').length
@@ -184,7 +148,9 @@ export default function DashboardPage() {
   )
   const hayUrgencias = alerts.length > 0
   const severidadBanner = alertasCriticas.length > 0 ? 'critica' : 'warning'
-  const alertasMostradas = [...alertasCriticas, ...alertasWarning]
+  const alertasMostradas = Array.from(
+    new Map([...alertasCriticas, ...alertasWarning].map((a) => [a.producto_id, a])).values(),
+  )
   const totalAlertasPrioritarias = alerts.length
 
   return (
@@ -384,7 +350,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {!loading && alerts.length === 0 && !alertasQ.isError && (
+      {!loading && alerts.length === 0 && !stockQ.isError && !alertasQ.isError && (
         <EmptyState
           icon={<CheckCircle2 className="h-6 w-6 text-success" />}
           title="Inventario en buen estado"

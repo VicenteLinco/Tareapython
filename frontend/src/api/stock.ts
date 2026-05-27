@@ -1,9 +1,9 @@
 // Dominio: stock, lotes, consumos, descartes
 import api from '@/lib/api'
 import type {
+  Alerta,
   StockItem,
   StockPorArea,
-  AlertasResponse,
   Lote,
   PaginatedResponse,
   DescarteSession,
@@ -19,6 +19,7 @@ export interface StockQuery {
   bajo_minimo?: boolean
   con_alertas?: boolean
   estado?: 'todos' | 'normal' | 'bajo' | 'sin_stock' | 'vence_pronto'
+  area_ids?: string | number[] | null
   page?: number
   per_page?: number
 }
@@ -85,7 +86,13 @@ export interface AlertasQuery {
 
 /** GET /stock — Listar stock global con filtros opcionales */
 export async function listarStock(params?: StockQuery): Promise<{ data: StockItem[]; total: number; page: number; per_page: number; total_pages: number }> {
-  const { data } = await api.get('/stock', { params })
+  const apiParams = params
+    ? {
+        ...params,
+        area_ids: Array.isArray(params.area_ids) ? params.area_ids.join(',') : params.area_ids,
+      }
+    : undefined
+  const { data } = await api.get('/stock', { params: apiParams })
   return data
 }
 
@@ -96,14 +103,14 @@ export async function stockPorArea(areaId: number, params?: { page?: number; per
 }
 
 /** GET /stock/alertas — Alertas de stock (bajo mínimo, por vencer, vencidos) */
-export async function obtenerAlertas(params?: AlertasQuery): Promise<AlertasResponse> {
+export async function obtenerAlertas(params?: AlertasQuery): Promise<PaginatedResponse<Alerta>> {
   const apiParams = params
     ? {
         ...params,
         area_ids: Array.isArray(params.area_ids) ? params.area_ids.join(',') : params.area_ids,
       }
     : undefined
-  const { data } = await api.get<AlertasResponse>('/stock/alertas', { params: apiParams })
+  const { data } = await api.get<PaginatedResponse<Alerta>>('/stock/alertas', { params: apiParams })
   return data
 }
 

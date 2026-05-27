@@ -75,10 +75,27 @@ export function formatDateTime(date: string | Date): string {
 
 export function daysUntil(date: string | Date | null | undefined): number | null {
   if (!date) return null
-  const target = new Date(date)
-  if (isNaN(target.getTime())) return null
+  const parseDateOnly = (value: string | Date): Date | null => {
+    if (value instanceof Date) {
+      if (isNaN(value.getTime())) return null
+      return new Date(value.getFullYear(), value.getMonth(), value.getDate())
+    }
+
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (match) {
+      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    }
+
+    const parsed = new Date(value)
+    if (isNaN(parsed.getTime())) return null
+    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
+  }
+
+  const target = parseDateOnly(date)
+  if (!target) return null
   const now = new Date()
-  return Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
 /**

@@ -90,13 +90,6 @@ export interface Alerta {
   proveedor_nombre?: string | null
 }
 
-export interface AlertasResponse {
-  bajo_minimo: Alerta[]
-  por_vencer_30d: Alerta[]
-  por_vencer_90d: Alerta[]
-  vencidos: Alerta[]
-}
-
 export interface Movimiento {
   id: number
   tipo: 'entrada' | 'salida' | 'descarte' | 'ajuste' | 'ajuste_pos' | 'ajuste_neg' | 'transferencia_entrada' | 'transferencia_salida'

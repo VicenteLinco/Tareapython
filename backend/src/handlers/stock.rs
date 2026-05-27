@@ -22,6 +22,7 @@ use crate::services::stock_ops;
 #[derive(Debug, Deserialize)]
 struct StockQuery {
     area_id: Option<i32>,
+    area_ids: Option<String>,
     q: Option<String>,
     categoria_id: Option<i32>,
     proveedor_id: Option<i32>,
@@ -31,6 +32,26 @@ struct StockQuery {
     estado: Option<String>, // nuevo param unificado: todos|normal|bajo|critico|sin_stock
     page: Option<i64>,
     per_page: Option<i64>,
+}
+
+fn parse_area_ids(value: Option<&str>) -> Result<Vec<i32>, AppError> {
+    value
+        .unwrap_or("")
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            s.parse::<i32>()
+                .map_err(|_| AppError::Validation("area_ids debe contener solo enteros".into()))
+        })
+        .collect()
+}
+
+fn escape_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 // === Handlers ===
@@ -43,9 +64,26 @@ async fn listar(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let forecast_cfg = load_forecast_config(&state.pool).await?;
 
+    let requested_area_ids = parse_area_ids(params.area_ids.as_deref())?;
+
+    if params.area_id.is_some() && !requested_area_ids.is_empty() {
+        return Err(AppError::Validation(
+            "Usa area_id o area_ids, no ambos".into(),
+        ));
+    }
+
+    let scoped_area_ids = if let Some(aid) = params.area_id {
+        vec![aid]
+    } else {
+        requested_area_ids
+    };
+
     // Si se filtra por área, validar acceso
     if let Some(aid) = params.area_id {
         stock_ops::validar_acceso_area(&state.pool, claims.sub, aid, &claims.rol).await?;
+    }
+    for aid in &scoped_area_ids {
+        stock_ops::validar_acceso_area(&state.pool, claims.sub, *aid, &claims.rol).await?;
     }
 
     let pagination = PaginationParams {
@@ -75,19 +113,38 @@ async fn listar(
     let mut param_idx = 0;
     let mut binds = Vec::new();
 
-    let area_filter = if let Some(aid) = params.area_id {
+    let scoped_area_array = if scoped_area_ids.is_empty() {
+        None
+    } else {
+        Some(
+            scoped_area_ids
+                .iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        )
+    };
+
+    let area_filter = if let Some(area_ids) = &scoped_area_array {
+        format!("AND s.area_id = ANY(ARRAY[{}]::integer[])", area_ids)
+    } else if let Some(aid) = params.area_id {
         param_idx += 1;
         binds.push(aid.to_string());
         format!("AND s.area_id = ${}::integer", param_idx)
     } else {
         "".to_string()
     };
+    let movement_area_filter = if let Some(area_ids) = &scoped_area_array {
+        format!("AND m.area_id = ANY(ARRAY[{}]::integer[])", area_ids)
+    } else {
+        "".to_string()
+    };
 
     let q_filter = if let Some(q) = &params.q {
         param_idx += 1;
-        binds.push(format!("%{}%", q));
+        binds.push(format!("%{}%", escape_like(q)));
         format!(
-            "AND (p.nombre ILIKE ${0} OR p.codigo_interno ILIKE ${0})",
+            "AND (p.nombre ILIKE ${0} ESCAPE '\\' OR p.codigo_interno ILIKE ${0} ESCAPE '\\')",
             param_idx
         )
     } else {
@@ -113,17 +170,29 @@ async fn listar(
         "".to_string()
     };
 
-    let stock_minimo_expr = if params.area_id.is_some() {
-        "COALESCE((SELECT pa.stock_minimo FROM producto_area pa WHERE pa.producto_id = p.id AND pa.area_id = $1::integer), p.stock_minimo, 0)"
+    let stock_minimo_expr = if let Some(area_ids) = &scoped_area_array {
+        format!(
+            "COALESCE((
+                SELECT SUM(pa.stock_minimo)
+                FROM producto_area pa
+                WHERE pa.producto_id = p.id
+                  AND pa.area_id = ANY(ARRAY[{}]::integer[])
+                  AND pa.stock_minimo > 0
+            ), p.stock_minimo, 0)",
+            area_ids
+        )
     } else {
-        "p.stock_minimo"
+        "p.stock_minimo".to_string()
     };
-    let inicializado_expr = if params.area_id.is_some() {
-        "(EXISTS (SELECT 1 FROM movimientos mi JOIN lotes li ON li.id = mi.lote_id WHERE li.producto_id = p.id AND mi.area_id = $1::integer)
-          OR EXISTS (SELECT 1 FROM stock si JOIN lotes lsi ON lsi.id = si.lote_id WHERE lsi.producto_id = p.id AND si.area_id = $1::integer))"
+    let inicializado_expr = if let Some(area_ids) = &scoped_area_array {
+        format!(
+            "(EXISTS (SELECT 1 FROM movimientos mi JOIN lotes li ON li.id = mi.lote_id WHERE li.producto_id = p.id AND mi.area_id = ANY(ARRAY[{}]::integer[]))
+              OR EXISTS (SELECT 1 FROM stock si JOIN lotes lsi ON lsi.id = si.lote_id WHERE lsi.producto_id = p.id AND si.area_id = ANY(ARRAY[{}]::integer[])))",
+            area_ids, area_ids
+        )
     } else {
         "(EXISTS (SELECT 1 FROM movimientos mi JOIN lotes li ON li.id = mi.lote_id WHERE li.producto_id = p.id)
-          OR EXISTS (SELECT 1 FROM stock si JOIN lotes lsi ON lsi.id = si.lote_id WHERE lsi.producto_id = p.id))"
+          OR EXISTS (SELECT 1 FROM stock si JOIN lotes lsi ON lsi.id = si.lote_id WHERE lsi.producto_id = p.id))".to_string()
     };
 
     // Filter by type — `estado` param + legacy compat
@@ -165,6 +234,7 @@ async fn listar(
                JOIN lotes l ON l.id = m.lote_id
                WHERE m.tipo = 'CONSUMO'
                  AND m.created_at >= (SELECT desde FROM ventana)
+                 {}
                GROUP BY l.producto_id, m.created_at::date
            ),
            series AS (
@@ -199,7 +269,7 @@ async fn listar(
                    COUNT(DISTINCT CASE WHEN m.tipo = 'CONSUMO' THEN m.created_at::date END) AS dias_con_consumo,
                    EXTRACT(DAY FROM (NOW() - MIN(m.created_at)))::INT + 1 AS dias_vida_sistema
                FROM lotes l
-               LEFT JOIN movimientos m ON m.lote_id = l.id AND m.tipo = 'CONSUMO' AND m.created_at >= NOW() - ({}::int * INTERVAL '1 day')
+               LEFT JOIN movimientos m ON m.lote_id = l.id AND m.tipo = 'CONSUMO' AND m.created_at >= NOW() - ({}::int * INTERVAL '1 day') {}
                GROUP BY l.producto_id
            ),
            fefo_prov AS (
@@ -232,7 +302,7 @@ async fn listar(
                    COALESCE(ms.dias_con_consumo, 0) as dias_con_consumo,
                    CASE
                        WHEN ms.dias_vida_sistema < 30 AND ms.dias_con_consumo >= 3 THEN
-                           COALESCE(ms.consumo_diario_ponderado * (30.0 / NULLIF(ms.dias_vida_sistema, 0)), 0)::NUMERIC(15,4)
+                           COALESCE(ms.consumo_diario_ponderado * (30.0 / GREATEST(ms.dias_vida_sistema, 7)), 0)::NUMERIC(15,4)
                        ELSE COALESCE(ms.consumo_diario_ponderado, 0)::NUMERIC(15,4)
                    END AS consumo_diario_ajustado,
                    -- consumo_base_estimado replica la lógica de calcular_autonomia en Rust:
@@ -264,8 +334,10 @@ async fn listar(
            ORDER BY f.producto_nombre
            LIMIT ${} OFFSET ${}"#,
         forecast_cfg.ventana_demanda_dias,
+        movement_area_filter,
         area_filter,
         forecast_cfg.ventana_demanda_dias,
+        movement_area_filter,
         stock_minimo_expr,
         inicializado_expr,
         q_filter,
@@ -306,33 +378,49 @@ async fn listar(
         1
     };
 
+    let resumen_area_filter = scoped_area_array
+        .as_ref()
+        .map(|area_ids| format!("AND s.area_id = ANY(ARRAY[{}]::integer[])", area_ids))
+        .unwrap_or_default();
+
     // Resumen
     let resumen_total: (i64,) = sqlx::query_as(
-        "SELECT COUNT(DISTINCT l.producto_id) FROM stock s JOIN lotes l ON l.id = s.lote_id JOIN productos p ON p.id = l.producto_id WHERE s.cantidad > 0 AND p.activo = true",
+        &format!(
+            "SELECT COUNT(DISTINCT l.producto_id) FROM stock s JOIN lotes l ON l.id = s.lote_id JOIN productos p ON p.id = l.producto_id WHERE s.cantidad > 0 AND p.activo = true {}",
+            resumen_area_filter
+        ),
     )
     .fetch_one(&state.pool)
     .await?;
 
     let bajo_minimo: (i64,) = sqlx::query_as(
-        r#"SELECT COUNT(DISTINCT producto_id) FROM (
+        &format!(
+            r#"SELECT COUNT(DISTINCT producto_id) FROM (
             SELECT l.producto_id FROM stock s
             JOIN lotes l ON l.id = s.lote_id
             JOIN productos p ON p.id = l.producto_id
             LEFT JOIN producto_area pa ON pa.producto_id = p.id AND pa.area_id = s.area_id
-            WHERE s.cantidad > 0 AND COALESCE(pa.stock_minimo, p.stock_minimo, 0) > 0 AND p.activo = true
+            WHERE s.cantidad > 0 AND COALESCE(pa.stock_minimo, p.stock_minimo, 0) > 0 AND p.activo = true {}
             GROUP BY l.producto_id, s.area_id, pa.stock_minimo, p.stock_minimo
             HAVING SUM(s.cantidad) < COALESCE(pa.stock_minimo, p.stock_minimo, 0)
         ) sub"#,
+            resumen_area_filter
+        ),
     )
     .fetch_one(&state.pool)
     .await?;
 
-    let por_vencer: (i64,) = sqlx::query_as(
+    let por_vencer: (i64,) = sqlx::query_as(&format!(
         r#"SELECT COUNT(DISTINCT l.producto_id) FROM stock s
            JOIN lotes l ON l.id = s.lote_id
            JOIN productos p ON p.id = l.producto_id
-           WHERE s.cantidad > 0 AND p.activo = true AND l.fecha_vencimiento <= CURRENT_DATE + INTERVAL '90 days'"#,
-    )
+           WHERE s.cantidad > 0
+             AND p.activo = true
+             AND l.fecha_vencimiento >= CURRENT_DATE
+             AND l.fecha_vencimiento <= CURRENT_DATE + INTERVAL '90 days'
+             {}"#,
+        resumen_area_filter
+    ))
     .fetch_one(&state.pool)
     .await?;
 
@@ -443,9 +531,11 @@ async fn stock_por_area(
     let pagination = PaginationParams {
         page: params.page,
         per_page: params.per_page,
-    };
+    }
+    .validated()?;
     let limit = pagination.per_page();
     let offset = pagination.offset();
+    let q_like = params.q.as_ref().map(|q| format!("%{}%", escape_like(q)));
 
     // Query unificada: productos + lotes + presentaciones en una sola round-trip con JSON aggregation
     let data_sql = format!(
@@ -480,18 +570,32 @@ async fn stock_por_area(
            JOIN productos p ON p.id = l.producto_id
            JOIN unidades_basicas um ON um.id = p.unidad_base_id
            LEFT JOIN producto_area pa ON pa.producto_id = p.id AND pa.area_id = $1
-           WHERE s.area_id = $1 AND s.cantidad > 0
+           WHERE s.area_id = $1 AND s.cantidad > 0 AND p.activo = true
            {}
            GROUP BY p.id, p.codigo_interno, p.nombre, um.nombre, um.nombre_plural, pa.stock_minimo, p.stock_minimo
            ORDER BY p.nombre
            LIMIT ${} OFFSET ${}"#,
         if params.q.is_some() {
-            "AND (p.nombre ILIKE $2 OR p.codigo_interno ILIKE $2)"
+            "AND (p.nombre ILIKE $2 ESCAPE '\\' OR p.codigo_interno ILIKE $2 ESCAPE '\\')"
         } else {
             ""
         },
         if params.q.is_some() { 3 } else { 2 },
         if params.q.is_some() { 4 } else { 3 },
+    );
+
+    let count_sql = format!(
+        r#"SELECT COUNT(DISTINCT p.id)
+           FROM stock s
+           JOIN lotes l ON l.id = s.lote_id
+           JOIN productos p ON p.id = l.producto_id
+           WHERE s.area_id = $1 AND s.cantidad > 0 AND p.activo = true
+           {}"#,
+        if params.q.is_some() {
+            "AND (p.nombre ILIKE $2 ESCAPE '\\' OR p.codigo_interno ILIKE $2 ESCAPE '\\')"
+        } else {
+            ""
+        },
     );
 
     #[derive(sqlx::FromRow)]
@@ -503,14 +607,21 @@ async fn stock_por_area(
         unidad_plural: String,
         stock_minimo: Option<Decimal>,
         stock: Decimal,
+        presentaciones: Option<serde_json::Value>,
         lotes: Option<serde_json::Value>,
     }
 
     let mut query = sqlx::query_as::<_, StockAreaRow>(&data_sql).bind(area_id);
-    if let Some(q) = &params.q {
-        query = query.bind(format!("%{}%", q));
+    if let Some(q) = &q_like {
+        query = query.bind(q);
     }
     query = query.bind(limit).bind(offset);
+
+    let mut count_query = sqlx::query_as::<_, (i64,)>(&count_sql).bind(area_id);
+    if let Some(q) = &q_like {
+        count_query = count_query.bind(q);
+    }
+    let total = count_query.fetch_one(&state.pool).await?.0;
 
     let filas = query.fetch_all(&state.pool).await?;
 
@@ -525,14 +636,24 @@ async fn stock_por_area(
                 "unidad_plural": row.unidad_plural,
                 "stock_minimo": row.stock_minimo,
                 "stock": row.stock,
+                "presentaciones": row.presentaciones.unwrap_or(serde_json::json!([])),
                 "lotes": row.lotes.unwrap_or(serde_json::json!([])),
             })
         })
         .collect();
+    let total_pages = if limit > 0 {
+        (total + limit - 1) / limit
+    } else {
+        1
+    };
 
     Ok(Json(serde_json::json!({
         "area": area,
         "productos": productos_con_lotes,
+        "total": total,
+        "page": pagination.page(),
+        "per_page": limit,
+        "total_pages": total_pages,
     })))
 }
 
@@ -650,12 +771,17 @@ async fn alertas(
 
     // Limita el stock usado por las alertas sin exigir stock positivo; si no,
     // los productos quebrados desaparecen precisamente cuando deben alertar.
-    let (stock_area_filter, movement_area_filter, product_area_filter) =
+    let (stock_area_filter, stock_exists_area_filter, movement_area_filter, product_area_filter) =
         if effective_area_ids.is_empty() {
             if claims.rol == "admin" {
-                (String::new(), String::new(), String::new())
+                (String::new(), String::new(), String::new(), String::new())
             } else {
-                (String::new(), String::new(), "AND FALSE".to_string())
+                (
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    "AND FALSE".to_string(),
+                )
             }
         } else {
             let arr = effective_area_ids
@@ -665,6 +791,7 @@ async fn alertas(
                 .join(",");
             (
                 format!("AND s.area_id = ANY(ARRAY[{}]::integer[])", arr),
+                format!("AND si.area_id = ANY(ARRAY[{}]::integer[])", arr),
                 format!("AND m.area_id = ANY(ARRAY[{}]::integer[])", arr),
                 String::new(),
             )
@@ -758,8 +885,8 @@ async fn alertas(
                    ss.proxima_fecha_venc,
                    ms.ultimo_movimiento,
                    CASE
-                       WHEN ms.dias_vida_sistema < 30 THEN
-                           COALESCE(ms.consumo_diario_ponderado * (30.0 / NULLIF(ms.dias_vida_sistema, 0)), 0)::NUMERIC(15,4)
+                       WHEN ms.dias_vida_sistema < 30 AND ms.dias_con_consumo >= 3 THEN
+                           COALESCE(ms.consumo_diario_ponderado * (30.0 / GREATEST(ms.dias_vida_sistema, 7)), 0)::NUMERIC(15,4)
                        ELSE COALESCE(ms.consumo_diario_ponderado, 0)::NUMERIC(15,4)                   END AS consumo_diario_ajustado,
                    ms.dias_con_consumo,
                    (ms.consumo_7d > ms.consumo_diario_ponderado * 3 AND ms.dias_con_consumo > 5) AS es_anomalia
@@ -828,7 +955,7 @@ async fn alertas(
                nombre ASC
            LIMIT $1 OFFSET $2"#,
         movement_area_filter,
-        stock_area_filter,
+        stock_exists_area_filter,
         stock_area_filter,
         movement_area_filter,
         pedidos_cte,
@@ -889,7 +1016,7 @@ async fn lotes_vencidos(
         .as_ref()
         .map(|s| s.trim())
         .filter(|s| s.chars().count() >= 2)
-        .map(|s| format!("%{}%", s.to_lowercase()));
+        .map(|s| format!("%{}%", escape_like(&s.to_lowercase())));
 
     let mut conditions = vec![
         "s.cantidad > 0".to_string(),
@@ -897,8 +1024,8 @@ async fn lotes_vencidos(
             ($2::TEXT IS NULL AND l.fecha_vencimiento <= CURRENT_DATE + ($1 * INTERVAL '1 day'))
             OR
             ($2::TEXT IS NOT NULL AND (
-                LOWER(p.nombre) LIKE $2
-                OR LOWER(l.numero_lote) LIKE $2
+                LOWER(p.nombre) LIKE $2 ESCAPE '\'
+                OR LOWER(l.numero_lote) LIKE $2 ESCAPE '\'
             ))
         )"
         .to_string(),

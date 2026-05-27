@@ -14,6 +14,7 @@ import { formatDate, daysUntil, cn, formatCantidad } from '@/lib/utils'
 import { CantidadConUnidad } from '@/components/ui/cantidad'
 import { notify } from '@/lib/notify'
 import { toDecimal, toNum } from '@/domain/parse'
+import { AuthenticatedUploadImage } from '@/components/ui/authenticated-image'
 
 interface RecepcionHeader {
   id: string
@@ -48,46 +49,6 @@ interface RecepcionDetalleResponse {
   foto_documento: string | null
   foto_actualizada_at: string | null
   detalle: DetalleItem[]
-}
-
-function AuthenticatedUploadImage({ path, alt, className }: { path: string; alt: string; className?: string }) {
-  const [src, setSrc] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (path.startsWith('data:image')) {
-      setSrc(path)
-      return
-    }
-
-    setSrc(null)
-    let objectUrl: string | null = null
-    let cancelled = false
-
-    api.get(`/uploads/${path}`, { responseType: 'blob' })
-      .then((res) => {
-        if (cancelled) return
-        objectUrl = URL.createObjectURL(res.data)
-        setSrc(objectUrl)
-      })
-      .catch(() => {
-        if (!cancelled) notify.error('No se pudo cargar la foto')
-      })
-
-    return () => {
-      cancelled = true
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
-    }
-  }, [path])
-
-  if (!src) {
-    return (
-      <div className={cn('flex items-center justify-center bg-base-200 text-sm opacity-60', className)}>
-        Cargando foto...
-      </div>
-    )
-  }
-
-  return <img src={src} alt={alt} className={className} />
 }
 
 export default function RecepcionDetallePage() {
@@ -303,7 +264,7 @@ export default function RecepcionDetallePage() {
         <div className="flex flex-wrap items-center gap-2 pl-10">
           {foto_documento && (
             <button
-              className="btn btn-sm btn-outline gap-2"
+              className="btn btn-sm btn-primary shadow-md gap-2 font-bold px-4 hover:scale-[1.02] transition-all"
               onClick={() => setFotoOpen(true)}
             >
               <FileText className="h-4 w-4" />
@@ -317,23 +278,23 @@ export default function RecepcionDetallePage() {
 
           {!foto_documento && (
             <button
-              className={cn('btn btn-sm btn-outline gap-2', uploadFotoMut.isPending && 'loading')}
+              className={cn('btn btn-sm btn-primary shadow-md gap-2 font-bold px-5 hover:scale-[1.02] transition-all animate-pulse', uploadFotoMut.isPending && 'loading')}
               onClick={() => fileInputFirstRef.current?.click()}
               disabled={uploadFotoMut.isPending}
             >
               {!uploadFotoMut.isPending && <Upload className="h-4 w-4" />}
-              Adjuntar guía de despacho
+              Adjuntar foto de la guía
             </button>
           )}
 
           {foto_documento && !confirmReplace && (
             <button
-              className="btn btn-sm btn-outline gap-2"
+              className="btn btn-sm btn-outline gap-2 hover:scale-[1.02] transition-all"
               onClick={() => setConfirmReplace(true)}
               disabled={uploadFotoMut.isPending}
             >
               <Upload className="h-4 w-4" />
-              Reemplazar foto
+              Reemplazar foto de la guía
             </button>
           )}
 

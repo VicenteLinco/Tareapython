@@ -51,9 +51,9 @@ export type DescarteRequest = { items: DescarteItem[] }
 export type DescarteItem = { lote_id: string; area_id: number; cantidad: string; tipo: string; nota: string | null }
 export type DescarteResponse = { grupo_movimiento: string; movimientos: MovimientoGenerado[] }
 export type MovimientoGenerado = { id: string; numero_documento: string; cantidad: string; cantidad_resultante: string }
-export type RecepcionQuery = { proveedor_id: number | null; estado: string | null; desde: string | null; hasta: string | null; busqueda: string | null; area_id: number | null; page: number | null; per_page: number | null }
+export type RecepcionQuery = { proveedor_id: number | null; estado: string | null; desde: string | null; hasta: string | null; busqueda: string | null; area_id: number | null; page: number | null; per_page: number | null; solo_con_foto: boolean | null }
 export type PaginatedRecepciones = { data: RecepcionListItem[]; total: number; page: number; per_page: number; total_pages: number }
-export type RecepcionListItem = { id: string; numero_documento: string; proveedor_nombre: string; proveedor_icono: string | null; guia_despacho: string | null; estado: EstadoRecepcion; fecha_recepcion: string; usuario_nombre: string; created_at: string; areas_destino: string | null; tiene_foto: boolean; solicitud_id: string | null; items_count: number; lotes_count: number }
+export type RecepcionListItem = { id: string; numero_documento: string; proveedor_nombre: string; proveedor_icono: string | null; guia_despacho: string | null; guia_despacho_archivo: string | null; estado: EstadoRecepcion; fecha_recepcion: string; usuario_nombre: string; created_at: string; areas_destino: string | null; tiene_foto: boolean; solicitud_id: string | null; items_count: number; lotes_count: number }
 export type SubirFotoInput = { data_url: string }
 export type CreateRecepcion = { proveedor_id: number; guia_despacho: string | null; 
 /**
@@ -91,3 +91,4 @@ export interface ApiError {
   message: string;
   details?: Record<string, unknown>;
 }
+

@@ -187,6 +187,9 @@ pub async fn listar(
         aid_val = aid;
         param_idx += 1;
     }
+    if let Some(true) = params.solo_con_foto {
+        conditions.push("r.guia_despacho_archivo IS NOT NULL".to_string());
+    }
 
     let where_clause = if conditions.is_empty() {
         String::new()
@@ -197,7 +200,7 @@ pub async fn listar(
     let sql = format!(
         r#"SELECT
             r.id, r.numero_documento, p.nombre as proveedor_nombre, p.icono as proveedor_icono,
-            r.guia_despacho, r.estado::text AS estado, r.fecha_recepcion, u.nombre as usuario_nombre,
+            r.guia_despacho, r.guia_despacho_archivo, r.estado::text AS estado, r.fecha_recepcion, u.nombre as usuario_nombre,
             r.created_at, r.guia_despacho_archivo IS NOT NULL as tiene_foto,
             r.solicitud_id,
             (SELECT STRING_AGG(DISTINCT a.nombre, ', ')

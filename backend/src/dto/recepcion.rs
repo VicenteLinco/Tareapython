@@ -18,6 +18,7 @@ pub struct RecepcionQuery {
     pub area_id: Option<i32>,
     pub page: Option<i32>,
     pub per_page: Option<i32>,
+    pub solo_con_foto: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Type)]
@@ -36,6 +37,7 @@ pub struct RecepcionListItem {
     pub proveedor_nombre: String,
     pub proveedor_icono: Option<String>,
     pub guia_despacho: Option<String>,
+    pub guia_despacho_archivo: Option<String>,
     pub estado: EstadoRecepcion,
     pub fecha_recepcion: DateTime<Utc>,
     pub usuario_nombre: String,

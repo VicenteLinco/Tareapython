@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
-import { Plus, Search, FileText, FileX, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, Package } from 'lucide-react'
+import { Plus, Search, FileText, FileX, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, Package, Upload } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { PageLoading } from '@/components/ui/page-state'
@@ -17,6 +17,7 @@ import { CantidadConUnidad } from '@/components/ui/cantidad'
 import { notify } from '@/lib/notify'
 import { useFilterStorage } from '@/hooks/use-filter-storage'
 import { toDecimal, toNum } from '@/domain/parse'
+import { AuthenticatedUploadImage } from '@/components/ui/authenticated-image'
 
 const PAGE_SIZE = 15
 
@@ -76,6 +77,10 @@ interface RecepcionDetailPanelProps {
   onEliminar: (id: string) => void
   confirmarPending: boolean
   eliminarPending: boolean
+  onVerFoto: () => void
+  onAdjuntarFoto: () => void
+  onReemplazarFoto: () => void
+  uploadFotoPending: boolean
 }
 
 function RecepcionDetailPanel({
@@ -86,6 +91,10 @@ function RecepcionDetailPanel({
   onEliminar,
   confirmarPending,
   eliminarPending,
+  onVerFoto,
+  onAdjuntarFoto,
+  onReemplazarFoto,
+  uploadFotoPending,
 }: RecepcionDetailPanelProps) {
   if (isLoading || !recepcionData) {
     return (
@@ -98,13 +107,13 @@ function RecepcionDetailPanel({
     )
   }
 
-  const { recepcion, nota, detalle } = recepcionData
+  const { recepcion, nota, detalle, foto_documento } = recepcionData
   const esConfirmada = recepcion.estado !== 'borrador'
 
   return (
-    <div className="rounded-xl border border-base-200 bg-base-100 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
+    <div className="rounded-xl border border-base-200 bg-base-100 overflow-hidden flex flex-col max-h-[calc(100vh-120px)] shadow-sm">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-base-200 flex items-center justify-between gap-2 shrink-0">
+      <div className="px-4 py-3 border-b border-base-200 flex items-center justify-between gap-2 shrink-0 bg-base-200/20">
         <div className="min-w-0">
           <p className="font-mono font-semibold text-sm leading-tight">{recepcion.numero_documento}</p>
           <div className="flex items-center gap-1.5 mt-0.5">
@@ -145,6 +154,46 @@ function RecepcionDetailPanel({
               <p className="text-[10px] font-semibold uppercase tracking-wider opacity-40 mb-0.5">Guía de despacho</p>
               <p className="font-mono font-medium">{recepcion.guia_despacho}</p>
             </div>
+          )}
+        </div>
+
+        {/* Guía física de respaldo */}
+        <div className="border-t border-base-200 pt-3 space-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider opacity-45 flex items-center gap-1">
+            <FileText className="h-3.5 w-3.5" />
+            Guía de despacho (Física)
+          </p>
+          
+          {foto_documento ? (
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                className="btn btn-xs btn-primary font-bold shadow-sm w-full gap-1.5 hover:scale-[1.01] transition-all"
+                onClick={onVerFoto}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Ver Guía de despacho
+              </button>
+              <button
+                type="button"
+                className="btn btn-xs btn-outline w-full gap-1.5 hover:scale-[1.01] transition-all"
+                onClick={onReemplazarFoto}
+                disabled={uploadFotoPending}
+              >
+                {uploadFotoPending ? <span className="loading loading-spinner loading-xs" /> : <Upload className="h-3.5 w-3.5" />}
+                Reemplazar foto de la guía
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className={cn("btn btn-xs btn-primary font-bold shadow-md w-full gap-1.5 animate-pulse hover:scale-[1.01] transition-all", uploadFotoPending && "loading")}
+              onClick={onAdjuntarFoto}
+              disabled={uploadFotoPending}
+            >
+              {!uploadFotoPending && <Upload className="h-3.5 w-3.5" />}
+              Adjuntar foto de la guía
+            </button>
           )}
         </div>
 
@@ -263,9 +312,14 @@ export default function RecepcionesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [borradorAEliminar, setBorradorAEliminar] = useState<string | null>(null)
   const [borradorItemAEliminar, setBorradorItemAEliminar] = useState<RecepcionListItem | null>(null)
+  const [fotoOpen, setFotoOpen] = useState(false)
+  const [confirmReplace, setConfirmReplace] = useState(false)
+  
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const fileInputFirstRef = useRef<HTMLInputElement>(null)
 
   // Atajos de teclado
   useKeyboardShortcut({ key: 'n', onKeyDown: () => navigate('/recepciones/nueva') })
@@ -343,6 +397,29 @@ export default function RecepcionesPage() {
     },
     onError: () => notify.error('Error al eliminar borrador'),
   })
+
+  const uploadFotoMut = useMutation({
+    mutationFn: (dataUrl: string) =>
+      api.put(`/recepciones/${selectedId}/foto`, { data_url: dataUrl }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recepcion-detalle-inline', selectedId] })
+      queryClient.invalidateQueries({ queryKey: ['recepciones'] })
+      notify.success('Guía de despacho actualizada')
+      setConfirmReplace(false)
+    },
+    onError: () => notify.error('No se pudo guardar la foto'),
+  })
+
+  function handleFotoFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      uploadFotoMut.mutate(ev.target?.result as string)
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
 
   const handleRowClick = (id: string) => {
     if (window.innerWidth >= 1024) {
@@ -626,6 +703,14 @@ export default function RecepcionesPage() {
             }}
             confirmarPending={confirmarMutation.isPending}
             eliminarPending={eliminarMutation.isPending}
+            onVerFoto={() => setFotoOpen(true)}
+            onAdjuntarFoto={() => fileInputFirstRef.current?.click()}
+            onReemplazarFoto={() => {
+              if (window.confirm('La foto actual será reemplazada permanentemente. ¿Deseas continuar?')) {
+                fileInputRef.current?.click()
+              }
+            }}
+            uploadFotoPending={uploadFotoMut.isPending}
           />
         </div>
       )}
@@ -656,6 +741,32 @@ export default function RecepcionesPage() {
             : []),
         ]}
       />
+
+      {/* Inputs de foto ocultos */}
+      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFotoFile} />
+      <input ref={fileInputFirstRef} type="file" accept="image/*" className="hidden" onChange={handleFotoFile} />
+
+      {/* Lightbox foto */}
+      {fotoOpen && selectedRecepcion?.foto_documento && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setFotoOpen(false)}
+        >
+          <div className="relative max-h-[90vh] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="absolute -right-3 -top-3 btn btn-circle btn-sm btn-error z-10"
+              onClick={() => setFotoOpen(false)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <AuthenticatedUploadImage
+              path={selectedRecepcion.foto_documento}
+              alt="Guía de despacho"
+              className="max-h-[85vh] max-w-[85vw] rounded-xl shadow-2xl object-contain"
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

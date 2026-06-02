@@ -580,7 +580,7 @@ pub async fn obtener_detalles(
             pr.nombre as presentacion_nombre, rd.cantidad_presentaciones, 
             rd.factor_conversion_usado, rd.cantidad_unidades_base,
             um.nombre as unidad_base_nombre, um.nombre_plural as unidad_base_nombre_plural,
-            a.nombre as area_destino
+            a.nombre as area_destino, rd.lote_id as lote_id, l.codigo_interno as codigo_interno
            FROM recepcion_detalle rd
            JOIN productos p ON p.id = rd.producto_id
            JOIN lotes l ON l.id = rd.lote_id

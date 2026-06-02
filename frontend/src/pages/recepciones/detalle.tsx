@@ -3,12 +3,14 @@ import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Package, FileDown, FileText, X, Upload, Info,
-  AlertTriangle, CheckCircle2, Clock, Smartphone,
+  AlertTriangle, CheckCircle2, Clock, Smartphone, Printer,
 } from 'lucide-react'
 import { QrScannerSession } from './qr-scanner-session'
 import { Badge } from '@/components/ui/badge'
 import { PageLoading } from '@/components/ui/page-state'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
+import { Dialog } from '@/components/ui/dialog'
+import { LabelsSection } from './components/labels-section'
 import api from '@/lib/api'
 import { formatDate, daysUntil, cn, formatCantidad } from '@/lib/utils'
 import { CantidadConUnidad } from '@/components/ui/cantidad'
@@ -41,6 +43,8 @@ interface DetalleItem {
   unidad_base_nombre: string
   unidad_base_nombre_plural: string
   area_destino: string
+  lote_id: string
+  codigo_interno: string
 }
 
 interface RecepcionDetalleResponse {
@@ -58,6 +62,7 @@ export default function RecepcionDetallePage() {
   const [fotoOpen, setFotoOpen] = useState(false)
   const [confirmReplace, setConfirmReplace] = useState(false)
   const [showQrScanner, setShowQrScanner] = useState(false)
+  const [printModalOpen, setPrintModalOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const fileInputFirstRef = useRef<HTMLInputElement>(null)
 
@@ -303,6 +308,14 @@ export default function RecepcionDetallePage() {
             Exportar PDF
           </button>
 
+          <button
+            className="btn btn-sm btn-outline gap-2"
+            onClick={() => setPrintModalOpen(true)}
+          >
+            <Printer className="h-4 w-4" />
+            Imprimir etiquetas
+          </button>
+
           {!esConfirmada && (
             <>
               <button
@@ -498,6 +511,38 @@ export default function RecepcionDetallePage() {
           }}
           onClose={() => setShowQrScanner(false)}
         />
+      )}
+
+      {printModalOpen && (
+        <Dialog
+          open={printModalOpen}
+          onClose={() => setPrintModalOpen(false)}
+          title="Reimprimir etiquetas"
+        >
+          <div className="mt-1 text-xs text-base-content/60 mb-4 font-medium">
+            Configura el formato y cantidad de etiquetas para imprimir los lotes de esta recepción.
+          </div>
+          <LabelsSection
+            lotesConfirmados={detalle.map(item => ({
+              lote_id: item.lote_id,
+              codigo_interno: item.codigo_interno,
+              numero_lote: item.numero_lote,
+              fecha_vencimiento: item.fecha_vencimiento,
+              producto_nombre: item.producto_nombre,
+              presentacion_nombre: item.presentacion_nombre,
+              area_nombre: item.area_destino,
+              cantidad_etiquetas: 1
+            }))}
+          />
+          <div className="mt-4 border-t border-base-200 pt-3">
+            <button
+              className="btn btn-outline btn-sm w-full text-xs font-semibold py-2"
+              onClick={() => setPrintModalOpen(false)}
+            >
+              Cerrar
+            </button>
+          </div>
+        </Dialog>
       )}
     </div>
   )

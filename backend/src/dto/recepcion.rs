@@ -110,6 +110,8 @@ pub struct DetalleRecepcionRow {
     pub unidad_base_nombre: String,
     pub unidad_base_nombre_plural: String,
     pub area_destino: String,
+    pub lote_id: Uuid,
+    pub codigo_interno: String,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow, Type)]

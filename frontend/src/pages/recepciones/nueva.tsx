@@ -10,7 +10,6 @@ import { Dialog } from '@/components/ui/dialog'
 import { notify } from '@/lib/notify'
 import { toNum } from '@/domain/parse'
 import type { DecimalInput } from '@/domain/parse'
-import { imprimirEtiquetas } from '@/lib/label-print'
 import { useAreas, useProveedores, useConfiguracion } from '@/hooks/dominio'
 import { LabelsSection } from './components/labels-section'
 import { LoteBottomSheet } from './components/lote-bottom-sheet'
@@ -323,28 +322,18 @@ export default function NuevaRecepcionPage() {
       <Dialog
         open={printModal.open}
         onClose={() => { printModal.onClose(); navigate('/recepciones') }}
-        title="¿Imprimir etiquetas?"
+        title="Imprimir etiquetas de insumos"
       >
         {lotesConfirmados && (
           <LabelsSection lotesConfirmados={lotesConfirmados} />
         )}
-        <div className="flex gap-2 mt-4">
+        <div className="mt-4 border-t border-base-200 pt-3">
           <Button
             variant="outline"
-            className="flex-1"
+            className="w-full font-semibold text-xs py-2"
             onClick={() => { printModal.onClose(); navigate('/recepciones') }}
           >
-            Saltar
-          </Button>
-          <Button
-            className="flex-1"
-            onClick={async () => {
-              if (lotesConfirmados) await imprimirEtiquetas(lotesConfirmados)
-              printModal.onClose()
-              navigate('/recepciones')
-            }}
-          >
-            Imprimir y finalizar
+            Finalizar y volver a Recepciones
           </Button>
         </div>
       </Dialog>

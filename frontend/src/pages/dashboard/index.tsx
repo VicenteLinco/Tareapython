@@ -70,6 +70,15 @@ interface QuickActionProps {
   onClick: () => void
 }
 
+interface AlertasResponse extends PaginatedResponse<Alerta> {
+  resumen?: {
+    sin_stock: number
+    vencido: number
+    bajo_minimo: number
+    vencimiento: number
+  }
+}
+
 function QuickAction({ label, description, icon, onClick }: QuickActionProps) {
   return (
     <button
@@ -98,6 +107,12 @@ export default function DashboardPage() {
   const areaIdsParam = filtrarMisAreas && tieneMisAreas
     ? misAreaIds.join(',')
     : undefined
+  const stockPath = (params?: Record<string, string>) => {
+    const next = new URLSearchParams(params)
+    if (areaIdsParam) next.set('area_ids', areaIdsParam)
+    const query = next.toString()
+    return query ? `/stock?${query}` : '/stock'
+  }
 
   const [alertBannerDismissed, setAlertBannerDismissed] = useState(() =>
     sessionStorage.getItem('dashboard_alert_dismissed') === '1',
@@ -120,8 +135,8 @@ export default function DashboardPage() {
       {
         queryKey: ['alertas', areaIdsParam],
         queryFn: () =>
-          api.get<PaginatedResponse<Alerta>>('/stock/alertas', {
-            params: { per_page: 200, ...(areaIdsParam ? { area_ids: areaIdsParam } : {}) },
+          api.get<AlertasResponse>('/stock/alertas', {
+            params: { per_page: 100, ...(areaIdsParam ? { area_ids: areaIdsParam } : {}) },
           }).then((r) => r.data),
         refetchInterval: 60000,
         retry: 1,
@@ -135,23 +150,27 @@ export default function DashboardPage() {
 
   const totalItems = stockQ.data?.total ?? 0
   const alerts = alertasQ.data?.data ?? []
+  const alertasResumen = alertasQ.data?.resumen
 
-  const sinStock = alerts.filter((a) => a.tipo_alerta === 'sin_stock').length
-  const stockBajo = alerts.filter((a) => a.tipo_alerta === 'bajo_minimo').length
-  const porVencer = alerts.filter(
-    (a) => a.tipo_alerta === 'vencido' || a.tipo_alerta === 'vence_30d' || a.tipo_alerta === 'vence_90d',
+  const sinStock = alertasResumen?.sin_stock ?? alerts.filter((a) => a.tipo_alerta === 'sin_stock').length
+  const vencidos = alertasResumen?.vencido ?? alerts.filter((a) => a.tipo_alerta === 'vencido').length
+  const stockBajo = alertasResumen?.bajo_minimo ?? alerts.filter(
+    (a) => ['bajo_minimo', 'critico', 'reponer'].includes(a.tipo_alerta)
+  ).length
+  const porVencer = alertasResumen?.vencimiento ?? alerts.filter(
+    (a) => a.tipo_alerta === 'vence_30d' || a.tipo_alerta === 'vence_90d',
   ).length
 
-  const alertasCriticas = alerts.filter((a) => ['sin_stock', 'vencido'].includes(a.tipo_alerta))
+  const alertasCriticas = alerts.filter((a) => ['sin_stock', 'vencido', 'critico'].includes(a.tipo_alerta))
   const alertasWarning = alerts.filter((a) =>
-    ['bajo_minimo', 'vence_30d', 'vence_90d'].includes(a.tipo_alerta),
+    ['bajo_minimo', 'reponer', 'vence_30d', 'vence_90d'].includes(a.tipo_alerta),
   )
   const hayUrgencias = alerts.length > 0
   const severidadBanner = alertasCriticas.length > 0 ? 'critica' : 'warning'
   const alertasMostradas = Array.from(
     new Map([...alertasCriticas, ...alertasWarning].map((a) => [a.producto_id, a])).values(),
   )
-  const totalAlertasPrioritarias = alerts.length
+  const totalAlertasPrioritarias = alertasQ.data?.total ?? alerts.length
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -180,7 +199,7 @@ export default function DashboardPage() {
               {filtrarMisAreas ? 'Mis áreas' : 'Todo el lab'}
             </button>
           )}
-          <button type="button" onClick={() => navigate('/stock')} className="btn btn-outline btn-sm gap-2">
+          <button type="button" onClick={() => navigate(stockPath())} className="btn btn-outline btn-sm gap-2">
             <Package className="h-4 w-4" />
             Stock
           </button>
@@ -226,7 +245,7 @@ export default function DashboardPage() {
                   <button
                     type="button"
                     key={`${a.nombre}-${i}`}
-                    onClick={() => navigate('/stock?alertas=true')}
+                    onClick={() => navigate(stockPath({ alertas: 'true' }))}
                     className="max-w-full truncate rounded-full border border-base-300 bg-base-200/50 px-2.5 py-1 text-xs font-medium text-base-content/75 transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
                   >
                     {a.nombre}
@@ -235,7 +254,7 @@ export default function DashboardPage() {
                 {alertasMostradas.length > 4 && (
                   <button
                     type="button"
-                    onClick={() => navigate('/stock?alertas=true')}
+                    onClick={() => navigate(stockPath({ alertas: 'true' }))}
                     className="rounded-full border border-base-300 bg-base-200/50 px-2.5 py-1 text-xs font-medium text-base-content/65 transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
                   >
                     +{alertasMostradas.length - 4} más
@@ -246,7 +265,7 @@ export default function DashboardPage() {
 
             <button
               type="button"
-              onClick={() => navigate('/stock?alertas=true')}
+              onClick={() => navigate(stockPath({ alertas: 'true' }))}
               className="btn btn-ghost btn-xs hidden shrink-0 gap-1 sm:inline-flex"
             >
               Ver
@@ -259,14 +278,14 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         <StatCard
           label="Insumos activos"
           value={totalItems}
           icon={<Package className="h-4 w-4" />}
           tone="primary"
           loading={stockQ.isLoading}
-          onClick={() => navigate('/stock')}
+          onClick={() => navigate(stockPath())}
         />
         <StatCard
           label="Alertas"
@@ -275,7 +294,7 @@ export default function DashboardPage() {
           tone={totalAlertasPrioritarias > 0 ? 'warning' : 'info'}
           loading={alertasQ.isLoading}
           alert
-          onClick={() => navigate('/stock?alertas=true')}
+          onClick={() => navigate(stockPath({ alertas: 'true' }))}
         />
         <StatCard
           label="Sin stock"
@@ -284,7 +303,7 @@ export default function DashboardPage() {
           tone="error"
           loading={alertasQ.isLoading}
           alert
-          onClick={() => navigate('/stock?estado=sin_stock')}
+          onClick={() => navigate(stockPath({ estado: 'sin_stock' }))}
         />
         <StatCard
           label="Stock bajo"
@@ -293,7 +312,16 @@ export default function DashboardPage() {
           tone="warning"
           loading={alertasQ.isLoading}
           alert
-          onClick={() => navigate('/stock?estado=bajo')}
+          onClick={() => navigate(stockPath({ estado: 'bajo' }))}
+        />
+        <StatCard
+          label="Vencido"
+          value={vencidos}
+          icon={<Clock className="h-4 w-4" />}
+          tone="error"
+          loading={alertasQ.isLoading}
+          alert
+          onClick={() => navigate(stockPath({ estado: 'vencido' }))}
         />
         <StatCard
           label="Por vencer"
@@ -302,7 +330,7 @@ export default function DashboardPage() {
           tone="info"
           loading={alertasQ.isLoading}
           alert
-          onClick={() => navigate('/stock?estado=vence_pronto')}
+          onClick={() => navigate(stockPath({ estado: 'vence_pronto' }))}
         />
       </section>
 

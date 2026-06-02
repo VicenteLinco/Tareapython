@@ -51,6 +51,7 @@ export interface StockItem {
   proximo_vencimiento: string | null
   proveedor_nombre: string | null
   proveedor_icono: string | null
+  estado_alerta?: 'normal' | 'sin_stock' | 'vencido' | 'bajo_minimo' | 'vence_pronto' | 'critico' | 'reponer'
   imagen_url?: string | null
   area_id?: number
   area_nombre?: string
@@ -70,7 +71,7 @@ export interface StockPorArea {
 }
 
 export interface Alerta {
-  tipo_alerta: 'bajo_minimo' | 'vence_30d' | 'vence_90d' | 'vencido' | 'sin_stock'
+  tipo_alerta: 'bajo_minimo' | 'vence_30d' | 'vence_90d' | 'vencido' | 'sin_stock' | 'critico' | 'reponer'
   producto_id: string
   nombre: string
   proxima_fecha_venc: string | null

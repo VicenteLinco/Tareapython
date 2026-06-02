@@ -95,20 +95,16 @@ async fn listar(
     let limit = pagination.per_page();
     let offset = pagination.offset();
 
-    // Resolver filtro: `estado` es el nuevo param unificado; `filter` y `con_alertas`/`stock_bajo` se mantienen por compatibilidad
-    let estado = params.estado.as_deref().unwrap_or("");
-    let filter = if !estado.is_empty() {
-        // Mapear estado → valor de filter legacy
-        match estado {
-            "critico" => "bajo",
-            "sin_stock" => "sin-stock",
-            "vence_pronto" => "vencimiento",
-            _ => params.filter.as_deref().unwrap_or(""),
-        }
-    } else {
-        params.filter.as_deref().unwrap_or("")
+    let estado = match params.estado.as_deref().unwrap_or("") {
+        "critico" | "bajo_minimo" => "bajo",
+        "sin-stock" => "sin_stock",
+        "vencidos" => "vencido",
+        "vencimiento" => "vence_pronto",
+        other => other,
     };
-    let con_alertas = params.con_alertas == Some(true) || !filter.is_empty();
+    let filter = params.filter.as_deref().unwrap_or("");
+    let tiene_filtro_estado = !estado.is_empty() && estado != "todos";
+    let con_alertas = params.con_alertas == Some(true) || tiene_filtro_estado || !filter.is_empty();
 
     let mut param_idx = 0;
     let mut binds = Vec::new();
@@ -195,22 +191,21 @@ async fn listar(
           OR EXISTS (SELECT 1 FROM stock si JOIN lotes lsi ON lsi.id = si.lote_id WHERE lsi.producto_id = p.id))".to_string()
     };
 
-    // Filter by type — `estado` param + legacy compat
-    let stock_bajo_estado =
-        estado == "bajo" || estado == "critico" || params.stock_bajo == Some(true);
-    let normal_estado = estado == "normal";
-    let type_filter = match filter {
-        "vencimiento" => {
-            "AND (proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days' AND proximo_vencimiento >= CURRENT_DATE)"
-        }
-        "vencidos" => "AND proximo_vencimiento < CURRENT_DATE",
-        "sin-stock" => "AND stock_total <= 0 AND inicializado",
-        _ if params.con_alertas == Some(true) => {
-            "AND ((stock_total < stock_minimo AND stock_minimo > 0) OR proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days')"
-        }
-        _ if stock_bajo_estado => "AND stock_total < stock_minimo AND stock_minimo > 0",
-        _ if normal_estado => "AND (stock_minimo = 0 OR stock_total >= stock_minimo)",
-        _ => "",
+    let type_filter = match estado {
+        "sin_stock" => "AND estado_alerta = 'sin_stock'",
+        "vencido" => "AND estado_alerta = 'vencido'",
+        "bajo" => "AND estado_alerta IN ('bajo_minimo', 'critico', 'reponer')",
+        "vence_pronto" => "AND estado_alerta = 'vence_pronto'",
+        "normal" => "AND estado_alerta = 'normal'",
+        _ if params.stock_bajo == Some(true) => "AND estado_alerta IN ('bajo_minimo', 'critico', 'reponer')",
+        _ if params.con_alertas == Some(true) => "AND estado_alerta <> 'normal'",
+        _ => match filter {
+            "vencimiento" => "AND estado_alerta = 'vence_pronto'",
+            "vencidos" => "AND estado_alerta = 'vencido'",
+            "sin-stock" => "AND estado_alerta = 'sin_stock'",
+            "bajo" | "critico" => "AND estado_alerta IN ('bajo_minimo', 'critico', 'reponer')",
+            _ => "",
+        },
     };
 
     // Base query using the already updated 'stock' table
@@ -323,8 +318,33 @@ async fn listar(
                LEFT JOIN series sr ON sr.producto_id = p.id
                WHERE p.activo = true {} {} {}
            ),
+           enriched AS (
+               SELECT
+                   final_stats.*,
+                   CASE
+                       WHEN stock_total > 0 AND consumo_base_estimado > 0.0001 AND dias_con_consumo >= 3
+                           THEN (stock_total / consumo_base_estimado)
+                       ELSE NULL
+                   END AS dias_autonomia_sql
+               FROM final_stats
+           ),
+           enriched2 AS (
+               SELECT
+                   e.*,
+                   CASE
+                       WHEN inicializado AND stock_total <= 0 THEN 'sin_stock'
+                       WHEN proximo_vencimiento < CURRENT_DATE THEN 'vencido'
+                       WHEN dias_autonomia_sql IS NOT NULL AND dias_autonomia_sql <= COALESCE(lead_time_propio, 3) THEN 'critico'
+                       WHEN stock_minimo > 0 AND stock_total < stock_minimo AND stock_total > 0 THEN 'bajo_minimo'
+                       WHEN dias_autonomia_sql IS NOT NULL AND dias_autonomia_sql <= COALESCE(lead_time_propio, 3) + 7 THEN 'reponer'
+                       WHEN proximo_vencimiento >= CURRENT_DATE
+                            AND proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days' THEN 'vence_pronto'
+                       ELSE 'normal'
+                   END AS estado_alerta
+               FROM enriched e
+           ),
            filtered AS (
-               SELECT * FROM final_stats WHERE 1=1 {} {}
+               SELECT * FROM enriched2 WHERE 1=1 {} {}
            ),
            total_count AS (
                SELECT COUNT(*) as full_count FROM filtered
@@ -456,6 +476,7 @@ struct StockItemRow {
     proveedor_nombre: Option<String>,
     proveedor_icono: Option<String>,
     imagen_url: Option<String>,
+    estado_alerta: String,
     consumo_diario_ajustado: Decimal,
     dias_con_consumo: i64,
     #[sqlx(default)]
@@ -482,9 +503,16 @@ fn decimal_to_f64(value: Decimal) -> f64 {
 ///   que el consumo base (señal de variabilidad significativa).
 fn calcular_autonomia(row: &mut StockItemRow, cfg: ForecastConfig) {
     let stock_actual = decimal_to_f64(row.stock_total.unwrap_or(Decimal::ZERO));
+    let lead_time = row.lead_time_propio.unwrap_or(3);
+    
     if stock_actual <= 0.0 {
         row.dias_autonomia = Some(0);
         row.dias_autonomia_pico = None;
+        if row.inicializado {
+            row.estado_alerta = "sin_stock".to_string();
+        } else {
+            row.estado_alerta = "normal".to_string();
+        }
         return;
     }
 
@@ -512,6 +540,32 @@ fn calcular_autonomia(row: &mut StockItemRow, cfg: ForecastConfig) {
     } else {
         None
     };
+
+    // Recalcular y sobreescribir el estado para garantizar consistencia total con la lógica de autonomía en Rust
+    let hoy = chrono::Utc::now().date_naive();
+    if row.proximo_vencimiento.is_some() && row.proximo_vencimiento.unwrap() < hoy {
+        row.estado_alerta = "vencido".to_string();
+    } else if let Some(dias) = row.dias_autonomia {
+        if dias <= lead_time {
+            row.estado_alerta = "critico".to_string();
+        } else if row.stock_minimo > Decimal::ZERO && row.stock_total.unwrap_or(Decimal::ZERO) < row.stock_minimo {
+            row.estado_alerta = "bajo_minimo".to_string();
+        } else if dias <= lead_time + 7 {
+            row.estado_alerta = "reponer".to_string();
+        } else if row.proximo_vencimiento.is_some() && row.proximo_vencimiento.unwrap() <= hoy + chrono::Duration::days(90) {
+            row.estado_alerta = "vence_pronto".to_string();
+        } else {
+            row.estado_alerta = "normal".to_string();
+        }
+    } else {
+        if row.stock_minimo > Decimal::ZERO && row.stock_total.unwrap_or(Decimal::ZERO) < row.stock_minimo {
+            row.estado_alerta = "bajo_minimo".to_string();
+        } else if row.proximo_vencimiento.is_some() && row.proximo_vencimiento.unwrap() <= hoy + chrono::Duration::days(90) {
+            row.estado_alerta = "vence_pronto".to_string();
+        } else {
+            row.estado_alerta = "normal".to_string();
+        }
+    }
 }
 
 /// GET /api/v1/stock/area/:area_id — Stock de un área específica
@@ -724,6 +778,14 @@ struct AlertaRow {
     tiene_pedido_pendiente: bool,
     #[serde(skip)]
     total_count: i64,
+    #[serde(skip)]
+    sin_stock_count: i64,
+    #[serde(skip)]
+    vencido_count: i64,
+    #[serde(skip)]
+    bajo_minimo_count: i64,
+    #[serde(skip)]
+    vencimiento_count: i64,
 }
 
 /// GET /api/v1/stock/alertas — Productos que necesitan atención
@@ -769,8 +831,6 @@ async fn alertas(
         }
     };
 
-    // Limita el stock usado por las alertas sin exigir stock positivo; si no,
-    // los productos quebrados desaparecen precisamente cuando deben alertar.
     let (stock_area_filter, stock_exists_area_filter, movement_area_filter, product_area_filter) =
         if effective_area_ids.is_empty() {
             if claims.rol == "admin" {
@@ -899,6 +959,16 @@ async fn alertas(
                WHERE p.activo = true
                {}
            ),
+           stats_with_autonomia AS (
+                SELECT
+                    *,
+                    CASE
+                        WHEN total > 0 AND consumo_diario_ajustado > 0.0001 AND dias_con_consumo >= 3 THEN
+                            LEAST(FLOOR(total / consumo_diario_ajustado), 999)::INT
+                        ELSE NULL
+                    END as dias_autonomia
+                FROM stats
+           ),
            filtered_alertas AS (
                SELECT
                    producto_id,
@@ -919,38 +989,55 @@ async fn alertas(
                    consumo_diario_ajustado as consumo_diario_30d,
                    dias_con_consumo,
                    es_anomalia,
-                   CASE
-                       WHEN consumo_diario_ajustado > 0.0001 AND dias_con_consumo >= 3 THEN LEAST(FLOOR(total / consumo_diario_ajustado), 999)::INT
-                       ELSE NULL
-                   END as dias_autonomia,
+                   dias_autonomia,
                    alerta.tipo as tipo_alerta
-               FROM stats
+               FROM stats_with_autonomia
                CROSS JOIN LATERAL (
                    SELECT 'vencido' as tipo WHERE proxima_fecha_venc < CURRENT_DATE
                    UNION ALL
                    SELECT 'sin_stock' WHERE inicializado AND total <= 0
                    UNION ALL
-                   SELECT 'vence_30d' WHERE proxima_fecha_venc >= CURRENT_DATE AND proxima_fecha_venc <= CURRENT_DATE + INTERVAL '30 days'
+                   SELECT 'critico' WHERE total > 0 AND dias_autonomia IS NOT NULL AND dias_autonomia <= COALESCE(lead_time_propio, 3)
                    UNION ALL
                    SELECT 'bajo_minimo' WHERE stock_minimo > 0 AND total < stock_minimo AND total > 0
+                       AND NOT (dias_autonomia IS NOT NULL AND dias_autonomia <= COALESCE(lead_time_propio, 3))
+                   UNION ALL
+                   SELECT 'reponer' WHERE total > 0 AND dias_autonomia IS NOT NULL AND dias_autonomia > COALESCE(lead_time_propio, 3) AND dias_autonomia <= COALESCE(lead_time_propio, 3) + 7
+                       AND NOT (stock_minimo > 0 AND total < stock_minimo)
+                   UNION ALL
+                   SELECT 'vence_30d' WHERE proxima_fecha_venc >= CURRENT_DATE AND proxima_fecha_venc <= CURRENT_DATE + INTERVAL '30 days'
                    UNION ALL
                    SELECT 'vence_90d' WHERE proxima_fecha_venc > CURRENT_DATE + INTERVAL '30 days' AND proxima_fecha_venc <= CURRENT_DATE + INTERVAL '90 days'
                ) alerta
            ),
            total_count AS (
                SELECT COUNT(*) as full_count FROM filtered_alertas
+           ),
+           resumen AS (
+               SELECT
+                   COUNT(*) FILTER (WHERE tipo_alerta = 'sin_stock') AS sin_stock_count,
+                   COUNT(*) FILTER (WHERE tipo_alerta = 'vencido') AS vencido_count,
+                   COUNT(*) FILTER (WHERE tipo_alerta IN ('bajo_minimo', 'critico', 'reponer')) AS bajo_minimo_count,
+                   COUNT(*) FILTER (WHERE tipo_alerta IN ('vence_30d', 'vence_90d')) AS vencimiento_count
+               FROM filtered_alertas
            )
            SELECT
                fa.*,
-               tc.full_count as total_count
-           FROM filtered_alertas fa, total_count tc
+               tc.full_count as total_count,
+               r.sin_stock_count,
+               r.vencido_count,
+               r.bajo_minimo_count,
+               r.vencimiento_count
+           FROM filtered_alertas fa, total_count tc, resumen r
            ORDER BY
                CASE WHEN tipo_alerta = 'vencido' THEN 0
                     WHEN tipo_alerta = 'sin_stock' THEN 1
-                    WHEN tipo_alerta = 'vence_30d' THEN 2
-                    WHEN tipo_alerta = 'bajo_minimo' THEN 3
-                    WHEN tipo_alerta = 'vence_90d' THEN 4
-                    ELSE 5 END,
+                    WHEN tipo_alerta = 'critico' THEN 2
+                    WHEN tipo_alerta = 'vence_30d' THEN 3
+                    WHEN tipo_alerta = 'bajo_minimo' THEN 4
+                    WHEN tipo_alerta = 'reponer' THEN 5
+                    WHEN tipo_alerta = 'vence_90d' THEN 6
+                    ELSE 7 END,
                proxima_fecha_venc ASC NULLS LAST,
                nombre ASC
            LIMIT $1 OFFSET $2"#,
@@ -970,6 +1057,10 @@ async fn alertas(
         .await?;
 
     let total = rows.first().map(|r| r.total_count).unwrap_or(0);
+    let sin_stock_count = rows.first().map(|r| r.sin_stock_count).unwrap_or(0);
+    let vencido_count = rows.first().map(|r| r.vencido_count).unwrap_or(0);
+    let bajo_minimo_count = rows.first().map(|r| r.bajo_minimo_count).unwrap_or(0);
+    let vencimiento_count = rows.first().map(|r| r.vencimiento_count).unwrap_or(0);
     let total_pages = (total + per_page - 1) / per_page;
 
     Ok(Json(serde_json::json!({
@@ -978,6 +1069,12 @@ async fn alertas(
         "page": page,
         "per_page": per_page,
         "total_pages": total_pages,
+        "resumen": {
+            "sin_stock": sin_stock_count,
+            "vencido": vencido_count,
+            "bajo_minimo": bajo_minimo_count,
+            "vencimiento": vencimiento_count,
+        },
     })))
 }
 

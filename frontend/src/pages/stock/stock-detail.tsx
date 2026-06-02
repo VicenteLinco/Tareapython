@@ -58,7 +58,7 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
   }, [lotes, searchParams, setSearchParams])
 
   const stockTotal = Math.round(item.stock_total ?? 0)
-  const isLow = stockTotal <= item.stock_minimo && item.stock_minimo > 0
+  const isLow = stockTotal < item.stock_minimo && item.stock_minimo > 0
   const minimoLabel = Math.round(item.stock_minimo)
   const totalLotes = lotes?.reduce((s, l) => s + Math.round(l.stock_total ?? 0), 0) ?? stockTotal
 

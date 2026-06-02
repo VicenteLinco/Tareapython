@@ -486,6 +486,15 @@ async fn filtro_por_vencer_no_incluye_sin_stock(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::CREATED);
 
+    let (vencido_uuid, vencido_id) = setup_stock(&pool, &token, &app, 1, 100.0).await;
+    sqlx::query(
+        "UPDATE lotes SET fecha_vencimiento = CURRENT_DATE - INTERVAL '1 day' WHERE producto_id = $1",
+    )
+    .bind(vencido_uuid)
+    .execute(&pool)
+    .await
+    .expect("debe marcar el lote como vencido");
+
     let (status, json) =
         common::get_json(&app, "/api/v1/stock?estado=vence_pronto&area_id=1", &token).await;
 
@@ -499,6 +508,76 @@ async fn filtro_por_vencer_no_incluye_sin_stock(pool: PgPool) {
         !items.iter().any(|i| i["producto_id"] == sin_stock_id),
         "el filtro por vencer no debe incluir productos sin stock: {json}"
     );
+    assert!(
+        !items.iter().any(|i| i["producto_id"] == vencido_id),
+        "el filtro por vencer no debe incluir productos vencidos: {json}"
+    );
+
+    let (status, json) =
+        common::get_json(&app, "/api/v1/stock?estado=vencido&area_id=1", &token).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let items = json["data"].as_array().unwrap();
+    assert!(
+        items.iter().any(|i| i["producto_id"] == vencido_id),
+        "el filtro vencido debe incluir productos con lote positivo vencido: {json}"
+    );
+    assert!(
+        !items.iter().any(|i| i["producto_id"] == vence_id),
+        "el filtro vencido no debe incluir productos solo por vencer: {json}"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn filtro_normal_excluye_alarmas_operativas(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (_, normal_id) = setup_stock(&pool, &token, &app, 1, 150.0).await;
+    let (_, bajo_id) = setup_stock(&pool, &token, &app, 1, 50.0).await;
+    let (vencido_uuid, vencido_id) = setup_stock(&pool, &token, &app, 1, 150.0).await;
+    sqlx::query(
+        "UPDATE lotes SET fecha_vencimiento = CURRENT_DATE - INTERVAL '1 day' WHERE producto_id = $1",
+    )
+    .bind(vencido_uuid)
+    .execute(&pool)
+    .await
+    .expect("debe marcar lote vencido");
+
+    let (_, sin_stock_id) = setup_stock(&pool, &token, &app, 1, 100.0).await;
+    let idem_key = Uuid::new_v4().to_string();
+    let (status, _) = common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos",
+        &token,
+        serde_json::json!({
+            "producto_id": sin_stock_id,
+            "area_id": 1,
+            "cantidad": 100,
+            "unidad": "base",
+        }),
+        &idem_key,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, json) =
+        common::get_json(&app, "/api/v1/stock?estado=normal&area_id=1", &token).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let items = json["data"].as_array().unwrap();
+    assert!(
+        items
+            .iter()
+            .any(|i| i["producto_id"] == normal_id && i["estado_alerta"] == "normal"),
+        "normal debe incluir productos con stock positivo, minimo cubierto y sin vencimiento cercano: {json}"
+    );
+    for excluded_id in [bajo_id, vencido_id, sin_stock_id] {
+        assert!(
+            !items.iter().any(|i| i["producto_id"] == excluded_id),
+            "normal no debe incluir productos con alarmas operativas: {json}"
+        );
+    }
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -537,6 +616,16 @@ async fn filtro_sin_stock_incluye_agotados_sin_minimo(pool: PgPool) {
     assert!(
         items.iter().any(|i| i["producto_id"] == producto_id),
         "el filtro sin_stock debe incluir productos inicializados agotados aunque no tengan minimo: {json}"
+    );
+
+    let (status, json) =
+        common::get_json(&app, "/api/v1/stock?con_alertas=true&area_id=1", &token).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let items = json["data"].as_array().unwrap();
+    assert!(
+        items.iter().any(|i| i["producto_id"] == producto_id),
+        "la vista de alertas del inventario debe incluir agotados inicializados igual que el dashboard: {json}"
     );
 }
 

@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useFilterStorage } from '@/hooks/use-filter-storage'
 import type { StockItem } from '@/types'
 
-export type EstadoFiltro = 'todos' | 'normal' | 'bajo' | 'sin_stock' | 'vence_pronto'
+export type EstadoFiltro = 'todos' | 'normal' | 'bajo' | 'sin_stock' | 'vencido' | 'vence_pronto'
 
 const STOCK_FILTER_DEFAULTS = {
   categoriaId: null as number | null,
@@ -12,9 +12,10 @@ const STOCK_FILTER_DEFAULTS = {
 }
 
 function parseEstado(raw: string): EstadoFiltro {
-  const valid: EstadoFiltro[] = ['todos', 'normal', 'bajo', 'sin_stock', 'vence_pronto']
+  const valid: EstadoFiltro[] = ['todos', 'normal', 'bajo', 'sin_stock', 'vencido', 'vence_pronto']
   if ((valid as string[]).includes(raw)) return raw as EstadoFiltro
   if (raw === 'sin-stock') return 'sin_stock' // compat legacy
+  if (raw === 'vencidos') return 'vencido' // compat legacy
   if (raw === 'critico') return 'bajo' // compat legacy
   return 'todos'
 }

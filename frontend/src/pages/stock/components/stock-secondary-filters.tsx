@@ -57,6 +57,7 @@ export function StockSecondaryFilters({
           <option value="normal">Normal</option>
           <option value="bajo">Stock bajo</option>
           <option value="sin_stock">Sin stock</option>
+          <option value="vencido">Vencido</option>
           <option value="vence_pronto">Por vencer</option>
         </select>
       </div>

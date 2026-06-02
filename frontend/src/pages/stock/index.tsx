@@ -43,17 +43,19 @@ export default function StockPage() {
 
   const usuario = useAuthStore(s => s.usuario)
   const showAlertas = searchParams.get('alertas') === 'true'
+  const areaIdsParam = searchParams.get('area_ids') || undefined
 
   // Queries
   const { data: stockResponse, isLoading } = useQuery({
-    queryKey: ['stock', { search, categoriaId, proveedorId, areaId, estado, showAlertas }],
+    queryKey: ['stock', { search, categoriaId, proveedorId, areaId, areaIdsParam, estado, showAlertas }],
     queryFn: () =>
       api.get<PaginatedResponse<StockItem>>('/stock', {
         params: {
           q: search || undefined,
           categoria_id: categoriaId || undefined,
           proveedor_id: proveedorId || undefined,
-          area_id: areaId || undefined,
+          area_id: areaIdsParam ? undefined : areaId || undefined,
+          area_ids: areaIdsParam,
           estado: estado !== 'todos' ? estado : undefined,
           con_alertas: showAlertas || undefined,
           per_page: 100
@@ -97,6 +99,8 @@ export default function StockPage() {
             <h1 className="t-h1 tracking-tight text-base-content">
               {estado === 'bajo'    ? 'Stock Bajo' :
                estado === 'sin_stock' ? 'Stock Quebrado' :
+               estado === 'vencido' ? 'Stock Vencido' :
+               estado === 'vence_pronto' ? 'Stock Por Vencer' :
                estado === 'normal'  ? 'Stock Normal' : 'Inventario Global'}
             </h1>
             {estado !== 'todos' && (
@@ -178,6 +182,8 @@ export default function StockPage() {
             onClick: () => setEstado(estado === 'bajo' ? 'todos' : 'bajo') },
           { label: 'Sin stock', value: 'sin_stock', active: estado === 'sin_stock',
             onClick: () => setEstado(estado === 'sin_stock' ? 'todos' : 'sin_stock') },
+          { label: 'Vencido', value: 'vencido', active: estado === 'vencido',
+            onClick: () => setEstado(estado === 'vencido' ? 'todos' : 'vencido') },
           { label: 'Por vencer', value: 'vence_pronto', active: estado === 'vence_pronto',
             onClick: () => setEstado(estado === 'vence_pronto' ? 'todos' : 'vence_pronto') },
           { label: 'Normal', value: 'normal', active: estado === 'normal',

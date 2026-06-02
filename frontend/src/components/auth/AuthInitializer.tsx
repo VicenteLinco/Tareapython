@@ -32,6 +32,30 @@ export function AuthInitializer({ children }: Props) {
       })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'lab-auth-v3') {
+        if (!e.newValue) {
+          logout()
+          window.location.href = '/login'
+        } else {
+          try {
+            const parsed = JSON.parse(e.newValue)
+            if (!parsed.state || !parsed.state.refreshToken) {
+              logout()
+              window.location.href = '/login'
+            }
+          } catch (err) {
+            console.error('Error parsing synced auth store:', err)
+          }
+        }
+      }
+    }
+
+    window.addEventListener('storage', handleStorageChange)
+    return () => window.removeEventListener('storage', handleStorageChange)
+  }, [logout])
+
   if (!ready) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-base-200/50">

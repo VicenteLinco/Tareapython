@@ -23,16 +23,21 @@ export function useInactivityTimeout() {
   const dialogOpenRef = useRef(false)  // ref espejo de dialogOpen para closures
 
   function clearAllTimers() {
+    console.log('[InactivityTimeout] clearAllTimers called')
     if (warningTimerRef.current) { clearTimeout(warningTimerRef.current); warningTimerRef.current = null }
     if (logoutTimerRef.current) { clearTimeout(logoutTimerRef.current); logoutTimerRef.current = null }
     if (countdownIntervalRef.current) { clearInterval(countdownIntervalRef.current); countdownIntervalRef.current = null }
   }
 
   function doLogout() {
+    console.log('[InactivityTimeout] doLogout called')
     clearAllTimers()
-    dialogOpenRef.current = false
+    // No cambiamos dialogOpenRef.current a false para evitar que eventos durante la
+    // transición de desmonte llamen a resetTimer()
     setDialogOpen(false)
+    console.log('[InactivityTimeout] calling logoutFn')
     logoutFn()
+    console.log('[InactivityTimeout] logoutFn finished, calling navigate')
     notify.info('Sesión cerrada por inactividad')
     navigate('/login', { replace: true })
   }
@@ -42,40 +47,52 @@ export function useInactivityTimeout() {
     if (!deadline) return
 
     const remainingMs = Math.max(0, deadline - Date.now())
+    console.log('[InactivityTimeout] updateCountdown remainingMs:', remainingMs)
     setSecondsLeft(Math.ceil(remainingMs / 1000))
 
     if (remainingMs <= 0) {
+      console.log('[InactivityTimeout] remainingMs <= 0, calling doLogout')
       doLogout()
     }
   }
 
   function startLogoutCountdown(remainingMs = WARNING_DURATION_MS) {
+    console.log('[InactivityTimeout] startLogoutCountdown called with remainingMs:', remainingMs)
     logoutDeadlineRef.current = Date.now() + remainingMs
     warningDeadlineRef.current = null
     setSecondsLeft(Math.ceil(remainingMs / 1000))
     dialogOpenRef.current = true
     setDialogOpen(true)
 
-    logoutTimerRef.current = setTimeout(doLogout, remainingMs)
+    logoutTimerRef.current = setTimeout(() => {
+      console.log('[InactivityTimeout] logoutTimeout fired')
+      doLogout()
+    }, remainingMs)
     countdownIntervalRef.current = setInterval(updateCountdown, 1000)
   }
 
   function startWarningTimer(delayMs: number) {
+    console.log('[InactivityTimeout] startWarningTimer called with delayMs:', delayMs)
     warningDeadlineRef.current = Date.now() + delayMs
     logoutDeadlineRef.current = null
     warningTimerRef.current = setTimeout(() => {
+      console.log('[InactivityTimeout] warningTimeout fired')
       startLogoutCountdown()
     }, delayMs)
   }
 
   function resetTimer() {
+    console.log('[InactivityTimeout] resetTimer called')
     clearAllTimers()
     dialogOpenRef.current = false
     setDialogOpen(false)
     startWarningTimer(INACTIVITY_WARNING_MS)
   }
 
-  const onContinue = () => resetTimer()
+  const onContinue = () => {
+    console.log('[InactivityTimeout] onContinue clicked')
+    resetTimer()
+  }
 
   // Montar una sola vez: event listeners de actividad + timer inicial
   useEffect(() => {
@@ -83,7 +100,10 @@ export function useInactivityTimeout() {
 
     const handleActivity = () => {
       // Usar ref (no estado) para evitar closure stale
-      if (!dialogOpenRef.current) resetTimer()
+      // Solo resetear si el diálogo no está abierto y el usuario sigue autenticado
+      if (!dialogOpenRef.current && useAuthStore.getState().accessToken) {
+        resetTimer()
+      }
     }
 
     ACTIVITY_EVENTS.forEach((e) => window.addEventListener(e, handleActivity, { passive: true }))

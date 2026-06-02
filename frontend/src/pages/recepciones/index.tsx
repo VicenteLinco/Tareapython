@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
-import { Plus, Search, FileText, FileX, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, Package, Upload } from 'lucide-react'
+import { Plus, Search, FileText, FileX, ChevronLeft, ChevronRight, Trash2, CheckCircle2, X, Package, Upload, Printer } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { PageLoading } from '@/components/ui/page-state'
@@ -10,6 +10,8 @@ import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { KeyboardLegend } from '@/components/ui/keyboard-legend'
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut'
+import { Dialog } from '@/components/ui/dialog'
+import { LabelsSection } from './components/labels-section'
 import api from '@/lib/api'
 import type { Proveedor, RecepcionListItem } from '@/types'
 import { formatDate, daysUntil, cn } from '@/lib/utils'
@@ -58,6 +60,8 @@ interface DetalleItem {
   unidad_base_nombre: string
   unidad_base_nombre_plural: string
   area_destino: string
+  lote_id: string
+  codigo_interno: string
 }
 
 interface RecepcionDetalleResponse {
@@ -81,6 +85,7 @@ interface RecepcionDetailPanelProps {
   onAdjuntarFoto: () => void
   onReemplazarFoto: () => void
   uploadFotoPending: boolean
+  onImprimirEtiquetas?: () => void
 }
 
 function RecepcionDetailPanel({
@@ -95,6 +100,7 @@ function RecepcionDetailPanel({
   onAdjuntarFoto,
   onReemplazarFoto,
   uploadFotoPending,
+  onImprimirEtiquetas,
 }: RecepcionDetailPanelProps) {
   if (isLoading || !recepcionData) {
     return (
@@ -195,6 +201,22 @@ function RecepcionDetailPanel({
               Adjuntar foto de la guía
             </button>
           )}
+        </div>
+
+        {/* Etiquetas */}
+        <div className="border-t border-base-200 pt-3 space-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider opacity-45 flex items-center gap-1">
+            <Printer className="h-3.5 w-3.5" />
+            Etiquetas de Insumos
+          </p>
+          <button
+            type="button"
+            className="btn btn-xs btn-outline w-full gap-1.5 hover:scale-[1.01] transition-all font-semibold"
+            onClick={onImprimirEtiquetas}
+          >
+            <Printer className="h-3.5 w-3.5" />
+            Imprimir etiquetas
+          </button>
         </div>
 
         {nota && (
@@ -313,6 +335,7 @@ export default function RecepcionesPage() {
   const [borradorAEliminar, setBorradorAEliminar] = useState<string | null>(null)
   const [borradorItemAEliminar, setBorradorItemAEliminar] = useState<RecepcionListItem | null>(null)
   const [fotoOpen, setFotoOpen] = useState(false)
+  const [printModalOpen, setPrintModalOpen] = useState(false)
   
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -709,6 +732,7 @@ export default function RecepcionesPage() {
               }
             }}
             uploadFotoPending={uploadFotoMut.isPending}
+            onImprimirEtiquetas={() => setPrintModalOpen(true)}
           />
         </div>
       )}
@@ -764,6 +788,38 @@ export default function RecepcionesPage() {
             />
           </div>
         </div>
+      )}
+
+      {printModalOpen && selectedRecepcion && (
+        <Dialog
+          open={printModalOpen}
+          onClose={() => setPrintModalOpen(false)}
+          title="Reimprimir etiquetas"
+        >
+          <div className="mt-1 text-xs text-base-content/60 mb-4 font-medium">
+            Configura el formato y cantidad de etiquetas para imprimir los lotes de esta recepción.
+          </div>
+          <LabelsSection
+            lotesConfirmados={selectedRecepcion.detalle.map(item => ({
+              lote_id: item.lote_id,
+              codigo_interno: item.codigo_interno,
+              numero_lote: item.numero_lote,
+              fecha_vencimiento: item.fecha_vencimiento,
+              producto_nombre: item.producto_nombre,
+              presentacion_nombre: item.presentacion_nombre,
+              area_nombre: item.area_destino,
+              cantidad_etiquetas: 1
+            }))}
+          />
+          <div className="mt-4 border-t border-base-200 pt-3">
+            <button
+              className="btn btn-outline btn-sm w-full text-xs font-semibold py-2"
+              onClick={() => setPrintModalOpen(false)}
+            >
+              Cerrar
+            </button>
+          </div>
+        </Dialog>
       )}
     </div>
   )

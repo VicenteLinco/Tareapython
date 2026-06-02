@@ -1,4 +1,4 @@
-import { AlertTriangle, Clock, Info, TrendingUp } from 'lucide-react'
+import { AlertTriangle, Clock, Info } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import type { StockItem } from '@/types'
 import { cn, daysUntil } from '@/lib/utils'
@@ -19,9 +19,7 @@ export function StockBadge({ item }: { item: StockItem }) {
       : 'normal'
   )
   const dias = item.dias_autonomia ?? null
-  const diasPico = item.dias_autonomia_pico ?? null
   const diasConConsumo = item.dias_con_consumo ?? 0
-  const leadTime = item.lead_time_propio ?? 3
   const pocosData = diasConConsumo > 0 && diasConConsumo < 14
 
   if (estadoAlerta === 'sin_stock') return (

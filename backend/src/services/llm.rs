@@ -28,6 +28,7 @@ pub trait LlmClient {
 
 // Gemini REST API Structs
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct GeminiContentPart {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -73,11 +74,13 @@ pub struct GeminiFunctionDeclaration {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct GeminiTool {
     pub function_declarations: Vec<GeminiFunctionDeclaration>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct GeminiRequest {
     pub contents: Vec<GeminiContent>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -92,6 +95,7 @@ pub struct GeminiResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct GeminiCandidate {
     pub content: GeminiContent,
     pub finish_reason: Option<String>,
@@ -248,10 +252,15 @@ impl LlmClient for GeminiClient {
                 )));
             }
 
-            let gemini_resp: GeminiResponse = response
-                .json()
+            let response_text = response
+                .text()
                 .await
-                .map_err(|e| AppError::Internal(format!("Failed to parse Gemini response: {}", e)))?;
+                .map_err(|e| AppError::Internal(format!("Failed to read Gemini response text: {}", e)))?;
+            
+            tracing::info!("Gemini Raw Response: {}", response_text);
+
+            let gemini_resp: GeminiResponse = serde_json::from_str(&response_text)
+                .map_err(|e| AppError::Internal(format!("Failed to parse Gemini response: {}. Raw: {}", e, response_text)))?;
 
             let candidates = gemini_resp.candidates.ok_or_else(|| {
                 AppError::Internal("Gemini response returned no candidates".to_string())

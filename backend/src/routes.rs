@@ -81,6 +81,7 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
 
     let mut router = Router::new()
         .merge(handlers::health::routes())
+        .nest("/api/v1/webhooks/whatsapp", handlers::whatsapp::routes())
         .nest("/api/v1/auth", handlers::auth_handler::public_routes())
         .nest("/api/v1/auth", auth_protected)
         .nest_service(

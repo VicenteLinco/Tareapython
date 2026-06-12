@@ -22,3 +22,4 @@ pub mod stock;
 pub mod unidades_basicas;
 pub mod uploads;
 pub mod usuarios;
+pub mod whatsapp;

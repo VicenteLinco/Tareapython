@@ -10,6 +10,12 @@ pub struct LlmConfig {
     pub api_key: String,  // API Key for Gemini
 }
 
+#[derive(sqlx::FromRow, Debug)]
+pub struct ChatHistoryRow {
+    pub request_body: String,
+    pub response_body: Option<String>,
+}
+
 #[async_trait::async_trait]
 pub trait LlmClient {
     async fn chat_with_tools(
@@ -206,14 +212,52 @@ impl LlmClient for GeminiClient {
             db_config.model, db_config.api_key
         );
 
-        let mut contents = vec![GeminiContent {
+        let mut contents = Vec::new();
+
+        // Load recent history (last 5 messages)
+        let history_rows = sqlx::query_as::<_, ChatHistoryRow>(
+            r#"SELECT request_body, response_body 
+               FROM whatsapp_webhook_logs 
+               WHERE sender_phone = $1 AND response_body IS NOT NULL
+               ORDER BY created_at DESC 
+               LIMIT 5"#
+        )
+        .bind(sender_phone)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        // Order history chronologically (oldest first)
+        for row in history_rows.into_iter().rev() {
+            contents.push(GeminiContent {
+                role: "user".to_string(),
+                parts: vec![GeminiContentPart {
+                    text: Some(row.request_body),
+                    function_call: None,
+                    function_response: None,
+                }],
+            });
+            if let Some(resp) = row.response_body {
+                contents.push(GeminiContent {
+                    role: "model".to_string(),
+                    parts: vec![GeminiContentPart {
+                        text: Some(resp),
+                        function_call: None,
+                        function_response: None,
+                    }],
+                });
+            }
+        }
+
+        // Add current user prompt
+        contents.push(GeminiContent {
             role: "user".to_string(),
             parts: vec![GeminiContentPart {
                 text: Some(user_prompt.to_string()),
                 function_call: None,
                 function_response: None,
             }],
-        }];
+        });
 
         let mut command_type: Option<String> = None;
         let mut status = "SUCCESS".to_string();
@@ -538,20 +582,51 @@ impl LlmClient for OllamaClient {
         };
         let url = format!("{}/v1/chat/completions", base_url);
 
-        let mut messages = vec![
-            OpenAiMessage {
-                role: "system".to_string(),
-                content: Some(system_instruction.to_string()),
-                tool_calls: None,
-                tool_call_id: None,
-            },
-            OpenAiMessage {
+        let mut messages = vec![OpenAiMessage {
+            role: "system".to_string(),
+            content: Some(system_instruction.to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
+
+        // Load recent history (last 5 messages)
+        let history_rows = sqlx::query_as::<_, ChatHistoryRow>(
+            r#"SELECT request_body, response_body 
+               FROM whatsapp_webhook_logs 
+               WHERE sender_phone = $1 AND response_body IS NOT NULL
+               ORDER BY created_at DESC 
+               LIMIT 5"#
+        )
+        .bind(sender_phone)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        // Order history chronologically (oldest first)
+        for row in history_rows.into_iter().rev() {
+            messages.push(OpenAiMessage {
                 role: "user".to_string(),
-                content: Some(user_prompt.to_string()),
+                content: Some(row.request_body),
                 tool_calls: None,
                 tool_call_id: None,
-            },
-        ];
+            });
+            if let Some(resp) = row.response_body {
+                messages.push(OpenAiMessage {
+                    role: "assistant".to_string(),
+                    content: Some(resp),
+                    tool_calls: None,
+                    tool_call_id: None,
+                });
+            }
+        }
+
+        // Add current user prompt
+        messages.push(OpenAiMessage {
+            role: "user".to_string(),
+            content: Some(user_prompt.to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        });
 
         let mut command_type: Option<String> = None;
         let mut status = "SUCCESS".to_string();
@@ -732,6 +807,7 @@ REGLAS DE COMPORTAMIENTO GENERAL:
 1. Comunícate en español neutro o español de Chile. Mantén un tono profesional, educado, claro y conciso.
 2. Responde directamente la solicitud del usuario en un mensaje corto. Evita introducciones innecesarias o explicaciones redundantes.
 3. El sistema opera de manera transaccional. Para interactuar con los datos del inventario, DEBES llamar a la función (herramienta/tool) correspondiente cuando detectes la intención del usuario.
+4. Formato de Cantidades: Al responder al usuario con cantidades o stock, DEBES mostrarlas siempre como números enteros sin decimales, redondeando al entero más cercano si es necesario (ej. '15.00' o '15.5' muéstralos como '15' o '16').
 
 REGLAS DE CONTROL DE ACCESO (RBAC):
 - El rol del usuario y sus áreas asignadas rigen qué herramientas puede usar:
@@ -739,6 +815,10 @@ REGLAS DE CONTROL DE ACCESO (RBAC):
   * Registrar recepción ('registrar_ingreso'): Solo permitido para roles 'admin' y 'tecnologo'.
   * Crear sugerencia de compra ('crear_solicitud_compra'): Permitido para todos los roles activos.
 - Si un usuario con un rol no autorizado te pide realizar una acción prohibida, NO invoques la herramienta. Responde amablemente: "Lo siento, tu rol de usuario no tiene autorización para realizar esta acción."
+
+REGLAS DE CONFIRMACIÓN DE ACCIONES (MUY IMPORTANTE):
+1. Antes de ejecutar cualquier acción de escritura ('registrar_ingreso' o 'crear_solicitud_compra'), NO invoques la herramienta inmediatamente. Primero, debes describirle de forma clara al usuario la acción y los datos que se van a registrar, y pedirle confirmación explícita (ej. "¿Confirmas el ingreso de 10 unidades de Paracetamol en el Área Central con lote L12 y vencimiento 2026-12-31?").
+2. Solo cuando el usuario confirme explícitamente de manera positiva (ej. diciendo "Sí", "Confirmar", "Proceder", "Dale", "Confirmo"), debes proceder a invocar la herramienta correspondiente para ejecutar la acción en la base de datos.
 
 MANEJO DE PARÁMETROS CONVERSACIONAL (MUY IMPORTANTE):
 - Si el usuario solicita ejecutar una acción pero omite parámetros requeridos por la herramienta, NO debes inventar los datos (por ejemplo, inventar lotes, cantidades, áreas o fechas) ni rellenar con valores ficticios.
@@ -757,6 +837,7 @@ REGLAS DE VALIDACIÓN DE PARÁMETROS PARA HERRAMIENTAS:
    - Debe ser una fecha futura en relación al día de hoy.
 4. Área de Destino ('area_id'):
    - Debe ser el identificador numérico entero del área.
+5. Tolerancia a errores de tipeo y nombres aproximados: Si el usuario escribe un nombre aproximado, con errores de tipeo o incompleto (ej. 'paracetanol'), utiliza la herramienta 'buscar_stock' con ese término para encontrar el producto correcto en lugar de reportar inmediatamente que no existe.
 
 RESPUESTA FINAL POST-EJECUCIÓN:
 - Una vez ejecutada la herramienta y recibido el JSON de respuesta del backend, utilízalo para componer una respuesta final amigable y detallada en español para el usuario.

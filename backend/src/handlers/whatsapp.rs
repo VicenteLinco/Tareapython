@@ -371,7 +371,8 @@ pub async fn execute_buscar_stock(
         return Err(AppError::Forbidden("No autorizado: Requiere rol tecnologo o admin para buscar stock.".to_string()));
     }
 
-    let ilike_query = format!("%{}%", args.busqueda.trim());
+    let clean_query = args.busqueda.trim();
+    let ilike_query = format!("%{}%", clean_query);
 
     let rows = sqlx::query_as::<_, StockRow>(
         r#"SELECT
@@ -382,7 +383,11 @@ pub async fn execute_buscar_stock(
             v.unidad,
             v.proximo_vencimiento
            FROM v_stock_por_producto_area v
-           WHERE (v.codigo_interno ILIKE $1 OR v.producto_nombre ILIKE $1)
+           WHERE (
+               v.codigo_interno ILIKE $1 
+               OR v.producto_nombre ILIKE $1
+               OR similarity(v.producto_nombre, $4) > 0.3
+           )
              AND (
                  $2 = 'admin' OR 
                  EXISTS (
@@ -390,11 +395,21 @@ pub async fn execute_buscar_stock(
                      WHERE ua.usuario_id = $3 AND ua.area_id = v.area_id
                  )
              )
-           ORDER BY v.producto_nombre, v.codigo_interno, v.area_nombre"#
+           ORDER BY 
+             CASE 
+                 WHEN v.codigo_interno = $4 THEN 1
+                 WHEN v.producto_nombre ILIKE $1 THEN 2
+                 ELSE 3
+             END,
+             similarity(v.producto_nombre, $4) DESC,
+             v.producto_nombre, 
+             v.codigo_interno, 
+             v.area_nombre"#
     )
     .bind(&ilike_query)
     .bind(&user.rol)
     .bind(user.id)
+    .bind(clean_query)
     .fetch_all(pool)
     .await
     .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -405,7 +420,7 @@ pub async fn execute_buscar_stock(
             codigo_interno: r.codigo_interno,
             producto_nombre: r.producto_nombre,
             area_nombre: r.area_nombre,
-            stock_total: r.stock_total,
+            stock_total: r.stock_total.round().normalize(),
             unidad: r.unidad,
             proximo_vencimiento: r.proximo_vencimiento,
         })
@@ -422,6 +437,102 @@ pub async fn execute_buscar_stock(
         items,
         message,
     })
+}
+
+pub async fn resolve_product(
+    pool: &sqlx::PgPool,
+    ident: &str,
+) -> Result<Result<ProductResolution, String>, AppError> {
+    let ident = ident.trim();
+    
+    // 1. Try exact internal code
+    let exact_code = sqlx::query_as::<_, ProductResolution>(
+        r#"SELECT 
+            p.id AS producto_id, 
+            p.nombre AS producto_nombre,
+            NULL::INT AS presentacion_id, 
+            1.0::NUMERIC AS factor_conversion, 
+            ub.nombre AS unidad_basica_nombre
+        FROM productos p
+        JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
+        WHERE p.codigo_interno = $1 AND p.activo = true AND p.deleted_at IS NULL"#
+    )
+    .bind(ident)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(res) = exact_code {
+        return Ok(Ok(res));
+    }
+
+    // 2. Try exact barcode/presentation
+    let exact_barcode = sqlx::query_as::<_, ProductResolution>(
+        r#"SELECT 
+            pres.producto_id AS producto_id, 
+            p.nombre AS producto_nombre,
+            pres.id AS presentacion_id, 
+            pres.factor_conversion, 
+            ub.nombre AS unidad_basica_nombre
+        FROM presentaciones pres
+        JOIN productos p ON p.id = pres.producto_id
+        JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
+        WHERE pres.codigo_barras = $1 AND pres.activa = true AND p.activo = true AND p.deleted_at IS NULL"#
+    )
+    .bind(ident)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(res) = exact_barcode {
+        return Ok(Ok(res));
+    }
+
+    // 3. Try name match (ILIKE and similarity)
+    let candidates = sqlx::query_as::<_, ProductResolution>(
+        r#"SELECT 
+            p.id AS producto_id, 
+            p.nombre AS producto_nombre,
+            NULL::INT AS presentacion_id,
+            1.0::NUMERIC AS factor_conversion,
+            ub.nombre AS unidad_basica_nombre
+        FROM productos p
+        JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
+        WHERE (p.nombre ILIKE $1 OR similarity(p.nombre, $2) > 0.3)
+          AND p.activo = true AND p.deleted_at IS NULL
+        ORDER BY similarity(p.nombre, $2) DESC, p.nombre ASC
+        LIMIT 5"#
+    )
+    .bind(format!("%{}%", ident))
+    .bind(ident)
+    .fetch_all(pool)
+    .await?;
+
+    if candidates.is_empty() {
+        return Ok(Err(format!("Error: No se encontró ningún producto activo con código, código de barras o nombre '{}'.", ident)));
+    }
+
+    if candidates.len() == 1 {
+        let cand = &candidates[0];
+        return Ok(Ok(ProductResolution {
+            producto_id: cand.producto_id,
+            producto_nombre: cand.producto_nombre.clone(),
+            presentacion_id: None,
+            factor_conversion: rust_decimal::Decimal::ONE,
+            unidad_basica_nombre: cand.unidad_basica_nombre.clone(),
+        }));
+    }
+
+    // Multiple candidates found, build a selection message
+    let mut msg = format!("Se encontraron múltiples productos que coinciden con '{}'. Por favor, indica el código exacto:\n", ident);
+    for cand in candidates {
+        let code: String = sqlx::query_scalar("SELECT codigo_interno FROM productos WHERE id = $1")
+            .bind(cand.producto_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or_else(|_| "N/A".to_string());
+        msg.push_str(&format!("* `{}` - {}\n", code, cand.producto_nombre));
+    }
+
+    Ok(Err(msg))
 }
 
 pub async fn execute_registrar_ingreso(
@@ -501,51 +612,13 @@ pub async fn execute_registrar_ingreso(
         }
     }
 
-    let resolved_opt = sqlx::query_as::<_, ProductResolution>(
-        r#"SELECT 
-            p.id AS producto_id, 
-            p.nombre AS producto_nombre,
-            NULL::INT AS presentacion_id, 
-            1.0::NUMERIC AS factor_conversion, 
-            ub.nombre AS unidad_basica_nombre
-        FROM productos p
-        JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-        WHERE p.codigo_interno = $1 AND p.activo = true"#
-    )
-    .bind(&args.producto)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    let resolved = match resolved_opt {
-        Some(res) => res,
-        None => {
-            let pres_opt = sqlx::query_as::<_, ProductResolution>(
-                r#"SELECT 
-                    pres.producto_id AS producto_id, 
-                    p.nombre AS producto_nombre,
-                    pres.id AS presentacion_id, 
-                    pres.factor_conversion, 
-                    ub.nombre AS unidad_basica_nombre
-                FROM presentaciones pres
-                JOIN productos p ON p.id = pres.producto_id
-                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-                WHERE pres.codigo_barras = $1 AND pres.activa = true AND p.activo = true"#
-            )
-            .bind(&args.producto)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-
-            match pres_opt {
-                Some(res) => res,
-                None => {
-                    return Ok(RegistrarIngresoResult {
-                        status: "error".to_string(),
-                        message: format!("Error: No se encontró un producto activo con código o código de barras '{}'.", args.producto),
-                    });
-                }
-            }
+    let resolved = match resolve_product(pool, &args.producto).await? {
+        Ok(res) => res,
+        Err(err_msg) => {
+            return Ok(RegistrarIngresoResult {
+                status: "error".to_string(),
+                message: err_msg,
+            });
         }
     };
 
@@ -674,7 +747,7 @@ pub async fn execute_registrar_ingreso(
          Área ID: {}",
         numero_documento,
         resolved.producto_nombre,
-        args.cantidad,
+        args.cantidad.normalize(),
         resolved.unidad_basica_nombre,
         args.lote,
         lot_codigo_interno,
@@ -699,51 +772,13 @@ pub async fn execute_crear_solicitud_compra(
         });
     }
 
-    let resolved_opt = sqlx::query_as::<_, ProductResolution>(
-        r#"SELECT 
-            p.id AS producto_id, 
-            p.nombre AS producto_nombre,
-            NULL::INT AS presentacion_id, 
-            1.0::NUMERIC AS factor_conversion, 
-            ub.nombre AS unidad_basica_nombre
-        FROM productos p
-        JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-        WHERE p.codigo_interno = $1 AND p.activo = true"#
-    )
-    .bind(&args.producto)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    let resolved = match resolved_opt {
-        Some(res) => res,
-        None => {
-            let pres_opt = sqlx::query_as::<_, ProductResolution>(
-                r#"SELECT 
-                    pres.producto_id AS producto_id, 
-                    p.nombre AS producto_nombre,
-                    pres.id AS presentacion_id, 
-                    pres.factor_conversion, 
-                    ub.nombre AS unidad_basica_nombre
-                FROM presentaciones pres
-                JOIN productos p ON p.id = pres.producto_id
-                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-                WHERE pres.codigo_barras = $1 AND pres.activa = true AND p.activo = true"#
-            )
-            .bind(&args.producto)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-
-            match pres_opt {
-                Some(res) => res,
-                None => {
-                    return Ok(CrearSolicitudCompraResult {
-                        status: "error".to_string(),
-                        message: format!("Error: No se encontró un producto activo con código o código de barras '{}'.", args.producto),
-                    });
-                }
-            }
+    let resolved = match resolve_product(pool, &args.producto).await? {
+        Ok(res) => res,
+        Err(err_msg) => {
+            return Ok(CrearSolicitudCompraResult {
+                status: "error".to_string(),
+                message: err_msg,
+            });
         }
     };
 
@@ -815,7 +850,7 @@ pub async fn execute_crear_solicitud_compra(
          Producto: {}\n\
          Cantidad Agregada: {} {}",
         resolved.producto_nombre,
-        args.cantidad,
+        args.cantidad.normalize(),
         resolved.unidad_basica_nombre
     );
 

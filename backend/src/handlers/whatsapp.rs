@@ -333,6 +333,31 @@ pub struct CrearSolicitudCompraResult {
     pub message: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct RegistrarConsumoArgs {
+    pub producto: String,
+    pub cantidad: rust_decimal::Decimal,
+    pub lote: Option<String>,
+    pub area_id: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RegistrarConsumoResult {
+    pub status: String,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LoteSelectionDetail {
+    pub lote_id: uuid::Uuid,
+    pub numero_lote: String,
+    pub codigo_interno: String,
+    pub fecha_vencimiento: chrono::NaiveDate,
+    pub area_nombre: String,
+    pub area_id: i32,
+    pub cantidad_disponible: rust_decimal::Decimal,
+}
+
 pub async fn execute_tool(
     pool: &sqlx::PgPool,
     user: &ActiveUser,
@@ -351,6 +376,12 @@ pub async fn execute_tool(
                 .map_err(|e| AppError::Internal(format!("Invalid arguments for registrar_ingreso: {}", e)))?;
             let res = execute_registrar_ingreso(pool, user, args).await?;
             Ok(serde_json::to_value(res).map_err(|e| AppError::Internal(e.to_string()))?)
+        }
+        "registrar_consumo" => {
+            let args: RegistrarConsumoArgs = serde_json::from_value(args)
+                .map_err(|e| AppError::Internal(format!("Invalid arguments for registrar_consumo: {}", e)))?;
+            let res = execute_registrar_consumo(pool, user, args).await?;
+            Ok(res)
         }
         "crear_solicitud_compra" => {
             let args: CrearSolicitudCompraArgs = serde_json::from_value(args)
@@ -858,6 +889,294 @@ pub async fn execute_crear_solicitud_compra(
         status: "success".to_string(),
         message: success_msg,
     })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct StockQueryRow {
+    stock_id: i32,
+    lote_id: uuid::Uuid,
+    cantidad: rust_decimal::Decimal,
+    area_id: i32,
+    numero_lote: String,
+    codigo_interno: String,
+    fecha_vencimiento: chrono::NaiveDate,
+    area_nombre: String,
+}
+
+pub async fn execute_registrar_consumo(
+    pool: &sqlx::PgPool,
+    user: &ActiveUser,
+    args: RegistrarConsumoArgs,
+) -> Result<serde_json::Value, AppError> {
+    if !matches!(user.rol.as_str(), "admin" | "tecnologo") {
+        return Ok(serde_json::json!({
+            "status": "error",
+            "message": "Error: No autorizado. Rol no permitido."
+        }));
+    }
+
+    if args.cantidad.scale() > 2 {
+        return Ok(serde_json::json!({
+            "status": "error",
+            "message": "Error: La cantidad no puede tener más de 2 decimales."
+        }));
+    }
+    if args.cantidad <= rust_decimal::Decimal::ZERO {
+        return Ok(serde_json::json!({
+            "status": "error",
+            "message": "Error: La cantidad debe ser mayor a cero."
+        }));
+    }
+
+    let resolved = match resolve_product(pool, &args.producto).await? {
+        Ok(res) => res,
+        Err(err_msg) => {
+            return Ok(serde_json::json!({
+                "status": "error",
+                "message": err_msg,
+            }));
+        }
+    };
+
+    let cantidad_base = args.cantidad * resolved.factor_conversion;
+    let lote_ident = args.lote.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty());
+
+    if lote_ident.is_none() {
+        // Scenario 1: No lote parameter is provided. Query all available stock globally for product.
+        let rows = sqlx::query_as::<_, StockQueryRow>(
+            r#"SELECT 
+                s.id as stock_id,
+                s.lote_id,
+                s.cantidad,
+                s.area_id,
+                l.numero_lote,
+                l.codigo_interno,
+                l.fecha_vencimiento,
+                a.nombre as area_nombre
+            FROM stock s
+            JOIN lotes l ON l.id = s.lote_id
+            JOIN areas a ON a.id = s.area_id
+            WHERE l.producto_id = $1 AND s.cantidad > 0
+            ORDER BY l.fecha_vencimiento ASC"#
+        )
+        .bind(resolved.producto_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+        if rows.is_empty() {
+            return Ok(serde_json::json!({
+                "status": "error",
+                "message": "Error: No hay stock disponible para este producto."
+            }));
+        }
+
+        if rows.len() == 1 {
+            let row = &rows[0];
+            let mut tx = pool.begin().await.map_err(|e| AppError::Internal(e.to_string()))?;
+
+            // Lock row FOR UPDATE
+            let current_qty = sqlx::query_scalar::<_, rust_decimal::Decimal>(
+                "SELECT cantidad FROM stock WHERE id = $1 FOR UPDATE"
+            )
+            .bind(row.stock_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+
+            if current_qty < cantidad_base {
+                return Ok(serde_json::json!({
+                    "status": "error",
+                    "message": format!("Error: Stock insuficiente. Cantidad disponible: {}.", current_qty)
+                }));
+            }
+
+            let lotes_fefo = vec![crate::services::stock_ops::LoteFefo {
+                stock_id: row.stock_id,
+                lote_id: row.lote_id,
+                cantidad: current_qty,
+                area_id: row.area_id,
+            }];
+
+            let _movimientos = crate::services::stock_ops::aplicar_salida_fefo(
+                &mut tx,
+                &lotes_fefo,
+                cantidad_base,
+                user.id,
+                "CONSUMO",
+                uuid::Uuid::new_v4(),
+                Some("Consumo vía WhatsApp Agent"),
+                None,
+            )
+            .await?;
+
+            tx.commit().await.map_err(|e| AppError::Internal(e.to_string()))?;
+
+            return Ok(serde_json::json!({
+                "status": "success",
+                "message": format!(
+                    "Consumo registrado con éxito: se descontaron {} unidades del Lote {} (vence: {}) en el área {}.",
+                    args.cantidad,
+                    row.numero_lote,
+                    row.fecha_vencimiento,
+                    row.area_nombre
+                )
+            }));
+        } else {
+            // Multiple stock rows. Needs selection.
+            let first_row = &rows[0];
+            let fefo_lote = LoteSelectionDetail {
+                lote_id: first_row.lote_id,
+                numero_lote: first_row.numero_lote.clone(),
+                codigo_interno: first_row.codigo_interno.clone(),
+                fecha_vencimiento: first_row.fecha_vencimiento,
+                area_nombre: first_row.area_nombre.clone(),
+                area_id: first_row.area_id,
+                cantidad_disponible: first_row.cantidad,
+            };
+
+            let alternativas = rows[1..]
+                .iter()
+                .map(|r| LoteSelectionDetail {
+                    lote_id: r.lote_id,
+                    numero_lote: r.numero_lote.clone(),
+                    codigo_interno: r.codigo_interno.clone(),
+                    fecha_vencimiento: r.fecha_vencimiento,
+                    area_nombre: r.area_nombre.clone(),
+                    area_id: r.area_id,
+                    cantidad_disponible: r.cantidad,
+                })
+                .collect::<Vec<_>>();
+
+            return Ok(serde_json::json!({
+                "status": "needs_lote_selection",
+                "producto_nombre": resolved.producto_nombre,
+                "cantidad": args.cantidad,
+                "fefo_lote": fefo_lote,
+                "alternativas": alternativas
+            }));
+        }
+    } else {
+        // Scenario 2: Lote is provided.
+        let lote_str = lote_ident.unwrap();
+
+        let rows = if let Some(aid) = args.area_id {
+            sqlx::query_as::<_, StockQueryRow>(
+                r#"SELECT 
+                    s.id as stock_id,
+                    s.lote_id,
+                    s.cantidad,
+                    s.area_id,
+                    l.numero_lote,
+                    l.codigo_interno,
+                    l.fecha_vencimiento,
+                    a.nombre as area_nombre
+                FROM stock s
+                JOIN lotes l ON l.id = s.lote_id
+                JOIN areas a ON a.id = s.area_id
+                WHERE l.producto_id = $1
+                  AND (l.numero_lote = $2 OR l.codigo_interno = $2 OR l.id::text = $2)
+                  AND s.cantidad > 0
+                  AND s.area_id = $3"#
+            )
+            .bind(resolved.producto_id)
+            .bind(lote_str)
+            .bind(aid)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?
+        } else {
+            sqlx::query_as::<_, StockQueryRow>(
+                r#"SELECT 
+                    s.id as stock_id,
+                    s.lote_id,
+                    s.cantidad,
+                    s.area_id,
+                    l.numero_lote,
+                    l.codigo_interno,
+                    l.fecha_vencimiento,
+                    a.nombre as area_nombre
+                FROM stock s
+                JOIN lotes l ON l.id = s.lote_id
+                JOIN areas a ON a.id = s.area_id
+                WHERE l.producto_id = $1
+                  AND (l.numero_lote = $2 OR l.codigo_interno = $2 OR l.id::text = $2)
+                  AND s.cantidad > 0"#
+            )
+            .bind(resolved.producto_id)
+            .bind(lote_str)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?
+        };
+
+        if rows.is_empty() {
+            return Ok(serde_json::json!({
+                "status": "error",
+                "message": "Error: El lote especificado no existe o no tiene stock disponible."
+            }));
+        }
+
+        let row = if rows.len() > 1 {
+            return Ok(serde_json::json!({
+                "status": "error",
+                "message": "Error: El lote especificado está presente en múltiples áreas. Por favor indica el ID de área."
+            }));
+        } else {
+            &rows[0]
+        };
+
+        let mut tx = pool.begin().await.map_err(|e| AppError::Internal(e.to_string()))?;
+
+        // Lock row FOR UPDATE
+        let current_qty = sqlx::query_scalar::<_, rust_decimal::Decimal>(
+            "SELECT cantidad FROM stock WHERE lote_id = $1 AND area_id = $2 FOR UPDATE"
+        )
+        .bind(row.lote_id)
+        .bind(row.area_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+        if current_qty < cantidad_base {
+            return Ok(serde_json::json!({
+                "status": "error",
+                "message": format!("Error: Stock insuficiente. Cantidad disponible: {}.", current_qty)
+            }));
+        }
+
+        let lotes_fefo = vec![crate::services::stock_ops::LoteFefo {
+            stock_id: row.stock_id,
+            lote_id: row.lote_id,
+            cantidad: current_qty,
+            area_id: row.area_id,
+        }];
+
+        let _movimientos = crate::services::stock_ops::aplicar_salida_fefo(
+            &mut tx,
+            &lotes_fefo,
+            cantidad_base,
+            user.id,
+            "CONSUMO",
+            uuid::Uuid::new_v4(),
+            Some("Consumo vía WhatsApp Agent"),
+            None,
+        )
+        .await?;
+
+        tx.commit().await.map_err(|e| AppError::Internal(e.to_string()))?;
+
+        return Ok(serde_json::json!({
+            "status": "success",
+            "message": format!(
+                "Consumo registrado con éxito: se descontaron {} unidades del Lote {} (vence: {}) en el área {}.",
+                args.cantidad,
+                row.numero_lote,
+                row.fecha_vencimiento,
+                row.area_nombre
+            )
+        }));
+    }
 }
 
 pub async fn process_message_async(state: AppState, msg: WebhookMessage) -> Result<(), AppError> {

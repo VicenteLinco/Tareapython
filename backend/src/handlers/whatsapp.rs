@@ -420,7 +420,7 @@ pub async fn execute_buscar_stock(
                OR similarity(v.producto_nombre, $4) > 0.3
            )
              AND (
-                 $2 = 'admin' OR 
+                 $2 = 'admin' OR $2 = 'tecnologo' OR 
                  EXISTS (
                      SELECT 1 FROM usuario_area ua 
                      WHERE ua.usuario_id = $3 AND ua.area_id = v.area_id

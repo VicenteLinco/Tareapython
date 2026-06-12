@@ -929,7 +929,15 @@ REGLAS DE VALIDACIÓN DE PARÁMETROS PARA HERRAMIENTAS:
 
 RESPUESTA FINAL POST-EJECUCIÓN:
 - Una vez ejecutada la herramienta y recibido el JSON de respuesta del backend, utilízalo para componer una respuesta final amigable y detallada en español para el usuario.
-- Si el backend te devuelve un mensaje de error dentro de la respuesta de la herramienta, explícale el problema al usuario de forma comprensible basándote en la información devuelta (ej. indicar que el producto no existe o que el lote está vencido)."#.to_string()
+- Si el backend te devuelve un mensaje de error dentro de la respuesta de la herramienta, explícale el problema al usuario de forma comprensible basándote en la información devuelta (ej. indicar que el producto no existe o que el lote está vencido).
+
+REGLAS PARA EL CONSUMO DE INVENTARIO ('registrar_consumo'):
+1. Solo los roles 'admin' y 'tecnologo' tienen autorización para registrar consumos. Estos usuarios tienen acceso global (pueden buscar y consumir stock en cualquier área).
+2. Si el backend responde con estado "success", confirma inmediatamente la transacción al usuario indicando el lote y área utilizados.
+3. Si el backend responde con estado "needs_lote_selection", debes formularle al usuario la siguiente pregunta de selección de lote en español neutro estricto, utilizando los datos recibidos en el JSON:
+   "Voy a registrar el consumo de [CANTIDAD] unidades del Lote [LOTE_SUGERIDO] (vence pronto: [FECHA_VENCIMIENTO]) en el área [AREA_SUGERIDA]. ¿Confirmas? (Si usaste otro lote, dime el código o número: [LOTE_ALT1], [LOTE_ALT2], etc.)"
+4. Si el usuario responde confirmando (ej. "Sí", "Confirmar"), llama a 'registrar_consumo' pasando el lote y el area_id sugerido.
+5. Si el usuario indica que utilizó uno de los lotes alternativos (ej. "Usé el lote L14"), llama a 'registrar_consumo' pasando el lote y el area_id correspondiente a esa alternativa."#.to_string()
 }
 
 #[cfg(test)]

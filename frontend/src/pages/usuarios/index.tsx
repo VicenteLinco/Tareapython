@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, UserX, UserCheck, KeyRound, X, Search, ShieldCheck, FlaskConical, BookOpen } from 'lucide-react'
+import { Plus, Pencil, UserX, UserCheck, KeyRound, X, Search, ShieldCheck, FlaskConical, BookOpen, Phone } from 'lucide-react'
 import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
@@ -53,6 +53,7 @@ interface ModalUsuarioProps {
 const EMPTY_FORM = {
   nombre: '',
   email: '',
+  whatsapp_phone: '',
   password: '',
   rol: 'tecnologo' as string,
   area_ids: [] as number[],
@@ -67,6 +68,7 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
       ? {
           nombre: usuario.nombre,
           email: usuario.email,
+          whatsapp_phone: usuario.whatsapp_phone || '',
           password: '',
           rol: usuario.rol,
           area_ids: usuario.areas.map((a) => a.id),
@@ -84,6 +86,7 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
         ? { 
             nombre: usuario.nombre, 
             email: usuario.email, 
+            whatsapp_phone: usuario.whatsapp_phone || '',
             password: '', 
             rol: usuario.rol, 
             area_ids: usuario.areas.map((a) => a.id),
@@ -140,17 +143,37 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.nombre.trim() || !form.email.trim()) return
+
+    let cleanPhone: string | null = form.whatsapp_phone.trim()
+    if (cleanPhone) {
+      const phoneRegex = /^\+?[0-9\s-]{8,20}$/
+      if (!phoneRegex.test(cleanPhone)) {
+        notify.error('El número de WhatsApp no es válido (use dígitos, espacios o guiones, entre 8 y 20 caracteres)')
+        return
+      }
+    } else {
+      cleanPhone = null
+    }
+
     if (isEdit) {
       updateMut.mutate({
         nombre: form.nombre,
         email: form.email,
+        whatsapp_phone: cleanPhone,
         rol: form.rol,
         area_ids: form.area_ids,
         version: form.version,
       })
     } else {
       if (!form.password) { notify.error('La contraseña es obligatoria'); return }
-      createMut.mutate(form)
+      createMut.mutate({
+        nombre: form.nombre,
+        email: form.email,
+        whatsapp_phone: cleanPhone,
+        password: form.password,
+        rol: form.rol,
+        area_ids: form.area_ids,
+      })
     }
   }
 
@@ -188,6 +211,18 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
               value={form.email}
               onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
               required
+            />
+          </div>
+
+          {/* WhatsApp */}
+          <div className="form-control">
+            <label className="label"><span className="label-text">WhatsApp (Opcional)</span></label>
+            <input
+              type="text"
+              className="input input-bordered input-sm"
+              placeholder="+56912345678"
+              value={form.whatsapp_phone}
+              onChange={(e) => setForm((f) => ({ ...f, whatsapp_phone: e.target.value }))}
             />
           </div>
 
@@ -370,6 +405,7 @@ export default function UsuariosPage() {
         : api.put(`/usuarios/${u.id}`, { 
             nombre: u.nombre, 
             email: u.email, 
+            whatsapp_phone: u.whatsapp_phone,
             rol: u.rol, 
             area_ids: u.areas.map((a) => a.id),
             version: u.version
@@ -469,6 +505,12 @@ export default function UsuariosPage() {
                   <div className="flex-1 min-w-0 pt-0.5">
                     <p className="font-semibold text-sm leading-tight truncate">{u.nombre}</p>
                     <p className="text-xs text-base-content/45 truncate mt-0.5">{u.email}</p>
+                    {u.whatsapp_phone && (
+                      <p className="text-[11px] text-success flex items-center gap-1 mt-1 font-medium truncate" title={u.whatsapp_phone}>
+                        <Phone className="w-3 h-3 text-success shrink-0" />
+                        {u.whatsapp_phone}
+                      </p>
+                    )}
                   </div>
                   <RolBadge rol={u.rol} />
                 </div>

@@ -89,14 +89,25 @@ pub fn verify_twilio_signature(
     constant_time_eq(computed_signature.as_bytes(), expected_signature.as_bytes())
 }
 
-/// Normalizes phone number (strips whatsapp: prefix and @domain suffix)
+/// Normalizes phone number (strips whatsapp: prefix, @domain suffix, and spaces/dashes)
 pub fn normalize_phone(phone: &str) -> String {
     let stripped = phone.strip_prefix("whatsapp:").unwrap_or(phone);
-    if let Some(idx) = stripped.find('@') {
-        stripped[..idx].to_string()
+    let stripped = if let Some(idx) = stripped.find('@') {
+        &stripped[..idx]
     } else {
-        stripped.to_string()
+        stripped
+    };
+    let trimmed = stripped.trim();
+    let mut normalized = String::new();
+    if trimmed.starts_with('+') {
+        normalized.push('+');
     }
+    for c in trimmed.chars() {
+        if c.is_ascii_digit() {
+            normalized.push(c);
+        }
+    }
+    normalized
 }
 
 pub async fn webhook_handler(
@@ -933,7 +944,6 @@ pub async fn process_message_async(state: AppState, msg: WebhookMessage) -> Resu
 
     Ok(())
 }
-
 pub fn routes() -> Router<AppState> {
     Router::new().route("/", post(webhook_handler))
 }
@@ -948,6 +958,11 @@ mod tests {
         assert_eq!(normalize_phone("+56912345678@c.us"), "+56912345678");
         assert_eq!(normalize_phone("whatsapp:+56912345678@c.us"), "+56912345678");
         assert_eq!(normalize_phone("+56912345678"), "+56912345678");
+        assert_eq!(normalize_phone("+56 9 1234 5678"), "+56912345678");
+        assert_eq!(normalize_phone("56912345678"), "56912345678");
+        assert_eq!(normalize_phone("  +56-9-1234-5678  "), "+56912345678");
+        assert_eq!(normalize_phone("+"), "+");
+        assert_eq!(normalize_phone(""), "");
     }
 
 

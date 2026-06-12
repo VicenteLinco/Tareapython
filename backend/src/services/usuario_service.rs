@@ -27,6 +27,7 @@ async fn build_usuario_response(
         id: user.id,
         nombre: user.nombre.clone(),
         email: user.email.clone(),
+        whatsapp_phone: user.whatsapp_phone.clone(),
         rol: user.rol.clone(),
         activo: user.activo,
         areas,
@@ -46,7 +47,7 @@ pub async fn listar(pool: &PgPool, params: UsuarioQuery) -> Result<Vec<UsuarioRe
 
     let usuarios = if let Some(rol) = &params.rol {
         sqlx::query_as::<_, Usuario>(
-            "SELECT id, nombre, email, password_hash, rol, activo, version, created_at, updated_at FROM usuarios WHERE activo = $1 AND rol = $2 ORDER BY nombre",
+            "SELECT id, nombre, email, whatsapp_phone, password_hash, rol, activo, version, created_at, updated_at FROM usuarios WHERE activo = $1 AND rol = $2 ORDER BY nombre",
         )
         .bind(activo)
         .bind(rol)
@@ -54,7 +55,7 @@ pub async fn listar(pool: &PgPool, params: UsuarioQuery) -> Result<Vec<UsuarioRe
         .await?
     } else {
         sqlx::query_as::<_, Usuario>(
-            "SELECT id, nombre, email, password_hash, rol, activo, version, created_at, updated_at FROM usuarios WHERE activo = $1 ORDER BY nombre",
+            "SELECT id, nombre, email, whatsapp_phone, password_hash, rol, activo, version, created_at, updated_at FROM usuarios WHERE activo = $1 ORDER BY nombre",
         )
         .bind(activo)
         .fetch_all(pool)
@@ -98,6 +99,7 @@ pub async fn listar(pool: &PgPool, params: UsuarioQuery) -> Result<Vec<UsuarioRe
                 id: u.id,
                 nombre: u.nombre,
                 email: u.email,
+                whatsapp_phone: u.whatsapp_phone,
                 rol: u.rol,
                 activo: u.activo,
                 areas,
@@ -109,7 +111,7 @@ pub async fn listar(pool: &PgPool, params: UsuarioQuery) -> Result<Vec<UsuarioRe
 
 pub async fn obtener(pool: &PgPool, id: Uuid) -> Result<UsuarioResponse, AppError> {
     let user = sqlx::query_as::<_, Usuario>(
-        "SELECT id, nombre, email, password_hash, rol, activo, version, created_at, updated_at FROM usuarios WHERE id = $1",
+        "SELECT id, nombre, email, whatsapp_phone, password_hash, rol, activo, version, created_at, updated_at FROM usuarios WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -128,6 +130,10 @@ pub async fn crear(
 
     let nombre = req.nombre.trim().to_string();
     let email = req.email.trim().to_lowercase();
+    let whatsapp_phone = req
+        .whatsapp_phone
+        .as_ref()
+        .map(|p| crate::handlers::whatsapp::normalize_phone(p));
 
     let salt = SaltString::generate(&mut OsRng);
     let password_hash = Argon2::default()
@@ -138,18 +144,19 @@ pub async fn crear(
     let mut tx = pool.begin().await?;
 
     let user = sqlx::query_as::<_, Usuario>(
-        "INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES ($1, $2, $3, $4) \
-         RETURNING id, nombre, email, password_hash, rol, activo, version, created_at, updated_at",
+        "INSERT INTO usuarios (nombre, email, password_hash, rol, whatsapp_phone) VALUES ($1, $2, $3, $4, $5) \
+         RETURNING id, nombre, email, whatsapp_phone, password_hash, rol, activo, version, created_at, updated_at",
     )
     .bind(&nombre)
     .bind(&email)
     .bind(&password_hash)
     .bind(&req.rol)
+    .bind(&whatsapp_phone)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| match &e {
         sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
-            AppError::Conflict(format!("El email '{}' ya está registrado", email))
+            AppError::Conflict(format!("El email o número de WhatsApp ya está registrado"))
         }
         _ => e.into(),
     })?;
@@ -170,7 +177,12 @@ pub async fn crear(
         &user.id.to_string(),
         "CREATE",
         None,
-        Some(json!({"nombre": &user.nombre, "email": &user.email, "rol": &user.rol})),
+        Some(json!({
+            "nombre": &user.nombre,
+            "email": &user.email,
+            "rol": &user.rol,
+            "whatsapp_phone": &user.whatsapp_phone
+        })),
         admin_id,
     )
     .await?;
@@ -193,7 +205,7 @@ pub async fn actualizar(
     }
 
     let anterior = sqlx::query_as::<_, Usuario>(
-        "SELECT id, nombre, email, password_hash, rol, activo, version, created_at, updated_at FROM usuarios WHERE id = $1",
+        "SELECT id, nombre, email, whatsapp_phone, password_hash, rol, activo, version, created_at, updated_at FROM usuarios WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -209,16 +221,23 @@ pub async fn actualizar(
     let email_ref = email.as_deref().unwrap_or(&anterior.email);
     let rol = req.rol.as_deref().unwrap_or(&anterior.rol);
 
+    let whatsapp_phone = req
+        .whatsapp_phone
+        .as_ref()
+        .map(|p| crate::handlers::whatsapp::normalize_phone(p));
+    let whatsapp_phone_ref = whatsapp_phone.as_ref().or(anterior.whatsapp_phone.as_ref());
+
     let mut tx = pool.begin().await?;
 
     let user = sqlx::query_as::<_, Usuario>(
-        "UPDATE usuarios SET nombre = $1, email = $2, rol = $3, version = version + 1, updated_at = NOW() \
-         WHERE id = $4 AND version = $5 \
-         RETURNING id, nombre, email, password_hash, rol, activo, version, created_at, updated_at",
+        "UPDATE usuarios SET nombre = $1, email = $2, rol = $3, whatsapp_phone = $4, version = version + 1, updated_at = NOW() \
+         WHERE id = $5 AND version = $6 \
+         RETURNING id, nombre, email, whatsapp_phone, password_hash, rol, activo, version, created_at, updated_at",
     )
     .bind(nombre)
     .bind(email_ref)
     .bind(rol)
+    .bind(whatsapp_phone_ref)
     .bind(id)
     .bind(req.version)
     .fetch_optional(&mut *tx)
@@ -249,8 +268,18 @@ pub async fn actualizar(
         "usuarios",
         &id.to_string(),
         "UPDATE",
-        Some(json!({"nombre": &anterior.nombre, "email": &anterior.email, "rol": &anterior.rol})),
-        Some(json!({"nombre": &user.nombre, "email": &user.email, "rol": &user.rol})),
+        Some(json!({
+            "nombre": &anterior.nombre,
+            "email": &anterior.email,
+            "rol": &anterior.rol,
+            "whatsapp_phone": &anterior.whatsapp_phone
+        })),
+        Some(json!({
+            "nombre": &user.nombre,
+            "email": &user.email,
+            "rol": &user.rol,
+            "whatsapp_phone": &user.whatsapp_phone
+        })),
         admin_id,
     )
     .await?;
@@ -326,4 +355,72 @@ pub async fn reset_password(
     .await?;
 
     Ok(())
+}
+
+pub async fn actualizar_perfil(
+    pool: &PgPool,
+    id: Uuid,
+    req: crate::auth::models::UpdateProfileRequest,
+) -> Result<UsuarioResponse, AppError> {
+    req.validate()?;
+
+    let anterior = sqlx::query_as::<_, Usuario>(
+        "SELECT id, nombre, email, whatsapp_phone, password_hash, rol, activo, version, created_at, updated_at FROM usuarios WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::NotFound("Usuario no encontrado".into()))?;
+
+    let nombre = req
+        .nombre
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or(&anterior.nombre);
+    let email = req.email.as_deref().map(|e| e.trim().to_lowercase());
+    let email_ref = email.as_deref().unwrap_or(&anterior.email);
+
+    let whatsapp_phone = req
+        .whatsapp_phone
+        .as_ref()
+        .map(|p| crate::handlers::whatsapp::normalize_phone(p));
+    let whatsapp_phone_ref = whatsapp_phone.as_ref().or(anterior.whatsapp_phone.as_ref());
+
+    let mut tx = pool.begin().await?;
+
+    let user = sqlx::query_as::<_, Usuario>(
+        "UPDATE usuarios SET nombre = $1, email = $2, whatsapp_phone = $3, version = version + 1, updated_at = NOW() \
+         WHERE id = $4 \
+         RETURNING id, nombre, email, whatsapp_phone, password_hash, rol, activo, version, created_at, updated_at",
+    )
+    .bind(nombre)
+    .bind(email_ref)
+    .bind(whatsapp_phone_ref)
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(AppError::NotFound("Usuario no encontrado".into()))?;
+
+    tx.commit().await?;
+
+    crate::services::audit::registrar(
+        pool,
+        "usuarios",
+        &id.to_string(),
+        "UPDATE_PROFILE",
+        Some(json!({
+            "nombre": &anterior.nombre,
+            "email": &anterior.email,
+            "whatsapp_phone": &anterior.whatsapp_phone
+        })),
+        Some(json!({
+            "nombre": &user.nombre,
+            "email": &user.email,
+            "whatsapp_phone": &user.whatsapp_phone
+        })),
+        id,
+    )
+    .await?;
+
+    build_usuario_response(pool, &user).await
 }

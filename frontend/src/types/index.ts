@@ -26,9 +26,16 @@ export interface MeResponse {
   id: string
   nombre: string
   email: string
+  whatsapp_phone: string | null
   rol: string
   area_ids: number[]
   version: number
+}
+
+export interface UpdateProfileRequest {
+  nombre?: string
+  email?: string
+  whatsapp_phone?: string | null
 }
 
 

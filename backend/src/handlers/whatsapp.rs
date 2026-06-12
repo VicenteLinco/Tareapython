@@ -944,8 +944,40 @@ pub async fn process_message_async(state: AppState, msg: WebhookMessage) -> Resu
 
     Ok(())
 }
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct WebhookLogEntry {
+    pub id: uuid::Uuid,
+    pub message_id: String,
+    pub sender_phone: String,
+    pub usuario_id: Option<uuid::Uuid>,
+    pub request_body: String,
+    pub command_type: Option<String>,
+    pub status: String,
+    pub response_body: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+pub async fn get_logs_handler(
+    State(state): State<AppState>,
+) -> Result<axum::Json<Vec<WebhookLogEntry>>, AppError> {
+    let logs = sqlx::query_as::<_, WebhookLogEntry>(
+        "SELECT id, message_id, sender_phone, usuario_id, request_body, command_type, status, response_body, created_at 
+         FROM whatsapp_webhook_logs 
+         ORDER BY created_at DESC 
+         LIMIT 50"
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| AppError::Sqlx(e))?;
+
+    Ok(axum::Json(logs))
+}
+
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/", post(webhook_handler))
+    Router::new()
+        .route("/", axum::routing::post(webhook_handler))
+        .route("/logs", axum::routing::get(get_logs_handler))
 }
 
 #[cfg(test)]

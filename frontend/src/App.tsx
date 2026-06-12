@@ -27,6 +27,7 @@ const OrdenesCompraPage = lazy(() => import('@/pages/ordenes-compra'))
 const OrdenCompraDetallePage = lazy(() => import('@/pages/ordenes-compra/detalle'))
 const ScanPage = lazy(() => import('./pages/scan/index'))
 const ReportesPage = lazy(() => import('@/pages/reportes'))
+const WhatsappSimulatorPage = lazy(() => import('@/pages/whatsapp-simulator'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -84,6 +85,7 @@ export default function App() {
                   <Route path="/audit-log" element={<AuditLogPage />} />
                   <Route path="/setup" element={<SetupPage />} />
                   <Route path="/reportes" element={<ReportesPage />} />
+                  <Route path="/whatsapp-simulator" element={<WhatsappSimulatorPage />} />
                 </Route>
                 <Route path="/scan/:token" element={<ScanPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />

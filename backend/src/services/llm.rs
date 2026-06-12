@@ -42,18 +42,24 @@ pub struct GeminiContentPart {
     pub function_call: Option<GeminiFunctionCall>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub function_response: Option<GeminiFunctionResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thought_signature: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GeminiFunctionCall {
     pub name: String,
     pub args: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GeminiFunctionResponse {
     pub name: String,
     pub response: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -187,6 +193,32 @@ fn get_gemini_tools() -> Vec<GeminiTool> {
                     "required": ["producto", "cantidad"]
                 }),
             },
+            GeminiFunctionDeclaration {
+                name: "registrar_consumo".to_string(),
+                description: "Registra el consumo de stock de un producto específico. Si no se indica un lote y existen múltiples, el sistema devolverá las opciones disponibles para que el usuario elija.".to_string(),
+                parameters: serde_json::json!({
+                    "type": "OBJECT",
+                    "properties": {
+                        "producto": {
+                            "type": "STRING",
+                            "description": "Código interno del producto, código de barras o nombre del producto"
+                        },
+                        "cantidad": {
+                            "type": "NUMBER",
+                            "description": "Cantidad física a consumir (número positivo, máx 2 decimales)"
+                        },
+                        "lote": {
+                            "type": "STRING",
+                            "description": "Opcional. Código identificador de lote del fabricante, código interno o UUID del lote"
+                        },
+                        "area_id": {
+                            "type": "INTEGER",
+                            "description": "Opcional. ID numérico del área donde se realiza el consumo"
+                        }
+                    },
+                    "required": ["producto", "cantidad"]
+                }),
+            },
         ],
     }]
 }
@@ -235,6 +267,7 @@ impl LlmClient for GeminiClient {
                     text: Some(row.request_body),
                     function_call: None,
                     function_response: None,
+                    thought_signature: None,
                 }],
             });
             if let Some(resp) = row.response_body {
@@ -244,6 +277,7 @@ impl LlmClient for GeminiClient {
                         text: Some(resp),
                         function_call: None,
                         function_response: None,
+                        thought_signature: None,
                     }],
                 });
             }
@@ -256,6 +290,7 @@ impl LlmClient for GeminiClient {
                 text: Some(user_prompt.to_string()),
                 function_call: None,
                 function_response: None,
+                thought_signature: None,
             }],
         });
 
@@ -379,7 +414,9 @@ impl LlmClient for GeminiClient {
                             function_response: Some(GeminiFunctionResponse {
                                 name: call.name.clone(),
                                 response: tool_result,
+                                id: call.id.clone(),
                             }),
+                            thought_signature: None,
                         }],
                     });
                     break;
@@ -550,6 +587,35 @@ fn get_openai_tools() -> Vec<OpenAiTool> {
                         "nota": {
                             "type": "string",
                             "description": "Nota descriptiva o justificación opcional"
+                        }
+                    },
+                    "required": ["producto", "cantidad"]
+                }),
+            },
+        },
+        OpenAiTool {
+            r#type: "function".to_string(),
+            function: OpenAiFunction {
+                name: "registrar_consumo".to_string(),
+                description: "Registra el consumo de stock de un producto específico. Si no se indica un lote y existen múltiples, el sistema devolverá las opciones disponibles para que el usuario elija.".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "producto": {
+                            "type": "string",
+                            "description": "Código interno del producto, código de barras o nombre del producto"
+                        },
+                        "cantidad": {
+                            "type": "number",
+                            "description": "Cantidad física a consumir (número positivo, máx 2 decimales)"
+                        },
+                        "lote": {
+                            "type": "string",
+                            "description": "Opcional. Código identificador de lote del fabricante, código interno o UUID del lote"
+                        },
+                        "area_id": {
+                            "type": "integer",
+                            "description": "Opcional. ID numérico del área donde se realiza el consumo"
                         }
                     },
                     "required": ["producto", "cantidad"]

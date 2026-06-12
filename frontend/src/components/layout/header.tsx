@@ -3,6 +3,8 @@ import axios from 'axios'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { useNavigate } from 'react-router-dom'
 import { clearDeviceMode } from '@/lib/device-mode'
+import { useState } from 'react'
+import { ProfileModal } from '@/components/auth/ProfileModal'
 
 interface HeaderProps {
   onOpenSearch?: () => void
@@ -11,6 +13,7 @@ interface HeaderProps {
 export function Header({ onOpenSearch }: HeaderProps) {
   const { usuario, refreshToken, logout } = useAuthStore()
   const navigate = useNavigate()
+  const [profileOpen, setProfileOpen] = useState(false)
 
   const handleLogout = async () => {
     try {
@@ -43,14 +46,19 @@ export function Header({ onOpenSearch }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold">
-            {usuario?.nombre?.charAt(0)?.toUpperCase() ?? 'U'}
-          </div>
-          <div className="hidden sm:flex flex-col">
-            <span className="text-xs font-semibold leading-tight">{usuario?.nombre}</span>
-            <span className="text-[10px] opacity-40 capitalize leading-tight">{usuario?.rol}</span>
-          </div>
+        <div className="tooltip tooltip-bottom" data-tip="Editar perfil">
+          <button
+            onClick={() => setProfileOpen(true)}
+            className="flex items-center gap-2.5 hover:bg-base-200/50 p-1 px-2 rounded-xl transition-all text-left"
+          >
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold">
+              {usuario?.nombre?.charAt(0)?.toUpperCase() ?? 'U'}
+            </div>
+            <div className="hidden sm:flex flex-col">
+              <span className="text-xs font-semibold leading-tight">{usuario?.nombre}</span>
+              <span className="text-[10px] opacity-40 capitalize leading-tight">{usuario?.rol}</span>
+            </div>
+          </button>
         </div>
         <div className="tooltip tooltip-bottom" data-tip="Cerrar sesión">
           <button onClick={handleLogout} className="btn btn-ghost btn-xs btn-square opacity-40 hover:opacity-100">
@@ -58,6 +66,7 @@ export function Header({ onOpenSearch }: HeaderProps) {
           </button>
         </div>
       </div>
+      <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
     </header>
   )
 }

@@ -756,64 +756,73 @@ impl LlmClient for OllamaClient {
 
             if let Some(ref tool_calls) = model_message.tool_calls {
                 if !tool_calls.is_empty() {
-                    let tool_call = &tool_calls[0];
+                    let mut command_types = Vec::new();
 
-                    let (cmd_type, current_tool_status) = match tool_call.function.name.as_str() {
-                        "buscar_stock" => ("STOCK", "SUCCESS"),
-                        "registrar_ingreso" => ("RECIBIR", "SUCCESS"),
-                        "crear_solicitud_compra" => ("CREAR", "SUCCESS"),
-                        _ => ("INVALIDO", "SYNTAX_ERROR"),
-                    };
-                    command_type = Some(cmd_type.to_string());
-                    if current_tool_status == "SYNTAX_ERROR" {
-                        status = "SYNTAX_ERROR".to_string();
-                    }
+                    for tool_call in tool_calls {
+                        let (cmd_type, current_tool_status) = match tool_call.function.name.as_str() {
+                            "buscar_stock" => ("STOCK", "SUCCESS"),
+                            "registrar_ingreso" => ("RECIBIR", "SUCCESS"),
+                            "registrar_consumo" => ("CONSUMO", "SUCCESS"),
+                            "crear_solicitud_compra" => ("CREAR", "SUCCESS"),
+                            _ => ("INVALIDO", "SYNTAX_ERROR"),
+                        };
+                        if cmd_type != "INVALIDO" && !command_types.contains(&cmd_type) {
+                            command_types.push(cmd_type);
+                        }
+                        if current_tool_status == "SYNTAX_ERROR" {
+                            status = "SYNTAX_ERROR".to_string();
+                        }
 
-                    let args_val: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)
-                        .unwrap_or(serde_json::Value::Null);
+                        let args_val: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)
+                            .unwrap_or(serde_json::Value::Null);
 
-                    let tool_result = match execute_tool(pool, user, &tool_call.function.name, args_val).await {
-                        Ok(val) => {
-                            if let Some(status_field) = val.get("status").and_then(|s| s.as_str()) {
-                                if status_field == "error" {
-                                    if let Some(msg) = val.get("message").and_then(|m| m.as_str()) {
-                                        if msg.contains("autorización") || msg.contains("rol") {
-                                            status = "UNAUTHORIZED".to_string();
-                                        } else if msg.contains("no existe") || msg.contains("formato") || msg.contains("futura") || msg.contains("decimales") || msg.contains("cero") {
-                                            status = "SYNTAX_ERROR".to_string();
+                        let tool_result = match execute_tool(pool, user, &tool_call.function.name, args_val).await {
+                            Ok(val) => {
+                                if let Some(status_field) = val.get("status").and_then(|s| s.as_str()) {
+                                    if status_field == "error" {
+                                        if let Some(msg) = val.get("message").and_then(|m| m.as_str()) {
+                                            if msg.contains("autorización") || msg.contains("rol") {
+                                                status = "UNAUTHORIZED".to_string();
+                                            } else if msg.contains("no existe") || msg.contains("formato") || msg.contains("futura") || msg.contains("decimales") || msg.contains("cero") {
+                                                status = "SYNTAX_ERROR".to_string();
+                                            } else {
+                                                status = "DB_ERROR".to_string();
+                                            }
                                         } else {
-                                            status = "DB_ERROR".to_string();
+                                            status = "SYNTAX_ERROR".to_string();
                                         }
-                                    } else {
-                                        status = "SYNTAX_ERROR".to_string();
                                     }
                                 }
+                                val
                             }
-                            val
-                        }
-                        Err(e) => {
-                            status = match e {
-                                AppError::Forbidden(_) => "UNAUTHORIZED".to_string(),
-                                AppError::Sqlx(_) => "DB_ERROR".to_string(),
-                                _ => "SYNTAX_ERROR".to_string(),
-                            };
-                            let error_msg = match e {
-                                AppError::Forbidden(m) => m,
-                                _ => "Error en la ejecución de la herramienta.".to_string(),
-                            };
-                            serde_json::json!({
-                                "status": "error",
-                                "message": error_msg,
-                            })
-                        }
-                    };
+                            Err(e) => {
+                                status = match e {
+                                    AppError::Forbidden(_) => "UNAUTHORIZED".to_string(),
+                                    AppError::Sqlx(_) => "DB_ERROR".to_string(),
+                                    _ => "SYNTAX_ERROR".to_string(),
+                                };
+                                let error_msg = match e {
+                                    AppError::Forbidden(m) => m,
+                                    _ => "Error en la ejecución de la herramienta.".to_string(),
+                                };
+                                serde_json::json!({
+                                    "status": "error",
+                                    "message": error_msg,
+                                })
+                            }
+                        };
 
-                    messages.push(OpenAiMessage {
-                        role: "tool".to_string(),
-                        content: Some(serde_json::to_string(&tool_result).unwrap()),
-                        tool_calls: None,
-                        tool_call_id: Some(tool_call.id.clone()),
-                    });
+                        messages.push(OpenAiMessage {
+                            role: "tool".to_string(),
+                            content: Some(serde_json::to_string(&tool_result).unwrap()),
+                            tool_calls: None,
+                            tool_call_id: Some(tool_call.id.clone()),
+                        });
+                    }
+
+                    if !command_types.is_empty() {
+                        command_type = Some(command_types.join(","));
+                    }
                     continue;
                 }
             }

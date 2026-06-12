@@ -38,3 +38,5 @@ docs/superpowers/
 .claude/
 .antigravitycli/
 
+# Local Pi runtime state
+.atl/

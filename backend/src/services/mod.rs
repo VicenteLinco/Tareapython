@@ -12,3 +12,5 @@ pub mod stock_ops;
 pub mod storage;
 pub mod unidad_basica_service;
 pub mod usuario_service;
+pub mod llm;
+

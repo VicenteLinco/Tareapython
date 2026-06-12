@@ -182,26 +182,12 @@ pub async fn webhook_handler(
     Ok((StatusCode::ACCEPTED, "Processing request").into_response())
 }
 
-static RE_AYUDA: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\s*(?i)AYUDA\s*$").unwrap()
-});
 
-static RE_VER_STOCK: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\s*(?i)VER/STOCK\s+(?P<query>.+?)\s*$").unwrap()
-});
 
-static RE_RECIBIR: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\s*(?i)RECIBIR\s+(?P<product>[A-Z0-9\-]+)\s+(?P<qty>\d+(\.\d{1,2})?)\s+(?P<lote>[A-Z0-9\-]+)\s+(?P<expiry>\d{4}-\d{2}-\d{2})\s+(?P<area>\d+)\s*$").unwrap()
-});
-
-static RE_CREAR: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\s*(?i)CREAR\s+SOLICITUD\s+(?P<product>[A-Z0-9\-]+)\s+(?P<qty>\d+(\.\d{1,2})?)(?:\s+(?P<note>.+))?\s*$").unwrap()
-});
-
-#[derive(sqlx::FromRow, Debug)]
+#[derive(sqlx::FromRow, Debug, Clone)]
 pub struct ActiveUser {
-    id: uuid::Uuid,
-    rol: String,
+    pub id: uuid::Uuid,
+    pub rol: String,
 }
 
 #[derive(sqlx::FromRow, Debug)]
@@ -286,16 +272,97 @@ pub async fn log_webhook_transaction(
     Ok(())
 }
 
-pub async fn handle_ver_stock(
-    state: &AppState,
-    msg: &WebhookMessage,
-    sender_phone: &str,
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BuscarStockArgs {
+    pub busqueda: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct StockItemResult {
+    pub codigo_interno: String,
+    pub producto_nombre: String,
+    pub area_nombre: String,
+    pub stock_total: rust_decimal::Decimal,
+    pub unidad: String,
+    pub proximo_vencimiento: Option<chrono::NaiveDate>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BuscarStockResult {
+    pub status: String,
+    pub items: Vec<StockItemResult>,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct RegistrarIngresoArgs {
+    pub producto: String,
+    pub cantidad: rust_decimal::Decimal,
+    pub lote: String,
+    pub vencimiento: String,
+    pub area_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RegistrarIngresoResult {
+    pub status: String,
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct CrearSolicitudCompraArgs {
+    pub producto: String,
+    pub cantidad: rust_decimal::Decimal,
+    pub nota: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CrearSolicitudCompraResult {
+    pub status: String,
+    pub message: String,
+}
+
+pub async fn execute_tool(
+    pool: &sqlx::PgPool,
     user: &ActiveUser,
-    query: &str,
-) -> Result<(), AppError> {
-    let ilike_query = format!("%{}%", query);
-    
-    let rows_res = sqlx::query_as::<_, StockRow>(
+    tool_name: &str,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    match tool_name {
+        "buscar_stock" => {
+            let args: BuscarStockArgs = serde_json::from_value(args)
+                .map_err(|e| AppError::Internal(format!("Invalid arguments for buscar_stock: {}", e)))?;
+            let res = execute_buscar_stock(pool, user, args).await?;
+            Ok(serde_json::to_value(res).map_err(|e| AppError::Internal(e.to_string()))?)
+        }
+        "registrar_ingreso" => {
+            let args: RegistrarIngresoArgs = serde_json::from_value(args)
+                .map_err(|e| AppError::Internal(format!("Invalid arguments for registrar_ingreso: {}", e)))?;
+            let res = execute_registrar_ingreso(pool, user, args).await?;
+            Ok(serde_json::to_value(res).map_err(|e| AppError::Internal(e.to_string()))?)
+        }
+        "crear_solicitud_compra" => {
+            let args: CrearSolicitudCompraArgs = serde_json::from_value(args)
+                .map_err(|e| AppError::Internal(format!("Invalid arguments for crear_solicitud_compra: {}", e)))?;
+            let res = execute_crear_solicitud_compra(pool, user, args).await?;
+            Ok(serde_json::to_value(res).map_err(|e| AppError::Internal(e.to_string()))?)
+        }
+        _ => Err(AppError::Internal(format!("Unknown tool: {}", tool_name))),
+    }
+}
+
+pub async fn execute_buscar_stock(
+    pool: &sqlx::PgPool,
+    user: &ActiveUser,
+    args: BuscarStockArgs,
+) -> Result<BuscarStockResult, AppError> {
+    if !matches!(user.rol.as_str(), "admin" | "tecnologo") {
+        return Err(AppError::Forbidden("No autorizado: Requiere rol tecnologo o admin para buscar stock.".to_string()));
+    }
+
+    let ilike_query = format!("%{}%", args.busqueda.trim());
+
+    let rows = sqlx::query_as::<_, StockRow>(
         r#"SELECT
             v.codigo_interno,
             v.producto_nombre,
@@ -317,282 +384,113 @@ pub async fn handle_ver_stock(
     .bind(&ilike_query)
     .bind(&user.rol)
     .bind(user.id)
-    .fetch_all(&state.pool)
-    .await;
+    .fetch_all(pool)
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let rows = match rows_res {
-        Ok(r) => r,
-        Err(e) => {
-            let error_msg = "Ocurrió un error al consultar el stock.";
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("STOCK"),
-                "DB_ERROR",
-                Some(error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-            return Err(e.into());
-        }
+    let items = rows
+        .into_iter()
+        .map(|r| StockItemResult {
+            codigo_interno: r.codigo_interno,
+            producto_nombre: r.producto_nombre,
+            area_nombre: r.area_nombre,
+            stock_total: r.stock_total,
+            unidad: r.unidad,
+            proximo_vencimiento: r.proximo_vencimiento,
+        })
+        .collect::<Vec<_>>();
+
+    let message = if items.is_empty() {
+        Some(format!("No se encontró stock para la búsqueda: '{}'.", args.busqueda))
+    } else {
+        None
     };
 
-    if rows.is_empty() {
-        let no_stock_msg = format!("No se encontró stock para la búsqueda: '{}'.", query);
-        let _ = log_webhook_transaction(
-            &state.pool,
-            &msg.id,
-            sender_phone,
-            Some(user.id),
-            &msg.raw_payload,
-            Some("STOCK"),
-            "SUCCESS",
-            Some(&no_stock_msg),
-        ).await;
-        let _ = send_whatsapp_reply(&state.config, &msg.from, &no_stock_msg).await;
-        return Ok(());
-    }
-
-    let mut reply = format!("Resultados de stock para '{}':\n", query);
-    let mut current_product = String::new();
-    for row in rows {
-        let prod_header = format!("\n*{}* (Código: {})\n", row.producto_nombre, row.codigo_interno);
-        if prod_header != current_product {
-            reply.push_str(&prod_header);
-            current_product = prod_header;
-        }
-        let vencimiento_str = match row.proximo_vencimiento {
-            Some(date) => date.format("%Y-%m-%d").to_string(),
-            None => "N/A".to_string(),
-        };
-        reply.push_str(&format!(
-            " - Área: {} | Stock: {} {} | Próx. Vencimiento: {}\n",
-            row.area_nombre, row.stock_total, row.unidad, vencimiento_str
-        ));
-    }
-
-    let _ = log_webhook_transaction(
-        &state.pool,
-        &msg.id,
-        sender_phone,
-        Some(user.id),
-        &msg.raw_payload,
-        Some("STOCK"),
-        "SUCCESS",
-        Some(&reply),
-    ).await;
-
-    let _ = send_whatsapp_reply(&state.config, &msg.from, &reply).await;
-    Ok(())
+    Ok(BuscarStockResult {
+        status: "success".to_string(),
+        items,
+        message,
+    })
 }
 
-#[allow(clippy::too_many_arguments)]
-pub async fn handle_recibir(
-    state: &AppState,
-    msg: &WebhookMessage,
-    sender_phone: &str,
+pub async fn execute_registrar_ingreso(
+    pool: &sqlx::PgPool,
     user: &ActiveUser,
-    product_code: &str,
-    qty_str: &str,
-    lote_num: &str,
-    expiry_str: &str,
-    area_str: &str,
-) -> Result<(), AppError> {
-    use std::str::FromStr;
+    args: RegistrarIngresoArgs,
+) -> Result<RegistrarIngresoResult, AppError> {
+    if !matches!(user.rol.as_str(), "admin" | "tecnologo") {
+        return Ok(RegistrarIngresoResult {
+            status: "error".to_string(),
+            message: "No autorizado: Requiere rol tecnologo o admin para registrar ingreso.".to_string(),
+        });
+    }
 
-    let area_id = match i32::from_str(area_str) {
-        Ok(id) => id,
-        Err(_) => {
-            let error_msg = format!("Error: El área ID '{}' no es un número válido.", area_str);
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("RECIBIR"),
-                "SYNTAX_ERROR",
-                Some(&error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, &error_msg).await;
-            return Ok(());
-        }
-    };
+    if args.cantidad.scale() > 2 {
+        return Ok(RegistrarIngresoResult {
+            status: "error".to_string(),
+            message: "Error: La cantidad no puede tener más de 2 decimales.".to_string(),
+        });
+    }
+    if args.cantidad <= rust_decimal::Decimal::ZERO {
+        return Ok(RegistrarIngresoResult {
+            status: "error".to_string(),
+            message: "Error: La cantidad debe ser mayor a cero.".to_string(),
+        });
+    }
 
-    let qty_dec = match rust_decimal::Decimal::from_str(qty_str) {
-        Ok(q) => {
-            if q.scale() > 2 {
-                let error_msg = "Error: La cantidad no puede tener más de 2 decimales.";
-                let _ = log_webhook_transaction(
-                    &state.pool,
-                    &msg.id,
-                    sender_phone,
-                    Some(user.id),
-                    &msg.raw_payload,
-                    Some("RECIBIR"),
-                    "SYNTAX_ERROR",
-                    Some(error_msg),
-                ).await;
-                let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-                return Ok(());
-            }
-            if q <= rust_decimal::Decimal::ZERO {
-                let error_msg = "Error: La cantidad debe ser mayor a cero.";
-                let _ = log_webhook_transaction(
-                    &state.pool,
-                    &msg.id,
-                    sender_phone,
-                    Some(user.id),
-                    &msg.raw_payload,
-                    Some("RECIBIR"),
-                    "SYNTAX_ERROR",
-                    Some(error_msg),
-                ).await;
-                let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-                return Ok(());
-            }
-            q
-        }
-        Err(_) => {
-            let error_msg = format!("Error: La cantidad '{}' no es un número válido.", qty_str);
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("RECIBIR"),
-                "SYNTAX_ERROR",
-                Some(&error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, &error_msg).await;
-            return Ok(());
-        }
-    };
-
-    let expiry_date = match chrono::NaiveDate::parse_from_str(expiry_str, "%Y-%m-%d") {
+    let expiry_date = match chrono::NaiveDate::parse_from_str(&args.vencimiento, "%Y-%m-%d") {
         Ok(date) => {
             let today = chrono::Utc::now().date_naive();
             if date <= today {
-                let error_msg = format!("Error: La fecha de vencimiento '{}' debe ser futura.", expiry_str);
-                let _ = log_webhook_transaction(
-                    &state.pool,
-                    &msg.id,
-                    sender_phone,
-                    Some(user.id),
-                    &msg.raw_payload,
-                    Some("RECIBIR"),
-                    "SYNTAX_ERROR",
-                    Some(&error_msg),
-                ).await;
-                let _ = send_whatsapp_reply(&state.config, &msg.from, &error_msg).await;
-                return Ok(());
+                return Ok(RegistrarIngresoResult {
+                    status: "error".to_string(),
+                    message: format!("Error: La fecha de vencimiento '{}' debe ser futura.", args.vencimiento),
+                });
             }
             date
         }
         Err(_) => {
-            let error_msg = format!("Error: La fecha de vencimiento '{}' no tiene el formato AAAA-MM-DD.", expiry_str);
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("RECIBIR"),
-                "SYNTAX_ERROR",
-                Some(&error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, &error_msg).await;
-            return Ok(());
+            return Ok(RegistrarIngresoResult {
+                status: "error".to_string(),
+                message: format!("Error: La fecha de vencimiento '{}' no tiene el formato AAAA-MM-DD.", args.vencimiento),
+            });
         }
     };
 
+    let area_exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM areas WHERE id = $1)"
+    )
+    .bind(args.area_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    if !area_exists {
+        return Ok(RegistrarIngresoResult {
+            status: "error".to_string(),
+            message: format!("Error: El área ID {} no existe.", args.area_id),
+        });
+    }
+
     if user.rol != "admin" {
-        let has_access = match sqlx::query_scalar::<_, bool>(
+        let has_access = sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS(SELECT 1 FROM usuario_area WHERE usuario_id = $1 AND area_id = $2)"
         )
         .bind(user.id)
-        .bind(area_id)
-        .fetch_one(&state.pool)
-        .await {
-            Ok(access) => access,
-            Err(e) => {
-                let error_msg = "Ocurrió un error al verificar los accesos del área.";
-                let _ = log_webhook_transaction(
-                    &state.pool,
-                    &msg.id,
-                    sender_phone,
-                    Some(user.id),
-                    &msg.raw_payload,
-                    Some("RECIBIR"),
-                    "DB_ERROR",
-                    Some(error_msg),
-                ).await;
-                let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-                return Err(e.into());
-            }
-        };
+        .bind(args.area_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
         if !has_access {
-            let error_msg = format!("Error: No tiene autorización para ingresar stock en el área ID {}.", area_id);
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("RECIBIR"),
-                "UNAUTHORIZED",
-                Some(&error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, &error_msg).await;
-            return Ok(());
+            return Ok(RegistrarIngresoResult {
+                status: "error".to_string(),
+                message: format!("Error: No tiene autorización para ingresar stock en el área ID {}.", args.area_id),
+            });
         }
     }
 
-    let area_exists = match sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM areas WHERE id = $1)"
-    )
-    .bind(area_id)
-    .fetch_one(&state.pool)
-    .await {
-        Ok(exists) => exists,
-        Err(e) => {
-            let error_msg = "Ocurrió un error al verificar el área.";
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("RECIBIR"),
-                "DB_ERROR",
-                Some(error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-            return Err(e.into());
-        }
-    };
-
-    if !area_exists {
-        let error_msg = format!("Error: El área ID {} no existe.", area_id);
-        let _ = log_webhook_transaction(
-            &state.pool,
-            &msg.id,
-            sender_phone,
-            Some(user.id),
-            &msg.raw_payload,
-            Some("RECIBIR"),
-            "SYNTAX_ERROR",
-            Some(&error_msg),
-        ).await;
-        let _ = send_whatsapp_reply(&state.config, &msg.from, &error_msg).await;
-        return Ok(());
-    }
-
-    let resolved_opt = match sqlx::query_as::<_, ProductResolution>(
+    let resolved_opt = sqlx::query_as::<_, ProductResolution>(
         r#"SELECT 
             p.id AS producto_id, 
             p.nombre AS producto_nombre,
@@ -603,31 +501,15 @@ pub async fn handle_recibir(
         JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
         WHERE p.codigo_interno = $1 AND p.activo = true"#
     )
-    .bind(product_code)
-    .fetch_optional(&state.pool)
-    .await {
-        Ok(res) => res,
-        Err(e) => {
-            let error_msg = "Ocurrió un error al buscar el producto.";
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("RECIBIR"),
-                "DB_ERROR",
-                Some(error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-            return Err(e.into());
-        }
-    };
+    .bind(&args.producto)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let resolved = match resolved_opt {
         Some(res) => res,
         None => {
-            let pres_opt = match sqlx::query_as::<_, ProductResolution>(
+            let pres_opt = sqlx::query_as::<_, ProductResolution>(
                 r#"SELECT 
                     pres.producto_id AS producto_id, 
                     p.nombre AS producto_nombre,
@@ -639,68 +521,26 @@ pub async fn handle_recibir(
                 JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
                 WHERE pres.codigo_barras = $1 AND pres.activa = true AND p.activo = true"#
             )
-            .bind(product_code)
-            .fetch_optional(&state.pool)
-            .await {
-                Ok(res) => res,
-                Err(e) => {
-                    let error_msg = "Ocurrió un error al buscar la presentación.";
-                    let _ = log_webhook_transaction(
-                        &state.pool,
-                        &msg.id,
-                        sender_phone,
-                        Some(user.id),
-                        &msg.raw_payload,
-                        Some("RECIBIR"),
-                        "DB_ERROR",
-                        Some(error_msg),
-                    ).await;
-                    let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-                    return Err(e.into());
-                }
-            };
+            .bind(&args.producto)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
             match pres_opt {
                 Some(res) => res,
                 None => {
-                    let error_msg = format!("Error: No se encontró un producto activo con código o código de barras '{}'.", product_code);
-                    let _ = log_webhook_transaction(
-                        &state.pool,
-                        &msg.id,
-                        sender_phone,
-                        Some(user.id),
-                        &msg.raw_payload,
-                        Some("RECIBIR"),
-                        "SYNTAX_ERROR",
-                        Some(&error_msg),
-                    ).await;
-                    let _ = send_whatsapp_reply(&state.config, &msg.from, &error_msg).await;
-                    return Ok(());
+                    return Ok(RegistrarIngresoResult {
+                        status: "error".to_string(),
+                        message: format!("Error: No se encontró un producto activo con código o código de barras '{}'.", args.producto),
+                    });
                 }
             }
         }
     };
 
-    let mut tx = match state.pool.begin().await {
-        Ok(t) => t,
-        Err(e) => {
-            let error_msg = "Ocurrió un error al iniciar la transacción.";
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("RECIBIR"),
-                "DB_ERROR",
-                Some(error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-            return Err(e.into());
-        }
-    };
+    let mut tx = pool.begin().await.map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let mut provider_id: Option<i32> = match sqlx::query_scalar::<_, i32>(
+    let mut provider_id: Option<i32> = sqlx::query_scalar::<_, i32>(
         r#"SELECT pp.proveedor_id
            FROM producto_proveedor pp
            JOIN proveedores prov ON prov.id = pp.proveedor_id
@@ -708,27 +548,11 @@ pub async fn handle_recibir(
     )
     .bind(resolved.producto_id)
     .fetch_optional(&mut *tx)
-    .await {
-        Ok(id) => id,
-        Err(e) => {
-            let error_msg = "Error al buscar el proveedor principal.";
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("RECIBIR"),
-                "DB_ERROR",
-                Some(error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-            return Err(e.into());
-        }
-    };
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     if provider_id.is_none() {
-        provider_id = match sqlx::query_scalar::<_, i32>(
+        provider_id = sqlx::query_scalar::<_, i32>(
             r#"SELECT pp.proveedor_id
                FROM producto_proveedor pp
                JOIN proveedores prov ON prov.id = pp.proveedor_id
@@ -737,100 +561,40 @@ pub async fn handle_recibir(
         )
         .bind(resolved.producto_id)
         .fetch_optional(&mut *tx)
-        .await {
-            Ok(id) => id,
-            Err(e) => {
-                let error_msg = "Error al buscar proveedores activos del producto.";
-                let _ = log_webhook_transaction(
-                    &state.pool,
-                    &msg.id,
-                    sender_phone,
-                    Some(user.id),
-                    &msg.raw_payload,
-                    Some("RECIBIR"),
-                    "DB_ERROR",
-                    Some(error_msg),
-                ).await;
-                let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-                return Err(e.into());
-            }
-        };
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
     if provider_id.is_none() {
-        provider_id = match sqlx::query_scalar::<_, i32>(
+        provider_id = sqlx::query_scalar::<_, i32>(
             "SELECT id FROM proveedores ORDER BY id ASC LIMIT 1"
         )
         .fetch_optional(&mut *tx)
-        .await {
-            Ok(id) => id,
-            Err(e) => {
-                let error_msg = "Error al buscar primer proveedor en el sistema.";
-                let _ = log_webhook_transaction(
-                    &state.pool,
-                    &msg.id,
-                    sender_phone,
-                    Some(user.id),
-                    &msg.raw_payload,
-                    Some("RECIBIR"),
-                    "DB_ERROR",
-                    Some(error_msg),
-                ).await;
-                let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-                return Err(e.into());
-            }
-        };
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
     let provider_id = match provider_id {
         Some(id) => id,
         None => {
-            let error_msg = "Error: No se encontró ningún proveedor en el sistema.";
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("RECIBIR"),
-                "DB_ERROR",
-                Some(error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-            return Ok(());
+            return Ok(RegistrarIngresoResult {
+                status: "error".to_string(),
+                message: "Error: No se encontró ningún proveedor en el sistema.".to_string(),
+            });
         }
     };
 
     let insert_reception_res: Result<(uuid::Uuid, String), sqlx::Error> = sqlx::query_as(
         "INSERT INTO recepciones (proveedor_id, guia_despacho, estado, fecha_recepcion, usuario_id, nota)
-         VALUES ($1, $2, 'completa', NOW(), $3, $4)
+         VALUES ($1, 'AI-WA-GATEWAY', 'completa', NOW(), $2, 'Ingreso vía WhatsApp Agent')
          RETURNING id, numero_documento"
     )
     .bind(provider_id)
-    .bind(&msg.id)
     .bind(user.id)
-    .bind("Ingreso vía WhatsApp")
     .fetch_one(&mut *tx)
     .await;
 
-    let (recepcion_id, numero_documento) = match insert_reception_res {
-        Ok(res) => res,
-        Err(e) => {
-            let error_msg = "Error: Falló la creación del registro de recepción.";
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("RECIBIR"),
-                "DB_ERROR",
-                Some(error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-            return Err(e.into());
-        }
-    };
+    let (recepcion_id, numero_documento) = insert_reception_res.map_err(|e| AppError::Internal(format!("Falló la creación del registro de recepción: {}", e)))?;
 
     let insert_lot_res: Result<(uuid::Uuid, String), sqlx::Error> = sqlx::query_as(
         r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento, codigo_interno)
@@ -841,33 +605,16 @@ pub async fn handle_recibir(
     )
     .bind(resolved.producto_id)
     .bind(provider_id)
-    .bind(lote_num)
+    .bind(&args.lote)
     .bind(expiry_date)
     .fetch_one(&mut *tx)
     .await;
 
-    let (lote_id, lot_codigo_interno) = match insert_lot_res {
-        Ok(res) => res,
-        Err(e) => {
-            let error_msg = "Error: Falló el registro del lote.";
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("RECIBIR"),
-                "DB_ERROR",
-                Some(error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-            return Err(e.into());
-        }
-    };
+    let (lote_id, lot_codigo_interno) = insert_lot_res.map_err(|e| AppError::Internal(format!("Falló el registro del lote: {}", e)))?;
 
-    let cantidad_base = qty_dec * resolved.factor_conversion;
+    let cantidad_base = args.cantidad * resolved.factor_conversion;
 
-    let insert_detail_res = sqlx::query(
+    sqlx::query(
         r#"INSERT INTO recepcion_detalle 
            (recepcion_id, producto_id, lote_id, presentacion_id, area_destino_id, cantidad_presentaciones, factor_conversion_usado, cantidad_unidades_base)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#
@@ -876,97 +623,37 @@ pub async fn handle_recibir(
     .bind(resolved.producto_id)
     .bind(lote_id)
     .bind(resolved.presentacion_id)
-    .bind(area_id)
-    .bind(qty_dec)
+    .bind(args.area_id)
+    .bind(args.cantidad)
     .bind(resolved.factor_conversion)
     .bind(cantidad_base)
     .execute(&mut *tx)
-    .await;
+    .await
+    .map_err(|e| AppError::Internal(format!("Falló el registro del detalle de la recepción: {}", e)))?;
 
-    if let Err(e) = insert_detail_res {
-        let error_msg = "Error: Falló el registro del detalle de la recepción.";
-        let _ = log_webhook_transaction(
-            &state.pool,
-            &msg.id,
-            sender_phone,
-            Some(user.id),
-            &msg.raw_payload,
-            Some("RECIBIR"),
-            "DB_ERROR",
-            Some(error_msg),
-        ).await;
-        let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-        return Err(e.into());
-    }
-
-    let link_area_res = sqlx::query(
+    sqlx::query(
         "INSERT INTO producto_area (producto_id, area_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
     )
     .bind(resolved.producto_id)
-    .bind(area_id)
+    .bind(args.area_id)
     .execute(&mut *tx)
-    .await;
+    .await
+    .map_err(|e| AppError::Internal(format!("Falló el enlace de producto y área: {}", e)))?;
 
-    if let Err(e) = link_area_res {
-        let error_msg = "Error: Falló el enlace de producto y área.";
-        let _ = log_webhook_transaction(
-            &state.pool,
-            &msg.id,
-            sender_phone,
-            Some(user.id),
-            &msg.raw_payload,
-            Some("RECIBIR"),
-            "DB_ERROR",
-            Some(error_msg),
-        ).await;
-        let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-        return Err(e.into());
-    }
-
-    let apply_res = crate::services::stock_ops::aplicar_ingreso(
+    crate::services::stock_ops::aplicar_ingreso(
         &mut tx,
         lote_id,
-        area_id,
+        args.area_id,
         cantidad_base,
         user.id,
         "INGRESO",
         Some(recepcion_id),
-        Some("Ingreso vía WhatsApp"),
+        Some("Ingreso vía WhatsApp Agent"),
         Some("RECEPCION"),
     )
-    .await;
+    .await?;
 
-    if let Err(e) = apply_res {
-        let error_msg = "Error: Falló la aplicación de ingreso al stock.";
-        let _ = log_webhook_transaction(
-            &state.pool,
-            &msg.id,
-            sender_phone,
-            Some(user.id),
-            &msg.raw_payload,
-            Some("RECIBIR"),
-            "DB_ERROR",
-            Some(error_msg),
-        ).await;
-        let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-        return Err(e);
-    }
-
-    if let Err(e) = tx.commit().await {
-        let error_msg = "Error: Falló el commit de la transacción.";
-        let _ = log_webhook_transaction(
-            &state.pool,
-            &msg.id,
-            sender_phone,
-            Some(user.id),
-            &msg.raw_payload,
-            Some("RECIBIR"),
-            "DB_ERROR",
-            Some(error_msg),
-        ).await;
-        let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-        return Err(e.into());
-    }
+    tx.commit().await.map_err(|e| AppError::Internal(format!("Falló el commit de la transacción: {}", e)))?;
 
     let success_msg = format!(
         "Recepción {} registrada exitosamente.\n\
@@ -976,76 +663,32 @@ pub async fn handle_recibir(
          Área ID: {}",
         numero_documento,
         resolved.producto_nombre,
-        qty_dec,
+        args.cantidad,
         resolved.unidad_basica_nombre,
-        lote_num,
+        args.lote,
         lot_codigo_interno,
-        area_id
+        args.area_id
     );
 
-    let _ = log_webhook_transaction(
-        &state.pool,
-        &msg.id,
-        sender_phone,
-        Some(user.id),
-        &msg.raw_payload,
-        Some("RECIBIR"),
-        "SUCCESS",
-        Some(&success_msg),
-    ).await;
-
-    let _ = send_whatsapp_reply(&state.config, &msg.from, &success_msg).await;
-    Ok(())
+    Ok(RegistrarIngresoResult {
+        status: "success".to_string(),
+        message: success_msg,
+    })
 }
 
-pub async fn handle_crear_solicitud(
-    state: &AppState,
-    msg: &WebhookMessage,
-    sender_phone: &str,
+pub async fn execute_crear_solicitud_compra(
+    pool: &sqlx::PgPool,
     user: &ActiveUser,
-    product_code: &str,
-    qty_str: &str,
-    _note: Option<&str>,
-) -> Result<(), AppError> {
-    use std::str::FromStr;
+    args: CrearSolicitudCompraArgs,
+) -> Result<CrearSolicitudCompraResult, AppError> {
+    if args.cantidad <= rust_decimal::Decimal::ZERO {
+        return Ok(CrearSolicitudCompraResult {
+            status: "error".to_string(),
+            message: "Error: La cantidad sugerida debe ser mayor a cero.".to_string(),
+        });
+    }
 
-    let qty_dec = match rust_decimal::Decimal::from_str(qty_str) {
-        Ok(q) => {
-            if q <= rust_decimal::Decimal::ZERO {
-                let error_msg = "Error: La cantidad sugerida debe ser mayor a cero.";
-                let _ = log_webhook_transaction(
-                    &state.pool,
-                    &msg.id,
-                    sender_phone,
-                    Some(user.id),
-                    &msg.raw_payload,
-                    Some("CREAR"),
-                    "SYNTAX_ERROR",
-                    Some(error_msg),
-                ).await;
-                let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-                return Ok(());
-            }
-            q
-        }
-        Err(_) => {
-            let error_msg = format!("Error: La cantidad '{}' no es un número válido.", qty_str);
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("CREAR"),
-                "SYNTAX_ERROR",
-                Some(&error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, &error_msg).await;
-            return Ok(());
-        }
-    };
-
-    let resolved_opt = match sqlx::query_as::<_, ProductResolution>(
+    let resolved_opt = sqlx::query_as::<_, ProductResolution>(
         r#"SELECT 
             p.id AS producto_id, 
             p.nombre AS producto_nombre,
@@ -1056,31 +699,15 @@ pub async fn handle_crear_solicitud(
         JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
         WHERE p.codigo_interno = $1 AND p.activo = true"#
     )
-    .bind(product_code)
-    .fetch_optional(&state.pool)
-    .await {
-        Ok(res) => res,
-        Err(e) => {
-            let error_msg = "Ocurrió un error al buscar el producto.";
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("CREAR"),
-                "DB_ERROR",
-                Some(error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-            return Err(e.into());
-        }
-    };
+    .bind(&args.producto)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let resolved = match resolved_opt {
         Some(res) => res,
         None => {
-            let pres_opt = match sqlx::query_as::<_, ProductResolution>(
+            let pres_opt = sqlx::query_as::<_, ProductResolution>(
                 r#"SELECT 
                     pres.producto_id AS producto_id, 
                     p.nombre AS producto_nombre,
@@ -1092,240 +719,99 @@ pub async fn handle_crear_solicitud(
                 JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
                 WHERE pres.codigo_barras = $1 AND pres.activa = true AND p.activo = true"#
             )
-            .bind(product_code)
-            .fetch_optional(&state.pool)
-            .await {
-                Ok(res) => res,
-                Err(e) => {
-                    let error_msg = "Ocurrió un error al buscar la presentación.";
-                    let _ = log_webhook_transaction(
-                        &state.pool,
-                        &msg.id,
-                        sender_phone,
-                        Some(user.id),
-                        &msg.raw_payload,
-                        Some("CREAR"),
-                        "DB_ERROR",
-                        Some(error_msg),
-                    ).await;
-                    let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-                    return Err(e.into());
-                }
-            };
+            .bind(&args.producto)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
             match pres_opt {
                 Some(res) => res,
                 None => {
-                    let error_msg = format!("Error: No se encontró un producto activo con código o código de barras '{}'.", product_code);
-                    let _ = log_webhook_transaction(
-                        &state.pool,
-                        &msg.id,
-                        sender_phone,
-                        Some(user.id),
-                        &msg.raw_payload,
-                        Some("CREAR"),
-                        "SYNTAX_ERROR",
-                        Some(&error_msg),
-                    ).await;
-                    let _ = send_whatsapp_reply(&state.config, &msg.from, &error_msg).await;
-                    return Ok(());
+                    return Ok(CrearSolicitudCompraResult {
+                        status: "error".to_string(),
+                        message: format!("Error: No se encontró un producto activo con código o código de barras '{}'.", args.producto),
+                    });
                 }
             }
         }
     };
 
-    let mut tx = match state.pool.begin().await {
-        Ok(t) => t,
-        Err(e) => {
-            let error_msg = "Ocurrió un error al iniciar la transacción.";
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("CREAR"),
-                "DB_ERROR",
-                Some(error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-            return Err(e.into());
-        }
-    };
+    let mut tx = pool.begin().await.map_err(|e| AppError::Internal(e.to_string()))?;
 
     let solicitud_id_res = sqlx::query_scalar::<_, uuid::Uuid>(
         "SELECT id FROM solicitudes_compra WHERE usuario_id = $1 AND estado = 'borrador'"
     )
     .bind(user.id)
     .fetch_optional(&mut *tx)
-    .await;
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let mut solicitud_id = match solicitud_id_res {
-        Ok(id) => id,
-        Err(e) => {
-            let error_msg = "Error al buscar solicitud de compra existente.";
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("CREAR"),
-                "DB_ERROR",
-                Some(error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-            return Err(e.into());
+    let nota_db = match &args.nota {
+        Some(n) if !n.trim().is_empty() => format!("Borrador WhatsApp: {}", n.trim()),
+        _ => "Borrador WhatsApp".to_string(),
+    };
+
+    let solicitud_id = match solicitud_id_res {
+        Some(id) => id,
+        None => {
+            sqlx::query_scalar::<_, uuid::Uuid>(
+                "INSERT INTO solicitudes_compra (usuario_id, nota, estado) VALUES ($1, $2, 'borrador') RETURNING id"
+            )
+            .bind(user.id)
+            .bind(&nota_db)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?
         }
     };
 
-    if solicitud_id.is_none() {
-        let insert_sol_res = sqlx::query_scalar::<_, uuid::Uuid>(
-            "INSERT INTO solicitudes_compra (usuario_id, nota, estado) VALUES ($1, 'Borrador WhatsApp', 'borrador') RETURNING id"
-        )
-        .bind(user.id)
-        .fetch_one(&mut *tx)
-        .await;
-
-        solicitud_id = match insert_sol_res {
-            Ok(id) => Some(id),
-            Err(e) => {
-                let error_msg = "Error al crear nueva solicitud de compra borrador.";
-                let _ = log_webhook_transaction(
-                    &state.pool,
-                    &msg.id,
-                    sender_phone,
-                    Some(user.id),
-                    &msg.raw_payload,
-                    Some("CREAR"),
-                    "DB_ERROR",
-                    Some(error_msg),
-                ).await;
-                let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-                return Err(e.into());
-            }
-        };
-    }
-    let solicitud_id = solicitud_id.unwrap();
-
-    let existing_qty_res = sqlx::query_scalar::<_, rust_decimal::Decimal>(
+    let existing_qty = sqlx::query_scalar::<_, rust_decimal::Decimal>(
         "SELECT cantidad_sugerida FROM solicitud_compra_detalle WHERE solicitud_id = $1 AND producto_id = $2"
     )
     .bind(solicitud_id)
     .bind(resolved.producto_id)
     .fetch_optional(&mut *tx)
-    .await;
-
-    let existing_qty = match existing_qty_res {
-        Ok(qty) => qty,
-        Err(e) => {
-            let error_msg = "Error al verificar detalles de solicitud de compra.";
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("CREAR"),
-                "DB_ERROR",
-                Some(error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-            return Err(e.into());
-        }
-    };
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     if existing_qty.is_some() {
-        let update_res = sqlx::query(
+        sqlx::query(
             "UPDATE solicitud_compra_detalle SET cantidad_sugerida = cantidad_sugerida + $3 WHERE solicitud_id = $1 AND producto_id = $2"
         )
         .bind(solicitud_id)
         .bind(resolved.producto_id)
-        .bind(qty_dec)
+        .bind(args.cantidad)
         .execute(&mut *tx)
-        .await;
-
-        if let Err(e) = update_res {
-            let error_msg = "Error al actualizar detalle de la solicitud de compra.";
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("CREAR"),
-                "DB_ERROR",
-                Some(error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-            return Err(e.into());
-        }
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     } else {
-        let insert_detail_res = sqlx::query(
+        sqlx::query(
             "INSERT INTO solicitud_compra_detalle (solicitud_id, producto_id, cantidad_sugerida, unidad) VALUES ($1, $2, $3, $4)"
         )
         .bind(solicitud_id)
         .bind(resolved.producto_id)
-        .bind(qty_dec)
+        .bind(args.cantidad)
         .bind(&resolved.unidad_basica_nombre)
         .execute(&mut *tx)
-        .await;
-
-        if let Err(e) = insert_detail_res {
-            let error_msg = "Error al registrar detalle de la solicitud de compra.";
-            let _ = log_webhook_transaction(
-                &state.pool,
-                &msg.id,
-                sender_phone,
-                Some(user.id),
-                &msg.raw_payload,
-                Some("CREAR"),
-                "DB_ERROR",
-                Some(error_msg),
-            ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-            return Err(e.into());
-        }
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
-    if let Err(e) = tx.commit().await {
-        let error_msg = "Error al confirmar la transacción.";
-        let _ = log_webhook_transaction(
-            &state.pool,
-            &msg.id,
-            sender_phone,
-            Some(user.id),
-            &msg.raw_payload,
-            Some("CREAR"),
-            "DB_ERROR",
-            Some(error_msg),
-        ).await;
-        let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
-        return Err(e.into());
-    }
+    tx.commit().await.map_err(|e| AppError::Internal(e.to_string()))?;
 
     let success_msg = format!(
         "Solicitud de compra borrador actualizada exitosamente.\n\
          Producto: {}\n\
          Cantidad Agregada: {} {}",
         resolved.producto_nombre,
-        qty_dec,
+        args.cantidad,
         resolved.unidad_basica_nombre
     );
 
-    let _ = log_webhook_transaction(
-        &state.pool,
-        &msg.id,
-        sender_phone,
-        Some(user.id),
-        &msg.raw_payload,
-        Some("CREAR"),
-        "SUCCESS",
-        Some(&success_msg),
-    ).await;
-
-    let _ = send_whatsapp_reply(&state.config, &msg.from, &success_msg).await;
-    Ok(())
+    Ok(CrearSolicitudCompraResult {
+        status: "success".to_string(),
+        message: success_msg,
+    })
 }
 
 pub async fn process_message_async(state: AppState, msg: WebhookMessage) -> Result<(), AppError> {
@@ -1373,89 +859,77 @@ pub async fn process_message_async(state: AppState, msg: WebhookMessage) -> Resu
         }
     };
 
-    if RE_AYUDA.is_match(&msg.body) {
-        let help_msg = "Comandos disponibles:\n\
-                        1. AYUDA: Muestra este mensaje de ayuda.\n\
-                        2. VER/STOCK <busqueda>: Muestra el stock del producto.\n\
-                        3. RECIBIR <producto> <cantidad> <lote> <AAAA-MM-DD> <area_id>: Registra ingreso de stock.\n\
-                        4. CREAR SOLICITUD <producto> <cantidad> [nota]: Crea una solicitud de compra borrador.";
-        let _ = log_webhook_transaction(
-            &state.pool,
-            &msg.id,
-            &sender_phone,
-            Some(user.id),
-            &msg.raw_payload,
-            Some("AYUDA"),
-            "SUCCESS",
-            Some(help_msg),
-        ).await;
-        let _ = send_whatsapp_reply(&state.config, &msg.from, help_msg).await;
-        return Ok(());
-    }
-
-    if let Some(caps) = RE_VER_STOCK.captures(&msg.body) {
-        let query = caps.name("query").map(|m| m.as_str().trim()).unwrap_or("");
-        if let Err(e) = handle_ver_stock(&state, &msg, &sender_phone, &user, query).await {
-            tracing::error!("Error in handle_ver_stock: {:?}", e);
-            return Err(e);
-        }
-        return Ok(());
-    }
-
-    if let Some(caps) = RE_RECIBIR.captures(&msg.body) {
-        if !matches!(user.rol.as_str(), "admin" | "tecnologo") {
-            let unauthorized_msg = "No autorizado: Requiere rol tecnologo o admin para recibir stock.";
+    // Load AI Agent config
+    let llm_config = match crate::services::llm::load_llm_config(&state.pool).await {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            tracing::error!("Failed to load LLM config: {:?}", e);
+            let error_msg = "Error al cargar la configuración del asistente de IA.";
             let _ = log_webhook_transaction(
                 &state.pool,
                 &msg.id,
                 &sender_phone,
                 Some(user.id),
                 &msg.raw_payload,
-                Some("RECIBIR"),
-                "UNAUTHORIZED",
-                Some(unauthorized_msg),
+                None,
+                "DB_ERROR",
+                Some(error_msg),
             ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, unauthorized_msg).await;
-            return Ok(());
-        }
-
-        let product = caps.name("product").map(|m| m.as_str().trim()).unwrap_or("");
-        let qty = caps.name("qty").map(|m| m.as_str().trim()).unwrap_or("");
-        let lote = caps.name("lote").map(|m| m.as_str().trim()).unwrap_or("");
-        let expiry = caps.name("expiry").map(|m| m.as_str().trim()).unwrap_or("");
-        let area = caps.name("area").map(|m| m.as_str().trim()).unwrap_or("");
-
-        if let Err(e) = handle_recibir(&state, &msg, &sender_phone, &user, product, qty, lote, expiry, area).await {
-            tracing::error!("Error in handle_recibir: {:?}", e);
+            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
             return Err(e);
         }
-        return Ok(());
-    }
+    };
 
-    if let Some(caps) = RE_CREAR.captures(&msg.body) {
-        let product = caps.name("product").map(|m| m.as_str().trim()).unwrap_or("");
-        let qty = caps.name("qty").map(|m| m.as_str().trim()).unwrap_or("");
-        let note = caps.name("note").map(|m| m.as_str().trim());
-
-        if let Err(e) = handle_crear_solicitud(&state, &msg, &sender_phone, &user, product, qty, note).await {
-            tracing::error!("Error in handle_crear_solicitud: {:?}", e);
+    // Create LlmClient
+    let client = match crate::services::llm::LlmFactory::create(llm_config) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("Failed to create LLM client: {:?}", e);
+            let error_msg = "Error al inicializar el asistente de IA.";
+            let _ = log_webhook_transaction(
+                &state.pool,
+                &msg.id,
+                &sender_phone,
+                Some(user.id),
+                &msg.raw_payload,
+                None,
+                "DB_ERROR",
+                Some(error_msg),
+            ).await;
+            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
             return Err(e);
         }
-        return Ok(());
-    }
+    };
 
-    let invalid_format_msg = "Formato de comando inválido. Envíe 'AYUDA' para ver los comandos disponibles.";
-    let _ = log_webhook_transaction(
+    let system_prompt = crate::services::llm::get_system_prompt();
+
+    // Call AI Agent loop
+    if let Err(e) = client.chat_with_tools(
+        &system_prompt,
+        &msg.body,
         &state.pool,
+        &user,
         &msg.id,
         &sender_phone,
-        Some(user.id),
         &msg.raw_payload,
-        Some("INVALIDO"),
-        "SYNTAX_ERROR",
-        Some(invalid_format_msg),
-    ).await;
-    let _ = send_whatsapp_reply(&state.config, &msg.from, invalid_format_msg).await;
+        &msg.from,
+        &state.config,
+    ).await {
+        tracing::error!("LLM chat session failed: {:?}", e);
+        let error_msg = "Disculpe, ocurrió un error al procesar su mensaje con el asistente de IA.";
+        let _ = log_webhook_transaction(
+            &state.pool,
+            &msg.id,
+            &sender_phone,
+            Some(user.id),
+            &msg.raw_payload,
+            None,
+            "DB_ERROR",
+            Some(error_msg),
+        ).await;
+        let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
+        return Err(e);
+    }
 
     Ok(())
 }
@@ -1476,24 +950,7 @@ mod tests {
         assert_eq!(normalize_phone("+56912345678"), "+56912345678");
     }
 
-    #[test]
-    fn test_regex_patterns() {
-        assert!(RE_AYUDA.is_match("AYUDA"));
-        assert!(RE_AYUDA.is_match("  ayuda  "));
-        assert!(!RE_AYUDA.is_match("AYUDAR"));
 
-        assert!(RE_VER_STOCK.is_match("VER/STOCK paracetamol"));
-        assert!(RE_VER_STOCK.is_match("  ver/stock   ibuprofeno  "));
-        assert!(!RE_VER_STOCK.is_match("VER/STOCK"));
-
-        assert!(RE_RECIBIR.is_match("RECIBIR P-001 10.5 L-123 2026-12-31 2"));
-        assert!(RE_RECIBIR.is_match("recibir P-001 10 L-123 2026-12-31 2"));
-        assert!(!RE_RECIBIR.is_match("RECIBIR P-001 10.555 L-123 2026-12-31 2"));
-
-        assert!(RE_CREAR.is_match("CREAR SOLICITUD P-001 5"));
-        assert!(RE_CREAR.is_match("crear solicitud P-001 5.5 nota especial"));
-        assert!(!RE_CREAR.is_match("CREAR SOLICITUD P-001"));
-    }
 
     #[test]
     fn test_verify_openwa_secret() {
@@ -1517,5 +974,205 @@ mod tests {
         let auth_token = "12345";
         let expected_signature = "1qMcXsrGkX9+xuSpaazMGNpn9lM=";
         assert!(verify_twilio_signature(url, &params, auth_token, expected_signature));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_execute_tool_validation_and_early_errors(pool: sqlx::PgPool) {
+        let admin_user = ActiveUser {
+            id: uuid::Uuid::new_v4(),
+            rol: "admin".to_string(),
+        };
+        let normal_user = ActiveUser {
+            id: uuid::Uuid::new_v4(),
+            rol: "user".to_string(),
+        };
+
+        // 1. RBAC on execute_buscar_stock
+        let search_args = BuscarStockArgs {
+            busqueda: "paracetamol".to_string(),
+        };
+        let err_res = execute_buscar_stock(&pool, &normal_user, search_args.clone()).await;
+        assert!(err_res.is_err());
+        match err_res.unwrap_err() {
+            AppError::Forbidden(msg) => assert!(msg.contains("No autorizado")),
+            _ => panic!("Expected Forbidden error"),
+        }
+
+        let ok_res = execute_buscar_stock(&pool, &admin_user, search_args.clone()).await;
+        assert!(ok_res.is_ok());
+
+        // 2. RBAC on execute_registrar_ingreso
+        let registrar_args = RegistrarIngresoArgs {
+            producto: "PRD-123".to_string(),
+            cantidad: rust_decimal::Decimal::new(10, 0),
+            lote: "L-99".to_string(),
+            vencimiento: "2030-01-01".to_string(),
+            area_id: 1,
+        };
+        let rbac_fail = execute_registrar_ingreso(&pool, &normal_user, registrar_args.clone()).await.unwrap();
+        assert_eq!(rbac_fail.status, "error");
+        assert!(rbac_fail.message.contains("No autorizado"));
+
+        // 3. Quantity validation <= 0
+        let mut invalid_qty_args = registrar_args.clone();
+        invalid_qty_args.cantidad = rust_decimal::Decimal::new(-5, 0);
+        let qty_fail = execute_registrar_ingreso(&pool, &admin_user, invalid_qty_args).await.unwrap();
+        assert_eq!(qty_fail.status, "error");
+        assert!(qty_fail.message.contains("mayor a cero"));
+
+        // 4. Decimal scale > 2
+        let mut invalid_scale_args = registrar_args.clone();
+        invalid_scale_args.cantidad = rust_decimal::Decimal::new(10123, 3); // 10.123
+        let scale_fail = execute_registrar_ingreso(&pool, &admin_user, invalid_scale_args).await.unwrap();
+        assert_eq!(scale_fail.status, "error");
+        assert!(scale_fail.message.contains("2 decimales"));
+
+        // 5. Expiry date past date
+        let mut past_expiry_args = registrar_args.clone();
+        past_expiry_args.vencimiento = "2020-01-01".to_string();
+        let past_fail = execute_registrar_ingreso(&pool, &admin_user, past_expiry_args).await.unwrap();
+        assert_eq!(past_fail.status, "error");
+        assert!(past_fail.message.contains("debe ser futura"));
+
+        // 6. Expiry date invalid format
+        let mut invalid_format_args = registrar_args.clone();
+        invalid_format_args.vencimiento = "01-01-2030".to_string();
+        let format_fail = execute_registrar_ingreso(&pool, &admin_user, invalid_format_args).await.unwrap();
+        assert_eq!(format_fail.status, "error");
+        assert!(format_fail.message.contains("formato AAAA-MM-DD"));
+
+        // 7. Area non-existent
+        let mut non_existent_area_args = registrar_args.clone();
+        non_existent_area_args.area_id = 99999;
+        let area_fail = execute_registrar_ingreso(&pool, &admin_user, non_existent_area_args).await.unwrap();
+        assert_eq!(area_fail.status, "error");
+        assert!(area_fail.message.contains("no existe"));
+
+        // 8. execute_crear_solicitud_compra invalid quantity
+        let sol_args = CrearSolicitudCompraArgs {
+            producto: "PRD-123".to_string(),
+            cantidad: rust_decimal::Decimal::new(-10, 0),
+            nota: None,
+        };
+        let sol_fail = execute_crear_solicitud_compra(&pool, &admin_user, sol_args).await.unwrap();
+        assert_eq!(sol_fail.status, "error");
+        assert!(sol_fail.message.contains("mayor a cero"));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_execute_tool_success_routes(pool: sqlx::PgPool) {
+        // Setup database records
+        let admin_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO usuarios (id, nombre, email, password_hash, rol, activo) \
+             VALUES ($1, 'Admin DB Test', 'admin-db-test@lab.cl', 'hash', 'admin', true)"
+        )
+        .bind(admin_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let admin_user = ActiveUser {
+            id: admin_id,
+            rol: "admin".to_string(),
+        };
+
+        let provider_id: i32 = sqlx::query_scalar(
+            "INSERT INTO proveedores (nombre) VALUES ('Test Proveedor') RETURNING id"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let unit_id: i32 = sqlx::query_scalar(
+            "INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ('Test Base Unit', 'Test Base Units') RETURNING id"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let product_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO productos (id, nombre, codigo_interno, unidad_base_id, activo) \
+             VALUES ($1, 'Test Product DB', 'PRD-SUCCESS-1', $2, true)"
+        )
+        .bind(product_id)
+        .bind(unit_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO producto_proveedor (producto_id, proveedor_id, es_principal, activo) \
+             VALUES ($1, $2, true, true)"
+        )
+        .bind(product_id)
+        .bind(provider_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let area_exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM areas WHERE id = 1)")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        if !area_exists {
+            sqlx::query("INSERT INTO areas (id, nombre, descripcion) VALUES (1, 'Area Central', 'Central')")
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+
+        // Test Registrar Ingreso (Success Route)
+        let registrar_args = RegistrarIngresoArgs {
+            producto: "PRD-SUCCESS-1".to_string(),
+            cantidad: rust_decimal::Decimal::new(15, 0),
+            lote: "LOT-SUCCESS-99".to_string(),
+            vencimiento: "2030-01-01".to_string(),
+            area_id: 1,
+        };
+
+        let result = execute_registrar_ingreso(&pool, &admin_user, registrar_args).await.unwrap();
+        assert_eq!(result.status, "success");
+        assert!(result.message.contains("registrada exitosamente"));
+
+        let stock_qty: rust_decimal::Decimal = sqlx::query_scalar(
+            "SELECT SUM(cantidad) FROM stock WHERE area_id = 1 AND lote_id IN (SELECT id FROM lotes WHERE producto_id = $1)"
+        )
+        .bind(product_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stock_qty, rust_decimal::Decimal::new(15, 0));
+
+        // Test Crear Solicitud Compra (Success Route)
+        let sol_args = CrearSolicitudCompraArgs {
+            producto: "PRD-SUCCESS-1".to_string(),
+            cantidad: rust_decimal::Decimal::new(50, 0),
+            nota: Some("Urgente por WhatsApp".to_string()),
+        };
+
+        let result_sol = execute_crear_solicitud_compra(&pool, &admin_user, sol_args).await.unwrap();
+        assert_eq!(result_sol.status, "success");
+        assert!(result_sol.message.contains("actualizada exitosamente"));
+
+        let sol_detail_qty: rust_decimal::Decimal = sqlx::query_scalar(
+            "SELECT cantidad_sugerida FROM solicitud_compra_detalle WHERE producto_id = $1"
+        )
+        .bind(product_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(sol_detail_qty, rust_decimal::Decimal::new(50, 0));
+
+        // Test execute_buscar_stock (Success Route)
+        let search_args = BuscarStockArgs {
+            busqueda: "Success".to_string(),
+        };
+        let search_res = execute_buscar_stock(&pool, &admin_user, search_args).await.unwrap();
+        assert_eq!(search_res.status, "success");
+        assert_eq!(search_res.items.len(), 1);
+        assert_eq!(search_res.items[0].codigo_interno, "PRD-SUCCESS-1");
+        assert_eq!(search_res.items[0].stock_total, rust_decimal::Decimal::new(15, 0));
     }
 }

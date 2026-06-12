@@ -355,6 +355,9 @@ impl LlmClient for GeminiClient {
             contents.push(model_content.clone());
 
             let mut function_call_found = false;
+            let mut function_responses = Vec::new();
+            let mut command_types = Vec::new();
+
             for part in &model_content.parts {
                 if let Some(ref call) = part.function_call {
                     function_call_found = true;
@@ -362,10 +365,13 @@ impl LlmClient for GeminiClient {
                     let (cmd_type, current_tool_status) = match call.name.as_str() {
                         "buscar_stock" => ("STOCK", "SUCCESS"),
                         "registrar_ingreso" => ("RECIBIR", "SUCCESS"),
+                        "registrar_consumo" => ("CONSUMO", "SUCCESS"),
                         "crear_solicitud_compra" => ("CREAR", "SUCCESS"),
                         _ => ("INVALIDO", "SYNTAX_ERROR"),
                     };
-                    command_type = Some(cmd_type.to_string());
+                    if cmd_type != "INVALIDO" && !command_types.contains(&cmd_type) {
+                        command_types.push(cmd_type);
+                    }
                     if current_tool_status == "SYNTAX_ERROR" {
                         status = "SYNTAX_ERROR".to_string();
                     }
@@ -406,21 +412,28 @@ impl LlmClient for GeminiClient {
                         }
                     };
 
-                    contents.push(GeminiContent {
-                        role: "function".to_string(),
-                        parts: vec![GeminiContentPart {
-                            text: None,
-                            function_call: None,
-                            function_response: Some(GeminiFunctionResponse {
-                                name: call.name.clone(),
-                                response: tool_result,
-                                id: call.id.clone(),
-                            }),
-                            thought_signature: None,
-                        }],
+                    function_responses.push(GeminiContentPart {
+                        text: None,
+                        function_call: None,
+                        function_response: Some(GeminiFunctionResponse {
+                            name: call.name.clone(),
+                            response: tool_result,
+                            id: call.id.clone(),
+                        }),
+                        thought_signature: None,
                     });
-                    break;
                 }
+            }
+
+            if function_call_found {
+                if !command_types.is_empty() {
+                    command_type = Some(command_types.join(","));
+                }
+                contents.push(GeminiContent {
+                    role: "function".to_string(),
+                    parts: function_responses,
+                });
+                continue;
             }
 
             if !function_call_found {

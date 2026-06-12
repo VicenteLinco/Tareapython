@@ -42,6 +42,10 @@ pub fn test_config() -> AppConfig {
         allow_bootstrap_admin: false,
         setup_admin_email: None,
         setup_admin_password: None,
+        twilio_auth_token: "mock_twilio_auth_token_for_tests".to_string(),
+        whatsapp_webhook_secret: "mock_webhook_secret_for_tests".to_string(),
+        whatsapp_api_url: "http://localhost:8008".to_string(),
+        whatsapp_api_key: "mock_whatsapp_api_key_for_tests".to_string(),
     }
 }
 

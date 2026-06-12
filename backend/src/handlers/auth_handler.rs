@@ -262,7 +262,7 @@ async fn me(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<UserResponse>, AppError> {
-    let user = sqlx::query("SELECT nombre, email, version FROM usuarios WHERE id = $1")
+    let user = sqlx::query("SELECT nombre, email, whatsapp_phone, version FROM usuarios WHERE id = $1")
         .bind(claims.sub)
         .fetch_one(&state.pool)
         .await?;
@@ -271,9 +271,28 @@ async fn me(
         id: claims.sub,
         nombre: user.get("nombre"),
         email: user.get("email"),
+        whatsapp_phone: user.get("whatsapp_phone"),
         rol: claims.rol,
         area_ids: claims.area_ids,
         version: user.get("version"),
+    }))
+}
+
+async fn actualizar_me(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<crate::auth::models::UpdateProfileRequest>,
+) -> Result<Json<UserResponse>, AppError> {
+    let updated_user = crate::services::usuario_service::actualizar_perfil(&state.pool, claims.sub, req).await?;
+    
+    Ok(Json(UserResponse {
+        id: updated_user.id,
+        nombre: updated_user.nombre,
+        email: updated_user.email,
+        whatsapp_phone: updated_user.whatsapp_phone,
+        rol: updated_user.rol,
+        area_ids: updated_user.areas.iter().map(|a| a.id).collect(),
+        version: updated_user.version,
     }))
 }
 
@@ -360,6 +379,6 @@ pub fn public_routes() -> Router<AppState> {
 /// Rutas protegidas (requieren JWT, el middleware se aplica en routes.rs)
 pub fn protected_routes() -> Router<AppState> {
     Router::new()
-        .route("/me", get(me))
+        .route("/me", get(me).put(actualizar_me))
         .route("/cambiar-password", post(cambiar_password))
 }

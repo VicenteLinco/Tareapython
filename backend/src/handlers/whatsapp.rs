@@ -1576,4 +1576,403 @@ mod tests {
         assert_eq!(search_res.items[0].codigo_interno, "PRD-SUCCESS-1");
         assert_eq!(search_res.items[0].stock_total, rust_decimal::Decimal::new(15, 0));
     }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_parallel_execution_and_failure_isolation(pool: sqlx::PgPool) {
+        // Setup database records
+        let admin_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO usuarios (id, nombre, email, password_hash, rol, activo) \
+             VALUES ($1, 'Admin DB Test', 'admin-db-test@lab.cl', 'hash', 'admin', true)"
+        )
+        .bind(admin_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let admin_user = ActiveUser {
+            id: admin_id,
+            rol: "admin".to_string(),
+        };
+
+        let provider_id: i32 = sqlx::query_scalar(
+            "INSERT INTO proveedores (nombre) VALUES ('Test Proveedor') RETURNING id"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let unit_id: i32 = sqlx::query_scalar(
+            "INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ('Test Base Unit', 'Test Base Units') RETURNING id"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let p1_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO productos (id, nombre, codigo_interno, unidad_base_id, activo) \
+             VALUES ($1, 'Product One', 'P-001', $2, true)"
+        )
+        .bind(p1_id)
+        .bind(unit_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let p2_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO productos (id, nombre, codigo_interno, unidad_base_id, activo) \
+             VALUES ($1, 'Product Two', 'P-002', $2, true)"
+        )
+        .bind(p2_id)
+        .bind(unit_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO producto_proveedor (producto_id, proveedor_id, es_principal, activo) \
+             VALUES ($1, $2, true, true)"
+        )
+        .bind(p1_id)
+        .bind(provider_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO producto_proveedor (producto_id, proveedor_id, es_principal, activo) \
+             VALUES ($1, $2, true, true)"
+        )
+        .bind(p2_id)
+        .bind(provider_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let area_exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM areas WHERE id = 1)")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        if !area_exists {
+            sqlx::query("INSERT INTO areas (id, nombre, descripcion) VALUES (1, 'Area Central', 'Central')")
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+
+        // 1. Success batch: register entry for both P-001 and P-002
+        let args1 = serde_json::json!({
+            "producto": "P-001",
+            "cantidad": 10.0,
+            "lote": "L1",
+            "vencimiento": "2030-01-01",
+            "area_id": 1
+        });
+        let args2 = serde_json::json!({
+            "producto": "P-002",
+            "cantidad": 20.0,
+            "lote": "L2",
+            "vencimiento": "2030-01-01",
+            "area_id": 1
+        });
+
+        // Run "parallel" tools execution block
+        let res1 = execute_tool(&pool, &admin_user, "registrar_ingreso", args1).await.unwrap();
+        let res2 = execute_tool(&pool, &admin_user, "registrar_ingreso", args2).await.unwrap();
+
+        assert_eq!(res1.get("status").unwrap().as_str().unwrap(), "success");
+        assert_eq!(res2.get("status").unwrap().as_str().unwrap(), "success");
+
+        // Verify both stock rows are committed
+        let stock_p1: rust_decimal::Decimal = sqlx::query_scalar("SELECT cantidad FROM stock WHERE lote_id IN (SELECT id FROM lotes WHERE producto_id = $1)")
+            .bind(p1_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let stock_p2: rust_decimal::Decimal = sqlx::query_scalar("SELECT cantidad FROM stock WHERE lote_id IN (SELECT id FROM lotes WHERE producto_id = $1)")
+            .bind(p2_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(stock_p1, rust_decimal::Decimal::new(10, 0));
+        assert_eq!(stock_p2, rust_decimal::Decimal::new(20, 0));
+
+        // 2. Failure Isolation:
+        // First tool succeeds (consume 5 of P-001)
+        // Second tool fails (consume 100 of P-002 -> stock insufficient)
+        let consume_args1 = serde_json::json!({
+            "producto": "P-001",
+            "cantidad": 5.0,
+            "lote": "L1",
+            "area_id": 1
+        });
+        let consume_args2 = serde_json::json!({
+            "producto": "P-002",
+            "cantidad": 100.0,
+            "lote": "L2",
+            "area_id": 1
+        });
+
+        let cres1 = execute_tool(&pool, &admin_user, "registrar_consumo", consume_args1).await.unwrap();
+        let cres2 = execute_tool(&pool, &admin_user, "registrar_consumo", consume_args2).await.unwrap();
+
+        // P-001 consumption succeeds
+        assert_eq!(cres1.get("status").unwrap().as_str().unwrap(), "success");
+        // P-002 consumption fails
+        assert_eq!(cres2.get("status").unwrap().as_str().unwrap(), "error");
+        assert!(cres2.get("message").unwrap().as_str().unwrap().contains("insuficiente"));
+
+        // Verify failure isolation: P-001 is committed (stock goes 10 -> 5)
+        let stock_p1_after: rust_decimal::Decimal = sqlx::query_scalar("SELECT cantidad FROM stock WHERE lote_id IN (SELECT id FROM lotes WHERE producto_id = $1)")
+            .bind(p1_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(stock_p1_after, rust_decimal::Decimal::new(5, 0));
+
+        // P-002 is rolled back (stock remains 20)
+        let stock_p2_after: rust_decimal::Decimal = sqlx::query_scalar("SELECT cantidad FROM stock WHERE lote_id IN (SELECT id FROM lotes WHERE producto_id = $1)")
+            .bind(p2_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(stock_p2_after, rust_decimal::Decimal::new(20, 0));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_rbac_global_search_for_tecnologo(pool: sqlx::PgPool) {
+        // Setup areas
+        let area_exists1 = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM areas WHERE id = 1)")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        if !area_exists1 {
+            sqlx::query("INSERT INTO areas (id, nombre, descripcion) VALUES (1, 'Area Central', 'Central')")
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let area_exists2 = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM areas WHERE id = 2)")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        if !area_exists2 {
+            sqlx::query("INSERT INTO areas (id, nombre, descripcion) VALUES (2, 'Urgencias', 'Urgencias')")
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+
+        // Setup user tecnologo
+        let tec_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO usuarios (id, nombre, email, password_hash, rol, activo) \
+             VALUES ($1, 'Tec DB Test', 'tec-db-test@lab.cl', 'hash', 'tecnologo', true)"
+        )
+        .bind(tec_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let tec_user = ActiveUser {
+            id: tec_id,
+            rol: "tecnologo".to_string(),
+        };
+
+        // Note: NO entries in usuario_area are added for tec_user.
+
+        // Setup product & stock in both areas
+        let unit_id: i32 = sqlx::query_scalar(
+            "INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ('Test Base Unit', 'Test Base Units') RETURNING id"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let p_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO productos (id, nombre, codigo_interno, unidad_base_id, activo) \
+             VALUES ($1, 'Global Product', 'P-GLOBAL', $2, true)"
+        )
+        .bind(p_id)
+        .bind(unit_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert stock in Area 1 and Area 2
+        let l_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO lotes (id, producto_id, numero_lote, codigo_interno, fecha_vencimiento) \
+             VALUES ($1, $2, 'L-GLOBAL', 'LT-GL', '2030-01-01')"
+        )
+        .bind(l_id)
+        .bind(p_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO stock (lote_id, area_id, cantidad) VALUES ($1, 1, 10.0), ($1, 2, 15.0)"
+        )
+        .bind(l_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Execute buscar_stock as tecnologo
+        let search_args = BuscarStockArgs {
+            busqueda: "P-GLOBAL".to_string(),
+        };
+        let res = execute_buscar_stock(&pool, &tec_user, search_args).await.unwrap();
+
+        assert_eq!(res.status, "success");
+        // Must return 2 items (one for Area Central, one for Urgencias)
+        assert_eq!(res.items.len(), 2);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_interactive_consumption_flow(pool: sqlx::PgPool) {
+        // Setup areas
+        let area_exists1 = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM areas WHERE id = 1)")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        if !area_exists1 {
+            sqlx::query("INSERT INTO areas (id, nombre, descripcion) VALUES (1, 'Area Central', 'Central')")
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let area_exists2 = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM areas WHERE id = 2)")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        if !area_exists2 {
+            sqlx::query("INSERT INTO areas (id, nombre, descripcion) VALUES (2, 'Urgencias', 'Urgencias')")
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+
+        // Setup user admin
+        let admin_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO usuarios (id, nombre, email, password_hash, rol, activo) \
+             VALUES ($1, 'Admin DB Test', 'admin-db-test@lab.cl', 'hash', 'admin', true)"
+        )
+        .bind(admin_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let admin_user = ActiveUser {
+            id: admin_id,
+            rol: "admin".to_string(),
+        };
+
+        // Setup product
+        let unit_id: i32 = sqlx::query_scalar(
+            "INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ('Test Base Unit', 'Test Base Units') RETURNING id"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let p_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO productos (id, nombre, codigo_interno, unidad_base_id, activo) \
+             VALUES ($1, 'Interactive Product', 'P-INT', $2, true)"
+        )
+        .bind(p_id)
+        .bind(unit_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Lote 1 (vence pronto)
+        let l1_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO lotes (id, producto_id, numero_lote, codigo_interno, fecha_vencimiento) \
+             VALUES ($1, $2, 'L12', 'LT-01', '2026-08-30')"
+        )
+        .bind(l1_id)
+        .bind(p_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Lote 2 (vence despues)
+        let l2_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO lotes (id, producto_id, numero_lote, codigo_interno, fecha_vencimiento) \
+             VALUES ($1, $2, 'L14', 'LT-02', '2026-12-31')"
+        )
+        .bind(l2_id)
+        .bind(p_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO stock (lote_id, area_id, cantidad) VALUES ($1, 1, 10.0), ($2, 2, 15.0)"
+        )
+        .bind(l1_id)
+        .bind(l2_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 1. Consume without specifying a lote -> should prompt selection
+        let args = RegistrarConsumoArgs {
+            producto: "P-INT".to_string(),
+            cantidad: rust_decimal::Decimal::new(5, 0),
+            lote: None,
+            area_id: None,
+        };
+
+        let res = execute_registrar_consumo(&pool, &admin_user, args).await.unwrap();
+
+        assert_eq!(res.get("status").unwrap().as_str().unwrap(), "needs_lote_selection");
+        assert_eq!(res.get("producto_nombre").unwrap().as_str().unwrap(), "Interactive Product");
+
+        let fefo = res.get("fefo_lote").unwrap();
+        assert_eq!(fefo.get("numero_lote").unwrap().as_str().unwrap(), "L12");
+        assert_eq!(fefo.get("area_id").unwrap().as_i64().unwrap(), 1);
+
+        let alts = res.get("alternativas").unwrap().as_array().unwrap();
+        assert_eq!(alts.len(), 1);
+        assert_eq!(alts[0].get("numero_lote").unwrap().as_str().unwrap(), "L14");
+        assert_eq!(alts[0].get("area_id").unwrap().as_i64().unwrap(), 2);
+
+        // 2. Consume specifying L14 -> should succeed immediately
+        let args_selected = RegistrarConsumoArgs {
+            producto: "P-INT".to_string(),
+            cantidad: rust_decimal::Decimal::new(5, 0),
+            lote: Some("L14".to_string()),
+            area_id: None,
+        };
+
+        let res_selected = execute_registrar_consumo(&pool, &admin_user, args_selected).await.unwrap();
+        assert_eq!(res_selected.get("status").unwrap().as_str().unwrap(), "success");
+        assert!(res_selected.get("message").unwrap().as_str().unwrap().contains("Lote L14"));
+
+        // Verify stock of L14 decreased (15 -> 10)
+        let stock_l14: rust_decimal::Decimal = sqlx::query_scalar("SELECT cantidad FROM stock WHERE lote_id = $1 AND area_id = 2")
+            .bind(l2_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(stock_l14, rust_decimal::Decimal::new(10, 0));
+
+        // Stock of L12 remained 10
+        let stock_l12: rust_decimal::Decimal = sqlx::query_scalar("SELECT cantidad FROM stock WHERE lote_id = $1 AND area_id = 1")
+            .bind(l1_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(stock_l12, rust_decimal::Decimal::new(10, 0));
+    }
 }

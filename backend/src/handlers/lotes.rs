@@ -24,7 +24,6 @@ struct LoteListItem {
     id: Uuid,
     producto_id: Uuid,
     producto_nombre: String,
-    codigo_interno: String,
     numero_lote: String,
     fecha_vencimiento: NaiveDate,
     proveedor_nombre: Option<String>,
@@ -118,7 +117,7 @@ async fn listar(
     };
 
     let sql = format!(
-        r#"SELECT l.id, l.producto_id, p.nombre as producto_nombre, l.codigo_interno,
+        r#"SELECT l.id, l.producto_id, p.nombre as producto_nombre,
                   l.numero_lote, l.fecha_vencimiento, prov.nombre as proveedor_nombre,
                   l.costo_unitario,
                   (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id = l.id AND s.cantidad > 0) as stock_total,
@@ -214,7 +213,6 @@ async fn obtener(
         "producto_id": lote.producto_id,
         "producto_nombre": producto_nombre,
         "numero_lote": lote.numero_lote,
-        "codigo_interno": lote.codigo_interno,
         "fecha_vencimiento": lote.fecha_vencimiento,
         "costo_unitario": lote.costo_unitario,
         "created_at": lote.created_at,
@@ -228,12 +226,12 @@ async fn buscar_por_codigo(
     State(state): State<AppState>,
     Path(codigo): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    // Buscar por codigo_interno de lote
+    // Buscar por numero_lote de lote
     let lote_result = sqlx::query_as::<_, LoteBusqueda>(
-        r#"SELECT l.id, l.numero_lote, p.nombre as producto_nombre, l.codigo_interno
+        r#"SELECT l.id, l.numero_lote, p.nombre as producto_nombre
            FROM lotes l
            JOIN productos p ON p.id = l.producto_id
-           WHERE l.codigo_interno = $1"#,
+           WHERE l.numero_lote = $1"#,
     )
     .bind(&codigo)
     .fetch_optional(&state.pool)
@@ -242,7 +240,7 @@ async fn buscar_por_codigo(
     if let Some(lote) = lote_result {
         return Ok(Json(serde_json::json!({
             "resultados": [{
-                "tipo": "lote_interno",
+                "tipo": "lote_fabricante",
                 "lote": lote,
             }]
         })));
@@ -285,7 +283,6 @@ struct LoteBusqueda {
     id: Uuid,
     numero_lote: String,
     producto_nombre: String,
-    codigo_interno: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]

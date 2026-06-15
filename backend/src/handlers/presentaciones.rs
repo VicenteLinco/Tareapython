@@ -19,6 +19,7 @@ struct CreatePresentacion {
     codigo_barras: Option<String>,
     gtin: Option<String>,
     gs1_habilitado: Option<bool>,
+    sku: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,6 +30,7 @@ struct UpdatePresentacion {
     codigo_barras: Option<String>,
     gtin: Option<String>,
     gs1_habilitado: Option<bool>,
+    sku: Option<String>,
     version: i32,
 }
 
@@ -88,7 +90,7 @@ async fn crear(
     }
 
     let presentacion = sqlx::query_as::<_, Presentacion>(
-        "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
+        "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado, sku) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
     )
     .bind(producto_id)
     .bind(&nombre)
@@ -97,6 +99,7 @@ async fn crear(
     .bind(&req.codigo_barras)
     .bind(&req.gtin)
     .bind(req.gs1_habilitado.unwrap_or(false))
+    .bind(&req.sku)
     .fetch_one(&state.pool)
     .await?;
 
@@ -171,7 +174,7 @@ async fn actualizar(
     }
 
     let presentacion = sqlx::query_as::<_, Presentacion>(
-        "UPDATE presentaciones SET nombre = $1, nombre_plural = $2, factor_conversion = $3, codigo_barras = $4, gtin = $5, gs1_habilitado = $6, version = version + 1 WHERE id = $7 AND version = $8 RETURNING *",
+        "UPDATE presentaciones SET nombre = $1, nombre_plural = $2, factor_conversion = $3, codigo_barras = $4, gtin = $5, gs1_habilitado = $6, sku = $7, version = version + 1 WHERE id = $8 AND version = $9 RETURNING *",
     )
     .bind(nombre)
     .bind(nombre_plural)
@@ -179,6 +182,7 @@ async fn actualizar(
     .bind(req.codigo_barras.as_deref().or(anterior.codigo_barras.as_deref()))
     .bind(gtin)
     .bind(req.gs1_habilitado.unwrap_or(anterior.gs1_habilitado))
+    .bind(req.sku.as_deref().or(anterior.sku.as_deref()))
     .bind(id)
     .bind(req.version)
     .fetch_optional(&state.pool)

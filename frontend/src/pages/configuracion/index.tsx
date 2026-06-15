@@ -17,6 +17,14 @@ interface Configuracion {
   factor_historial_corto: number
   ventana_consumo_dias?: number
   periodo_revision_dias?: number
+  ia_proveedor: string
+  ia_modelo: string
+  ia_api_url: string
+  ia_api_key: string
+  whatsapp_api_url: string
+  whatsapp_api_key: string
+  whatsapp_webhook_secret: string
+  whatsapp_bot_phone: string
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -52,6 +60,14 @@ export default function ConfiguracionPage() {
   const [factorHistorialCorto, setFactorHistorialCorto] = useState(0.35)
   const [ventanaConsumoDias, setVentanaConsumoDias] = useState(90)
   const [periodoRevisionDias, setPeriodoRevisionDias] = useState(30)
+  const [iaProveedor, setIaProveedor] = useState('gemini')
+  const [iaModelo, setIaModelo] = useState('gemini-1.5-flash')
+  const [iaApiUrl, setIaApiUrl] = useState('')
+  const [iaApiKey, setIaApiKey] = useState('')
+  const [whatsappApiUrl, setWhatsappApiUrl] = useState('')
+  const [whatsappApiKey, setWhatsappApiKey] = useState('')
+  const [whatsappWebhookSecret, setWhatsappWebhookSecret] = useState('')
+  const [whatsappBotPhone, setWhatsappBotPhone] = useState('')
 
   useEffect(() => {
     if (!data) return
@@ -67,6 +83,14 @@ export default function ConfiguracionPage() {
     setFactorHistorialCorto(data.factor_historial_corto ?? 0.35)
     if (data.ventana_consumo_dias != null) setVentanaConsumoDias(data.ventana_consumo_dias)
     if (data.periodo_revision_dias != null) setPeriodoRevisionDias(data.periodo_revision_dias)
+    setIaProveedor(data.ia_proveedor || 'gemini')
+    setIaModelo(data.ia_modelo || 'gemini-1.5-flash')
+    setIaApiUrl(data.ia_api_url || '')
+    setIaApiKey(data.ia_api_key || '')
+    setWhatsappApiUrl(data.whatsapp_api_url || '')
+    setWhatsappApiKey(data.whatsapp_api_key || '')
+    setWhatsappWebhookSecret(data.whatsapp_webhook_secret || '')
+    setWhatsappBotPhone(data.whatsapp_bot_phone || '')
   }, [data])
 
   const mutation = useMutation({
@@ -82,6 +106,14 @@ export default function ConfiguracionPage() {
       factor_historial_corto: number
       ventana_consumo_dias: number
       periodo_revision_dias: number
+      ia_proveedor: string
+      ia_modelo: string
+      ia_api_url: string
+      ia_api_key: string
+      whatsapp_api_url: string
+      whatsapp_api_key: string
+      whatsapp_webhook_secret: string
+      whatsapp_bot_phone: string
     }) => api.put<Configuracion>('/configuracion', payload).then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['configuracion'] })
@@ -130,6 +162,14 @@ export default function ConfiguracionPage() {
       factor_historial_corto: factorHistorialCorto,
       ventana_consumo_dias: ventanaConsumoDias,
       periodo_revision_dias: periodoRevisionDias,
+      ia_proveedor: iaProveedor,
+      ia_modelo: iaModelo,
+      ia_api_url: iaApiUrl,
+      ia_api_key: iaApiKey,
+      whatsapp_api_url: whatsappApiUrl,
+      whatsapp_api_key: whatsappApiKey,
+      whatsapp_webhook_secret: whatsappWebhookSecret,
+      whatsapp_bot_phone: whatsappBotPhone,
     })
   }
 
@@ -417,6 +457,119 @@ export default function ConfiguracionPage() {
               <p className="text-xs text-base-content/50 leading-relaxed">
                 Frecuencia esperada de reposición. Afecta el stock de seguridad.
               </p>
+            </div>
+          </div>
+        </div>
+
+        <Divider />
+
+        {/* ── ASISTENTE DE IA Y WHATSAPP ── */}
+        <SectionTitle>Asistente de IA y WhatsApp</SectionTitle>
+
+        <div className="space-y-6">
+          <div className="flex items-center gap-2 mb-1">
+            <Brain className="w-4 h-4 text-base-content/40" />
+            <p className="text-xs text-base-content/50">
+              Configura el proveedor de IA y las credenciales para el bot de WhatsApp.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-5">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Proveedor de IA</label>
+              <select
+                className="select select-bordered w-full"
+                value={iaProveedor}
+                onChange={(e) => setIaProveedor(e.target.value)}
+              >
+                <option value="gemini">Google Gemini</option>
+                <option value="ollama">Ollama (Local)</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Modelo de IA</label>
+              <input
+                type="text"
+                className="input input-bordered w-full"
+                value={iaModelo}
+                onChange={(e) => setIaModelo(e.target.value)}
+                placeholder="Ej: gemini-1.5-flash"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-5">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">IA API URL (Ollama)</label>
+              <input
+                type="text"
+                className="input input-bordered w-full"
+                value={iaApiUrl}
+                onChange={(e) => setIaApiUrl(e.target.value)}
+                placeholder="Ej: http://localhost:11434"
+                disabled={iaProveedor !== 'ollama'}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">IA API Key (Gemini)</label>
+              <input
+                type="password"
+                className="input input-bordered w-full"
+                value={iaApiKey}
+                onChange={(e) => setIaApiKey(e.target.value)}
+                placeholder={iaApiKey === '***' ? '••••••••' : 'API Key'}
+                disabled={iaProveedor !== 'gemini'}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-5">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">WhatsApp API URL</label>
+              <input
+                type="text"
+                className="input input-bordered w-full"
+                value={whatsappApiUrl}
+                onChange={(e) => setWhatsappApiUrl(e.target.value)}
+                placeholder="Ej: http://localhost:8008"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">WhatsApp API Key</label>
+              <input
+                type="password"
+                className="input input-bordered w-full"
+                value={whatsappApiKey}
+                onChange={(e) => setWhatsappApiKey(e.target.value)}
+                placeholder={whatsappApiKey === '***' ? '••••••••' : 'API Key'}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-5">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Webhook Secret</label>
+              <input
+                type="text"
+                className="input input-bordered w-full"
+                value={whatsappWebhookSecret}
+                onChange={(e) => setWhatsappWebhookSecret(e.target.value)}
+                placeholder="Secreto para validar firma"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Teléfono del Bot</label>
+              <input
+                type="text"
+                className="input input-bordered w-full"
+                value={whatsappBotPhone}
+                onChange={(e) => setWhatsappBotPhone(e.target.value)}
+                placeholder="Ej: +56912345678"
+              />
             </div>
           </div>
         </div>

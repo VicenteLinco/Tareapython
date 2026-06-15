@@ -200,3 +200,69 @@ async fn crear_presentacion_para_producto(pool: PgPool) {
     assert_eq!(json["nombre"], "Caja x20");
     assert_eq!(json["factor_conversion"], "20.00");
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn crear_presentaciones_con_sku_duplicado(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool);
+
+    // 1. Crear producto 1
+    let (_, prod1_json) = common::post_json(
+        &app,
+        "/api/v1/productos",
+        &token,
+        serde_json::json!({
+            "nombre": "Producto 1 para SKU",
+            "unidad_base_id": 1,
+        }),
+    )
+    .await;
+    let prod1_id = prod1_json["id"].as_str().unwrap();
+
+    // 2. Crear producto 2
+    let (_, prod2_json) = common::post_json(
+        &app,
+        "/api/v1/productos",
+        &token,
+        serde_json::json!({
+            "nombre": "Producto 2 para SKU",
+            "unidad_base_id": 1,
+        }),
+    )
+    .await;
+    let prod2_id = prod2_json["id"].as_str().unwrap();
+
+    // 3. Crear presentación para producto 1 con SKU "SKU-DUPLICADO"
+    let (status1, _) = common::post_json(
+        &app,
+        &format!("/api/v1/productos/{}/presentaciones", prod1_id),
+        &token,
+        serde_json::json!({
+            "nombre": "Frasco 1",
+            "nombre_plural": "Frascos 1",
+            "factor_conversion": 10,
+            "sku": "SKU-DUPLICADO"
+        }),
+    )
+    .await;
+    assert_eq!(status1, StatusCode::CREATED);
+
+    // 4. Intentar crear presentación para producto 2 con el mismo SKU "SKU-DUPLICADO" -> 409 o similar database error/validation error.
+    // En Axum/AppError, los errores de clave única en base de datos retornan INTERNAL o un error específico si se mapea.
+    // Veamos qué status retorna. Debería fallar por la clave única en base de datos.
+    let (status2, _) = common::post_json(
+        &app,
+        &format!("/api/v1/productos/{}/presentaciones", prod2_id),
+        &token,
+        serde_json::json!({
+            "nombre": "Frasco 2",
+            "nombre_plural": "Frascos 2",
+            "factor_conversion": 10,
+            "sku": "SKU-DUPLICADO"
+        }),
+    )
+    .await;
+    
+    // El error de clave única se mapea como AppError::Database/Internal, que retorna un status de error.
+    assert!(status2.is_client_error() || status2.is_server_error());
+}

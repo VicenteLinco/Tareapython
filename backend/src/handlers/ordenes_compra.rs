@@ -27,7 +27,7 @@ pub struct CreateOCItem {
     pub presentacion_id: Option<i32>,
     pub cantidad_solicitada: Decimal,
     pub precio_unitario: Option<Decimal>,
-    pub unidad: String,
+    pub unidad_basica_id: Option<i32>,
     pub area_destino_id: Option<i32>,
 }
 
@@ -167,7 +167,7 @@ async fn crear(
     for item in &payload.items {
         sqlx::query(
             r#"INSERT INTO orden_compra_detalle
-               (orden_compra_id, producto_id, presentacion_id, cantidad_solicitada, precio_unitario, unidad, area_destino_id)
+               (orden_compra_id, producto_id, presentacion_id, cantidad_solicitada, precio_unitario, unidad_basica_id, area_destino_id)
                VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
         )
         .bind(orden_id)
@@ -175,7 +175,7 @@ async fn crear(
         .bind(item.presentacion_id)
         .bind(item.cantidad_solicitada)
         .bind(item.precio_unitario)
-        .bind(&item.unidad)
+        .bind(item.unidad_basica_id)
         .bind(item.area_destino_id)
         .execute(&mut *tx)
         .await?;
@@ -343,10 +343,11 @@ async fn obtener(
                d.cantidad_solicitada,
                d.cantidad_recibida,
                d.precio_unitario,
-               d.unidad,
+               COALESCE(pres.nombre, ub.nombre) AS unidad,
                a.nombre AS area_destino_nombre
            FROM orden_compra_detalle d
            JOIN productos p ON p.id = d.producto_id
+           LEFT JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
            LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
            LEFT JOIN areas a ON a.id = d.area_destino_id
            WHERE d.orden_compra_id = $1

@@ -37,6 +37,18 @@ docs/superpowers/
 # Agent tools/worktrees
 .claude/
 .antigravitycli/
+.openclaw/
+.pi/
+openspec/
 
 # Local Pi runtime state
 .atl/
+
+# Releases and builds
+/Release*/
+/release*/
+/dist/
+/target/
+
+# Database backups
+backup_db.sql

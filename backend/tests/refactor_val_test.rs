@@ -45,16 +45,25 @@ async fn test_integridad_stock_y_servicios_refactorizados(pool: sqlx::PgPool) {
 
     let producto_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO productos (id, codigo_interno, nombre, categoria_id, unidad_base_id, proveedor_id, stock_minimo) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        "INSERT INTO productos (id, codigo_interno, nombre, categoria_id, unidad_base_id, stock_minimo) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(producto_id)
     .bind(format!("TEST-{}", Uuid::new_v4().to_string()[..8].to_string()))
     .bind("Producto Test Refactor")
     .bind(categoria_id)
     .bind(unidad_id)
-    .bind(proveedor_id)
     .bind(Decimal::from(10))
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO producto_proveedor (producto_id, proveedor_id, es_principal) \
+         VALUES ($1, $2, true)",
+    )
+    .bind(producto_id)
+    .bind(proveedor_id)
     .execute(&pool)
     .await
     .unwrap();

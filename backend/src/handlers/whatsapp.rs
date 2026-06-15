@@ -20,6 +20,47 @@ use crate::errors::AppError;
 
 type HmacSha1 = Hmac<Sha1>;
 
+#[derive(Debug, Clone)]
+pub struct WhatsappSettings {
+    pub api_url: String,
+    pub api_key: String,
+    pub webhook_secret: String,
+    pub bot_phone: String,
+}
+
+pub async fn load_whatsapp_settings(pool: &sqlx::PgPool) -> Result<WhatsappSettings, AppError> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT clave, valor_texto FROM configuracion WHERE clave IN ('whatsapp_api_url', 'whatsapp_api_key', 'whatsapp_webhook_secret', 'whatsapp_bot_phone')"
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut api_url = std::env::var("WHATSAPP_API_URL").unwrap_or_else(|_| "http://localhost:8008".to_string());
+    let mut api_key = std::env::var("WHATSAPP_API_KEY").unwrap_or_else(|_| "mock_whatsapp_api_key_for_dev".to_string());
+    let mut webhook_secret = std::env::var("WHATSAPP_WEBHOOK_SECRET").unwrap_or_else(|_| "mock_webhook_secret_for_dev".to_string());
+    let mut bot_phone = std::env::var("WHATSAPP_BOT_PHONE").unwrap_or_default();
+
+    for (clave, valor) in rows {
+        let trimmed = valor.trim();
+        if !trimmed.is_empty() {
+            match clave.as_str() {
+                "whatsapp_api_url" => api_url = trimmed.to_string(),
+                "whatsapp_api_key" => api_key = trimmed.to_string(),
+                "whatsapp_webhook_secret" => webhook_secret = trimmed.to_string(),
+                "whatsapp_bot_phone" => bot_phone = trimmed.to_string(),
+                _ => {}
+            }
+        }
+    }
+
+    Ok(WhatsappSettings {
+        api_url,
+        api_key,
+        webhook_secret,
+        bot_phone,
+    })
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct OpenwaWebhook {
     pub event: String,
@@ -115,6 +156,15 @@ pub async fn webhook_handler(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<impl IntoResponse, StatusCode> {
+    let wa_settings = load_whatsapp_settings(&state.pool).await.unwrap_or_else(|_| {
+        WhatsappSettings {
+            api_url: state.config.whatsapp_api_url.clone(),
+            api_key: state.config.whatsapp_api_key.clone(),
+            webhook_secret: state.config.whatsapp_webhook_secret.clone(),
+            bot_phone: String::new(),
+        }
+    });
+
     // 1. Determine provider & verify signature
     let msg = if headers.contains_key("X-Twilio-Signature") {
         let twilio_signature = headers
@@ -149,7 +199,7 @@ pub async fn webhook_handler(
             raw_payload: String::from_utf8_lossy(&body).into_owned(),
         }
     } else if headers.contains_key("X-Webhook-Secret") {
-        if !verify_openwa_secret(&headers, &state.config.whatsapp_webhook_secret) {
+        if !verify_openwa_secret(&headers, &wa_settings.webhook_secret) {
             return Err(StatusCode::UNAUTHORIZED);
         }
 
@@ -218,14 +268,25 @@ pub struct ProductResolution {
     presentacion_id: Option<i32>,
     factor_conversion: rust_decimal::Decimal,
     unidad_basica_nombre: String,
+    unidad_base_id: i32,
 }
 
 pub async fn send_whatsapp_reply(
+    pool: &sqlx::PgPool,
     config: &crate::config::AppConfig,
     to: &str,
     message: &str,
 ) -> Result<(), AppError> {
-    let url = format!("{}/sendText", config.whatsapp_api_url);
+    let settings = load_whatsapp_settings(pool).await.unwrap_or_else(|_| {
+        WhatsappSettings {
+            api_url: config.whatsapp_api_url.clone(),
+            api_key: config.whatsapp_api_key.clone(),
+            webhook_secret: config.whatsapp_webhook_secret.clone(),
+            bot_phone: String::new(),
+        }
+    });
+
+    let url = format!("{}/sendText", settings.api_url);
     let payload = serde_json::json!({
         "to": to,
         "content": message,
@@ -234,7 +295,7 @@ pub async fn send_whatsapp_reply(
     let client = reqwest::Client::new();
     let mut request = client.post(&url);
 
-    let key = &config.whatsapp_api_key;
+    let key = &settings.api_key;
     if !key.is_empty() && key != "mock_whatsapp_api_key_for_dev" {
         request = request.header("Authorization", format!("Bearer {}", key));
     }
@@ -351,7 +412,6 @@ pub struct RegistrarConsumoResult {
 pub struct LoteSelectionDetail {
     pub lote_id: uuid::Uuid,
     pub numero_lote: String,
-    pub codigo_interno: String,
     pub fecha_vencimiento: chrono::NaiveDate,
     pub area_nombre: String,
     pub area_id: i32,
@@ -407,20 +467,24 @@ pub async fn execute_buscar_stock(
 
     let rows = sqlx::query_as::<_, StockRow>(
         r#"SELECT
-            v.codigo_interno,
-            v.producto_nombre,
-            v.area_nombre,
-            v.stock_total,
-            v.unidad,
+            p.codigo_interno,
+            p.nombre AS producto_nombre,
+            COALESCE(v.area_nombre, 'N/A') AS area_nombre,
+            COALESCE(v.stock_total, 0::numeric) AS stock_total,
+            ub.nombre AS unidad,
             v.proximo_vencimiento
-           FROM v_stock_por_producto_area v
-           WHERE (
-               v.codigo_interno ILIKE $1 
-               OR v.producto_nombre ILIKE $1
-               OR similarity(v.producto_nombre, $4) > 0.3
-           )
+           FROM productos p
+           JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
+           LEFT JOIN v_stock_por_producto_area v ON v.producto_id = p.id
+           WHERE p.activo = true AND p.deleted_at IS NULL
+             AND (
+                 p.codigo_interno ILIKE $1 
+                 OR p.nombre ILIKE $1
+                 OR similarity(p.nombre, $4) > 0.3
+             )
              AND (
                  $2 = 'admin' OR $2 = 'tecnologo' OR 
+                 v.area_id IS NULL OR
                  EXISTS (
                      SELECT 1 FROM usuario_area ua 
                      WHERE ua.usuario_id = $3 AND ua.area_id = v.area_id
@@ -428,13 +492,13 @@ pub async fn execute_buscar_stock(
              )
            ORDER BY 
              CASE 
-                 WHEN v.codigo_interno = $4 THEN 1
-                 WHEN v.producto_nombre ILIKE $1 THEN 2
+                 WHEN p.codigo_interno = $4 THEN 1
+                 WHEN p.nombre ILIKE $1 THEN 2
                  ELSE 3
              END,
-             similarity(v.producto_nombre, $4) DESC,
-             v.producto_nombre, 
-             v.codigo_interno, 
+             similarity(p.nombre, $4) DESC,
+             p.nombre, 
+             p.codigo_interno, 
              v.area_nombre"#
     )
     .bind(&ilike_query)
@@ -483,10 +547,11 @@ pub async fn resolve_product(
             p.nombre AS producto_nombre,
             NULL::INT AS presentacion_id, 
             1.0::NUMERIC AS factor_conversion, 
-            ub.nombre AS unidad_basica_nombre
+            ub.nombre AS unidad_basica_nombre,
+            p.unidad_base_id
         FROM productos p
         JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-        WHERE p.codigo_interno = $1 AND p.activo = true AND p.deleted_at IS NULL"#
+        WHERE UPPER(p.codigo_interno) = UPPER($1) AND p.activo = true AND p.deleted_at IS NULL"#
     )
     .bind(ident)
     .fetch_optional(pool)
@@ -503,11 +568,12 @@ pub async fn resolve_product(
             p.nombre AS producto_nombre,
             pres.id AS presentacion_id, 
             pres.factor_conversion, 
-            ub.nombre AS unidad_basica_nombre
+            ub.nombre AS unidad_basica_nombre,
+            p.unidad_base_id
         FROM presentaciones pres
         JOIN productos p ON p.id = pres.producto_id
         JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-        WHERE pres.codigo_barras = $1 AND pres.activa = true AND p.activo = true AND p.deleted_at IS NULL"#
+        WHERE UPPER(pres.codigo_barras) = UPPER($1) AND pres.activa = true AND p.activo = true AND p.deleted_at IS NULL"#
     )
     .bind(ident)
     .fetch_optional(pool)
@@ -524,7 +590,8 @@ pub async fn resolve_product(
             p.nombre AS producto_nombre,
             NULL::INT AS presentacion_id,
             1.0::NUMERIC AS factor_conversion,
-            ub.nombre AS unidad_basica_nombre
+            ub.nombre AS unidad_basica_nombre,
+            p.unidad_base_id
         FROM productos p
         JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
         WHERE (p.nombre ILIKE $1 OR similarity(p.nombre, $2) > 0.3)
@@ -549,6 +616,7 @@ pub async fn resolve_product(
             presentacion_id: None,
             factor_conversion: rust_decimal::Decimal::ONE,
             unidad_basica_nombre: cand.unidad_basica_nombre.clone(),
+            unidad_base_id: cand.unidad_base_id,
         }));
     }
 
@@ -711,21 +779,20 @@ pub async fn execute_registrar_ingreso(
 
     let (recepcion_id, numero_documento) = insert_reception_res.map_err(|e| AppError::Internal(format!("Falló la creación del registro de recepción: {}", e)))?;
 
-    let insert_lot_res: Result<(uuid::Uuid, String), sqlx::Error> = sqlx::query_as(
-        r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento, codigo_interno)
-           VALUES ($1, $2, $3, $4, 'L' || LPAD(nextval('seq_lot_numero')::text, 6, '0'))
+    let lote_id: uuid::Uuid = sqlx::query_scalar(
+        r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento)
+           VALUES ($1, $2, $3, $4)
            ON CONFLICT (producto_id, proveedor_id, numero_lote)
            DO UPDATE SET fecha_vencimiento = EXCLUDED.fecha_vencimiento
-           RETURNING id, codigo_interno"#
+           RETURNING id"#
     )
     .bind(resolved.producto_id)
     .bind(provider_id)
     .bind(&args.lote)
     .bind(expiry_date)
     .fetch_one(&mut *tx)
-    .await;
-
-    let (lote_id, lot_codigo_interno) = insert_lot_res.map_err(|e| AppError::Internal(format!("Falló el registro del lote: {}", e)))?;
+    .await
+    .map_err(|e| AppError::Internal(format!("Falló el registro del lote: {}", e)))?;
 
     let cantidad_base = args.cantidad * resolved.factor_conversion;
 
@@ -774,14 +841,13 @@ pub async fn execute_registrar_ingreso(
         "Recepción {} registrada exitosamente.\n\
          Producto: {}\n\
          Cantidad: {} {}\n\
-         Lote: {} ({})\n\
+         Lote: {}\n\
          Área ID: {}",
         numero_documento,
         resolved.producto_nombre,
         args.cantidad.normalize(),
         resolved.unidad_basica_nombre,
         args.lote,
-        lot_codigo_interno,
         args.area_id
     );
 
@@ -851,24 +917,38 @@ pub async fn execute_crear_solicitud_compra(
     .await
     .map_err(|e| AppError::Internal(e.to_string()))?;
 
+    let (unidad_basica_id, presentacion_id, cantidad_sugerida, cantidad_presentaciones) = if let Some(pres_id) = resolved.presentacion_id {
+        (None, Some(pres_id), args.cantidad * resolved.factor_conversion, Some(args.cantidad))
+    } else {
+        (Some(resolved.unidad_base_id), None, args.cantidad, None)
+    };
+
     if existing_qty.is_some() {
         sqlx::query(
-            "UPDATE solicitud_compra_detalle SET cantidad_sugerida = cantidad_sugerida + $3 WHERE solicitud_id = $1 AND producto_id = $2"
+            "UPDATE solicitud_compra_detalle SET \
+             cantidad_sugerida = cantidad_sugerida + $3, \
+             cantidad_presentaciones = CASE WHEN presentacion_id IS NOT NULL THEN COALESCE(cantidad_presentaciones, 0::numeric) + $4 ELSE NULL END \
+             WHERE solicitud_id = $1 AND producto_id = $2"
         )
         .bind(solicitud_id)
         .bind(resolved.producto_id)
-        .bind(args.cantidad)
+        .bind(cantidad_sugerida)
+        .bind(cantidad_presentaciones)
         .execute(&mut *tx)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
     } else {
         sqlx::query(
-            "INSERT INTO solicitud_compra_detalle (solicitud_id, producto_id, cantidad_sugerida, unidad) VALUES ($1, $2, $3, $4)"
+            "INSERT INTO solicitud_compra_detalle \
+             (solicitud_id, producto_id, cantidad_sugerida, unidad_basica_id, presentacion_id, cantidad_presentaciones) \
+             VALUES ($1, $2, $3, $4, $5, $6)"
         )
         .bind(solicitud_id)
         .bind(resolved.producto_id)
-        .bind(args.cantidad)
-        .bind(&resolved.unidad_basica_nombre)
+        .bind(cantidad_sugerida)
+        .bind(unidad_basica_id)
+        .bind(presentacion_id)
+        .bind(cantidad_presentaciones)
         .execute(&mut *tx)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -898,7 +978,6 @@ struct StockQueryRow {
     cantidad: rust_decimal::Decimal,
     area_id: i32,
     numero_lote: String,
-    codigo_interno: String,
     fecha_vencimiento: chrono::NaiveDate,
     area_nombre: String,
 }
@@ -950,7 +1029,6 @@ pub async fn execute_registrar_consumo(
                 s.cantidad,
                 s.area_id,
                 l.numero_lote,
-                l.codigo_interno,
                 l.fecha_vencimiento,
                 a.nombre as area_nombre
             FROM stock s
@@ -1028,7 +1106,6 @@ pub async fn execute_registrar_consumo(
             let fefo_lote = LoteSelectionDetail {
                 lote_id: first_row.lote_id,
                 numero_lote: first_row.numero_lote.clone(),
-                codigo_interno: first_row.codigo_interno.clone(),
                 fecha_vencimiento: first_row.fecha_vencimiento,
                 area_nombre: first_row.area_nombre.clone(),
                 area_id: first_row.area_id,
@@ -1040,7 +1117,6 @@ pub async fn execute_registrar_consumo(
                 .map(|r| LoteSelectionDetail {
                     lote_id: r.lote_id,
                     numero_lote: r.numero_lote.clone(),
-                    codigo_interno: r.codigo_interno.clone(),
                     fecha_vencimiento: r.fecha_vencimiento,
                     area_nombre: r.area_nombre.clone(),
                     area_id: r.area_id,
@@ -1068,14 +1144,13 @@ pub async fn execute_registrar_consumo(
                     s.cantidad,
                     s.area_id,
                     l.numero_lote,
-                    l.codigo_interno,
                     l.fecha_vencimiento,
                     a.nombre as area_nombre
                 FROM stock s
                 JOIN lotes l ON l.id = s.lote_id
                 JOIN areas a ON a.id = s.area_id
                 WHERE l.producto_id = $1
-                  AND (l.numero_lote = $2 OR l.codigo_interno = $2 OR l.id::text = $2)
+                  AND (l.numero_lote = $2 OR l.id::text = $2)
                   AND s.cantidad > 0
                   AND s.area_id = $3"#
             )
@@ -1093,14 +1168,13 @@ pub async fn execute_registrar_consumo(
                     s.cantidad,
                     s.area_id,
                     l.numero_lote,
-                    l.codigo_interno,
                     l.fecha_vencimiento,
                     a.nombre as area_nombre
                 FROM stock s
                 JOIN lotes l ON l.id = s.lote_id
                 JOIN areas a ON a.id = s.area_id
                 WHERE l.producto_id = $1
-                  AND (l.numero_lote = $2 OR l.codigo_interno = $2 OR l.id::text = $2)
+                  AND (l.numero_lote = $2 OR l.id::text = $2)
                   AND s.cantidad > 0"#
             )
             .bind(resolved.producto_id)
@@ -1198,12 +1272,12 @@ pub async fn process_message_async(state: AppState, msg: WebhookMessage) -> Resu
                 &msg.id,
                 &sender_phone,
                 None,
-                &msg.raw_payload,
+                &msg.body,
                 None,
                 "UNAUTHORIZED",
                 Some(access_denied_msg),
             ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, access_denied_msg).await;
+            let _ = send_whatsapp_reply(&state.pool, &state.config, &msg.from, access_denied_msg).await;
             return Ok(());
         }
         Err(e) => {
@@ -1214,12 +1288,12 @@ pub async fn process_message_async(state: AppState, msg: WebhookMessage) -> Resu
                 &msg.id,
                 &sender_phone,
                 None,
-                &msg.raw_payload,
+                &msg.body,
                 None,
                 "DB_ERROR",
                 Some(error_msg),
             ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
+            let _ = send_whatsapp_reply(&state.pool, &state.config, &msg.from, error_msg).await;
             return Err(e.into());
         }
     };
@@ -1235,12 +1309,12 @@ pub async fn process_message_async(state: AppState, msg: WebhookMessage) -> Resu
                 &msg.id,
                 &sender_phone,
                 Some(user.id),
-                &msg.raw_payload,
+                &msg.body,
                 None,
                 "DB_ERROR",
                 Some(error_msg),
             ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
+            let _ = send_whatsapp_reply(&state.pool, &state.config, &msg.from, error_msg).await;
             return Err(e);
         }
     };
@@ -1256,12 +1330,12 @@ pub async fn process_message_async(state: AppState, msg: WebhookMessage) -> Resu
                 &msg.id,
                 &sender_phone,
                 Some(user.id),
-                &msg.raw_payload,
+                &msg.body,
                 None,
                 "DB_ERROR",
                 Some(error_msg),
             ).await;
-            let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
+            let _ = send_whatsapp_reply(&state.pool, &state.config, &msg.from, error_msg).await;
             return Err(e);
         }
     };
@@ -1287,12 +1361,12 @@ pub async fn process_message_async(state: AppState, msg: WebhookMessage) -> Resu
             &msg.id,
             &sender_phone,
             Some(user.id),
-            &msg.raw_payload,
+            &msg.body,
             None,
             "DB_ERROR",
             Some(error_msg),
         ).await;
-        let _ = send_whatsapp_reply(&state.config, &msg.from, error_msg).await;
+        let _ = send_whatsapp_reply(&state.pool, &state.config, &msg.from, error_msg).await;
         return Err(e);
     }
 
@@ -1805,8 +1879,8 @@ mod tests {
         // Insert stock in Area 1 and Area 2
         let l_id = uuid::Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO lotes (id, producto_id, numero_lote, codigo_interno, fecha_vencimiento) \
-             VALUES ($1, $2, 'L-GLOBAL', 'LT-GL', '2030-01-01')"
+            "INSERT INTO lotes (id, producto_id, numero_lote, fecha_vencimiento) \
+             VALUES ($1, $2, 'L-GLOBAL', '2030-01-01')"
         )
         .bind(l_id)
         .bind(p_id)
@@ -1895,8 +1969,8 @@ mod tests {
         // Lote 1 (vence pronto)
         let l1_id = uuid::Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO lotes (id, producto_id, numero_lote, codigo_interno, fecha_vencimiento) \
-             VALUES ($1, $2, 'L12', 'LT-01', '2026-08-30')"
+            "INSERT INTO lotes (id, producto_id, numero_lote, fecha_vencimiento) \
+             VALUES ($1, $2, 'L12', '2026-08-30')"
         )
         .bind(l1_id)
         .bind(p_id)
@@ -1907,8 +1981,8 @@ mod tests {
         // Lote 2 (vence despues)
         let l2_id = uuid::Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO lotes (id, producto_id, numero_lote, codigo_interno, fecha_vencimiento) \
-             VALUES ($1, $2, 'L14', 'LT-02', '2026-12-31')"
+            "INSERT INTO lotes (id, producto_id, numero_lote, fecha_vencimiento) \
+             VALUES ($1, $2, 'L14', '2026-12-31')"
         )
         .bind(l2_id)
         .bind(p_id)

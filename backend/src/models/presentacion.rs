@@ -16,4 +16,5 @@ pub struct Presentacion {
     pub activa: bool,
     pub version: i32,
     pub created_at: DateTime<Utc>,
+    pub sku: Option<String>,
 }

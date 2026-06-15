@@ -35,11 +35,14 @@ async fn reconciliar_solicitud_recepcion(
         r#"SELECT
                d.producto_id,
                SUM(d.cantidad_sugerida) AS cantidad,
-               MIN(d.unidad) AS unidad
+               MIN(COALESCE(pres.nombre, ub.nombre)) AS unidad
            FROM solicitud_compra_detalle d
            JOIN productos p ON p.id = d.producto_id
+           LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = true
+           LEFT JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
+           LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
            WHERE d.solicitud_id = $1
-             AND p.proveedor_id = $2
+             AND pp.proveedor_id = $2
            GROUP BY d.producto_id"#,
     )
     .bind(solicitud_id)
@@ -348,12 +351,12 @@ pub async fn crear_recepcion(
             .fetch_one(&mut *tx)
             .await?;
 
-            let (lote_id, codigo_interno): (Uuid, String) = sqlx::query_as(
-                r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento, costo_unitario, codigo_interno)
-                   VALUES ($1, $2, $3, $4, $5, 'L' || LPAD(nextval('seq_lot_numero')::text, 6, '0'))
+            let lote_id: Uuid = sqlx::query_scalar(
+                r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento, costo_unitario)
+                   VALUES ($1, $2, $3, $4, $5)
                    ON CONFLICT (producto_id, proveedor_id, numero_lote)
                    DO UPDATE SET fecha_vencimiento = EXCLUDED.fecha_vencimiento, costo_unitario = EXCLUDED.costo_unitario
-                   RETURNING id, codigo_interno"#
+                   RETURNING id"#
             )
             .bind(item.producto_id)
             .bind(req.proveedor_id)
@@ -419,7 +422,6 @@ pub async fn crear_recepcion(
 
             lotes_creados.push(LoteCreado {
                 lote_id,
-                codigo_interno,
                 numero_lote: item.numero_lote.clone(),
                 fecha_vencimiento: item.fecha_vencimiento,
                 producto_id: item.producto_id,
@@ -580,7 +582,7 @@ pub async fn obtener_detalles(
             pr.nombre as presentacion_nombre, rd.cantidad_presentaciones, 
             rd.factor_conversion_usado, rd.cantidad_unidades_base,
             um.nombre as unidad_base_nombre, um.nombre_plural as unidad_base_nombre_plural,
-            a.nombre as area_destino, rd.lote_id as lote_id, l.codigo_interno as codigo_interno
+            a.nombre as area_destino, rd.lote_id as lote_id
            FROM recepcion_detalle rd
            JOIN productos p ON p.id = rd.producto_id
            JOIN lotes l ON l.id = rd.lote_id

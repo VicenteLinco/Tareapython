@@ -104,6 +104,7 @@ pub struct CreatePresentacionInline {
     pub codigo_barras: Option<String>,
     pub gtin: Option<String>,
     pub gs1_habilitado: Option<bool>,
+    pub sku: Option<String>,
 }
 
 #[derive(Debug, Deserialize, specta::Type)]
@@ -192,7 +193,7 @@ async fn listar(
 
     if params.q.is_some() {
         conditions.push(format!(
-            "(p.search_vector @@ plainto_tsquery('simple', ${0}) OR p.nombre ILIKE '%' || ${0} || '%' OR p.codigo_interno ILIKE '%' || ${0} || '%' OR p.codigo_proveedor ILIKE '%' || ${0} || '%' OR p.codigo_maestro ILIKE '%' || ${0} || '%')",
+            "(p.search_vector @@ plainto_tsquery('simple', ${0}) OR p.nombre ILIKE '%' || ${0} || '%' OR p.codigo_interno ILIKE '%' || ${0} || '%' OR pp.codigo_proveedor ILIKE '%' || ${0} || '%' OR pp.codigo_maestro ILIKE '%' || ${0} || '%')",
             param_idx
         ));
         param_idx += 1;
@@ -230,10 +231,13 @@ async fn listar(
         _ => "ASC",
     };
 
-    let count_sql = format!("SELECT COUNT(*) FROM productos p WHERE {}", where_clause);
+    let count_sql = format!(
+        "SELECT COUNT(*) FROM productos p LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = true WHERE {}",
+        where_clause
+    );
     let data_sql = format!(
-        r#"SELECT p.id, p.codigo_interno, p.nombre, p.codigo_proveedor, p.codigo_maestro,
-                  p.stock_minimo, p.precio_unidad, p.lead_time_propio, p.activo,
+        r#"SELECT p.id, p.codigo_interno, p.nombre, pp.codigo_proveedor, pp.codigo_maestro,
+                  p.stock_minimo, pp.precio_unidad, pp.lead_time_dias AS lead_time_propio, p.activo,
                   CASE
                       WHEN NOT p.activo THEN 'inactivo'
                       WHEN p.stock_minimo > 0
@@ -245,7 +249,7 @@ async fn listar(
                           THEN 'sin_stock'
                       ELSE 'activo'
                   END AS estado_stock,
-                  p.imagen_path AS imagen_url,
+                  pp.imagen_url AS imagen_url,
                   c.id as cat_id, c.nombre as cat_nombre,
                   um.id as um_id, um.nombre as um_nombre, um.nombre_plural as um_nombre_plural,
                   pr.id as prov_id, pr.nombre as prov_nombre, pr.icono as prov_icono,
@@ -256,9 +260,10 @@ async fn listar(
                   (SELECT nombre_plural FROM presentaciones WHERE producto_id = p.id AND activa = true ORDER BY factor_conversion DESC LIMIT 1) as pres_nombre_plural,
                   (SELECT factor_conversion FROM presentaciones WHERE producto_id = p.id AND activa = true ORDER BY factor_conversion DESC LIMIT 1) as pres_factor
            FROM productos p
+           LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = true
+           LEFT JOIN proveedores pr ON pr.id = pp.proveedor_id
            LEFT JOIN categorias c ON c.id = p.categoria_id
            JOIN unidades_basicas um ON um.id = p.unidad_base_id
-           LEFT JOIN proveedores pr ON pr.id = p.proveedor_id
            WHERE {}
            ORDER BY {} {} NULLS LAST, p.nombre ASC
            LIMIT ${} OFFSET ${}"#,
@@ -514,7 +519,7 @@ async fn subir_imagen(
 
     // Verificar que el producto existe y obtener imagen actual
     let imagen_actual: Option<String> =
-        sqlx::query_scalar("SELECT imagen_path FROM productos WHERE id = $1 AND activo = true")
+        sqlx::query_scalar("SELECT imagen_url FROM producto_proveedor WHERE producto_id = $1 AND es_principal = true")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?
@@ -567,7 +572,7 @@ async fn subir_imagen(
     let path = path.ok_or_else(|| AppError::Validation("Archivo requerido".into()))?;
 
     // Actualizar base de datos
-    sqlx::query("UPDATE productos SET imagen_path = $1 WHERE id = $2")
+    sqlx::query("UPDATE producto_proveedor SET imagen_url = $1 WHERE producto_id = $2 AND es_principal = true")
         .bind(&path)
         .bind(id)
         .execute(&state.pool)
@@ -586,7 +591,7 @@ async fn quitar_imagen(
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
     let imagen_actual: Option<String> =
-        sqlx::query_scalar("SELECT imagen_path FROM productos WHERE id = $1")
+        sqlx::query_scalar("SELECT imagen_url FROM producto_proveedor WHERE producto_id = $1 AND es_principal = true")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?
@@ -594,7 +599,7 @@ async fn quitar_imagen(
 
     if let Some(ref path) = imagen_actual {
         crate::services::storage::delete_image(path).await?;
-        sqlx::query("UPDATE productos SET imagen_path = NULL WHERE id = $1")
+        sqlx::query("UPDATE producto_proveedor SET imagen_url = NULL WHERE producto_id = $1 AND es_principal = true")
             .bind(id)
             .execute(&state.pool)
             .await?;

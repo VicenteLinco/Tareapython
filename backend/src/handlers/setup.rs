@@ -318,12 +318,13 @@ async fn importar_productos(
         let stock_min = Decimal::from_str(stock_minimo_str).unwrap_or(Decimal::ZERO);
         let precio = Decimal::from_str(precio_str).ok();
 
+        let p_id = uuid::Uuid::new_v4();
         sqlx::query(
             "INSERT INTO productos
-             (codigo_interno, nombre, descripcion, unidad_base_id, categoria_id, proveedor_id,
-              stock_minimo, precio_unidad, codigo_proveedor)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+             (id, codigo_interno, nombre, descripcion, unidad_base_id, categoria_id, stock_minimo)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
         )
+        .bind(p_id)
         .bind(codigo_interno)
         .bind(nombre)
         .bind(if descripcion.is_empty() {
@@ -333,16 +334,27 @@ async fn importar_productos(
         })
         .bind(u_id)
         .bind(cat_id)
-        .bind(prov_id)
         .bind(stock_min)
-        .bind(precio)
-        .bind(if cod_proveedor.is_empty() {
-            None
-        } else {
-            Some(cod_proveedor)
-        })
         .execute(&state.pool)
         .await?;
+
+        if let Some(proveedor_id) = prov_id {
+            sqlx::query(
+                "INSERT INTO producto_proveedor
+                 (producto_id, proveedor_id, es_principal, codigo_proveedor, precio_unidad, lead_time_dias)
+                 VALUES ($1, $2, TRUE, $3, $4, 7)",
+            )
+            .bind(p_id)
+            .bind(proveedor_id)
+            .bind(if cod_proveedor.is_empty() {
+                None
+            } else {
+                Some(cod_proveedor)
+            })
+            .bind(precio)
+            .execute(&state.pool)
+            .await?;
+        }
 
         importados += 1;
     }

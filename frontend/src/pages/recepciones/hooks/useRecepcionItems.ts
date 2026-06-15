@@ -227,10 +227,18 @@ export function useRecepcionItems({
       const data = res.data
 
       if (!data.encontrado) {
-        const found = productos?.find(p =>
-          p.nombre.toLowerCase().includes(q.toLowerCase()) ||
-          p.codigo_interno.toLowerCase() === q.toLowerCase()
-        )
+        const normalizeText = (str: string): string => {
+          return str
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase();
+        };
+        const normalizedQ = normalizeText(q);
+        const found = productos?.find(p => {
+          const normalizedNombre = normalizeText(p.nombre);
+          const normalizedCodigo = normalizeText(p.codigo_interno);
+          return normalizedNombre.includes(normalizedQ) || normalizedCodigo === normalizedQ;
+        })
         if (found) { await addProducto(found); return }
         notify.error('Producto no encontrado')
         return

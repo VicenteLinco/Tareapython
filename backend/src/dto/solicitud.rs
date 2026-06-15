@@ -52,7 +52,7 @@ pub struct UpdateSolicitudRequest {
 pub struct CreateSolicitudItem {
     pub producto_id: Uuid,
     pub cantidad_sugerida: Decimal,
-    pub unidad: String,
+    pub unidad_basica_id: Option<i32>,
     pub precio_unitario: Option<Decimal>,
     pub presentacion_id: Option<i32>,
     pub cantidad_presentaciones: Option<Decimal>,
@@ -98,6 +98,7 @@ pub struct SolicitudDetalleItem {
     pub proveedor_id: Option<i32>,
     pub producto_nombre: String,
     pub cantidad_sugerida: Decimal,
+    pub unidad_basica_id: Option<i32>,
     pub unidad: String,
     pub unidad_plural: Option<String>,
     pub codigo_proveedor: Option<String>,

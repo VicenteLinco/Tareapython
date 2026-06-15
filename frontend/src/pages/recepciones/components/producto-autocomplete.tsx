@@ -21,18 +21,28 @@ export function ProductoAutocomplete({ productos, excluidos, proveedorId, onSele
   const listRef = useRef<HTMLDivElement>(null)
   const itemRefs = useRef<(HTMLDivElement | null)[]>([])
 
-  const q = value.trim().toLowerCase()
+  const q = value.trim()
   const canShowInitialList = open && q.length === 0
   const canSearch = q.length >= 2
+
+  const normalizeText = (str: string): string => {
+    return str
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  };
+
   const suggestions: Producto[] = canShowInitialList || canSearch
     ? productos
         .filter(p => !excluidos.includes(String(p.id)))
         .filter(p => proveedorId == null || p.proveedor_id === proveedorId)
-        .filter(p =>
-          canShowInitialList ||
-          p.nombre.toLowerCase().includes(q) ||
-          p.codigo_interno.toLowerCase().includes(q)
-        )
+        .filter(p => {
+          if (canShowInitialList) return true;
+          const normalizedNombre = normalizeText(p.nombre);
+          const normalizedCodigo = normalizeText(p.codigo_interno);
+          const normalizedQ = normalizeText(q);
+          return normalizedNombre.includes(normalizedQ) || normalizedCodigo.includes(normalizedQ);
+        })
         .slice(0, 8)
     : []
 

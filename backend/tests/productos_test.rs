@@ -198,7 +198,7 @@ async fn crear_presentacion_para_producto(pool: PgPool) {
 
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(json["nombre"], "Caja x20");
-    assert_eq!(json["factor_conversion"], "20.00");
+    assert_eq!(json["factor_conversion"], "20.000000");
 }
 
 #[sqlx::test(migrations = "./migrations")]

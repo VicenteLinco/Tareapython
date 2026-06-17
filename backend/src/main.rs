@@ -16,6 +16,7 @@ mod errors;
 mod handlers;
 mod middleware;
 mod models;
+mod persistence;
 mod routes;
 mod services;
 
@@ -59,7 +60,7 @@ async fn bootstrap_admin_if_enabled(
     let user_id: uuid::Uuid = sqlx::query_scalar(
         "INSERT INTO usuarios (nombre, email, password_hash, rol, activo) \
          VALUES ('Administrador', $1, $2, 'admin', true) \
-         ON CONFLICT (email) DO UPDATE \
+         ON CONFLICT (email) WHERE deleted_at IS NULL DO UPDATE \
          SET password_hash = EXCLUDED.password_hash, rol = 'admin', activo = true, updated_at = NOW() \
          RETURNING id",
     )

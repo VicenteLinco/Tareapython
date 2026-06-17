@@ -4,6 +4,7 @@ use std::env;
 pub struct AppConfig {
     pub database_url: String,
     pub jwt_secret: String,
+    pub jwt_refresh_secret: String,
     pub jwt_access_expiration: i64,
     pub jwt_refresh_expiration: i64,
     pub port: u16,
@@ -30,6 +31,16 @@ impl AppConfig {
             return Err(format!(
                 "JWT_SECRET debe tener al menos 32 caracteres (tiene {})",
                 jwt_secret.len()
+            ));
+        }
+
+        let jwt_refresh_secret = env::var("JWT_REFRESH_SECRET")
+            .map_err(|_| "Variable JWT_REFRESH_SECRET no está definida".to_string())?;
+
+        if jwt_refresh_secret.len() < 32 {
+            return Err(format!(
+                "JWT_REFRESH_SECRET debe tener al menos 32 caracteres (tiene {})",
+                jwt_refresh_secret.len()
             ));
         }
 
@@ -101,6 +112,7 @@ impl AppConfig {
         Ok(Self {
             database_url,
             jwt_secret,
+            jwt_refresh_secret,
             jwt_access_expiration,
             jwt_refresh_expiration,
             port,

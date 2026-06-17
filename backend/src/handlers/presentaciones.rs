@@ -3,13 +3,15 @@ use axum::routing::{get, put};
 use axum::{Extension, Json, Router};
 use rust_decimal::Decimal;
 use serde::Deserialize;
-use serde_json::json;
 use uuid::Uuid;
 
 use crate::auth::models::Claims;
 use crate::db::AppState;
-use crate::errors::{AppError, validate_text_length};
+use crate::errors::AppError;
 use crate::models::presentacion::Presentacion;
+use crate::services::presentacion_service::{
+    PresentacionService, CrearPresentacionParams, ActualizarPresentacionParams,
+};
 
 #[derive(Debug, Deserialize)]
 struct CreatePresentacion {
@@ -38,12 +40,7 @@ async fn listar(
     State(state): State<AppState>,
     Path(producto_id): Path<Uuid>,
 ) -> Result<Json<Vec<Presentacion>>, AppError> {
-    let presentaciones = sqlx::query_as::<_, Presentacion>(
-        "SELECT * FROM presentaciones WHERE producto_id = $1 AND activa = true ORDER BY nombre",
-    )
-    .bind(producto_id)
-    .fetch_all(&state.pool)
-    .await?;
+    let presentaciones = PresentacionService::listar(&state.pool, producto_id).await?;
     Ok(Json(presentaciones))
 }
 
@@ -55,63 +52,17 @@ async fn crear(
 ) -> Result<(axum::http::StatusCode, Json<Presentacion>), AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
-    let nombre = req.nombre.trim().to_string();
-    if nombre.is_empty() {
-        return Err(AppError::Validation("El nombre es requerido".into()));
-    }
-    validate_text_length(&nombre, "nombre", 255)?;
-    let nombre_plural = req.nombre_plural.trim().to_string();
-    if nombre_plural.is_empty() {
-        return Err(AppError::Validation("El plural es requerido".into()));
-    }
-    validate_text_length(&nombre_plural, "nombre_plural", 100)?;
-    if let Some(ref cb) = req.codigo_barras {
-        validate_text_length(cb, "codigo_barras", 100)?;
-    }
-    if let Some(ref gtin) = req.gtin {
-        validate_text_length(gtin, "gtin", 14)?;
-        if !gtin.chars().all(|c| c.is_ascii_digit()) || gtin.len() != 14 {
-            return Err(AppError::Validation("GTIN debe tener 14 digitos".into()));
-        }
-    }
-    if req.factor_conversion <= Decimal::ZERO {
-        return Err(AppError::Validation(
-            "El factor de conversión debe ser mayor a 0".into(),
-        ));
-    }
+    let params = CrearPresentacionParams {
+        nombre: req.nombre,
+        nombre_plural: req.nombre_plural,
+        factor_conversion: req.factor_conversion,
+        codigo_barras: req.codigo_barras,
+        gtin: req.gtin,
+        gs1_habilitado: req.gs1_habilitado,
+        sku: req.sku,
+    };
 
-    // Verificar que el producto existe
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1)")
-        .bind(producto_id)
-        .fetch_one(&state.pool)
-        .await?;
-    if !exists {
-        return Err(AppError::NotFound("Producto no encontrado".into()));
-    }
-
-    let presentacion = sqlx::query_as::<_, Presentacion>(
-        "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado, sku) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
-    )
-    .bind(producto_id)
-    .bind(&nombre)
-    .bind(&nombre_plural)
-    .bind(req.factor_conversion)
-    .bind(&req.codigo_barras)
-    .bind(&req.gtin)
-    .bind(req.gs1_habilitado.unwrap_or(false))
-    .bind(&req.sku)
-    .fetch_one(&state.pool)
-    .await?;
-
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, datos_nuevos, usuario_id) VALUES ('presentaciones', $1, 'CREATE', $2, $3)",
-    )
-    .bind(presentacion.id.to_string())
-    .bind(json!({"nombre": &presentacion.nombre, "factor_conversion": presentacion.factor_conversion.to_string()}))
-    .bind(claims.sub)
-    .execute(&state.pool)
-    .await?;
-
+    let presentacion = PresentacionService::crear(&state.pool, producto_id, params, claims.sub).await?;
     Ok((axum::http::StatusCode::CREATED, Json(presentacion)))
 }
 
@@ -123,85 +74,18 @@ async fn actualizar(
 ) -> Result<Json<Presentacion>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
-    let anterior = sqlx::query_as::<_, Presentacion>("SELECT * FROM presentaciones WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or(AppError::NotFound("Presentación no encontrada".into()))?;
+    let params = ActualizarPresentacionParams {
+        nombre: req.nombre,
+        nombre_plural: req.nombre_plural,
+        factor_conversion: req.factor_conversion,
+        codigo_barras: req.codigo_barras,
+        gtin: req.gtin,
+        gs1_habilitado: req.gs1_habilitado,
+        sku: req.sku,
+        version: req.version,
+    };
 
-    if req.version != anterior.version {
-        return Err(AppError::VersionConflict {
-            esperada: req.version as i64,
-            actual: anterior.version as i64,
-        });
-    }
-
-    // No permitir cambiar factor_conversion si hay recepciones que la usaron
-    if let Some(new_factor) = req.factor_conversion
-        && new_factor != anterior.factor_conversion
-    {
-        let used: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM recepcion_detalle WHERE presentacion_id = $1)",
-        )
-        .bind(id)
-        .fetch_one(&state.pool)
-        .await?;
-
-        if used {
-            return Err(AppError::BusinessLogic(
-                "No se puede cambiar el factor de conversión: ya fue usada en recepciones".into(),
-                "FACTOR_EN_USO".into(),
-            ));
-        }
-    }
-
-    let nombre = req
-        .nombre
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or(&anterior.nombre);
-    let nombre_plural = req
-        .nombre_plural
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or(&anterior.nombre_plural);
-    let factor = req.factor_conversion.unwrap_or(anterior.factor_conversion);
-    let gtin = req.gtin.as_deref().or(anterior.gtin.as_deref());
-    if let Some(gtin) = gtin
-        && (!gtin.chars().all(|c| c.is_ascii_digit()) || gtin.len() != 14)
-    {
-        return Err(AppError::Validation("GTIN debe tener 14 digitos".into()));
-    }
-
-    let presentacion = sqlx::query_as::<_, Presentacion>(
-        "UPDATE presentaciones SET nombre = $1, nombre_plural = $2, factor_conversion = $3, codigo_barras = $4, gtin = $5, gs1_habilitado = $6, sku = $7, version = version + 1 WHERE id = $8 AND version = $9 RETURNING *",
-    )
-    .bind(nombre)
-    .bind(nombre_plural)
-    .bind(factor)
-    .bind(req.codigo_barras.as_deref().or(anterior.codigo_barras.as_deref()))
-    .bind(gtin)
-    .bind(req.gs1_habilitado.unwrap_or(anterior.gs1_habilitado))
-    .bind(req.sku.as_deref().or(anterior.sku.as_deref()))
-    .bind(id)
-    .bind(req.version)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(AppError::VersionConflict {
-        esperada: req.version as i64,
-        actual: anterior.version as i64,
-    })?;
-
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, datos_anteriores, datos_nuevos, usuario_id) VALUES ('presentaciones', $1, 'UPDATE', $2, $3, $4)",
-    )
-    .bind(id.to_string())
-    .bind(json!({"nombre": &anterior.nombre}))
-    .bind(json!({"nombre": &presentacion.nombre}))
-    .bind(claims.sub)
-    .execute(&state.pool)
-    .await?;
-
+    let presentacion = PresentacionService::actualizar(&state.pool, id, params, claims.sub).await?;
     Ok(Json(presentacion))
 }
 
@@ -212,23 +96,7 @@ async fn eliminar(
 ) -> Result<axum::http::StatusCode, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
-    let result =
-        sqlx::query("UPDATE presentaciones SET activa = false, deleted_at = NOW() WHERE id = $1 AND activa = true")
-            .bind(id)
-            .execute(&state.pool)
-            .await?;
-
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Presentación no encontrada".into()));
-    }
-
-    sqlx::query(
-        "INSERT INTO audit_log (tabla, registro_id, accion, usuario_id) VALUES ('presentaciones', $1, 'DELETE', $2)",
-    )
-    .bind(id.to_string())
-    .bind(claims.sub)
-    .execute(&state.pool)
-    .await?;
+    PresentacionService::eliminar(&state.pool, id, claims.sub).await?;
 
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

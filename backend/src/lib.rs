@@ -7,5 +7,6 @@ pub mod errors;
 pub mod handlers;
 pub mod middleware;
 pub mod models;
+pub mod persistence;
 pub mod routes;
 pub mod services;

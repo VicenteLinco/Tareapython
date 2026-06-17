@@ -616,7 +616,16 @@ async fn stock_por_area(
                        'lote_id',          s.lote_id,
                        'numero_lote',      l.numero_lote,
                        'stock',            s.cantidad,
-                       'fecha_vencimiento', l.fecha_vencimiento
+                       'fecha_vencimiento', l.fecha_vencimiento,
+                       'presentacion_nombre', lpres.nombre,
+                       'presentacion_nombre_plural', lpres.nombre_plural,
+                       'presentacion_factor', lpres.factor_conversion,
+                       'cantidad_presentaciones_equivalente',
+                           CASE
+                               WHEN lpres.factor_conversion IS NOT NULL AND lpres.factor_conversion > 0
+                               THEN ROUND(s.cantidad / lpres.factor_conversion, 2)
+                               ELSE NULL
+                           END
                    ) ORDER BY l.fecha_vencimiento ASC NULLS LAST
                ) FILTER (WHERE s.cantidad > 0) AS lotes
            FROM stock s
@@ -624,6 +633,7 @@ async fn stock_por_area(
            JOIN productos p ON p.id = l.producto_id
            JOIN unidades_basicas um ON um.id = p.unidad_base_id
            LEFT JOIN producto_area pa ON pa.producto_id = p.id AND pa.area_id = $1
+           LEFT JOIN presentaciones lpres ON lpres.id = l.presentacion_id AND lpres.deleted_at IS NULL
            WHERE s.area_id = $1 AND s.cantidad > 0 AND p.activo = true
            {}
            GROUP BY p.id, p.codigo_interno, p.nombre, um.nombre, um.nombre_plural, pa.stock_minimo, p.stock_minimo

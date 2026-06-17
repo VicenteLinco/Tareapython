@@ -48,7 +48,7 @@ async fn flujo_completo_solicitud(pool: PgPool) {
         &tec_token,
         serde_json::json!({
             "items": [
-                { "producto_id": prod_id, "cantidad_sugerida": 10, "unidad": "base" }
+                { "producto_id": prod_id, "cantidad_sugerida": 10, "unidad_basica_id": 1 }
             ]
         }),
     )
@@ -101,7 +101,7 @@ async fn tecnologo_puede_guardar_solicitud(pool: PgPool) {
         "/api/v1/solicitudes-compra",
         &tec_token,
         serde_json::json!({
-            "items": [{ "producto_id": prod_id, "cantidad_sugerida": 10, "unidad": "base" }]
+            "items": [{ "producto_id": prod_id, "cantidad_sugerida": 10, "unidad_basica_id": 1 }]
         }),
     )
     .await;
@@ -129,7 +129,7 @@ async fn no_se_puede_guardar_dos_veces(pool: PgPool) {
         "/api/v1/solicitudes-compra",
         &admin_token,
         serde_json::json!({
-            "items": [{ "producto_id": prod_id, "cantidad_sugerida": 10, "unidad": "base" }]
+            "items": [{ "producto_id": prod_id, "cantidad_sugerida": 10, "unidad_basica_id": 1 }]
         }),
     )
     .await;
@@ -166,7 +166,7 @@ async fn cancelacion_con_motivo(pool: PgPool) {
         "/api/v1/solicitudes-compra",
         &admin_token,
         serde_json::json!({
-            "items": [{ "producto_id": prod_id, "cantidad_sugerida": 10, "unidad": "base" }]
+            "items": [{ "producto_id": prod_id, "cantidad_sugerida": 10, "unidad_basica_id": 1 }]
         }),
     )
     .await;
@@ -235,7 +235,13 @@ async fn recomendaciones_baja_confianza_no_extrapola(pool: PgPool) {
 
     // 1. Crear producto con stock_minimo y lead_time_propio
     let prod_id = setup_producto(&pool, &admin_token, &app).await;
-    sqlx::query("UPDATE productos SET stock_minimo = 50, lead_time_propio = 10 WHERE id = $1")
+    sqlx::query("UPDATE productos SET stock_minimo = 50 WHERE id = $1")
+        .bind(prod_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    sqlx::query("UPDATE producto_proveedor SET lead_time_dias = 10 WHERE producto_id = $1")
         .bind(prod_id)
         .execute(&pool)
         .await
@@ -243,13 +249,12 @@ async fn recomendaciones_baja_confianza_no_extrapola(pool: PgPool) {
 
     // 2. Insertar lote
     let lote_id: Uuid = sqlx::query_scalar(
-        r#"INSERT INTO lotes (producto_id, numero_lote, codigo_interno, fecha_vencimiento)
-           VALUES ($1, $2, $3, (NOW() + INTERVAL '180 days')::date)
+        r#"INSERT INTO lotes (producto_id, numero_lote, fecha_vencimiento)
+           VALUES ($1, $2, (NOW() + INTERVAL '180 days')::date)
            RETURNING id"#,
     )
     .bind(prod_id)
     .bind(format!("LOT-TEST-{}", prod_id))
-    .bind(format!("LOTC-{}", &prod_id.to_string()[..8]))
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -339,4 +344,50 @@ async fn recomendaciones_baja_confianza_no_extrapola(pool: PgPool) {
         );
     }
     // Si no aparece en la lista, también es correcto (sin urgencia)
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn validar_exclusividad_unidad_solicitud(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let prod_id = setup_producto(&pool, &token, &app).await;
+
+    // 1. Intentar crear solicitud con ambos definidos (presentacion_id y unidad_basica_id) -> Debe fallar
+    let (status1, _) = common::post_json(
+        &app,
+        "/api/v1/solicitudes-compra",
+        &token,
+        serde_json::json!({
+            "items": [
+                {
+                    "producto_id": prod_id,
+                    "cantidad_sugerida": 10,
+                    "unidad_basica_id": 1,
+                    "presentacion_id": 1,
+                    "cantidad_presentaciones": 10
+                }
+            ]
+        }),
+    )
+    .await;
+    assert!(status1.is_client_error() || status1.is_server_error());
+
+    // 2. Intentar crear solicitud con ambos NULL (ni presentacion_id ni unidad_basica_id) -> Debe fallar
+    let (status2, _) = common::post_json(
+        &app,
+        "/api/v1/solicitudes-compra",
+        &token,
+        serde_json::json!({
+            "items": [
+                {
+                    "producto_id": prod_id,
+                    "cantidad_sugerida": 10,
+                    "unidad_basica_id": null,
+                    "presentacion_id": null
+                }
+            ]
+        }),
+    )
+    .await;
+    assert!(status2.is_client_error() || status2.is_server_error());
 }

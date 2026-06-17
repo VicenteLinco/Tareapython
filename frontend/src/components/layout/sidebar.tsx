@@ -28,6 +28,7 @@ import {
   Moon,
   ClipboardCheck,
   BarChart3,
+  MessageCircle,
 } from 'lucide-react'
 import { useAuthStore } from '@/hooks/use-auth-store'
 
@@ -68,6 +69,7 @@ const adminItems = [
   { to: '/reportes', icon: BarChart3, label: 'Reportes' },
   { to: '/configuracion', icon: SlidersHorizontal, label: 'Configuración' },
   { to: '/usuarios', icon: Users, label: 'Usuarios' },
+  { to: '/whatsapp-simulator', icon: MessageCircle, label: 'Simulador WhatsApp' },
   { to: '/audit-log', icon: FileText, label: 'Audit Log' },
   { to: '/setup', icon: Rocket, label: 'Setup' },
 ]

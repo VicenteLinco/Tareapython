@@ -43,7 +43,7 @@ pub fn create_refresh_token(user_id: Uuid, config: &AppConfig) -> Result<String,
     encode(
         &Header::new(Algorithm::HS256),
         &claims,
-        &EncodingKey::from_secret(config.jwt_secret.as_bytes()),
+        &EncodingKey::from_secret(config.jwt_refresh_secret.as_bytes()),
     )
     .map_err(|e| AppError::Internal(format!("Error creando refresh token: {}", e)))
 }

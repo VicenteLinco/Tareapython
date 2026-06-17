@@ -648,8 +648,8 @@ async fn filtro_sin_stock_incluye_stock_directo_en_cero(pool: PgPool) {
 
     sqlx::query(
         r#"INSERT INTO lotes
-           (id, producto_id, numero_lote, fecha_vencimiento, codigo_interno)
-           VALUES ($1, $2, 'ZERO-DIRECT-LOT', CURRENT_DATE + INTERVAL '180 days', 'ZERO-DIRECT-LOT')"#,
+           (id, producto_id, numero_lote, fecha_vencimiento)
+           VALUES ($1, $2, 'ZERO-DIRECT-LOT', CURRENT_DATE + INTERVAL '180 days')"#,
     )
     .bind(lote_id)
     .bind(producto_id)
@@ -773,8 +773,8 @@ async fn buscar_lote_por_codigo(pool: PgPool) {
 
     setup_stock(&pool, &token, &app, 1, 100.0).await;
 
-    // Obtener código interno del lote
-    let codigo: String = sqlx::query_scalar("SELECT codigo_interno FROM lotes LIMIT 1")
+    // Obtener número de lote del lote
+    let codigo: String = sqlx::query_scalar("SELECT numero_lote FROM lotes LIMIT 1")
         .fetch_one(&pool)
         .await
         .unwrap();
@@ -788,7 +788,7 @@ async fn buscar_lote_por_codigo(pool: PgPool) {
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["resultados"].as_array().unwrap().len(), 1);
-    assert_eq!(json["resultados"][0]["tipo"], "lote_interno");
+    assert_eq!(json["resultados"][0]["tipo"], "lote_fabricante");
 }
 
 // ==========================================

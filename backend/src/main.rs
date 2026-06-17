@@ -16,6 +16,7 @@ mod errors;
 mod handlers;
 mod middleware;
 mod models;
+mod persistence;
 mod routes;
 mod services;
 
@@ -59,7 +60,7 @@ async fn bootstrap_admin_if_enabled(
     let user_id: uuid::Uuid = sqlx::query_scalar(
         "INSERT INTO usuarios (nombre, email, password_hash, rol, activo) \
          VALUES ('Administrador', $1, $2, 'admin', true) \
-         ON CONFLICT (email) DO UPDATE \
+         ON CONFLICT (email) WHERE deleted_at IS NULL DO UPDATE \
          SET password_hash = EXCLUDED.password_hash, rol = 'admin', activo = true, updated_at = NOW() \
          RETURNING id",
     )
@@ -110,14 +111,20 @@ async fn main() {
 
     tracing::info!("Conectado a PostgreSQL");
 
-    // Autocorrección de checksums de migraciones modificadas.
-    // Esto previene errores de VersionMismatch si alguna migración aplicada previamente fue editada en el código.
+    // Autocorrección de checksums de migraciones modificadas y limpieza de versiones antiguas por consolidación.
+    // Esto previene errores de VersionMismatch si alguna migración aplicada previamente fue editada en el código,
+    // y evita errores de "migration applied but missing" debido a las migraciones consolidadas.
     if let Ok(table_exists) = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = '_sqlx_migrations')"
     )
     .fetch_one(&pool)
     .await {
         if table_exists {
+            // Limpieza de versiones antiguas debido a la consolidación a versión 1
+            let _ = sqlx::query("DELETE FROM _sqlx_migrations WHERE version > 1")
+                .execute(&pool)
+                .await;
+
             let migrator = sqlx::migrate!("./migrations");
             for migration in migrator.migrations.iter() {
                 let _ = sqlx::query(

@@ -12,5 +12,6 @@ pub struct Lote {
     pub fecha_vencimiento: NaiveDate,
     pub codigo_interno: String,
     pub costo_unitario: Option<Decimal>,
+    pub presentacion_id: Option<i32>,
     pub created_at: DateTime<Utc>,
 }

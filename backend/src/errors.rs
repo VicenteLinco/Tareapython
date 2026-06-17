@@ -40,6 +40,9 @@ fn sqlx_database_error_response(err: &sqlx::Error) -> Option<(StatusCode, &'stat
 fn unique_violation_message(constraint: &str) -> String {
     match constraint {
         "usuarios_email_key" => "Ya existe un usuario con ese email.".to_string(),
+        "usuarios_whatsapp_phone_key" => {
+            "Ya existe un usuario con ese número de WhatsApp.".to_string()
+        }
         "categorias_nombre_key" => "Ya existe una categoria con ese nombre.".to_string(),
         "unidades_basicas_nombre_key" => "Ya existe una unidad con ese nombre.".to_string(),
         "proveedores_nombre_key" => "Ya existe un proveedor con ese nombre.".to_string(),

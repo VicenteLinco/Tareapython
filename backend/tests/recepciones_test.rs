@@ -430,7 +430,7 @@ async fn setup_solicitud_guardada(pool: &PgPool, producto_id: Uuid, app: &axum::
         "/api/v1/solicitudes-compra",
         &tec_token,
         serde_json::json!({
-            "items": [{ "producto_id": producto_id, "cantidad_sugerida": 20, "unidad": "base" }]
+            "items": [{ "producto_id": producto_id, "cantidad_sugerida": 20, "unidad_basica_id": 1 }]
         }),
     )
     .await;

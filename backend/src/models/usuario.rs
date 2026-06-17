@@ -8,6 +8,7 @@ pub struct Usuario {
     pub id: Uuid,
     pub nombre: String,
     pub email: String,
+    pub whatsapp_phone: Option<String>,
     #[serde(skip_serializing)]
     #[specta(skip)]
     pub password_hash: String,
@@ -16,4 +17,5 @@ pub struct Usuario {
     pub version: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub deleted_at: Option<DateTime<Utc>>,
 }

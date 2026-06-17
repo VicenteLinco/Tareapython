@@ -8,6 +8,9 @@ use inventario_lab_backend::dto::{
     },
     categoria::{CreateCategoria, UpdateCategoria},
     descarte::{DescarteItem, DescarteRequest, DescarteResponse},
+    producto_proveedor_presentacion::{
+        CreateProductoProveedorPresentacion, ProductoProveedorPresentacionRow,
+    },
     proveedor::{CreateProveedor, ProveedorQuery, UpdateProveedor},
     recepcion::{
         CreateRecepcion, DetalleRecepcionInput, DetalleRecepcionRow, LoteCreado,
@@ -29,8 +32,9 @@ use inventario_lab_backend::dto::{
 /// Ejecutar con: cargo run --bin export_types
 use inventario_lab_backend::models::{
     area::Area, categoria::Categoria, lote::Lote, presentacion::Presentacion, producto::Producto,
-    producto_proveedor::ProductoProveedor, proveedor::Proveedor, unidad_basica::UnidadBasica,
-    usuario::Usuario,
+    producto_proveedor::ProductoProveedor,
+    producto_proveedor_presentacion::ProductoProveedorPresentacion, proveedor::Proveedor,
+    unidad_basica::UnidadBasica, usuario::Usuario,
 };
 use inventario_lab_backend::services::stock_ops::MovimientoGenerado;
 use specta_typescript::{Typescript, export};
@@ -84,6 +88,7 @@ fn main() {
     append!(Proveedor);
     append!(Producto);
     append!(ProductoProveedor);
+    append!(ProductoProveedorPresentacion);
     append!(Presentacion);
     append!(Lote);
     append!(Usuario);
@@ -133,6 +138,10 @@ fn main() {
     append!(DescarteItem);
     append!(DescarteResponse);
     append!(MovimientoGenerado);
+
+    // DTOs ProductoProveedorPresentacion
+    append!(CreateProductoProveedorPresentacion);
+    append!(ProductoProveedorPresentacionRow);
 
     // DTOs Recepciones
     append!(RecepcionQuery);

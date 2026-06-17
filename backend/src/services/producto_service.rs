@@ -195,9 +195,9 @@ impl ProductoService {
         let producto = sqlx::query_as::<_, Producto>(
             r#"INSERT INTO productos
                (codigo_interno, nombre, descripcion, categoria_id, unidad_base_id,
-                codigo_maestro, stock_minimo, ubicacion,
+                stock_minimo, ubicacion,
                 temperatura_almacenamiento, requiere_cadena_frio, dias_estabilidad_abierto, clase_riesgo)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                RETURNING *"#,
         )
         .bind(&codigo)
@@ -205,7 +205,6 @@ impl ProductoService {
         .bind(&params.descripcion)
         .bind(params.categoria_id)
         .bind(params.unidad_base_id)
-        .bind(&params.codigo_maestro)
         .bind(params.stock_minimo.unwrap_or(Decimal::ZERO))
         .bind(&params.ubicacion)
         .bind(&params.temperatura_almacenamiento)
@@ -224,7 +223,7 @@ impl ProductoService {
         if let Some(pres_list) = params.presentaciones {
             for pres in pres_list {
                 sqlx::query(
-                    "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                    "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado, sku) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
                 )
                 .bind(producto.id)
                 .bind(pres.nombre.trim())
@@ -233,6 +232,7 @@ impl ProductoService {
                 .bind(&pres.codigo_barras)
                 .bind(&pres.gtin)
                 .bind(pres.gs1_habilitado.unwrap_or(false))
+                .bind(&pres.sku)
                 .execute(&mut *tx)
                 .await?;
             }
@@ -288,18 +288,6 @@ impl ProductoService {
                 }
             }
 
-            if let Some(principal) = provs.iter().find(|p| p.es_principal) {
-                sqlx::query(
-                    "UPDATE productos SET proveedor_id = $1, codigo_proveedor = $2, precio_unidad = $3, lead_time_propio = $4 WHERE id = $5"
-                )
-                .bind(principal.proveedor_id)
-                .bind(&principal.codigo_proveedor)
-                .bind(principal.precio_unidad)
-                .bind(principal.lead_time_dias)
-                .bind(producto.id)
-                .execute(&mut *tx)
-                .await?;
-            }
         }
 
         // Auditoría
@@ -324,7 +312,7 @@ impl ProductoService {
                 'codigo_interno',  p.codigo_interno,
                 'nombre',          p.nombre,
                 'descripcion',     p.descripcion,
-                'codigo_maestro',  p.codigo_maestro,
+                'codigo_maestro',  pp_prim.codigo_maestro,
                 'stock_minimo',    p.stock_minimo,
                 'ubicacion',       p.ubicacion,
                 'temperatura_almacenamiento', p.temperatura_almacenamiento,
@@ -332,7 +320,7 @@ impl ProductoService {
                 'dias_estabilidad_abierto',   p.dias_estabilidad_abierto,
                 'clase_riesgo',               p.clase_riesgo,
                 'activo',          p.activo,
-                'precio_unidad',   p.precio_unidad,
+                'precio_unidad',   pp_prim.precio_unidad,
                 'version',         p.version,
                 'created_at',      p.created_at,
                 'updated_at',      p.updated_at,
@@ -412,6 +400,7 @@ impl ProductoService {
                 )
             )
             FROM productos p
+            LEFT JOIN producto_proveedor pp_prim ON pp_prim.producto_id = p.id AND pp_prim.es_principal = TRUE
             LEFT JOIN categorias c ON c.id = p.categoria_id
             JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
             WHERE p.id = $1"#,
@@ -485,18 +474,17 @@ impl ProductoService {
         let producto = sqlx::query_as::<_, Producto>(
             r#"UPDATE productos
                SET nombre = $1, descripcion = $2, categoria_id = $3,
-                   stock_minimo = $4, codigo_maestro = $5, ubicacion = $6,
-                   temperatura_almacenamiento = $7, requiere_cadena_frio = $8,
-                   dias_estabilidad_abierto = $9, clase_riesgo = $10,
+                   stock_minimo = $4, ubicacion = $5,
+                   temperatura_almacenamiento = $6, requiere_cadena_frio = $7,
+                   dias_estabilidad_abierto = $8, clase_riesgo = $9,
                    version = version + 1, updated_at = NOW()
-               WHERE id = $11 AND version = $12
+               WHERE id = $10 AND version = $11
                RETURNING *"#,
         )
         .bind(&params.nombre)
         .bind(&params.descripcion)
         .bind(params.categoria_id)
         .bind(params.stock_minimo.unwrap_or(anterior.stock_minimo))
-        .bind(&params.codigo_maestro)
         .bind(&params.ubicacion)
         .bind(&params.temperatura_almacenamiento)
         .bind(
@@ -583,25 +571,6 @@ impl ProductoService {
                 }
             }
 
-            if let Some(principal) = provs.iter().find(|p| p.es_principal) {
-                sqlx::query(
-                    "UPDATE productos SET proveedor_id = $1, codigo_proveedor = $2, precio_unidad = $3, lead_time_propio = $4 WHERE id = $5"
-                )
-                .bind(principal.proveedor_id)
-                .bind(&principal.codigo_proveedor)
-                .bind(principal.precio_unidad)
-                .bind(principal.lead_time_dias)
-                .bind(params.id)
-                .execute(&mut *tx)
-                .await?;
-            } else {
-                sqlx::query(
-                    "UPDATE productos SET proveedor_id = NULL, codigo_proveedor = NULL, precio_unidad = NULL, lead_time_propio = NULL WHERE id = $1"
-                )
-                .bind(params.id)
-                .execute(&mut *tx)
-                .await?;
-            }
         }
 
         sqlx::query(
@@ -720,14 +689,15 @@ impl ProductoService {
 
         let row = sqlx::query_as::<_, Row1>(
             r#"SELECT
-                 p.id as producto_id, p.nombre as producto_nombre, p.proveedor_id,
+                 p.id as producto_id, p.nombre as producto_nombre, pp.proveedor_id,
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
                  pr.id as presentacion_id, pr.nombre as presentacion_nombre, pr.factor_conversion,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
-                 p.imagen_path AS imagen_url,
-                 p.precio_unidad
+                 pp.imagen_url AS imagen_url,
+                 pp.precio_unidad
                FROM presentaciones pr
                JOIN productos p ON p.id = pr.producto_id
+               LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = true
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
                WHERE (pr.codigo_barras = $1 OR pr.gtin = $1) AND pr.activa = true AND p.activo = true
                LIMIT 1"#,
@@ -785,14 +755,15 @@ impl ProductoService {
         // 2. Buscar por código interno del producto
         let row2 = sqlx::query_as::<_, Row2>(
             r#"SELECT
-                 p.id as producto_id, p.nombre as producto_nombre, p.proveedor_id,
+                 p.id as producto_id, p.nombre as producto_nombre, pp.proveedor_id,
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
-                 p.imagen_path AS imagen_url,
-                 p.precio_unidad
+                 pp.imagen_url AS imagen_url,
+                 pp.precio_unidad
                FROM productos p
+               LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = true
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-               WHERE p.codigo_interno = $1 AND p.activo = true
+               WHERE UPPER(p.codigo_interno) = UPPER($1) AND p.activo = true
                LIMIT 1"#,
         )
         .bind(codigo)
@@ -817,11 +788,10 @@ impl ProductoService {
             }));
         }
 
-        // 3. Buscar por codigo_interno del lote (para escanear etiquetas impresas en recepción)
+        // 3. Buscar por numero_lote del lote
         #[derive(sqlx::FromRow)]
         struct Row3 {
             lote_id: Uuid,
-            codigo_interno_lote: String,
             numero_lote: String,
             fecha_vencimiento: chrono::NaiveDate,
             producto_id: Uuid,
@@ -841,12 +811,11 @@ impl ProductoService {
         let row3 = sqlx::query_as::<_, Row3>(
             r#"SELECT
                  l.id as lote_id,
-                 l.codigo_interno as codigo_interno_lote,
                  l.numero_lote,
                  l.fecha_vencimiento,
                  p.id as producto_id,
                  p.nombre as producto_nombre,
-                 p.proveedor_id,
+                 pp.proveedor_id,
                  ub.nombre as unidad_base_nombre,
                  ub.nombre_plural as unidad_base_nombre_plural,
                  (SELECT pr.id FROM presentaciones pr
@@ -863,12 +832,13 @@ impl ProductoService {
                  (SELECT a.nombre FROM stock s JOIN areas a ON a.id = s.area_id
                   WHERE s.lote_id = l.id AND s.cantidad > 0
                   ORDER BY s.cantidad DESC LIMIT 1) as area_nombre,
-                 p.imagen_path AS imagen_url,
-                 p.precio_unidad
+                 pp.imagen_url AS imagen_url,
+                 pp.precio_unidad
                FROM lotes l
                JOIN productos p ON p.id = l.producto_id
+               LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = true
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-               WHERE l.codigo_interno = $1 AND p.activo = true
+               WHERE UPPER(l.numero_lote) = UPPER($1) AND p.activo = true
                LIMIT 1"#,
         )
         .bind(codigo)
@@ -880,7 +850,6 @@ impl ProductoService {
                 "encontrado": true,
                 "tipo": "lote",
                 "lote_id": r.lote_id,
-                "codigo_interno_lote": r.codigo_interno_lote,
                 "numero_lote": r.numero_lote,
                 "fecha_vencimiento": r.fecha_vencimiento,
                 "producto_id": r.producto_id,

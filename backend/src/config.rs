@@ -4,6 +4,7 @@ use std::env;
 pub struct AppConfig {
     pub database_url: String,
     pub jwt_secret: String,
+    pub jwt_refresh_secret: String,
     pub jwt_access_expiration: i64,
     pub jwt_refresh_expiration: i64,
     pub port: u16,
@@ -15,6 +16,10 @@ pub struct AppConfig {
     pub allow_bootstrap_admin: bool,
     pub setup_admin_email: Option<String>,
     pub setup_admin_password: Option<String>,
+    pub twilio_auth_token: String,
+    pub whatsapp_webhook_secret: String,
+    pub whatsapp_api_url: String,
+    pub whatsapp_api_key: String,
 }
 
 impl AppConfig {
@@ -26,6 +31,16 @@ impl AppConfig {
             return Err(format!(
                 "JWT_SECRET debe tener al menos 32 caracteres (tiene {})",
                 jwt_secret.len()
+            ));
+        }
+
+        let jwt_refresh_secret = env::var("JWT_REFRESH_SECRET")
+            .map_err(|_| "Variable JWT_REFRESH_SECRET no está definida".to_string())?;
+
+        if jwt_refresh_secret.len() < 32 {
+            return Err(format!(
+                "JWT_REFRESH_SECRET debe tener al menos 32 caracteres (tiene {})",
+                jwt_refresh_secret.len()
             ));
         }
 
@@ -82,9 +97,22 @@ impl AppConfig {
             .ok()
             .filter(|v| !v.is_empty());
 
+        let twilio_auth_token = env::var("TWILIO_AUTH_TOKEN")
+            .unwrap_or_else(|_| "mock_twilio_auth_token_for_dev_12345".to_string());
+
+        let whatsapp_webhook_secret = env::var("WHATSAPP_WEBHOOK_SECRET")
+            .unwrap_or_else(|_| "mock_webhook_secret_for_dev".to_string());
+
+        let whatsapp_api_url = env::var("WHATSAPP_API_URL")
+            .unwrap_or_else(|_| "http://localhost:8008".to_string());
+
+        let whatsapp_api_key = env::var("WHATSAPP_API_KEY")
+            .unwrap_or_else(|_| "mock_whatsapp_api_key_for_dev".to_string());
+
         Ok(Self {
             database_url,
             jwt_secret,
+            jwt_refresh_secret,
             jwt_access_expiration,
             jwt_refresh_expiration,
             port,
@@ -96,6 +124,10 @@ impl AppConfig {
             allow_bootstrap_admin,
             setup_admin_email,
             setup_admin_password,
+            twilio_auth_token,
+            whatsapp_webhook_secret,
+            whatsapp_api_url,
+            whatsapp_api_key,
         })
     }
 

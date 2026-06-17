@@ -152,6 +152,36 @@ export function useRecepcionItems({
 
   // ─── Agregar ítem ───────────────────────────────────────────────────────────
 
+  // Fetch supplier-specific presentations for a producto_proveedor link.
+  // Returns the supplier presentations (with es_default flagged) if any are configured,
+  // or null if the endpoint is unavailable or returns empty.
+  const fetchSupplierPresentaciones = useCallback(async (
+    ppId: number
+  ): Promise<Array<{ id: number; nombre: string; nombre_plural: string; factor_conversion: string; es_default: boolean }> | null> => {
+    try {
+      const res = await api.get(`/producto-proveedor/${ppId}/presentaciones`)
+      const rows = res.data as Array<{
+        presentacion_id: number
+        presentacion_nombre: string
+        presentacion_nombre_plural: string
+        factor_conversion: string
+        es_default: boolean
+        activo: boolean
+      }>
+      if (!rows || rows.length === 0) return null
+      return rows.map(r => ({
+        id: r.presentacion_id,
+        nombre: r.presentacion_nombre,
+        nombre_plural: r.presentacion_nombre_plural,
+        factor_conversion: r.factor_conversion,
+        es_default: r.es_default,
+      }))
+    } catch {
+      // Endpoint unavailable or no supplier presentations configured — fall back silently
+      return null
+    }
+  }, [])
+
   const addProducto = useCallback(async (
     prod: { id: string | number; nombre: string; codigo_interno?: string | null; proveedor_id?: number | null },
     overridePresentacionId?: number,
@@ -169,10 +199,45 @@ export function useRecepcionItems({
     try {
       const res = await api.get(`/productos/${prod.id}`)
       const full = res.data
-      const presentaciones = full.presentaciones || []
-      const pres = (overridePresentacionId
-        ? presentaciones.find((p: { id: number }) => p.id === overridePresentacionId)
-        : null) ?? presentaciones[0] ?? null
+      const allPresentaciones = full.presentaciones || []
+
+      // Attempt to fetch supplier-specific presentations when a supplier is selected.
+      // The producto_proveedor.id is available in the product detail's proveedores array.
+      let activePresentaciones = allPresentaciones
+      let defaultPresId: number | null = overridePresentacionId ?? null
+
+      if (proveedorId) {
+        const ppRecord = (full.proveedores as Array<{ id: number; proveedor_id: number }> | null)
+          ?.find(pp => pp.proveedor_id === proveedorId)
+        if (ppRecord?.id) {
+          const supplierPres = await fetchSupplierPresentaciones(ppRecord.id)
+          if (supplierPres && supplierPres.length > 0) {
+            // Use supplier-specific presentations; map them to Presentacion shape
+            activePresentaciones = supplierPres.map(sp => ({
+              id: sp.id,
+              producto_id: String(prod.id),
+              nombre: sp.nombre,
+              nombre_plural: sp.nombre_plural,
+              factor_conversion: sp.factor_conversion,
+              codigo_barras: null,
+              gtin: null,
+              gs1_habilitado: false,
+              activa: true,
+              version: 1,
+              created_at: '',
+            }))
+            // Pre-select the default unless overridden
+            if (!overridePresentacionId) {
+              const defaultEntry = supplierPres.find(sp => sp.es_default)
+              if (defaultEntry) defaultPresId = defaultEntry.id
+            }
+          }
+        }
+      }
+
+      const pres = (defaultPresId
+        ? activePresentaciones.find((p: { id: number }) => p.id === defaultPresId)
+        : null) ?? activePresentaciones[0] ?? null
 
       const catalogoArea = full.areas?.[0]
       const initialCantidad = overrideQuantity ?? 1
@@ -190,7 +255,7 @@ export function useRecepcionItems({
         unidad_base_nombre_plural: full.unidad_base?.nombre_plural || '',
         area_destino_id: catalogoArea?.id ?? null,
         area_destino_nombre: catalogoArea?.nombre ?? '',
-        presentaciones,
+        presentaciones: activePresentaciones,
         precio_unitario: full.precio_unidad
           ? mulDecimal(full.precio_unidad, pres?.factor_conversion || 1).toDecimalPlaces(0).toString()
           : '',
@@ -214,7 +279,7 @@ export function useRecepcionItems({
     } catch {
       notify.error('Error al cargar producto')
     }
-  }, [proveedorId, proveedores])
+  }, [proveedorId, proveedores, fetchSupplierPresentaciones])
 
   // ─── Búsqueda manual ────────────────────────────────────────────────────────
 

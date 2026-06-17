@@ -348,11 +348,17 @@ pub async fn crear_recepcion(
             .fetch_one(&mut *tx)
             .await?;
 
-            let (lote_id, codigo_interno): (Uuid, String) = sqlx::query_as(
-                r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento, costo_unitario, codigo_interno)
-                   VALUES ($1, $2, $3, $4, $5, 'L' || LPAD(nextval('seq_lot_numero')::text, 6, '0'))
+            let (lote_id, _): (Uuid, String) = sqlx::query_as(
+                r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento, costo_unitario, presentacion_id, codigo_interno)
+                   VALUES ($1, $2, $3, $4, $5, $6, 'L' || LPAD(nextval('seq_lot_numero')::text, 6, '0'))
                    ON CONFLICT (producto_id, proveedor_id, numero_lote)
-                   DO UPDATE SET fecha_vencimiento = EXCLUDED.fecha_vencimiento, costo_unitario = EXCLUDED.costo_unitario
+                   DO UPDATE SET
+                       fecha_vencimiento = EXCLUDED.fecha_vencimiento,
+                       costo_unitario = EXCLUDED.costo_unitario,
+                       presentacion_id = CASE
+                           WHEN EXCLUDED.presentacion_id IS NOT NULL THEN EXCLUDED.presentacion_id
+                           ELSE lotes.presentacion_id
+                       END
                    RETURNING id, codigo_interno"#
             )
             .bind(item.producto_id)
@@ -360,6 +366,7 @@ pub async fn crear_recepcion(
             .bind(&item.numero_lote)
             .bind(item.fecha_vencimiento)
             .bind(item.costo_unitario)
+            .bind(item.presentacion_id)
             .fetch_one(&mut *tx)
             .await?;
 
@@ -419,7 +426,6 @@ pub async fn crear_recepcion(
 
             lotes_creados.push(LoteCreado {
                 lote_id,
-                codigo_interno,
                 numero_lote: item.numero_lote.clone(),
                 fecha_vencimiento: item.fecha_vencimiento,
                 producto_id: item.producto_id,

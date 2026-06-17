@@ -22,6 +22,14 @@ struct ConfiguracionResponse {
     ventana_consumo_dias: i32,
     periodo_revision_dias: i32,
     factor_historial_corto: f64,
+    ia_proveedor: String,
+    ia_modelo: String,
+    ia_api_url: String,
+    ia_api_key: String,
+    whatsapp_api_url: String,
+    whatsapp_api_key: String,
+    whatsapp_webhook_secret: String,
+    whatsapp_bot_phone: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -38,6 +46,14 @@ struct UpdateConfiguracion {
     ventana_consumo_dias: Option<i32>,
     periodo_revision_dias: Option<i32>,
     factor_historial_corto: Option<f64>,
+    ia_proveedor: Option<String>,
+    ia_modelo: Option<String>,
+    ia_api_url: Option<String>,
+    ia_api_key: Option<String>,
+    whatsapp_api_url: Option<String>,
+    whatsapp_api_key: Option<String>,
+    whatsapp_webhook_secret: Option<String>,
+    whatsapp_bot_phone: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,7 +68,9 @@ async fn obtener(State(state): State<AppState>) -> Result<Json<ConfiguracionResp
             'nombre_laboratorio','logo_base64','pin_kiosko','conteo_ciego',
             'dias_autonomia_objetivo','lead_time_default',
             'moneda_codigo','moneda_simbolo','conteo_periodo_dias',
-            'ventana_consumo_dias','periodo_revision_dias','factor_historial_corto'
+            'ventana_consumo_dias','periodo_revision_dias','factor_historial_corto',
+            'ia_proveedor','ia_modelo','ia_api_url','ia_api_key',
+            'whatsapp_api_url','whatsapp_api_key','whatsapp_webhook_secret','whatsapp_bot_phone'
         )",
     )
     .fetch_all(&state.pool)
@@ -70,6 +88,14 @@ async fn obtener(State(state): State<AppState>) -> Result<Json<ConfiguracionResp
     let mut ventana_consumo_dias = 30;
     let mut periodo_revision_dias = 30;
     let mut factor_historial_corto = 0.35;
+    let mut ia_proveedor = "gemini".to_string();
+    let mut ia_modelo = "gemini-1.5-flash".to_string();
+    let mut ia_api_url = String::new();
+    let mut ia_api_key = String::new();
+    let mut whatsapp_api_url = String::new();
+    let mut whatsapp_api_key = String::new();
+    let mut whatsapp_webhook_secret = String::new();
+    let mut whatsapp_bot_phone = String::new();
 
     for (clave, valor) in rows {
         match clave.as_str() {
@@ -87,6 +113,26 @@ async fn obtener(State(state): State<AppState>) -> Result<Json<ConfiguracionResp
             "factor_historial_corto" => {
                 factor_historial_corto = valor.parse::<f64>().unwrap_or(0.35).clamp(0.0, 1.0)
             }
+            "ia_proveedor" => ia_proveedor = valor,
+            "ia_modelo" => ia_modelo = valor,
+            "ia_api_url" => ia_api_url = valor,
+            "ia_api_key" => {
+                ia_api_key = if valor.is_empty() {
+                    String::new()
+                } else {
+                    "***".to_string()
+                };
+            }
+            "whatsapp_api_url" => whatsapp_api_url = valor,
+            "whatsapp_api_key" => {
+                whatsapp_api_key = if valor.is_empty() {
+                    String::new()
+                } else {
+                    "***".to_string()
+                };
+            }
+            "whatsapp_webhook_secret" => whatsapp_webhook_secret = valor,
+            "whatsapp_bot_phone" => whatsapp_bot_phone = valor,
             _ => {}
         }
     }
@@ -104,6 +150,14 @@ async fn obtener(State(state): State<AppState>) -> Result<Json<ConfiguracionResp
         ventana_consumo_dias,
         periodo_revision_dias,
         factor_historial_corto,
+        ia_proveedor,
+        ia_modelo,
+        ia_api_url,
+        ia_api_key,
+        whatsapp_api_url,
+        whatsapp_api_key,
+        whatsapp_webhook_secret,
+        whatsapp_bot_phone,
     }))
 }
 
@@ -327,6 +381,92 @@ async fn actualizar(
                 val,
             ));
         }
+    }
+
+    if let Some(proveedor) = &body.ia_proveedor {
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('ia_proveedor', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+        )
+        .bind(proveedor)
+        .execute(&state.pool)
+        .await?;
+    }
+
+    if let Some(modelo) = &body.ia_modelo {
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('ia_modelo', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+        )
+        .bind(modelo)
+        .execute(&state.pool)
+        .await?;
+    }
+
+    if let Some(api_url) = &body.ia_api_url {
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('ia_api_url', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+        )
+        .bind(api_url)
+        .execute(&state.pool)
+        .await?;
+    }
+
+    if let Some(api_key) = &body.ia_api_key {
+        if api_key != "***" {
+            sqlx::query(
+                "INSERT INTO configuracion (clave, valor_texto) VALUES ('ia_api_key', $1)
+                 ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+            )
+            .bind(api_key)
+            .execute(&state.pool)
+            .await?;
+            log_changes.push(("ia_api_key", "***".to_string(), "***".to_string()));
+        }
+    }
+
+    if let Some(wa_url) = &body.whatsapp_api_url {
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('whatsapp_api_url', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+        )
+        .bind(wa_url)
+        .execute(&state.pool)
+        .await?;
+    }
+
+    if let Some(wa_key) = &body.whatsapp_api_key {
+        if wa_key != "***" {
+            sqlx::query(
+                "INSERT INTO configuracion (clave, valor_texto) VALUES ('whatsapp_api_key', $1)
+                 ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+            )
+            .bind(wa_key)
+            .execute(&state.pool)
+            .await?;
+            log_changes.push(("whatsapp_api_key", "***".to_string(), "***".to_string()));
+        }
+    }
+
+    if let Some(secret) = &body.whatsapp_webhook_secret {
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('whatsapp_webhook_secret', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+        )
+        .bind(secret)
+        .execute(&state.pool)
+        .await?;
+    }
+
+    if let Some(phone) = &body.whatsapp_bot_phone {
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('whatsapp_bot_phone', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+        )
+        .bind(phone)
+        .execute(&state.pool)
+        .await?;
     }
 
     for (clave, ant, nuev) in log_changes {

@@ -23,6 +23,7 @@ pub struct SolicitudCompraDetalle {
     pub solicitud_id: Uuid,
     pub producto_id: Uuid,
     pub cantidad_sugerida: Decimal,
-    pub unidad: String,
+    pub unidad_basica_id: Option<i32>,
+    pub presentacion_id: Option<i32>,
     pub created_at: DateTime<Utc>,
 }

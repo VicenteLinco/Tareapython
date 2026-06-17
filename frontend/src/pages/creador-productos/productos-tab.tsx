@@ -1344,21 +1344,6 @@ function CreateProductoDialog({
                 min="0"
               />
             </div>
-
-            <div className="form-control hidden">
-              <label className="label py-0.5">
-                <span className="label-text text-sm font-medium">Código maestro bodega</span>
-                <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-              </label>
-              <input
-                type="text"
-                className="input input-bordered input-sm h-9 font-mono"
-                value={form.codigo_maestro}
-                onChange={(e) => setForm((f) => ({ ...f, codigo_maestro: e.target.value }))}
-                placeholder="Cód. interno de bodega"
-              />
-              <p className="text-[10px] text-base-content/40 mt-0.5">Código interno maestro del laboratorio</p>
-            </div>
           </div>
 
           <div className="divider my-0" />
@@ -1424,96 +1409,6 @@ function CreateProductoDialog({
 
           <div className="divider my-0" />
 
-          {/* ── Presentación ── */}
-          <div className="space-y-3 hidden">
-            <div className="flex items-center gap-1.5">
-              <Package className="h-3.5 w-3.5 text-base-content/30" />
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Presentación</span>
-            </div>
-
-            <div className="bg-base-200/60 rounded-lg p-3 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="form-control">
-                  <label className="label py-0.5">
-                    <span className="label-text text-sm font-medium">Formato / presentación</span>
-                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-                  </label>
-                  <select
-                    className="select select-bordered select-sm h-9 text-sm"
-                    value={form.pres_nombre}
-                    onChange={(e) => handlePresChange(e.target.value)}
-                  >
-                    <option value="">— Solo unidad base —</option>
-                    {presFormatos.map((p) => (
-                      <option key={p.nombre} value={p.nombre}>{p.nombre}</option>
-                    ))}
-                  </select>
-                  {!form.pres_nombre && (
-                    <p className="text-[10px] text-base-content/40 mt-1">El insumo ingresa y se contabiliza en su unidad base directamente.</p>
-                  )}
-                </div>
-                <div className="form-control">
-                  <label className="label py-0.5">
-                    <span className="label-text text-sm font-medium">
-                      {form.pres_nombre ? `Unidades por ${form.pres_nombre}` : 'Unidades por formato'}
-                    </span>
-                  </label>
-                  <input
-                    type="number"
-                    className="input input-bordered input-sm h-9"
-                    value={form.pres_factor}
-                    onChange={(e) => setForm((f) => ({ ...f, pres_factor: e.target.value }))}
-                    placeholder="Ej: 20"
-                    min="1"
-                    step="1"
-                    disabled={!form.pres_nombre}
-                  />
-                </div>
-              </div>
-
-              <div className="form-control hidden">
-                <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Plural del formato</span>
-                  <span className="label-text-alt text-base-content/40 text-[10px]">ej: Cajas</span>
-                </label>
-                <input
-                  type="text"
-                  className="input input-bordered input-sm h-9"
-                  value={form.pres_nombre_plural}
-                  onChange={(e) => setForm((f) => ({ ...f, pres_nombre_plural: e.target.value }))}
-                  placeholder="Ej: Cajas"
-                  disabled={!form.pres_nombre}
-                />
-              </div>
-
-              <div className="form-control hidden">
-                <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Código de barras</span>
-                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-                </label>
-                <div className="flex gap-1">
-                  <input
-                    type="text"
-                    className="input input-bordered input-sm h-9 font-mono tracking-wider flex-1 min-w-0"
-                    value={form.pres_codigo_barras}
-                    onChange={(e) => setForm((f) => ({ ...f, pres_codigo_barras: e.target.value }))}
-                    placeholder="EAN / UPC"
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm btn-square h-9 w-9 shrink-0"
-                    onClick={() => setScannerOpen(true)}
-                    title="Escanear con cámara"
-                  >
-                    <Camera className="h-4 w-4 opacity-60" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="divider my-0" />
-
           {/* ── Información adicional ── */}
           <div className="space-y-3">
             <div className="flex items-center gap-1.5">
@@ -1556,14 +1451,6 @@ function CreateProductoDialog({
         onClose={() => setNewAreaOpen(false)}
         onCreated={(a) => { setForm((f) => ({ ...f, area_id: String(a.id) })); setNewAreaOpen(false) }}
       />
-      <Dialog open={scannerOpen} onClose={() => setScannerOpen(false)} title="Escanear código de barras">
-        {scannerOpen && (
-          <BarcodeScanner
-            onScan={(code) => { setForm((f) => ({ ...f, pres_codigo_barras: code })); setScannerOpen(false) }}
-            onClose={() => setScannerOpen(false)}
-          />
-        )}
-      </Dialog>
     </>
   )
 }
@@ -1586,9 +1473,6 @@ function EditProductoDialog({
     queryFn: () => api.get<PresFormatoRow[]>('/presentacion-formatos').then((r) => r.data),
   })
   const [newAreaOpen, setNewAreaOpen] = useState(false)
-  const [scannerOpen, setScannerOpen] = useState(false)
-  const [uploadingImage, setUploadingImage] = useState(false)
-  const imageInputRef = useRef<HTMLInputElement>(null)
 
   const { data: producto, isLoading } = useQuery({
     queryKey: ['producto-detail', productoId],
@@ -1602,14 +1486,7 @@ function EditProductoDialog({
     categoria_id: '',
     area_id: '',
     ubicacion: '',
-    codigo_maestro: '',
     stock_minimo: '0',
-    pres_id: '',
-    pres_version: 0,
-    pres_nombre: '',
-    pres_nombre_plural: '',
-    pres_factor: '',
-    pres_codigo_barras: '',
   })
 
   const [proveedoresForm, setProveedoresFormEdit] = useState<ProveedorProductoItem[]>([])
@@ -1658,23 +1535,13 @@ function EditProductoDialog({
     if (producto) {
       const catId = producto.categoria?.id ?? producto.categoria_id
       const areaId = producto.areas?.[0]?.id ?? ''
-      // Pre-populate presentation only when there is exactly one
-      const presCount = producto.presentaciones?.length ?? 0
-      const firstPres = presCount === 1 ? producto.presentaciones[0] : null
       setForm({
         nombre: producto.nombre,
         descripcion: producto.descripcion ?? '',
         categoria_id: catId ? String(catId) : '',
         area_id: areaId ? String(areaId) : '',
         ubicacion: producto.ubicacion ?? '',
-        codigo_maestro: producto.codigo_maestro ?? '',
         stock_minimo: String(Math.round(Number(producto.stock_minimo))),
-        pres_id: firstPres ? String(firstPres.id) : '',
-        pres_version: firstPres?.version ?? 0,
-        pres_nombre: firstPres?.nombre ?? '',
-        pres_nombre_plural: firstPres?.nombre_plural ?? '',
-        pres_factor: firstPres ? String(Math.round(Number(firstPres.factor_conversion))) : '',
-        pres_codigo_barras: firstPres?.codigo_barras ?? '',
       })
       setProveedoresFormEdit((producto.proveedores ?? []).map(proveedorFromDetalle))
       setTemperaturaAlmacenamientoEdit(producto.temperatura_almacenamiento ?? null)
@@ -1704,8 +1571,6 @@ function EditProductoDialog({
     const invalidGtin = proveedoresForm.find(p => p.pres_gtin && !/^\d{14}$/.test(p.pres_gtin))
     if (invalidGtin) { notify.error('GTIN debe tener 14 dígitos'); return }
 
-    // Build new presentacion if filled
-    const hasNewPres = false
     const payload: UpdateProducto = {
       nombre: form.nombre.trim() || undefined,
       descripcion: form.descripcion.trim() || undefined,
@@ -1722,82 +1587,11 @@ function EditProductoDialog({
     }
 
     updateMut.mutate(payload)
-
-    if (form.pres_id && hasNewPres) {
-      // Update existing presentation
-      api.put(`/presentaciones/${form.pres_id}`, {
-        nombre: form.pres_nombre,
-        nombre_plural: form.pres_nombre_plural || form.pres_nombre,
-        factor_conversion: Number(form.pres_factor),
-        codigo_barras: form.pres_codigo_barras.trim() || undefined,
-        version: form.pres_version,
-      }).then(() => {
-        queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
-        notify.success('Presentación actualizada')
-      }).catch((err) => {
-        notify.error(parseApiError(err))
-      })
-    } else if (!form.pres_id && hasNewPres) {
-      // Create new presentation
-      api.post(`/productos/${productoId}/presentaciones`, {
-        nombre: form.pres_nombre,
-        nombre_plural: form.pres_nombre_plural || form.pres_nombre,
-        factor_conversion: Number(form.pres_factor),
-        codigo_barras: form.pres_codigo_barras.trim() || undefined,
-      }).then(() => {
-        queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
-        notify.success('Presentación agregada')
-      }).catch((err) => notify.error(parseApiError(err)))
-    }
   }
 
   function handleAreaChange(value: string) {
     if (value === '__new__') { setNewAreaOpen(true); return }
     setForm((f) => ({ ...f, area_id: value }))
-  }
-
-  function handlePresChange(nombre: string) {
-    const found = presFormatos.find(p => p.nombre === nombre)
-    setForm(f => ({
-      ...f,
-      pres_nombre: nombre,
-      pres_nombre_plural: found?.nombre_plural || '',
-    }))
-  }
-
-  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    e.target.value = ''
-    try {
-      setUploadingImage(true)
-      const formData = new FormData()
-      formData.append('file', file)
-      await api.put(`/productos/${productoId}/imagen`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      queryClient.invalidateQueries({ queryKey: ['productos'] })
-      queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
-      notify.success('Imagen actualizada')
-    } catch (err) {
-      notify.error(err instanceof Error ? err.message : 'Error subiendo imagen')
-    } finally {
-      setUploadingImage(false)
-    }
-  }
-
-  async function handleImageDelete() {
-    try {
-      setUploadingImage(true)
-      await api.delete(`/productos/${productoId}/imagen`)
-      queryClient.invalidateQueries({ queryKey: ['productos'] })
-      queryClient.invalidateQueries({ queryKey: ['producto-detail', productoId] })
-      notify.success('Imagen eliminada')
-    } catch (err) {
-      notify.error(err instanceof Error ? err.message : 'Error eliminando imagen')
-    } finally {
-      setUploadingImage(false)
-    }
   }
 
   return (
@@ -2121,20 +1915,6 @@ function EditProductoDialog({
                   min="0"
                 />
               </div>
-
-              <div className="form-control hidden">
-                <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Código maestro bodega</span>
-                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-                </label>
-                <input
-                  type="text"
-                  className="input input-bordered input-sm h-9 font-mono"
-                  value={form.codigo_maestro}
-                  onChange={(e) => setForm((f) => ({ ...f, codigo_maestro: e.target.value }))}
-                  placeholder="Cód. interno"
-                />
-              </div>
             </div>
 
           <div className="divider my-0" />
@@ -2200,156 +1980,6 @@ function EditProductoDialog({
 
             <div className="divider my-0" />
 
-            {/* ── Presentaciones existentes (solo cuando hay 2 o más) ── */}
-            {producto?.presentaciones && producto.presentaciones.length > 1 && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5">
-                  <Package className="h-3.5 w-3.5 text-base-content/30" />
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Presentaciones actuales</span>
-                </div>
-                <div className="space-y-1.5">
-                  {producto.presentaciones.map((p: Presentacion) => (
-                    <div key={p.id} className="flex items-center justify-between bg-base-200/50 rounded-lg px-3 py-2">
-                      <span className="text-sm font-medium">{p.nombre}</span>
-                      <span className="text-xs font-mono opacity-50">x{Math.round(parseFloat(p.factor_conversion))}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ── Presentación / Agregar ── */}
-            <div className="space-y-3 hidden">
-              <div className="flex items-center gap-1.5">
-                <Package className="h-3.5 w-3.5 text-base-content/30" />
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">
-                  {form.pres_id ? 'Presentación asignada' : ((producto?.presentaciones?.length ?? 0) > 1 ? 'Agregar presentación' : 'Presentación')}
-                </span>
-              </div>
-              <div className="bg-base-200/60 rounded-lg p-3 space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="form-control">
-                    <label className="label py-0.5">
-                      <span className="label-text text-sm font-medium">Formato / presentación</span>
-                      <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-                    </label>
-                    <select
-                      className="select select-bordered select-sm h-9 text-sm"
-                      value={form.pres_nombre}
-                      onChange={(e) => handlePresChange(e.target.value)}
-                    >
-                      <option value="">{form.pres_id ? '— Solo unidad base —' : 'Seleccionar formato...'}</option>
-                      {presFormatos.map((p) => (
-                        <option key={p.nombre} value={p.nombre}>{p.nombre}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-control">
-                    <label className="label py-0.5">
-                      <span className="label-text text-sm font-medium">
-                        {form.pres_nombre ? `Unidades por ${form.pres_nombre}` : 'Unidades por formato'}
-                      </span>
-                    </label>
-                    <input
-                      type="number"
-                      className="input input-bordered input-sm h-9"
-                      value={form.pres_factor}
-                      onChange={(e) => setForm((f) => ({ ...f, pres_factor: e.target.value }))}
-                      placeholder="Ej: 20"
-                      min="1"
-                      step="1"
-                      disabled={!form.pres_nombre}
-                    />
-                  </div>
-                </div>
-                <div className="form-control">
-                  <label className="label py-0.5">
-                    <span className="label-text text-sm font-medium">Plural del formato</span>
-                    <span className="label-text-alt text-base-content/40 text-[10px]">ej: Cajas</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="input input-bordered input-sm h-9"
-                    value={form.pres_nombre_plural}
-                    onChange={(e) => setForm((f) => ({ ...f, pres_nombre_plural: e.target.value }))}
-                    placeholder="Ej: Cajas"
-                    disabled={!form.pres_nombre}
-                  />
-                </div>
-                <div className="form-control">
-                  <label className="label py-0.5">
-                    <span className="label-text text-sm font-medium">Código de barras</span>
-                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-                  </label>
-                  <div className="flex gap-1">
-                    <input
-                      type="text"
-                      className="input input-bordered input-sm h-9 font-mono tracking-wider flex-1 min-w-0"
-                      value={form.pres_codigo_barras}
-                      onChange={(e) => setForm((f) => ({ ...f, pres_codigo_barras: e.target.value }))}
-                      placeholder="EAN / UPC"
-                      disabled={!form.pres_nombre}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm btn-square h-9 w-9 shrink-0"
-                      onClick={() => setScannerOpen(true)}
-                      title="Escanear con cámara"
-                      disabled={!form.pres_nombre}
-                    >
-                      <Camera className="h-4 w-4 opacity-60" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="divider my-0" />
-
-            {/* ── Imagen ── */}
-            <div className="space-y-3 hidden">
-              <div className="flex items-center gap-1.5">
-                <ImagePlus className="h-3.5 w-3.5 text-base-content/30" />
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Imagen del producto</span>
-              </div>
-              <div className="flex items-center gap-3">
-                {producto?.imagen_url ? (
-                  <ProductoImage src={producto.imagen_url} size="lg" />
-                ) : (
-                  <button
-                    type="button"
-                    className="flex flex-col items-center justify-center gap-1 text-base-content/40 border-2 border-dashed border-base-300 rounded-xl cursor-pointer hover:border-primary/40 transition-colors"
-                    style={{ width: 72, height: 72 }}
-                    onClick={() => imageInputRef.current?.click()}
-                  >
-                    <ImagePlus className="h-5 w-5" />
-                    <span className="text-[9px]">Subir foto</span>
-                  </button>
-                )}
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline btn-primary gap-1"
-                      onClick={() => imageInputRef.current?.click()}
-                      disabled={uploadingImage}
-                    >
-                      {uploadingImage ? <span className="loading loading-spinner loading-xs" /> : <Camera className="h-3.5 w-3.5" />}
-                      {producto?.imagen_url ? 'Cambiar foto' : 'Subir foto'}
-                    </button>
-                    {producto?.imagen_url && (
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-ghost text-error gap-1"
-                        onClick={handleImageDelete}
-                        disabled={uploadingImage}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                        Quitar
-                      </button>
-                    )}
-                  </div>
-                  <p className="text-[9px] text-base-content/40 leading-tight">JPG o PNG · se comprimirá a 400×400px</p>
                 </div>
               </div>
               <input
@@ -2430,9 +2060,6 @@ function ProductoDetail({ id }: { id: string }) {
     <div className="space-y-5">
       <div className="space-y-3">
         <DetailRow label="Código sistema" value={producto.codigo_interno ?? '--'} mono />
-        {producto.codigo_maestro && (
-          <DetailRow label="Cód. maestro bodega" value={producto.codigo_maestro} mono />
-        )}
         <DetailRow label="Nombre" value={producto.nombre} />
         {producto.descripcion && (
           <DetailRow label="Descripción" value={producto.descripcion} />
@@ -2453,8 +2080,21 @@ function ProductoDetail({ id }: { id: string }) {
                     {pp.es_principal && <span className="text-[10px] font-bold uppercase text-primary">Principal</span>}
                   </div>
                   <div className="flex flex-col items-end gap-0.5">
-                    {pp.codigo_proveedor && <span className="text-[10px] font-mono opacity-50">{pp.codigo_proveedor}</span>}
-                    {pp.precio_unidad && <span className="text-[10px] font-mono opacity-50">${pp.precio_unidad}/u</span>}
+                    {pp.codigo_proveedor && (
+                      <span className="text-[10px] font-mono opacity-50">
+                        Cód. Prov: {pp.codigo_proveedor}
+                      </span>
+                    )}
+                    {pp.codigo_maestro && (
+                      <span className="text-[10px] font-mono opacity-50">
+                        Cód. Maestro: {pp.codigo_maestro}
+                      </span>
+                    )}
+                    {pp.precio_unidad && (
+                      <span className="text-[10px] font-mono opacity-50">
+                        ${pp.precio_unidad}/u
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}

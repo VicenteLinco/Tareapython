@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
-import { formatDate, daysUntil, cn } from '@/lib/utils'
+import { formatDate, daysUntil, cn, formatCantidad } from '@/lib/utils'
 import { CantidadConUnidad } from '@/components/ui/cantidad'
 import { LOTE_ROW_COLORS, STOCK_ALERT_COLORS } from '@/lib/theme'
 import type { StockItem, Movimiento, PaginatedResponse } from '@/types'
@@ -20,6 +20,15 @@ interface LoteSummary {
   fecha_vencimiento: string
   stock_total: number | null
   proveedor_nombre: string | null
+}
+
+// Enriched lot data from stock_por_area endpoint
+interface LoteAreaPresentacion {
+  lote_id: string
+  presentacion_nombre: string | null
+  presentacion_nombre_plural: string | null
+  presentacion_factor: number | null
+  cantidad_presentaciones_equivalente: number | null
 }
 
 export function StockDetail({ item, areaId }: { item: StockItem; areaId: number | null }) {
@@ -39,6 +48,36 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
         },
       }).then((r) => r.data),
   })
+
+  // Fetch enriched lot presentation data from stock_por_area when areaId is available.
+  // This query is fire-and-forget: if unavailable the display falls back to base units only.
+  interface StockAreaResponse {
+    productos: Array<{
+      producto_id: string
+      lotes: Array<LoteAreaPresentacion & { lote_id: string }>
+    }>
+  }
+  const { data: areaStockData } = useQuery({
+    queryKey: ['stock-area-pres', areaId, item.producto_id],
+    queryFn: () =>
+      api.get<StockAreaResponse>(`/stock/area/${areaId}`).then((r) => r.data),
+    enabled: !!areaId,
+    staleTime: 60_000,
+  })
+
+  // Build a lote_id → presentation-enrichment map from the area stock response
+  const lotePresEnrichment = useMemo((): Map<string, LoteAreaPresentacion> => {
+    const map = new Map<string, LoteAreaPresentacion>()
+    if (!areaStockData) return map
+    const prod = areaStockData.productos?.find(
+      (p) => String(p.producto_id) === String(item.producto_id)
+    )
+    if (!prod) return map
+    for (const l of (prod.lotes ?? [])) {
+      map.set(l.lote_id, l)
+    }
+    return map
+  }, [areaStockData, item.producto_id])
 
   // Auto-open discard dialog if coming from dashboard alert
   useEffect(() => {
@@ -210,6 +249,12 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
                 const isExpired = days !== null && days <= 0
                 const isSoon = days !== null && days > 0 && days <= 90
 
+                // Presentation-equivalent data from stock_por_area enrichment (if available)
+                const presData = lotePresEnrichment.get(lote.id)
+                const presNombre = presData?.presentacion_nombre ?? null
+                const presNombrePlural = presData?.presentacion_nombre_plural ?? null
+                const presEquivalente = presData?.cantidad_presentaciones_equivalente ?? null
+
                 return (
                   <div
                     key={lote.id}
@@ -239,10 +284,27 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
                         )}
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <div className="flex items-baseline gap-1 justify-end">
-                          <span className="font-mono font-bold text-sm">{qty}</span>
-                          <span className="text-xs opacity-40">{qty === 1 ? item.unidad : (item.unidad_plural ?? item.unidad)}</span>
-                        </div>
+                        {presNombre && presEquivalente !== null ? (
+                          // Show "15 cajas (150 unidades)" format using formatCantidad
+                          <div className="flex flex-col items-end gap-0.5">
+                            <div className="flex items-baseline gap-1 justify-end">
+                              <span className="font-mono font-bold text-sm">{presEquivalente}</span>
+                              <span className="text-xs opacity-40">
+                                {formatCantidad(presEquivalente, presNombre, presNombrePlural ?? undefined)
+                                  .replace(/^[\d.,\s]+/, '')
+                                  .trim()}
+                              </span>
+                            </div>
+                            <span className="text-[11px] opacity-35 tabular-nums">
+                              ({formatCantidad(qty, item.unidad, item.unidad_plural ?? undefined)})
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-baseline gap-1 justify-end">
+                            <span className="font-mono font-bold text-sm">{qty}</span>
+                            <span className="text-xs opacity-40">{qty === 1 ? item.unidad : (item.unidad_plural ?? item.unidad)}</span>
+                          </div>
+                        )}
                         <div className="flex items-center gap-1 justify-end mt-0.5">
                           {isExpired && <Badge variant="destructive">Vencido</Badge>}
                           {isSoon && !isExpired && <Badge variant="warning">{days === 1 ? 'mañana' : `${days}d`}</Badge>}

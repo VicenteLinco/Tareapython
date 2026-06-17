@@ -2885,3 +2885,253 @@ INSERT INTO configuracion (clave, valor_texto) VALUES
     ('whatsapp_webhook_secret', ''),
     ('whatsapp_bot_phone', '')
 ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto;
+
+
+-- ============================================================
+-- Originally: 002_database_fixes.sql
+-- ============================================================
+
+-- 1. Unification of decimal precision
+ALTER TABLE public.recepcion_detalle ALTER COLUMN precio_unitario TYPE numeric(12,4);
+ALTER TABLE public.solicitud_compra_detalle ALTER COLUMN precio_unitario TYPE numeric(12,4);
+ALTER TABLE public.presentaciones ALTER COLUMN factor_conversion TYPE numeric(12,6);
+ALTER TABLE public.recepcion_detalle ALTER COLUMN factor_conversion_usado TYPE numeric(12,6);
+
+-- 2. Dropping redundant columns from productos table
+-- We drop the search vector trigger first because it references the columns we want to drop
+DROP TRIGGER IF EXISTS trg_productos_search_vector ON public.productos;
+
+-- Update search vector update function to not reference dropped columns
+CREATE OR REPLACE FUNCTION public.productos_search_vector_update() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.search_vector :=
+        setweight(to_tsvector('simple', COALESCE(NEW.nombre, '')), 'A') ||
+        setweight(to_tsvector('simple', COALESCE(NEW.codigo_interno, '')), 'A') ||
+        setweight(to_tsvector('simple', COALESCE(NEW.descripcion, '')), 'C');
+    RETURN NEW;
+END;
+$$;
+
+-- Drop foreign key constraint on productos first
+ALTER TABLE public.productos DROP CONSTRAINT IF EXISTS productos_proveedor_id_fkey;
+
+-- Drop the columns
+ALTER TABLE public.productos DROP COLUMN IF EXISTS proveedor_id;
+ALTER TABLE public.productos DROP COLUMN IF EXISTS codigo_proveedor;
+ALTER TABLE public.productos DROP COLUMN IF EXISTS codigo_maestro;
+ALTER TABLE public.productos DROP COLUMN IF EXISTS precio_unidad;
+
+-- Recreate trigger on productos table
+CREATE TRIGGER trg_productos_search_vector
+    BEFORE INSERT OR UPDATE OF nombre, codigo_interno, descripcion
+    ON public.productos
+    FOR EACH ROW
+    EXECUTE FUNCTION public.productos_search_vector_update();
+
+-- 3. Modification of UNIQUE constraints on soft-deleted tables
+ALTER TABLE public.areas DROP CONSTRAINT IF EXISTS areas_nombre_key;
+CREATE UNIQUE INDEX idx_areas_nombre_active ON public.areas (nombre) WHERE deleted_at IS NULL;
+
+ALTER TABLE public.categorias DROP CONSTRAINT IF EXISTS categorias_nombre_key;
+CREATE UNIQUE INDEX idx_categorias_nombre_active ON public.categorias (nombre) WHERE deleted_at IS NULL;
+
+ALTER TABLE public.productos DROP CONSTRAINT IF EXISTS productos_codigo_interno_key;
+CREATE UNIQUE INDEX idx_productos_codigo_interno_active ON public.productos (codigo_interno) WHERE deleted_at IS NULL;
+
+ALTER TABLE public.unidades_basicas DROP CONSTRAINT IF EXISTS unidades_medida_nombre_key;
+CREATE UNIQUE INDEX idx_unidades_basicas_nombre_active ON public.unidades_basicas (nombre) WHERE deleted_at IS NULL;
+
+-- 4. Setting generar_codigo_lote() as DEFAULT value for lotes.codigo_interno
+ALTER TABLE public.lotes ALTER COLUMN codigo_interno SET DEFAULT public.generar_codigo_lote();
+
+-- 5. Adding nullable foreign key formato_id in presentaciones
+ALTER TABLE public.presentaciones ADD COLUMN formato_id integer REFERENCES public.presentacion_formatos(id);
+
+-- 6. Automating updated_at tracking
+CREATE OR REPLACE FUNCTION public.fn_update_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_update_timestamp_productos
+    BEFORE UPDATE ON public.productos
+    FOR EACH ROW
+    EXECUTE FUNCTION public.fn_update_timestamp();
+
+CREATE TRIGGER trg_update_timestamp_usuarios
+    BEFORE UPDATE ON public.usuarios
+    FOR EACH ROW
+    EXECUTE FUNCTION public.fn_update_timestamp();
+
+CREATE TRIGGER trg_update_timestamp_stock
+    BEFORE UPDATE ON public.stock
+    FOR EACH ROW
+    EXECUTE FUNCTION public.fn_update_timestamp();
+
+-- 7. Add missing columns and foreign keys for unit/integration tests compatibility
+ALTER TABLE public.solicitud_compra_detalle DROP COLUMN IF EXISTS unidad;
+ALTER TABLE public.solicitud_compra_detalle ADD COLUMN unidad_basica_id integer REFERENCES public.unidades_basicas(id);
+
+ALTER TABLE public.orden_compra_detalle DROP COLUMN IF EXISTS unidad;
+ALTER TABLE public.orden_compra_detalle ADD COLUMN unidad_basica_id integer REFERENCES public.unidades_basicas(id);
+
+-- 8. Add missing sku column and unique active partial index to presentaciones table
+ALTER TABLE public.presentaciones ADD COLUMN sku character varying(100);
+CREATE UNIQUE INDEX idx_presentaciones_sku_active ON public.presentaciones (sku) WHERE deleted_at IS NULL AND sku IS NOT NULL;
+
+-- 9. Add check constraint to enforce exclusivity between unidad_basica_id and presentacion_id in solicitud_compra_detalle
+ALTER TABLE public.solicitud_compra_detalle
+    ADD CONSTRAINT chk_solicitud_detalle_unidad_exclusiva
+    CHECK (
+        (unidad_basica_id IS NOT NULL AND presentacion_id IS NULL) OR
+        (unidad_basica_id IS NULL AND presentacion_id IS NOT NULL)
+    );
+
+
+-- ============================================================
+-- Originally: 003_database_refinements.sql
+-- ============================================================
+
+-- 1. Fix the race condition in public.fn_procesar_movimiento_stock()
+-- We lock the corresponding row in the public.lotes table (which always exists)
+-- to serialize concurrent stock updates for that batch.
+CREATE OR REPLACE FUNCTION public.fn_procesar_movimiento_stock() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_signo DECIMAL := 1;
+    v_stock_actual DECIMAL := 0;
+BEGIN
+    -- Bloquear el lote en la tabla public.lotes para serializar inserciones/actualizaciones concurrentes de stock
+    PERFORM id FROM public.lotes WHERE id = NEW.lote_id FOR UPDATE;
+
+    -- Determinar el signo según el tipo de movimiento
+    IF NEW.tipo IN ('CONSUMO', 'AJUSTE_NEGATIVO', 'TRANSFERENCIA_SALIDA', 'DESCARTE_VENCIDO', 'DESCARTE_DAÑADO') THEN
+        v_signo := -1;
+    END IF;
+
+    -- Obtener el stock actual del lote en el área (bloqueando la fila del stock)
+    SELECT cantidad INTO v_stock_actual
+    FROM public.stock
+    WHERE lote_id = NEW.lote_id AND area_id = NEW.area_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        v_stock_actual := 0;
+    END IF;
+
+    -- Calcular la cantidad resultante
+    NEW.cantidad_resultante := v_stock_actual + (NEW.cantidad * v_signo);
+
+    -- Validar que el stock no sea negativo
+    IF NEW.cantidad_resultante < 0 THEN
+        RAISE EXCEPTION 'Stock insuficiente para el lote % en el área %. Actual: %, Requerido: %', 
+            NEW.lote_id, NEW.area_id, v_stock_actual, NEW.cantidad;
+    END IF;
+
+    -- Actualizar o Insertar en la tabla stock
+    INSERT INTO public.stock (lote_id, area_id, cantidad, updated_at)
+    VALUES (NEW.lote_id, NEW.area_id, NEW.cantidad_resultante, NOW())
+    ON CONFLICT (lote_id, area_id) 
+    DO UPDATE SET 
+        cantidad = EXCLUDED.cantidad,
+        updated_at = EXCLUDED.updated_at;
+
+    RETURN NEW;
+END;
+$$;
+
+-- 2. Improve UNIQUE constraint on public.lotes table to handle NULL values for proveedor_id
+-- Since PostgreSQL 15, we can use UNIQUE NULLS NOT DISTINCT. This matches the ON CONFLICT (producto_id, proveedor_id, numero_lote) 
+-- syntax in the Rust backend while ensuring NULL values in proveedor_id do not allow duplicates.
+ALTER TABLE public.lotes DROP CONSTRAINT IF EXISTS lotes_producto_proveedor_lote_key;
+
+ALTER TABLE public.lotes ADD CONSTRAINT lotes_producto_proveedor_lote_key 
+    UNIQUE NULLS NOT DISTINCT (producto_id, proveedor_id, numero_lote);
+
+-- 3. Add soft delete (deleted_at) to public.usuarios table
+ALTER TABLE public.usuarios ADD COLUMN deleted_at timestamp with time zone;
+
+-- 4. Recreate unique constraints for usuarios as partial indexes supporting soft delete
+ALTER TABLE public.usuarios DROP CONSTRAINT IF EXISTS usuarios_email_key;
+ALTER TABLE public.usuarios DROP CONSTRAINT IF EXISTS usuarios_whatsapp_phone_key;
+
+CREATE UNIQUE INDEX idx_usuarios_email_active ON public.usuarios (email) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX idx_usuarios_whatsapp_phone_active ON public.usuarios (whatsapp_phone) WHERE deleted_at IS NULL AND whatsapp_phone IS NOT NULL;
+
+
+-- ============================================================
+-- Originally: 069_presentaciones_proveedor.sql
+-- ============================================================
+
+-- 069: Supplier-aware presentations join table + lot packaging traceability
+-- Adds producto_proveedor_presentacion table and lotes.presentacion_id column.
+-- producto_proveedor.presentacion_id is kept for now (legacy, do not use for reads)
+
+
+-- 1. Join table: links a producto_proveedor record to one or more presentations,
+--    with a single active default per supplier+product link enforced at DB level.
+CREATE TABLE producto_proveedor_presentacion (
+    id                     SERIAL PRIMARY KEY,
+    producto_proveedor_id  INTEGER NOT NULL
+        REFERENCES producto_proveedor(id) ON DELETE CASCADE,
+    presentacion_id        INTEGER NOT NULL
+        REFERENCES presentaciones(id),
+    es_default             BOOLEAN NOT NULL DEFAULT false,
+    precio_unidad          NUMERIC(12,4),
+    activo                 BOOLEAN NOT NULL DEFAULT true,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (producto_proveedor_id, presentacion_id)
+);
+
+-- Exactly one active default per supplier+product link (partial unique index).
+-- activo = true ensures soft-deleted rows don't count toward the constraint.
+CREATE UNIQUE INDEX uq_ppp_default
+    ON producto_proveedor_presentacion (producto_proveedor_id)
+    WHERE es_default = true AND activo = true;
+
+-- Performance index for active listing queries.
+CREATE INDEX idx_ppp_pp
+    ON producto_proveedor_presentacion (producto_proveedor_id)
+    WHERE activo = true;
+
+COMMENT ON TABLE producto_proveedor_presentacion IS
+    'Supplier+product to presentation link with optional default and per-presentation price. Supersedes producto_proveedor.presentacion_id (deprecated, not dropped).';
+
+-- 2. Migrate existing default links from the legacy column.
+INSERT INTO producto_proveedor_presentacion
+    (producto_proveedor_id, presentacion_id, es_default, precio_unidad, activo)
+SELECT pp.id, pp.presentacion_id, true, pp.precio_unidad, true
+FROM producto_proveedor pp
+WHERE pp.presentacion_id IS NOT NULL
+ON CONFLICT (producto_proveedor_id, presentacion_id) DO NOTHING;
+
+-- 3. Add nullable lot packaging FK (backward-compatible; existing lots get NULL).
+ALTER TABLE lotes ADD COLUMN presentacion_id INTEGER REFERENCES presentaciones(id);
+
+COMMENT ON COLUMN lotes.presentacion_id IS
+    'Presentation the lot arrived in (reception). NULL for legacy or unmatched lots.';
+
+-- 4. Backfill lotes.presentacion_id from most-recent recepcion_detalle per lot.
+--    Uses DISTINCT ON ordered by created_at DESC, id DESC for determinism.
+UPDATE lotes l
+SET presentacion_id = sub.presentacion_id
+FROM (
+    SELECT DISTINCT ON (rd.lote_id)
+        rd.lote_id,
+        rd.presentacion_id
+    FROM recepcion_detalle rd
+    WHERE rd.presentacion_id IS NOT NULL
+    ORDER BY rd.lote_id, rd.created_at DESC, rd.id DESC
+) sub
+WHERE sub.lote_id = l.id;
+
+-- 5. Deprecation notice on the legacy column (not dropped this cycle).
+COMMENT ON COLUMN producto_proveedor.presentacion_id IS
+    'DEPRECATED: kept for rollback safety. Use producto_proveedor_presentacion instead. Will be dropped in a future migration.';
+

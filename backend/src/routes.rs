@@ -52,6 +52,11 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
             "/presentacion-formatos",
             handlers::presentacion_formatos::routes(),
         )
+        // Presentaciones por vínculo proveedor+producto
+        .nest(
+            "/producto-proveedor/{id}/presentaciones",
+            handlers::producto_proveedor_presentacion::routes(),
+        )
         // Stock y lotes (lectura)
         .nest("/stock", handlers::stock::routes())
         .nest("/lotes", handlers::lotes::routes())
@@ -81,7 +86,6 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
 
     let mut router = Router::new()
         .merge(handlers::health::routes())
-        .nest("/api/v1/webhooks/whatsapp", handlers::whatsapp::routes())
         .nest("/api/v1/auth", handlers::auth_handler::public_routes())
         .nest("/api/v1/auth", auth_protected)
         .nest_service(

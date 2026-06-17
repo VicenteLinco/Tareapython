@@ -277,48 +277,47 @@ async fn listar(
                ORDER BY l2.producto_id, l2.fecha_vencimiento ASC
            ),
            final_stats AS (
-                SELECT
-                    p.id as producto_id,
-                    p.codigo_interno,
-                    p.nombre as producto_nombre,
-                    c.nombre as categoria,
-                    um.nombre as unidad,
-                    um.nombre_plural as unidad_plural,
-                    COALESCE(ss.total, 0) as stock_total,
-                    COALESCE(ss.lotes_con_stock, 0) as lotes_count,
-                    {} AS stock_minimo,
-                    {} AS inicializado,
-                    pp.lead_time_dias AS lead_time_propio,
-                    ss.proxima_fecha_venc as proximo_vencimiento,
-                    fp.nombre as proveedor_nombre,
-                    fp.icono as proveedor_icono,
-                    pp.imagen_url,
-                    COALESCE(sr.serie, ARRAY[]::FLOAT8[]) as serie,
-                    COALESCE(ms.dias_con_consumo, 0) as dias_con_consumo,
-                    CASE
-                        WHEN ms.dias_vida_sistema < 30 AND ms.dias_con_consumo >= 3 THEN
-                            COALESCE(ms.consumo_diario_ponderado * (30.0 / GREATEST(ms.dias_vida_sistema, 7)), 0)::NUMERIC(15,4)
-                        ELSE COALESCE(ms.consumo_diario_ponderado, 0)::NUMERIC(15,4)
-                    END AS consumo_diario_ajustado,
-                    -- consumo_base_estimado replica la lógica de calcular_autonomia en Rust:
-                    -- ≥14 días con consumo → ponderado; 1-13 → total/días_reales; <1 → 0
-                    CASE
-                        WHEN COALESCE(ms.dias_con_consumo, 0) >= 14
-                            THEN COALESCE(ms.consumo_diario_ponderado, 0)::FLOAT8
-                        WHEN COALESCE(ms.dias_con_consumo, 0) >= 1
-                            THEN COALESCE(ms.total_consumo_ventana, 0) / GREATEST(ms.dias_vida_sistema::FLOAT8, 1)
-                        ELSE 0.0
-                    END AS consumo_base_estimado
-                FROM productos p
-                JOIN unidades_basicas um ON um.id = p.unidad_base_id
-                LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = TRUE
-                LEFT JOIN categorias c ON c.id = p.categoria_id
-                LEFT JOIN stock_stats ss ON ss.producto_id = p.id
-                LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
-                LEFT JOIN fefo_prov fp ON fp.producto_id = p.id
-                LEFT JOIN series sr ON sr.producto_id = p.id
-                WHERE p.activo = true {} {} {}
-            ),
+               SELECT
+                   p.id as producto_id,
+                   p.codigo_interno,
+                   p.nombre as producto_nombre,
+                   c.nombre as categoria,
+                   um.nombre as unidad,
+                   um.nombre_plural as unidad_plural,
+                   COALESCE(ss.total, 0) as stock_total,
+                   COALESCE(ss.lotes_con_stock, 0) as lotes_count,
+                   {} AS stock_minimo,
+                   {} AS inicializado,
+                   p.lead_time_propio,
+                   ss.proxima_fecha_venc as proximo_vencimiento,
+                   fp.nombre as proveedor_nombre,
+                   fp.icono as proveedor_icono,
+                   p.imagen_path AS imagen_url,
+                   COALESCE(sr.serie, ARRAY[]::FLOAT8[]) as serie,
+                   COALESCE(ms.dias_con_consumo, 0) as dias_con_consumo,
+                   CASE
+                       WHEN ms.dias_vida_sistema < 30 AND ms.dias_con_consumo >= 3 THEN
+                           COALESCE(ms.consumo_diario_ponderado * (30.0 / GREATEST(ms.dias_vida_sistema, 7)), 0)::NUMERIC(15,4)
+                       ELSE COALESCE(ms.consumo_diario_ponderado, 0)::NUMERIC(15,4)
+                   END AS consumo_diario_ajustado,
+                   -- consumo_base_estimado replica la lógica de calcular_autonomia en Rust:
+                   -- ≥14 días con consumo → ponderado; 1-13 → total/días_reales; <1 → 0
+                   CASE
+                       WHEN COALESCE(ms.dias_con_consumo, 0) >= 14
+                           THEN COALESCE(ms.consumo_diario_ponderado, 0)::FLOAT8
+                       WHEN COALESCE(ms.dias_con_consumo, 0) >= 1
+                           THEN COALESCE(ms.total_consumo_ventana, 0) / GREATEST(ms.dias_vida_sistema::FLOAT8, 1)
+                       ELSE 0.0
+                   END AS consumo_base_estimado
+               FROM productos p
+               JOIN unidades_basicas um ON um.id = p.unidad_base_id
+               LEFT JOIN categorias c ON c.id = p.categoria_id
+               LEFT JOIN stock_stats ss ON ss.producto_id = p.id
+               LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
+               LEFT JOIN fefo_prov fp ON fp.producto_id = p.id
+               LEFT JOIN series sr ON sr.producto_id = p.id
+               WHERE p.activo = true {} {} {}
+           ),
            enriched AS (
                SELECT
                    final_stats.*,
@@ -617,7 +616,16 @@ async fn stock_por_area(
                        'lote_id',          s.lote_id,
                        'numero_lote',      l.numero_lote,
                        'stock',            s.cantidad,
-                       'fecha_vencimiento', l.fecha_vencimiento
+                       'fecha_vencimiento', l.fecha_vencimiento,
+                       'presentacion_nombre', lpres.nombre,
+                       'presentacion_nombre_plural', lpres.nombre_plural,
+                       'presentacion_factor', lpres.factor_conversion,
+                       'cantidad_presentaciones_equivalente',
+                           CASE
+                               WHEN lpres.factor_conversion IS NOT NULL AND lpres.factor_conversion > 0
+                               THEN ROUND(s.cantidad / lpres.factor_conversion, 2)
+                               ELSE NULL
+                           END
                    ) ORDER BY l.fecha_vencimiento ASC NULLS LAST
                ) FILTER (WHERE s.cantidad > 0) AS lotes
            FROM stock s
@@ -625,6 +633,7 @@ async fn stock_por_area(
            JOIN productos p ON p.id = l.producto_id
            JOIN unidades_basicas um ON um.id = p.unidad_base_id
            LEFT JOIN producto_area pa ON pa.producto_id = p.id AND pa.area_id = $1
+           LEFT JOIN presentaciones lpres ON lpres.id = l.presentacion_id AND lpres.deleted_at IS NULL
            WHERE s.area_id = $1 AND s.cantidad > 0 AND p.activo = true
            {}
            GROUP BY p.id, p.codigo_interno, p.nombre, um.nombre, um.nombre_plural, pa.stock_minimo, p.stock_minimo
@@ -933,16 +942,16 @@ async fn alertas(
                    p.id as producto_id,
                    p.nombre,
                    {} AS stock_minimo,
-                   pp.lead_time_dias AS lead_time_propio,
+                   p.lead_time_propio,
                    p.created_at,
-                   pp.proveedor_id,
+                   p.proveedor_id,
                    pv.nombre AS proveedor_nombre,
-                   COALESCE(pp.lead_time_dias, pv.dias_despacho_tierra, pv.dias_despacho_aereo, 7) AS dias_despacho,
+                   COALESCE(p.lead_time_propio, pv.dias_despacho_tierra, pv.dias_despacho_aereo, 7) AS dias_despacho,
                    ub.nombre AS unidad,
                    ub.nombre_plural AS unidad_plural,
                    COALESCE(ss.total, 0) AS total,
                    COALESCE(ss.inicializado, false) AS inicializado,
-                   COALESCE(pp_en_camino.total_en_camino, 0) AS total_en_camino,
+                   COALESCE(pp.total_en_camino, 0) AS total_en_camino,
                    ss.proxima_fecha_venc,
                    ms.ultimo_movimiento,
                    CASE
@@ -951,14 +960,13 @@ async fn alertas(
                        ELSE COALESCE(ms.consumo_diario_ponderado, 0)::NUMERIC(15,4)                   END AS consumo_diario_ajustado,
                    ms.dias_con_consumo,
                    (ms.consumo_7d > ms.consumo_diario_ponderado * 3 AND ms.dias_con_consumo > 5) AS es_anomalia
-                FROM productos p
-                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-                LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = TRUE
-                LEFT JOIN proveedores pv ON pv.id = pp.proveedor_id
-                LEFT JOIN stock_stats ss ON ss.producto_id = p.id
-                LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
-                LEFT JOIN pedidos_pendientes pp_en_camino ON pp_en_camino.producto_id = p.id
-                WHERE p.activo = true
+               FROM productos p
+               JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
+               LEFT JOIN proveedores pv ON pv.id = p.proveedor_id
+               LEFT JOIN stock_stats ss ON ss.producto_id = p.id
+               LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
+               LEFT JOIN pedidos_pendientes pp ON pp.producto_id = p.id
+               WHERE p.activo = true
                {}
            ),
            stats_with_autonomia AS (

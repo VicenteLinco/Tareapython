@@ -42,10 +42,6 @@ pub fn test_config() -> AppConfig {
         allow_bootstrap_admin: false,
         setup_admin_email: None,
         setup_admin_password: None,
-        twilio_auth_token: "mock_twilio_auth_token_for_tests".to_string(),
-        whatsapp_webhook_secret: "mock_webhook_secret_for_tests".to_string(),
-        whatsapp_api_url: "http://localhost:8008".to_string(),
-        whatsapp_api_key: "mock_whatsapp_api_key_for_tests".to_string(),
     }
 }
 
@@ -194,6 +190,28 @@ pub async fn put_json(
 ) -> (StatusCode, serde_json::Value) {
     let req = Request::builder()
         .method(Method::PUT)
+        .uri(path)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_string(&body).unwrap()))
+        .unwrap();
+
+    let response = app.clone().oneshot(req).await.unwrap();
+    let status = response.status();
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap_or(serde_json::json!(null));
+    (status, json)
+}
+
+/// Helper: envía un request PATCH con JSON body
+pub async fn patch_json(
+    app: &Router,
+    path: &str,
+    token: &str,
+    body: serde_json::Value,
+) -> (StatusCode, serde_json::Value) {
+    let req = Request::builder()
+        .method(Method::PATCH)
         .uri(path)
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")

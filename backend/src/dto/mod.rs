@@ -2,6 +2,7 @@ pub mod area;
 pub mod categoria;
 pub mod descarte;
 pub mod pagination;
+pub mod producto_proveedor_presentacion;
 pub mod proveedor;
 pub mod recepcion;
 pub mod reportes;

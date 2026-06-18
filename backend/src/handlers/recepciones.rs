@@ -191,8 +191,7 @@ async fn scan_codigo(
 
     let producto: Option<(Uuid, String)> = sqlx::query_as(
         "SELECT p.id, p.nombre FROM productos p \
-         LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id \
-         WHERE (p.codigo_interno = $1 OR pp.codigo_proveedor = $1) AND p.activo = true LIMIT 1"
+         WHERE (p.codigo_interno = $1 OR p.sku = $1) AND p.activo = true LIMIT 1"
     )
     .bind(&body.codigo)
     .fetch_optional(&state.pool)

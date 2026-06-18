@@ -16,8 +16,7 @@ pub async fn listar(pool: &PgPool, params: ProveedorQuery) -> Result<Vec<Proveed
              p.dias_despacho_aereo, p.dias_despacho_tierra, p.version, p.created_at, \
              COUNT(pr.id)::int AS total_productos \
              FROM proveedores p \
-             LEFT JOIN producto_proveedor pp ON pp.proveedor_id = p.id \
-             LEFT JOIN productos pr ON pr.id = pp.producto_id AND pr.activo = true \
+             LEFT JOIN productos pr ON pr.proveedor_id = p.id AND pr.activo = true \
              WHERE p.activa = $1 AND p.nombre ILIKE $2 \
              GROUP BY p.id ORDER BY p.nombre",
         )
@@ -32,8 +31,7 @@ pub async fn listar(pool: &PgPool, params: ProveedorQuery) -> Result<Vec<Proveed
              p.dias_despacho_aereo, p.dias_despacho_tierra, p.version, p.created_at, \
              COUNT(pr.id)::int AS total_productos \
              FROM proveedores p \
-             LEFT JOIN producto_proveedor pp ON pp.proveedor_id = p.id \
-             LEFT JOIN productos pr ON pr.id = pp.producto_id AND pr.activo = true \
+             LEFT JOIN productos pr ON pr.proveedor_id = p.id AND pr.activo = true \
              WHERE p.activa = $1 \
              GROUP BY p.id ORDER BY p.nombre",
         )

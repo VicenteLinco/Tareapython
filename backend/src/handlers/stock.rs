@@ -160,7 +160,7 @@ async fn listar(
         param_idx += 1;
         binds.push(prov_id.to_string());
         format!(
-            "AND EXISTS (SELECT 1 FROM producto_proveedor pp WHERE pp.producto_id = p.id AND pp.proveedor_id = ${}::integer AND pp.activo = TRUE)",
+            "AND p.proveedor_id = ${}::integer",
             param_idx
         )
     } else {

@@ -636,8 +636,7 @@ mod tests {
         .unwrap();
 
         sqlx::query(
-            "INSERT INTO producto_proveedor (producto_id, proveedor_id, es_principal, activo) \
-             VALUES ($1, $2, true, true)"
+            "UPDATE productos SET proveedor_id = $2 WHERE id = $1"
         )
         .bind(product_id)
         .bind(provider_id)
@@ -764,8 +763,7 @@ mod tests {
         .unwrap();
 
         sqlx::query(
-            "INSERT INTO producto_proveedor (producto_id, proveedor_id, es_principal, activo) \
-             VALUES ($1, $2, true, true)"
+            "UPDATE productos SET proveedor_id = $2 WHERE id = $1"
         )
         .bind(p1_id)
         .bind(provider_id)
@@ -774,8 +772,7 @@ mod tests {
         .unwrap();
 
         sqlx::query(
-            "INSERT INTO producto_proveedor (producto_id, proveedor_id, es_principal, activo) \
-             VALUES ($1, $2, true, true)"
+            "UPDATE productos SET proveedor_id = $2 WHERE id = $1"
         )
         .bind(p2_id)
         .bind(provider_id)

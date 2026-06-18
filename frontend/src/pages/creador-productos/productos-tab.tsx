@@ -24,7 +24,6 @@ import type {
   UnidadBasica,
   Area,
   Proveedor,
-  Presentacion,
   CreateProducto,
   UpdateProducto,
 } from '@/types'
@@ -34,40 +33,23 @@ interface ProductoListItem {
   id: string
   codigo_interno: string | null
   nombre: string
-  categoria: { id: number; nombre: string } | null
-  unidad_base: { id: number; nombre: string }
+  sku: string | null
+  proveedor_id: number | null
   proveedor: { id: number; nombre: string; icono: string | null } | null
+  categoria: { id: number; nombre: string } | null
+  unidad_base: { id: number; nombre: string; nombre_plural: string }
   area: { id: number; nombre: string } | null
   stock_minimo: string
+  precio_unidad: string | null
+  lead_time_propio: number | null
   activo: boolean
   estado_stock?: 'activo' | 'inactivo' | 'pendiente_inicializar' | 'sin_stock'
+  imagen_url?: string | null
+  pres_id: number | null
+  pres_nombre: string | null
+  pres_nombre_plural: string | null
+  pres_factor: string | null
   version: number
-  imagen_url?: string | null
-}
-
-interface ProveedorProductoItem {
-  id?: number
-  proveedor_id: number
-  proveedor_nombre?: string
-  proveedor_icono?: string | null
-  es_principal: boolean
-  codigo_proveedor?: string | null
-  codigo_maestro?: string | null
-  presentacion_id?: number | null
-  presentacion?: Presentacion | null
-  pres_nombre?: string
-  pres_nombre_plural?: string
-  pres_factor?: string
-  pres_codigo_barras?: string
-  pres_gtin?: string
-  pres_gs1_habilitado?: boolean
-  precio_unidad?: string | null
-  lead_time_dias?: number | null
-  unidad_minima_pedido?: string | null
-  imagen_url?: string | null
-  imagen_data_url?: string | null
-  activo?: boolean
-  version?: number
 }
 
 interface ProductoDetailResponse {
@@ -78,11 +60,22 @@ interface ProductoDetailResponse {
   categoria_id?: number | null
   categoria?: { id: number; nombre: string } | null
   categoria_nombre?: string | null
-  unidad_base?: { id: number; nombre: string } | null
+  unidad_base?: { id: number; nombre: string; nombre_plural?: string } | null
   areas: { id: number; nombre: string }[]
-  presentaciones: Presentacion[]
-  proveedores: ProveedorProductoItem[]
-  codigo_maestro: string | null
+  // flat supplier fields
+  proveedor_id: number | null
+  proveedor?: { id: number; nombre: string; icono?: string | null } | null
+  sku: string | null
+  precio_unidad: string | null
+  // flat presentation fields
+  pres_id: number | null
+  pres_nombre: string | null
+  pres_nombre_plural: string | null
+  pres_factor: string | null
+  pres_codigo_barras: string | null
+  pres_gtin: string | null
+  pres_gs1_habilitado: boolean | null
+  imagen_url: string | null
   stock_minimo: string
   ubicacion: string | null
   temperatura_almacenamiento: string | null
@@ -91,10 +84,11 @@ interface ProductoDetailResponse {
   clase_riesgo: string | null
   activo: boolean
   version: number
-  imagen_url?: string | null
 }
 
 type PresFormatoRow = PresFormato & { id: number }
+
+// ── Helpers ─────────────────────────────────────────────────
 
 function productoEstadoBadge(item: ProductoListItem) {
   if (item.estado_stock === 'pendiente_inicializar') {
@@ -112,42 +106,6 @@ function productoEstadoTexto(item: ProductoListItem) {
   if (item.estado_stock === 'pendiente_inicializar') return 'Pendiente inicializar'
   if (item.estado_stock === 'sin_stock') return 'Sin stock'
   return item.activo ? 'Activo' : 'Inactivo'
-}
-
-function proveedorPayload(pp: ProveedorProductoItem) {
-  const hasPres = !!pp.pres_nombre && !!pp.pres_factor
-  return {
-    proveedor_id: pp.proveedor_id,
-    es_principal: pp.es_principal,
-    codigo_proveedor: pp.codigo_proveedor || null,
-    codigo_maestro: pp.codigo_maestro || null,
-    presentacion_id: pp.presentacion_id ?? null,
-    presentacion: hasPres ? {
-      nombre: pp.pres_nombre!,
-      nombre_plural: pp.pres_nombre_plural || pp.pres_nombre!,
-      factor_conversion: Number(pp.pres_factor),
-      codigo_barras: pp.pres_codigo_barras || null,
-      gtin: pp.pres_gtin || null,
-      gs1_habilitado: pp.pres_gs1_habilitado ?? false,
-    } : null,
-    precio_unidad: pp.precio_unidad || null,
-    lead_time_dias: pp.lead_time_dias || null,
-    unidad_minima_pedido: pp.unidad_minima_pedido || null,
-    imagen_url: pp.imagen_url || null,
-    imagen_data_url: pp.imagen_data_url || null,
-  }
-}
-
-function proveedorFromDetalle(pp: ProveedorProductoItem): ProveedorProductoItem {
-  return {
-    ...pp,
-    pres_nombre: pp.presentacion?.nombre ?? '',
-    pres_nombre_plural: pp.presentacion?.nombre_plural ?? '',
-    pres_factor: pp.presentacion ? String(Math.round(Number(pp.presentacion.factor_conversion))) : '',
-    pres_codigo_barras: pp.presentacion?.codigo_barras ?? '',
-    pres_gtin: pp.presentacion?.gtin ?? '',
-    pres_gs1_habilitado: pp.presentacion?.gs1_habilitado ?? false,
-  }
 }
 
 interface PrecioHistorialItem {
@@ -871,6 +829,7 @@ function CreateProductoDialog({
     queryKey: ['presentacion-formatos'],
     queryFn: () => api.get<PresFormatoRow[]>('/presentacion-formatos').then((r) => r.data),
   })
+
   const [form, setForm] = useState({
     nombre: '',
     descripcion: '',
@@ -878,55 +837,26 @@ function CreateProductoDialog({
     unidad_base_id: '',
     area_id: '',
     ubicacion: '',
-    codigo_maestro: '',
     stock_minimo: '0',
+    // flat supplier fields
+    proveedor_id: '',
+    sku: '',
+    precio_unidad: '',
+    // flat presentation fields
     pres_nombre: '',
     pres_nombre_plural: '',
     pres_factor: '',
     pres_codigo_barras: '',
+    pres_gtin: '',
+    pres_gs1_habilitado: false,
+    imagen_data_url: null as string | null,
   })
 
-  const [proveedoresForm, setProveedoresForm] = useState<ProveedorProductoItem[]>([])
   const [temperaturaAlmacenamiento, setTemperaturaAlmacenamiento] = useState<string | null>(null)
   const [requiereCadenaFrio, setRequiereCadenaFrio] = useState(false)
   const [diasEstabilidadAbierto, setDiasEstabilidadAbierto] = useState<number | null>(null)
   const [claseRiesgo, setClaseRiesgo] = useState<string | null>(null)
-
-  function agregarProveedorCreate(provId: number, nombre: string) {
-    setProveedoresForm(prev => {
-      if (prev.some(p => p.proveedor_id === provId)) return prev
-      const esPrimero = prev.length === 0
-      return [...prev, {
-        proveedor_id: provId,
-        proveedor_nombre: nombre,
-        es_principal: esPrimero,
-        codigo_proveedor: null,
-        codigo_maestro: null,
-        pres_nombre: '',
-        pres_nombre_plural: '',
-        pres_factor: '',
-        pres_codigo_barras: '',
-        pres_gtin: '',
-        pres_gs1_habilitado: false,
-        precio_unidad: null,
-        lead_time_dias: null,
-      }]
-    })
-  }
-
-  function eliminarProveedorCreate(provId: number) {
-    setProveedoresForm(prev => {
-      const filtered = prev.filter(p => p.proveedor_id !== provId)
-      if (filtered.length > 0 && !filtered.some(p => p.es_principal)) {
-        return filtered.map((p, i) => i === 0 ? { ...p, es_principal: true } : p)
-      }
-      return filtered
-    })
-  }
-
-  function marcarPrincipalCreate(provId: number) {
-    setProveedoresForm(prev => prev.map(p => ({ ...p, es_principal: p.proveedor_id === provId })))
-  }
+  const [scannerOpen, setScannerOpen] = useState(false)
 
   const [newCatOpen, setNewCatOpen] = useState(false)
   const [newUnidadOpen, setNewUnidadOpen] = useState(false)
@@ -934,22 +864,25 @@ function CreateProductoDialog({
 
   useEffect(() => {
     if (!open || !duplicateSource) return
-    setForm((f) => ({
-      ...f,
+    setForm({
       nombre: `${duplicateSource.nombre} copia`,
       descripcion: duplicateSource.descripcion ?? '',
       categoria_id: duplicateSource.categoria?.id ? String(duplicateSource.categoria.id) : '',
       unidad_base_id: duplicateSource.unidad_base?.id ? String(duplicateSource.unidad_base.id) : '',
       area_id: duplicateSource.areas?.[0]?.id ? String(duplicateSource.areas[0].id) : '',
       ubicacion: duplicateSource.ubicacion ?? '',
-      codigo_maestro: duplicateSource.codigo_maestro ?? '',
       stock_minimo: String(Math.round(Number(duplicateSource.stock_minimo))),
-    }))
-    setProveedoresForm((duplicateSource.proveedores ?? []).map((p) => ({
-      ...proveedorFromDetalle(p),
-      id: undefined,
-      presentacion_id: null,
-    })))
+      proveedor_id: duplicateSource.proveedor_id ? String(duplicateSource.proveedor_id) : '',
+      sku: duplicateSource.sku ?? '',
+      precio_unidad: duplicateSource.precio_unidad ?? '',
+      pres_nombre: duplicateSource.pres_nombre ?? '',
+      pres_nombre_plural: duplicateSource.pres_nombre_plural ?? '',
+      pres_factor: duplicateSource.pres_factor ? String(Math.round(Number(duplicateSource.pres_factor))) : '',
+      pres_codigo_barras: duplicateSource.pres_codigo_barras ?? '',
+      pres_gtin: duplicateSource.pres_gtin ?? '',
+      pres_gs1_habilitado: duplicateSource.pres_gs1_habilitado ?? false,
+      imagen_data_url: null,
+    })
     setTemperaturaAlmacenamiento(duplicateSource.temperatura_almacenamiento ?? null)
     setRequiereCadenaFrio(duplicateSource.requiere_cadena_frio ?? false)
     setDiasEstabilidadAbierto(duplicateSource.dias_estabilidad_abierto ?? null)
@@ -970,11 +903,11 @@ function CreateProductoDialog({
     onClose()
     setForm({
       nombre: '', descripcion: '', categoria_id: '', unidad_base_id: '',
-      area_id: '', ubicacion: '', codigo_maestro: '',
-      stock_minimo: '0',
+      area_id: '', ubicacion: '', stock_minimo: '0',
+      proveedor_id: '', sku: '', precio_unidad: '',
       pres_nombre: '', pres_nombre_plural: '', pres_factor: '', pres_codigo_barras: '',
+      pres_gtin: '', pres_gs1_habilitado: false, imagen_data_url: null,
     })
-    setProveedoresForm([])
     setTemperaturaAlmacenamiento(null)
     setRequiereCadenaFrio(false)
     setDiasEstabilidadAbierto(null)
@@ -986,20 +919,30 @@ function CreateProductoDialog({
     if (!form.nombre.trim()) { notify.error('El nombre del producto es requerido'); return }
     if (!form.unidad_base_id) { notify.error('Selecciona una unidad base'); return }
     if (!form.area_id) { notify.error('Selecciona un área'); return }
-    if (proveedoresForm.length === 0) { notify.error('Agrega al menos un proveedor'); return }
-    const invalidEan = proveedoresForm.find(p => p.pres_codigo_barras && /^\d{13}$/.test(p.pres_codigo_barras) && !isValidEan13(p.pres_codigo_barras))
-    if (invalidEan) { notify.error('El EAN-13 ingresado no tiene un dígito de control válido'); return }
-    const invalidGtin = proveedoresForm.find(p => p.pres_gtin && !/^\d{14}$/.test(p.pres_gtin))
-    if (invalidGtin) { notify.error('GTIN debe tener 14 dígitos'); return }
+    if (form.pres_codigo_barras && /^\d{13}$/.test(form.pres_codigo_barras) && !isValidEan13(form.pres_codigo_barras)) {
+      notify.error('El EAN-13 ingresado no tiene un dígito de control válido'); return
+    }
+    if (form.pres_gtin && !/^\d{14}$/.test(form.pres_gtin)) {
+      notify.error('GTIN debe tener 14 dígitos'); return
+    }
     createMut.mutate({
       nombre: form.nombre.trim(),
       descripcion: form.descripcion.trim() || undefined,
       categoria_id: form.categoria_id ? Number(form.categoria_id) : undefined,
       unidad_base_id: Number(form.unidad_base_id),
+      proveedor_id: form.proveedor_id ? Number(form.proveedor_id) : undefined,
+      sku: form.sku.trim() || undefined,
+      precio_unidad: form.precio_unidad ? Number(form.precio_unidad) : undefined,
       stock_minimo: Number(form.stock_minimo) || 0,
       area_ids: [Number(form.area_id)],
       ubicacion: form.ubicacion.trim() || undefined,
-      proveedores: proveedoresForm.map(proveedorPayload),
+      pres_nombre: form.pres_nombre || undefined,
+      pres_nombre_plural: form.pres_nombre_plural || undefined,
+      pres_factor: form.pres_factor ? Number(form.pres_factor) : undefined,
+      pres_codigo_barras: form.pres_codigo_barras || undefined,
+      pres_gtin: form.pres_gtin || undefined,
+      pres_gs1_habilitado: form.pres_gs1_habilitado || undefined,
+      imagen_data_url: form.imagen_data_url || undefined,
       temperatura_almacenamiento: temperaturaAlmacenamiento,
       requiere_cadena_frio: requiereCadenaFrio,
       dias_estabilidad_abierto: diasEstabilidadAbierto,
@@ -1121,217 +1064,180 @@ function CreateProductoDialog({
               <p className="text-[10px] text-base-content/40 mt-0.5">Lugar físico exacto: refrigerador, armario, estante</p>
             </div>
 
-            {/* Sección Proveedores */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">
-                Proveedores <span className="text-error">*</span>
-              </label>
-              {proveedoresForm.map((pp) => (
-                <div key={pp.proveedor_id} className="p-3 bg-base-200 rounded-xl space-y-3 border border-base-300">
-                  {/* Header del Proveedor */}
-                  <div className="flex items-center justify-between border-b border-base-300/50 pb-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-bold text-sm truncate">{pp.proveedor_nombre}</span>
-                      {pp.es_principal && (
-                        <span className="badge badge-primary badge-xs py-1.5 px-2 font-bold uppercase tracking-wider">Principal</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {!pp.es_principal && (
-                        <button
-                          type="button"
-                          onClick={() => marcarPrincipalCreate(pp.proveedor_id)}
-                          className="btn btn-ghost btn-xs text-warning hover:bg-warning/10 font-bold"
-                          title="Marcar como principal"
-                        >
-                          ★ Principal
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => eliminarProveedorCreate(pp.proveedor_id)}
-                        className="btn btn-ghost btn-xs text-error hover:bg-error/10 font-semibold"
-                        title="Eliminar proveedor"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
+            {/* ── Proveedor (flat) ── */}
+            <div className="space-y-2 p-3 bg-base-200/50 border border-base-300 rounded-xl">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Proveedor</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-control">
+                  <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Proveedor</span>
+                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                  </label>
+                  <select
+                    className="select select-bordered select-sm h-9 bg-base-100 text-sm"
+                    value={form.proveedor_id}
+                    onChange={(e) => setForm((f) => ({ ...f, proveedor_id: e.target.value }))}
+                  >
+                    <option value="">Sin proveedor</option>
+                    {proveedores.map((p) => (
+                      <option key={p.id} value={p.id}>{p.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-control">
+                  <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">SKU / Cód. catálogo</span>
+                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="input input-bordered input-sm h-9 bg-base-100"
+                    value={form.sku}
+                    onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))}
+                    placeholder="Ej: PROV-123"
+                  />
+                </div>
+              </div>
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Precio por unidad</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                </label>
+                <input
+                  type="number"
+                  className="input input-bordered input-sm h-9 bg-base-100 w-44"
+                  value={form.precio_unidad}
+                  onChange={(e) => setForm((f) => ({ ...f, precio_unidad: e.target.value }))}
+                  placeholder="0.00"
+                  min="0"
+                  step="0.01"
+                />
+              </div>
+            </div>
 
-                  {/* Grid de Inputs */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                    {/* Cód. Proveedor */}
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Cód. proveedor</span>
-                      <input
-                        type="text"
-                        placeholder="Ej: PROV-123"
-                        value={pp.codigo_proveedor ?? ''}
-                        onChange={e => setProveedoresForm(prev => prev.map(p =>
-                          p.proveedor_id === pp.proveedor_id ? { ...p, codigo_proveedor: e.target.value || null } : p
-                        ))}
-                        className="input input-xs input-bordered w-full"
-                      />
-                    </div>
+            {/* ── Presentación (flat) ── */}
+            <div className="space-y-2 p-3 bg-base-200/50 border border-base-300 rounded-xl">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Presentación</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Formato / Pres.</span>
+                  <select
+                    className="select select-xs select-bordered bg-base-100 w-full"
+                    value={form.pres_nombre}
+                    onChange={e => {
+                      const found = presFormatos.find(p => p.nombre === e.target.value)
+                      setForm((f) => ({
+                        ...f,
+                        pres_nombre: e.target.value,
+                        pres_nombre_plural: found?.nombre_plural || '',
+                        pres_factor: e.target.value ? f.pres_factor : '',
+                      }))
+                    }}
+                  >
+                    <option value="">Unidad base</option>
+                    {presFormatos.map(p => <option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
+                  </select>
+                </div>
 
-                    {/* Cód. Maestro */}
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Cód. maestro</span>
-                      <input
-                        type="text"
-                        placeholder="Ej: MST-999"
-                        value={pp.codigo_maestro ?? ''}
-                        onChange={e => setProveedoresForm(prev => prev.map(p =>
-                          p.proveedor_id === pp.proveedor_id ? { ...p, codigo_maestro: e.target.value || null } : p
-                        ))}
-                        className="input input-xs input-bordered w-full"
-                      />
-                    </div>
+                <div className="flex flex-col gap-0.5" title={!form.pres_nombre
+                  ? "Bloqueado: La Unidad base siempre equivale a 1 unidad. Selecciona un formato para cambiarlo"
+                  : `Cantidad de unidades base contenidas en este formato`
+                }>
+                  <span className={cn(
+                    "text-[9px] uppercase font-bold tracking-wider cursor-help transition-opacity duration-200",
+                    !form.pres_nombre ? "opacity-30" : "opacity-60"
+                  )}>
+                    Unidades por {form.pres_nombre || 'Envase'} {!form.pres_nombre ? '🔒' : '🛈'}
+                  </span>
+                  <input
+                    type="number"
+                    placeholder={!form.pres_nombre ? "1" : "Ej: 10"}
+                    value={!form.pres_nombre ? "1" : form.pres_factor}
+                    onChange={e => setForm((f) => ({ ...f, pres_factor: e.target.value }))}
+                    className="input input-xs input-bordered w-full disabled:bg-base-300/60 disabled:text-base-content/40 disabled:cursor-not-allowed"
+                    min="1"
+                    disabled={!form.pres_nombre}
+                  />
+                </div>
 
-                    {/* Precio/u */}
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Precio/unidad</span>
-                      <input
-                        type="number"
-                        placeholder="0.00"
-                        value={pp.precio_unidad ?? ''}
-                        onChange={e => setProveedoresForm(prev => prev.map(p =>
-                          p.proveedor_id === pp.proveedor_id ? { ...p, precio_unidad: e.target.value || null } : p
-                        ))}
-                        className="input input-xs input-bordered w-full"
-                        min="0"
-                        step="0.01"
-                      />
-                    </div>
-
-                    {/* Unidad base */}
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Formato / Pres.</span>
-                      <select
-                        className="select select-xs select-bordered bg-base-100 w-full"
-                        value={pp.pres_nombre ?? ''}
-                        onChange={e => {
-                          const found = presFormatos.find(p => p.nombre === e.target.value)
-                          setProveedoresForm(prev => prev.map(p => p.proveedor_id === pp.proveedor_id ? {
-                            ...p,
-                            pres_nombre: e.target.value,
-                            pres_nombre_plural: found?.nombre_plural || '',
-                          } : p))
-                        }}
-                      >
-                        <option value="">Unidad base</option>
-                        {presFormatos.map(p => <option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
-                      </select>
-                    </div>
-
-                    {/* Unid. (Factor) */}
-                    <div className="flex flex-col gap-0.5" title={!pp.pres_nombre 
-                      ? "Bloqueado: La Unidad base siempre equivale a 1 unidad. Selecciona un formato (ej: Caja) para cambiarlo"
-                      : `Cantidad de unidades individuales contenidas en esta presentación (Ej: si la presentación es por ${pp.pres_nombre || 'envase'} y contiene 10 unidades base, el factor es 10)`
-                    }>
-                      <span className={cn(
-                        "text-[9px] uppercase font-bold tracking-wider cursor-help transition-opacity duration-200",
-                        !pp.pres_nombre ? "opacity-30" : "opacity-60"
-                      )}>
-                        Unidades por {pp.pres_nombre || 'Envase'} {!pp.pres_nombre ? '🔒' : '🛈'}
-                      </span>
-                      <input
-                        type="number"
-                        placeholder={!pp.pres_nombre ? "1" : "Ej: 10"}
-                        value={!pp.pres_nombre ? "1" : (pp.pres_factor ?? '')}
-                        onChange={e => setProveedoresForm(prev => prev.map(p =>
-                          p.proveedor_id === pp.proveedor_id ? { ...p, pres_factor: e.target.value } : p
-                        ))}
-                        className="input input-xs input-bordered w-full disabled:bg-base-300/60 disabled:text-base-content/40 disabled:cursor-not-allowed"
-                        min="1"
-                        disabled={!pp.pres_nombre}
-                      />
-                    </div>
-
-                    {/* GTIN-14 */}
-                    <div className="flex flex-col gap-0.5" title="Global Trade Item Number de 14 dígitos. Código de barras global que identifica la caja/envase completo de esta presentación.">
-                      <span className="text-[9px] uppercase font-bold tracking-wider opacity-60 cursor-help">Código GTIN-14 🛈</span>
-                      <input
-                        type="text"
-                        placeholder="14 dígitos"
-                        value={pp.pres_gtin ?? ''}
-                        onChange={e => setProveedoresForm(prev => prev.map(p =>
-                          p.proveedor_id === pp.proveedor_id ? { ...p, pres_gtin: e.target.value.replace(/\D/g, '').slice(0, 14) } : p
-                        ))}
-                        className="input input-xs input-bordered w-full"
-                        disabled={!pp.pres_nombre}
-                        title="Global Trade Item Number de 14 dígitos. Código de barras global que identifica la caja/envase completo de esta presentación."
-                      />
-                    </div>
-
-                    {/* Imagen / GS1 Habilitado */}
-                    <div className="col-span-2 flex items-center justify-between gap-4 mt-2 bg-base-300/40 p-1.5 px-3 rounded-lg">
-                      <label 
-                        className="flex items-center gap-1.5 text-[10px] font-bold uppercase opacity-80 cursor-help select-none"
-                        title="Si se habilita, al escanear el código de barras en recepciones se extraerán de forma automática el Lote y Fecha de Vencimiento de este producto."
-                      >
-                        <input
-                          type="checkbox"
-                          className="checkbox checkbox-xs checkbox-primary"
-                          checked={pp.pres_gs1_habilitado ?? false}
-                          disabled={!pp.pres_nombre}
-                          onChange={e => setProveedoresForm(prev => prev.map(p =>
-                            p.proveedor_id === pp.proveedor_id ? { ...p, pres_gs1_habilitado: e.target.checked } : p
-                          ))}
-                        />
-                        GS1 Habilitado 🛈
-                      </label>
-
-                      <div className="flex items-center gap-2">
-                        {pp.imagen_data_url && (
-                          <div className="w-6 h-6 rounded bg-base-100 overflow-hidden border border-base-300">
-                            <img src={pp.imagen_data_url} alt="Vista previa" className="w-full h-full object-cover" />
-                          </div>
-                        )}
-                        <label className="btn btn-xs btn-outline font-semibold gap-1">
-                          {pp.imagen_data_url ? 'Cambiar Foto' : 'Subir Foto'}
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/png"
-                            className="hidden"
-                            onChange={async e => {
-                              const file = e.target.files?.[0]
-                              e.target.value = ''
-                              if (!file) return
-                              try {
-                                const dataUrl = await comprimirImagen(file)
-                                setProveedoresForm(prev => prev.map(p =>
-                                  p.proveedor_id === pp.proveedor_id ? { ...p, imagen_data_url: dataUrl } : p
-                                ))
-                              } catch (err) {
-                                notify.error(err instanceof Error ? err.message : 'Error cargando imagen')
-                              }
-                            }}
-                          />
-                        </label>
-                      </div>
-                    </div>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Cód. de barras</span>
+                  <div className="flex gap-1">
+                    <input
+                      type="text"
+                      placeholder="EAN-13"
+                      value={form.pres_codigo_barras}
+                      onChange={e => setForm((f) => ({ ...f, pres_codigo_barras: e.target.value }))}
+                      className="input input-xs input-bordered flex-1 min-w-0"
+                      disabled={!form.pres_nombre}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-ghost px-1"
+                      onClick={() => setScannerOpen(true)}
+                      disabled={!form.pres_nombre}
+                      title="Escanear código de barras"
+                    >
+                      📷
+                    </button>
                   </div>
                 </div>
-              ))}
-              <select
-                className="select select-sm bg-base-100 border border-base-300 rounded-xl w-full"
-                value=""
-                onChange={e => {
-                  const provId = parseInt(e.target.value)
-                  if (!provId) return
-                  const prov = proveedores.find((p) => p.id === provId)
-                  if (prov) agregarProveedorCreate(provId, prov.nombre)
-                }}
-              >
-                <option value="">+ Agregar proveedor...</option>
-                {proveedores
-                  .filter((p) => !proveedoresForm.some(pp => pp.proveedor_id === p.id))
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>{p.nombre}</option>
-                  ))
-                }
-              </select>
+
+                <div className="flex flex-col gap-0.5" title="Global Trade Item Number de 14 dígitos.">
+                  <span className="text-[9px] uppercase font-bold tracking-wider opacity-60 cursor-help">GTIN-14 🛈</span>
+                  <input
+                    type="text"
+                    placeholder="14 dígitos"
+                    value={form.pres_gtin}
+                    onChange={e => setForm((f) => ({ ...f, pres_gtin: e.target.value.replace(/\D/g, '').slice(0, 14) }))}
+                    className="input input-xs input-bordered w-full"
+                    disabled={!form.pres_nombre}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-4 mt-2 bg-base-300/40 p-1.5 px-3 rounded-lg">
+                <label
+                  className="flex items-center gap-1.5 text-[10px] font-bold uppercase opacity-80 cursor-help select-none"
+                  title="Si se habilita, al escanear el código de barras en recepciones se extraerán de forma automática el Lote y Fecha de Vencimiento."
+                >
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-xs checkbox-primary"
+                    checked={form.pres_gs1_habilitado}
+                    disabled={!form.pres_nombre}
+                    onChange={e => setForm((f) => ({ ...f, pres_gs1_habilitado: e.target.checked }))}
+                  />
+                  GS1 Habilitado 🛈
+                </label>
+
+                <div className="flex items-center gap-2">
+                  {form.imagen_data_url && (
+                    <div className="w-6 h-6 rounded bg-base-100 overflow-hidden border border-base-300">
+                      <img src={form.imagen_data_url} alt="Vista previa" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                  <label className="btn btn-xs btn-outline font-semibold gap-1">
+                    {form.imagen_data_url ? 'Cambiar Foto' : 'Subir Foto'}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png"
+                      className="hidden"
+                      onChange={async e => {
+                        const file = e.target.files?.[0]
+                        e.target.value = ''
+                        if (!file) return
+                        try {
+                          const dataUrl = await comprimirImagen(file)
+                          setForm((f) => ({ ...f, imagen_data_url: dataUrl }))
+                        } catch (err) {
+                          notify.error(err instanceof Error ? err.message : 'Error cargando imagen')
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div className="form-control">
@@ -1455,6 +1361,14 @@ function CreateProductoDialog({
         onClose={() => setNewAreaOpen(false)}
         onCreated={(a) => { setForm((f) => ({ ...f, area_id: String(a.id) })); setNewAreaOpen(false) }}
       />
+      <Dialog open={scannerOpen} onClose={() => setScannerOpen(false)} title="Escanear código de barras">
+        {scannerOpen && (
+          <BarcodeScanner
+            onScan={(code) => { setForm((f) => ({ ...f, pres_codigo_barras: code })); setScannerOpen(false) }}
+            onClose={() => setScannerOpen(false)}
+          />
+        )}
+      </Dialog>
     </>
   )
 }
@@ -1492,49 +1406,24 @@ function EditProductoDialog({
     area_id: '',
     ubicacion: '',
     stock_minimo: '0',
+    // flat supplier fields
+    proveedor_id: '',
+    sku: '',
+    precio_unidad: '',
+    // flat presentation fields
+    pres_nombre: '',
+    pres_nombre_plural: '',
+    pres_factor: '',
+    pres_codigo_barras: '',
+    pres_gtin: '',
+    pres_gs1_habilitado: false,
+    imagen_data_url: null as string | null,
   })
 
-  const [proveedoresForm, setProveedoresFormEdit] = useState<ProveedorProductoItem[]>([])
   const [temperaturaAlmacenamiento, setTemperaturaAlmacenamientoEdit] = useState<string | null>(null)
   const [requiereCadenaFrio, setRequiereCadenaFrioEdit] = useState(false)
   const [diasEstabilidadAbierto, setDiasEstabilidadAbiertoEdit] = useState<number | null>(null)
   const [claseRiesgo, setClaseRiesgoEdit] = useState<string | null>(null)
-
-  function agregarProveedorEdit(provId: number, nombre: string) {
-    setProveedoresFormEdit(prev => {
-      if (prev.some(p => p.proveedor_id === provId)) return prev
-      const esPrimero = prev.length === 0
-      return [...prev, {
-        proveedor_id: provId,
-        proveedor_nombre: nombre,
-        es_principal: esPrimero,
-        codigo_proveedor: null,
-        codigo_maestro: null,
-        pres_nombre: '',
-        pres_nombre_plural: '',
-        pres_factor: '',
-        pres_codigo_barras: '',
-        pres_gtin: '',
-        pres_gs1_habilitado: false,
-        precio_unidad: null,
-        lead_time_dias: null,
-      }]
-    })
-  }
-
-  function eliminarProveedorEdit(provId: number) {
-    setProveedoresFormEdit(prev => {
-      const filtered = prev.filter(p => p.proveedor_id !== provId)
-      if (filtered.length > 0 && !filtered.some(p => p.es_principal)) {
-        return filtered.map((p, i) => i === 0 ? { ...p, es_principal: true } : p)
-      }
-      return filtered
-    })
-  }
-
-  function marcarPrincipalEdit(provId: number) {
-    setProveedoresFormEdit(prev => prev.map(p => ({ ...p, es_principal: p.proveedor_id === provId })))
-  }
 
   useEffect(() => {
     if (producto) {
@@ -1547,8 +1436,17 @@ function EditProductoDialog({
         area_id: areaId ? String(areaId) : '',
         ubicacion: producto.ubicacion ?? '',
         stock_minimo: String(Math.round(Number(producto.stock_minimo))),
+        proveedor_id: producto.proveedor_id ? String(producto.proveedor_id) : '',
+        sku: producto.sku ?? '',
+        precio_unidad: producto.precio_unidad ?? '',
+        pres_nombre: producto.pres_nombre ?? '',
+        pres_nombre_plural: producto.pres_nombre_plural ?? '',
+        pres_factor: producto.pres_factor ? String(Math.round(Number(producto.pres_factor))) : '',
+        pres_codigo_barras: producto.pres_codigo_barras ?? '',
+        pres_gtin: producto.pres_gtin ?? '',
+        pres_gs1_habilitado: producto.pres_gs1_habilitado ?? false,
+        imagen_data_url: null,
       })
-      setProveedoresFormEdit((producto.proveedores ?? []).map(proveedorFromDetalle))
       setTemperaturaAlmacenamientoEdit(producto.temperatura_almacenamiento ?? null)
       setRequiereCadenaFrioEdit(producto.requiere_cadena_frio ?? false)
       setDiasEstabilidadAbiertoEdit(producto.dias_estabilidad_abierto ?? null)
@@ -1570,20 +1468,30 @@ function EditProductoDialog({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!producto) return
-    if (proveedoresForm.length === 0) { notify.error('Agrega al menos un proveedor'); return }
-    const invalidEan = proveedoresForm.find(p => p.pres_codigo_barras && /^\d{13}$/.test(p.pres_codigo_barras) && !isValidEan13(p.pres_codigo_barras))
-    if (invalidEan) { notify.error('El EAN-13 ingresado no tiene un dígito de control válido'); return }
-    const invalidGtin = proveedoresForm.find(p => p.pres_gtin && !/^\d{14}$/.test(p.pres_gtin))
-    if (invalidGtin) { notify.error('GTIN debe tener 14 dígitos'); return }
+    if (form.pres_codigo_barras && /^\d{13}$/.test(form.pres_codigo_barras) && !isValidEan13(form.pres_codigo_barras)) {
+      notify.error('El EAN-13 ingresado no tiene un dígito de control válido'); return
+    }
+    if (form.pres_gtin && !/^\d{14}$/.test(form.pres_gtin)) {
+      notify.error('GTIN debe tener 14 dígitos'); return
+    }
 
     const payload: UpdateProducto = {
       nombre: form.nombre.trim() || undefined,
       descripcion: form.descripcion.trim() || undefined,
       categoria_id: form.categoria_id ? Number(form.categoria_id) : undefined,
+      proveedor_id: form.proveedor_id ? Number(form.proveedor_id) : null,
+      sku: form.sku.trim() || null,
+      precio_unidad: form.precio_unidad ? Number(form.precio_unidad) : null,
       stock_minimo: Number(form.stock_minimo),
       area_ids: form.area_id ? [Number(form.area_id)] : undefined,
       ubicacion: form.ubicacion.trim() || null,
-      proveedores: proveedoresForm.map(proveedorPayload),
+      pres_nombre: form.pres_nombre || null,
+      pres_nombre_plural: form.pres_nombre_plural || null,
+      pres_factor: form.pres_factor ? Number(form.pres_factor) : null,
+      pres_codigo_barras: form.pres_codigo_barras || null,
+      pres_gtin: form.pres_gtin || null,
+      pres_gs1_habilitado: form.pres_gs1_habilitado || null,
+      imagen_data_url: form.imagen_data_url || null,
       temperatura_almacenamiento: temperaturaAlmacenamiento,
       requiere_cadena_frio: requiereCadenaFrio,
       dias_estabilidad_abierto: diasEstabilidadAbierto,
@@ -1688,221 +1596,183 @@ function EditProductoDialog({
                 <p className="text-[10px] text-base-content/40 mt-0.5">Lugar físico exacto: refrigerador, armario, estante</p>
               </div>
 
-              <div className="form-control">
-                <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Proveedor <span className="text-error">*</span></span>
-                </label>
-                {/* Sección Proveedores */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">
-                    Proveedores <span className="text-error">*</span>
-                  </label>
-                  {proveedoresForm.map((pp) => (
-                    <div key={pp.proveedor_id} className="p-3 bg-base-200 rounded-xl space-y-3 border border-base-300">
-                      {/* Header del Proveedor */}
-                      <div className="flex items-center justify-between border-b border-base-300/50 pb-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-bold text-sm truncate">{pp.proveedor_nombre}</span>
-                          {pp.es_principal && (
-                            <span className="badge badge-primary badge-xs py-1.5 px-2 font-bold uppercase tracking-wider">Principal</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {!pp.es_principal && (
-                            <button
-                              type="button"
-                              onClick={() => marcarPrincipalEdit(pp.proveedor_id)}
-                              className="btn btn-ghost btn-xs text-warning hover:bg-warning/10 font-bold"
-                              title="Marcar como principal"
-                            >
-                              ★ Principal
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => eliminarProveedorEdit(pp.proveedor_id)}
-                            className="btn btn-ghost btn-xs text-error hover:bg-error/10 font-semibold"
-                            title="Eliminar proveedor"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Grid de Inputs */}
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                        {/* Cód. Proveedor */}
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Cód. proveedor</span>
-                          <input
-                            type="text"
-                            placeholder="Ej: PROV-123"
-                            value={pp.codigo_proveedor ?? ''}
-                            onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
-                              p.proveedor_id === pp.proveedor_id ? { ...p, codigo_proveedor: e.target.value || null } : p
-                            ))}
-                            className="input input-xs input-bordered w-full"
-                          />
-                        </div>
-
-                        {/* Cód. Maestro */}
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Cód. maestro</span>
-                          <input
-                            type="text"
-                            placeholder="Ej: MST-999"
-                            value={pp.codigo_maestro ?? ''}
-                            onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
-                              p.proveedor_id === pp.proveedor_id ? { ...p, codigo_maestro: e.target.value || null } : p
-                            ))}
-                            className="input input-xs input-bordered w-full"
-                          />
-                        </div>
-
-                        {/* Precio/u */}
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Precio/unidad</span>
-                          <input
-                            type="number"
-                            placeholder="0.00"
-                            value={pp.precio_unidad ?? ''}
-                            onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
-                              p.proveedor_id === pp.proveedor_id ? { ...p, precio_unidad: e.target.value || null } : p
-                            ))}
-                            className="input input-xs input-bordered w-full"
-                            min="0"
-                            step="0.01"
-                          />
-                        </div>
-
-                        {/* Unidad base */}
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Formato / Pres.</span>
-                          <select
-                            className="select select-xs select-bordered bg-base-100 w-full"
-                            value={pp.pres_nombre ?? ''}
-                            onChange={e => {
-                              const found = presFormatos.find(p => p.nombre === e.target.value)
-                              setProveedoresFormEdit(prev => prev.map(p => p.proveedor_id === pp.proveedor_id ? {
-                                ...p,
-                                pres_nombre: e.target.value,
-                                pres_nombre_plural: found?.nombre_plural || '',
-                              } : p))
-                            }}
-                          >
-                            <option value="">Unidad base</option>
-                            {presFormatos.map(p => <option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
-                          </select>
-                        </div>
-
-                        {/* Unid. (Factor) */}
-                        <div className="flex flex-col gap-0.5" title={!pp.pres_nombre 
-                          ? "Bloqueado: La Unidad base siempre equivale a 1 unidad. Selecciona un formato (ej: Caja) para cambiarlo"
-                          : `Cantidad de unidades individuales contenidas en esta presentación (Ej: si la presentación es por ${pp.pres_nombre || 'envase'} y contiene 10 unidades base, el factor es 10)`
-                        }>
-                          <span className={cn(
-                            "text-[9px] uppercase font-bold tracking-wider cursor-help transition-opacity duration-200",
-                            !pp.pres_nombre ? "opacity-30" : "opacity-60"
-                          )}>
-                            Unidades por {pp.pres_nombre || 'Envase'} {!pp.pres_nombre ? '🔒' : '🛈'}
-                          </span>
-                          <input
-                            type="number"
-                            placeholder={!pp.pres_nombre ? "1" : "Ej: 10"}
-                            value={!pp.pres_nombre ? "1" : (pp.pres_factor ?? '')}
-                            onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
-                              p.proveedor_id === pp.proveedor_id ? { ...p, pres_factor: e.target.value } : p
-                            ))}
-                            className="input input-xs input-bordered w-full disabled:bg-base-300/60 disabled:text-base-content/40 disabled:cursor-not-allowed"
-                            min="1"
-                            disabled={!pp.pres_nombre}
-                          />
-                        </div>
-
-                        {/* GTIN-14 */}
-                        <div className="flex flex-col gap-0.5" title="Global Trade Item Number de 14 dígitos. Código de barras global que identifica la caja/envase completo de esta presentación.">
-                          <span className="text-[9px] uppercase font-bold tracking-wider opacity-60 cursor-help">Código GTIN-14 🛈</span>
-                          <input
-                            type="text"
-                            placeholder="14 dígitos"
-                            value={pp.pres_gtin ?? ''}
-                            onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
-                              p.proveedor_id === pp.proveedor_id ? { ...p, pres_gtin: e.target.value.replace(/\D/g, '').slice(0, 14) } : p
-                            ))}
-                            className="input input-xs input-bordered w-full"
-                            disabled={!pp.pres_nombre}
-                            title="Global Trade Item Number de 14 dígitos. Código de barras global que identifica la caja/envase completo de esta presentación."
-                          />
-                        </div>
-
-                        {/* Imagen / GS1 Habilitado */}
-                        <div className="col-span-2 flex items-center justify-between gap-4 mt-2 bg-base-300/40 p-1.5 px-3 rounded-lg">
-                          <label 
-                            className="flex items-center gap-1.5 text-[10px] font-bold uppercase opacity-80 cursor-help select-none"
-                            title="Si se habilita, al escanear el código de barras en recepciones se extraerán de forma automática el Lote y Fecha de Vencimiento de este producto."
-                          >
-                            <input
-                              type="checkbox"
-                              className="checkbox checkbox-xs checkbox-primary"
-                              checked={pp.pres_gs1_habilitado ?? false}
-                              disabled={!pp.pres_nombre}
-                              onChange={e => setProveedoresFormEdit(prev => prev.map(p =>
-                                p.proveedor_id === pp.proveedor_id ? { ...p, pres_gs1_habilitado: e.target.checked } : p
-                              ))}
-                            />
-                            GS1 Habilitado 🛈
-                          </label>
-
-                          <div className="flex items-center gap-2">
-                            {pp.imagen_data_url && (
-                              <div className="w-6 h-6 rounded bg-base-100 overflow-hidden border border-base-300">
-                                <img src={pp.imagen_data_url} alt="Vista previa" className="w-full h-full object-cover" />
-                              </div>
-                            )}
-                            <label className="btn btn-xs btn-outline font-semibold gap-1">
-                              {pp.imagen_data_url ? 'Cambiar Foto' : 'Subir Foto'}
-                              <input
-                                type="file"
-                                accept="image/jpeg,image/png"
-                                className="hidden"
-                                onChange={async e => {
-                                  const file = e.target.files?.[0]
-                                  e.target.value = ''
-                                  if (!file) return
-                                  try {
-                                    const dataUrl = await comprimirImagen(file)
-                                    setProveedoresFormEdit(prev => prev.map(p =>
-                                      p.proveedor_id === pp.proveedor_id ? { ...p, imagen_data_url: dataUrl } : p
-                                    ))
-                                  } catch (err) {
-                                    notify.error(err instanceof Error ? err.message : 'Error cargando imagen')
-                                  }
-                                }}
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  <select
-                    className="select select-sm bg-base-100 border border-base-300 rounded-xl w-full"
-                    value=""
-                    onChange={e => {
-                      const provId = parseInt(e.target.value)
-                      if (!provId) return
-                      const prov = proveedores.find((p) => p.id === provId)
-                      if (prov) agregarProveedorEdit(provId, prov.nombre)
-                    }}
-                  >
-                    <option value="">+ Agregar proveedor...</option>
-                    {proveedores
-                      .filter((p) => !proveedoresForm.some(pp => pp.proveedor_id === p.id))
-                      .map((p) => (
+              {/* ── Proveedor (flat) ── */}
+              <div className="space-y-2 p-3 bg-base-200/50 border border-base-300 rounded-xl">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Proveedor</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="form-control">
+                    <label className="label py-0.5">
+                      <span className="label-text text-sm font-medium">Proveedor</span>
+                      <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                    </label>
+                    <select
+                      className="select select-bordered select-sm h-9 bg-base-100 text-sm"
+                      value={form.proveedor_id}
+                      onChange={(e) => setForm((f) => ({ ...f, proveedor_id: e.target.value }))}
+                    >
+                      <option value="">Sin proveedor</option>
+                      {proveedores.map((p) => (
                         <option key={p.id} value={p.id}>{p.nombre}</option>
-                      ))
-                    }
-                  </select>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-control">
+                    <label className="label py-0.5">
+                      <span className="label-text text-sm font-medium">SKU / Cód. catálogo</span>
+                      <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="input input-bordered input-sm h-9 bg-base-100"
+                      value={form.sku}
+                      onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))}
+                      placeholder="Ej: PROV-123"
+                    />
+                  </div>
+                </div>
+                <div className="form-control">
+                  <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Precio por unidad</span>
+                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                  </label>
+                  <input
+                    type="number"
+                    className="input input-bordered input-sm h-9 bg-base-100 w-44"
+                    value={form.precio_unidad}
+                    onChange={(e) => setForm((f) => ({ ...f, precio_unidad: e.target.value }))}
+                    placeholder="0.00"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+              </div>
+
+              {/* ── Presentación (flat) ── */}
+              <div className="space-y-2 p-3 bg-base-200/50 border border-base-300 rounded-xl">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Presentación</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Formato / Pres.</span>
+                    <select
+                      className="select select-xs select-bordered bg-base-100 w-full"
+                      value={form.pres_nombre}
+                      onChange={e => {
+                        const found = presFormatos.find(p => p.nombre === e.target.value)
+                        setForm((f) => ({
+                          ...f,
+                          pres_nombre: e.target.value,
+                          pres_nombre_plural: found?.nombre_plural || '',
+                          pres_factor: e.target.value ? f.pres_factor : '',
+                        }))
+                      }}
+                    >
+                      <option value="">Unidad base</option>
+                      {presFormatos.map(p => <option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-0.5" title={!form.pres_nombre
+                    ? "Bloqueado: La Unidad base siempre equivale a 1 unidad. Selecciona un formato para cambiarlo"
+                    : `Cantidad de unidades base contenidas en este formato`
+                  }>
+                    <span className={cn(
+                      "text-[9px] uppercase font-bold tracking-wider cursor-help transition-opacity duration-200",
+                      !form.pres_nombre ? "opacity-30" : "opacity-60"
+                    )}>
+                      Unidades por {form.pres_nombre || 'Envase'} {!form.pres_nombre ? '🔒' : '🛈'}
+                    </span>
+                    <input
+                      type="number"
+                      placeholder={!form.pres_nombre ? "1" : "Ej: 10"}
+                      value={!form.pres_nombre ? "1" : form.pres_factor}
+                      onChange={e => setForm((f) => ({ ...f, pres_factor: e.target.value }))}
+                      className="input input-xs input-bordered w-full disabled:bg-base-300/60 disabled:text-base-content/40 disabled:cursor-not-allowed"
+                      min="1"
+                      disabled={!form.pres_nombre}
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Cód. de barras</span>
+                    <div className="flex gap-1">
+                      <input
+                        type="text"
+                        placeholder="EAN-13"
+                        value={form.pres_codigo_barras}
+                        onChange={e => setForm((f) => ({ ...f, pres_codigo_barras: e.target.value }))}
+                        className="input input-xs input-bordered flex-1 min-w-0"
+                        disabled={!form.pres_nombre}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-ghost px-1"
+                        onClick={() => setScannerOpen(true)}
+                        disabled={!form.pres_nombre}
+                        title="Escanear código de barras"
+                      >
+                        📷
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-0.5" title="Global Trade Item Number de 14 dígitos.">
+                    <span className="text-[9px] uppercase font-bold tracking-wider opacity-60 cursor-help">GTIN-14 🛈</span>
+                    <input
+                      type="text"
+                      placeholder="14 dígitos"
+                      value={form.pres_gtin}
+                      onChange={e => setForm((f) => ({ ...f, pres_gtin: e.target.value.replace(/\D/g, '').slice(0, 14) }))}
+                      className="input input-xs input-bordered w-full"
+                      disabled={!form.pres_nombre}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-4 mt-2 bg-base-300/40 p-1.5 px-3 rounded-lg">
+                  <label
+                    className="flex items-center gap-1.5 text-[10px] font-bold uppercase opacity-80 cursor-help select-none"
+                    title="Si se habilita, al escanear el código de barras en recepciones se extraerán de forma automática el Lote y Fecha de Vencimiento."
+                  >
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-xs checkbox-primary"
+                      checked={form.pres_gs1_habilitado}
+                      disabled={!form.pres_nombre}
+                      onChange={e => setForm((f) => ({ ...f, pres_gs1_habilitado: e.target.checked }))}
+                    />
+                    GS1 Habilitado 🛈
+                  </label>
+
+                  <div className="flex items-center gap-2">
+                    {form.imagen_data_url ? (
+                      <div className="w-6 h-6 rounded bg-base-100 overflow-hidden border border-base-300">
+                        <img src={form.imagen_data_url} alt="Vista previa" className="w-full h-full object-cover" />
+                      </div>
+                    ) : producto?.imagen_url ? (
+                      <div className="w-6 h-6 rounded bg-base-100 overflow-hidden border border-base-300">
+                        <img src={producto.imagen_url} alt="Imagen actual" className="w-full h-full object-cover" />
+                      </div>
+                    ) : null}
+                    <label className="btn btn-xs btn-outline font-semibold gap-1">
+                      {(form.imagen_data_url || producto?.imagen_url) ? 'Cambiar Foto' : 'Subir Foto'}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        className="hidden"
+                        onChange={async e => {
+                          const file = e.target.files?.[0]
+                          e.target.value = ''
+                          if (!file) return
+                          try {
+                            const dataUrl = await comprimirImagen(file)
+                            setForm((f) => ({ ...f, imagen_data_url: dataUrl }))
+                          } catch (err) {
+                            notify.error(err instanceof Error ? err.message : 'Error cargando imagen')
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
                 </div>
               </div>
 
@@ -2063,57 +1933,42 @@ function ProductoDetail({ id }: { id: string }) {
         <DetailRow label="Stock mínimo" value={String(Math.round(Number(producto.stock_minimo)))} mono />
         <DetailRow label="Estado" value={producto.activo ? 'Activo' : 'Inactivo'} />
 
-        {producto.proveedores && producto.proveedores.length > 0 && (
+        {producto.proveedor && (
           <div>
-            <h4 className="text-xs font-semibold uppercase tracking-wider opacity-40 mb-2">Proveedores</h4>
-            <div className="space-y-1.5">
-              {producto.proveedores.map((pp) => (
-                <div key={pp.proveedor_id} className="flex items-center justify-between bg-base-200/50 rounded-lg px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{pp.proveedor_nombre ?? `Proveedor ${pp.proveedor_id}`}</span>
-                    {pp.es_principal && <span className="text-[10px] font-bold uppercase text-primary">Principal</span>}
-                  </div>
-                  <div className="flex flex-col items-end gap-0.5">
-                    {pp.codigo_proveedor && (
-                      <span className="text-[10px] font-mono opacity-50">
-                        Cód. Prov: {pp.codigo_proveedor}
-                      </span>
-                    )}
-                    {pp.codigo_maestro && (
-                      <span className="text-[10px] font-mono opacity-50">
-                        Cód. Maestro: {pp.codigo_maestro}
-                      </span>
-                    )}
-                    {pp.precio_unidad && (
-                      <span className="text-[10px] font-mono opacity-50">
-                        ${pp.precio_unidad}/u
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <h4 className="text-xs font-semibold uppercase tracking-wider opacity-40 mb-2">Proveedor</h4>
+            <div className="flex items-center justify-between bg-base-200/50 rounded-lg px-3 py-2">
+              <div className="flex items-center gap-2">
+                <ProveedorIcon proveedor={producto.proveedor} className="h-4 w-4" />
+                <span className="text-sm font-medium">{producto.proveedor.nombre}</span>
+              </div>
+              <div className="flex flex-col items-end gap-0.5">
+                {producto.sku && (
+                  <span className="text-[10px] font-mono opacity-50">SKU: {producto.sku}</span>
+                )}
+                {producto.precio_unidad && (
+                  <span className="text-[10px] font-mono opacity-50">${producto.precio_unidad}/u</span>
+                )}
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {producto.presentaciones && producto.presentaciones.length > 0 && (
+      {producto.pres_nombre && (
         <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wider opacity-40 mb-2">Presentaciones</h4>
-          <div className="space-y-1.5">
-            {producto.presentaciones.map((p: Presentacion) => (
-              <div key={p.id} className="flex items-center justify-between gap-3 bg-base-200/50 rounded-lg px-3 py-2">
-                <div className="min-w-0">
-                  <span className="text-sm font-medium">{p.nombre}</span>
-                  <div className="flex flex-wrap gap-1.5 mt-1">
-                    {p.codigo_barras && <span className="text-[10px] font-mono opacity-45">CB {p.codigo_barras}</span>}
-                    {p.gtin && <span className="text-[10px] font-mono opacity-45">GTIN {p.gtin}</span>}
-                    {p.gs1_habilitado && <Badge variant="info">GS1</Badge>}
-                  </div>
-                </div>
-                <span className="text-xs font-mono opacity-50 shrink-0">x{Math.round(parseFloat(p.factor_conversion))}</span>
+          <h4 className="text-xs font-semibold uppercase tracking-wider opacity-40 mb-2">Presentación</h4>
+          <div className="flex items-center justify-between gap-3 bg-base-200/50 rounded-lg px-3 py-2">
+            <div className="min-w-0">
+              <span className="text-sm font-medium">{producto.pres_nombre}</span>
+              <div className="flex flex-wrap gap-1.5 mt-1">
+                {producto.pres_codigo_barras && <span className="text-[10px] font-mono opacity-45">CB {producto.pres_codigo_barras}</span>}
+                {producto.pres_gtin && <span className="text-[10px] font-mono opacity-45">GTIN {producto.pres_gtin}</span>}
+                {producto.pres_gs1_habilitado && <Badge variant="info">GS1</Badge>}
               </div>
-            ))}
+            </div>
+            {producto.pres_factor && (
+              <span className="text-xs font-mono opacity-50 shrink-0">x{Math.round(Number(producto.pres_factor))}</span>
+            )}
           </div>
         </div>
       )}

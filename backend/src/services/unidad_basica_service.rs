@@ -8,7 +8,7 @@ use validator::Validate;
 
 pub async fn listar(pool: &PgPool) -> Result<Vec<UnidadBasica>, AppError> {
     sqlx::query_as::<_, UnidadBasica>(
-        "SELECT id, nombre, nombre_plural, activo, version FROM unidades_basicas WHERE activo = true ORDER BY nombre",
+        "SELECT id, nombre, nombre_plural, version, categoria FROM unidades_basicas WHERE activo = true ORDER BY nombre",
     )
     .fetch_all(pool)
     .await
@@ -42,9 +42,9 @@ pub async fn crear(
             // Reactivar explícitamente
             let unidad = sqlx::query_as::<_, UnidadBasica>(
                 "UPDATE unidades_basicas \
-                 SET activo = true, nombre_plural = $1, version = version + 1 \
+                 SET activo = true, deleted_at = NULL, nombre_plural = $1, version = version + 1 \
                  WHERE id = $2 \
-                 RETURNING id, nombre, nombre_plural, activo, version",
+                 RETURNING id, nombre, nombre_plural, version, categoria",
             )
             .bind(&nombre_plural)
             .bind(id)
@@ -65,7 +65,7 @@ pub async fn crear(
 
     let unidad = sqlx::query_as::<_, UnidadBasica>(
         "INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ($1, $2) \
-         RETURNING id, nombre, nombre_plural, activo, version",
+         RETURNING id, nombre, nombre_plural, version, categoria",
     )
     .bind(&nombre)
     .bind(&nombre_plural)
@@ -101,7 +101,7 @@ pub async fn actualizar(
     req.validate()?;
 
     let anterior = sqlx::query_as::<_, UnidadBasica>(
-        "SELECT id, nombre, nombre_plural, version FROM unidades_basicas WHERE id = $1",
+        "SELECT id, nombre, nombre_plural, version, categoria FROM unidades_basicas WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -139,7 +139,7 @@ pub async fn actualizar(
     let unidad = sqlx::query_as::<_, UnidadBasica>(
         "UPDATE unidades_basicas SET nombre = $1, nombre_plural = $2, version = version + 1 \
          WHERE id = $3 AND version = $4 \
-         RETURNING id, nombre, nombre_plural, version",
+         RETURNING id, nombre, nombre_plural, version, categoria",
     )
     .bind(nombre)
     .bind(nombre_plural)

@@ -6,4 +6,5 @@ pub struct UnidadBasica {
     pub nombre: String,
     pub nombre_plural: String,
     pub version: i32,
+    pub categoria: String,
 }

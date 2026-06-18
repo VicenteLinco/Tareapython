@@ -29,6 +29,7 @@ import {
   ClipboardCheck,
   BarChart3,
   MessageCircle,
+  Tag,
 } from 'lucide-react'
 import { useAuthStore } from '@/hooks/use-auth-store'
 
@@ -59,6 +60,12 @@ const navGroups = [
     items: [
       { to: '/recepciones', icon: ArrowDownToLine, label: 'Recepciones' },
       { to: '/solicitudes-compra', icon: ShoppingCart, label: 'Solicitudes' },
+    ],
+  },
+  {
+    label: 'Herramientas',
+    items: [
+      { to: '/etiquetas', icon: Tag, label: 'Etiquetas' },
     ],
   },
 ]

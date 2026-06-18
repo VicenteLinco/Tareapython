@@ -28,8 +28,9 @@ impl AreaRepository for SqlxAreaRepository {
     async fn listar(&self) -> Result<Vec<Area>, AppError> {
         sqlx::query_as::<_, Area>(
             r#"SELECT a.id, a.nombre, a.es_bodega, a.activa, a.created_at, a.version, a.conteo_frecuencia_dias,
-                      (SELECT COUNT(DISTINCT s.id)::integer FROM stock s WHERE s.area_id = a.id AND s.cantidad > 0) AS total_items_stock
-               FROM areas a WHERE a.activa = true ORDER BY a.nombre"#,
+                      (SELECT COUNT(DISTINCT s.id)::integer FROM stock s WHERE s.area_id = a.id AND s.cantidad > 0) AS total_items_stock,
+                      a.es_virtual
+               FROM areas a WHERE a.activa = true AND a.es_virtual = false ORDER BY a.nombre"#,
         )
         .fetch_all(&self.pool)
         .await
@@ -39,7 +40,7 @@ impl AreaRepository for SqlxAreaRepository {
     async fn crear(&self, nombre: &str, es_bodega: bool) -> Result<Area, AppError> {
         sqlx::query_as::<_, Area>(
             "INSERT INTO areas (nombre, es_bodega) VALUES ($1, $2) \
-             RETURNING id, nombre, es_bodega, activa, created_at, version, conteo_frecuencia_dias, 0::int AS total_items_stock",
+             RETURNING id, nombre, es_bodega, activa, created_at, version, conteo_frecuencia_dias, 0::int AS total_items_stock, es_virtual",
         )
         .bind(nombre)
         .bind(es_bodega)
@@ -56,7 +57,8 @@ impl AreaRepository for SqlxAreaRepository {
     async fn buscar_por_id(&self, id: i32) -> Result<Option<Area>, AppError> {
         sqlx::query_as::<_, Area>(
             r#"SELECT a.id, a.nombre, a.es_bodega, a.activa, a.created_at, a.version, a.conteo_frecuencia_dias,
-                      (SELECT COUNT(DISTINCT s.id)::integer FROM stock s WHERE s.area_id = a.id AND s.cantidad > 0) AS total_items_stock
+                      (SELECT COUNT(DISTINCT s.id)::integer FROM stock s WHERE s.area_id = a.id AND s.cantidad > 0) AS total_items_stock,
+                      a.es_virtual
                FROM areas a WHERE a.id = $1"#
         )
         .bind(id)
@@ -69,7 +71,7 @@ impl AreaRepository for SqlxAreaRepository {
         sqlx::query_as::<_, Area>(
             "UPDATE areas SET nombre = $1, es_bodega = $2, version = version + 1 \
              WHERE id = $3 AND version = $4 \
-             RETURNING id, nombre, es_bodega, activa, created_at, version, conteo_frecuencia_dias, 0::int AS total_items_stock",
+             RETURNING id, nombre, es_bodega, activa, created_at, version, conteo_frecuencia_dias, 0::int AS total_items_stock, es_virtual",
         )
         .bind(nombre)
         .bind(es_bodega)

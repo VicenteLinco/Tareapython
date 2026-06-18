@@ -4,6 +4,7 @@ use axum::{Json, Router};
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use uuid::Uuid;
 
 use axum::Extension;
@@ -1208,10 +1209,47 @@ async fn lotes_vencidos(
     Ok(Json(items))
 }
 
+/// GET /api/v1/stock/balance-check — Verifica integridad del stock contra los movimientos
+///
+/// Compares the materialised stock table against a sum of signed movements per (lote, area).
+/// An empty `discrepancias` array means the ledger is healthy.
+///
+/// TODO: add admin role guard once auth middleware extraction is refactored.
+pub async fn balance_check(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let rows = sqlx::query(
+        "SELECT lote_id, area_id, stock_calculado, stock_materializado, discrepancia \
+         FROM v_stock_balance_check ORDER BY discrepancia DESC",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let discrepancias: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "lote_id": r.get::<Uuid, _>("lote_id"),
+                "area_id": r.get::<i32, _>("area_id"),
+                "stock_calculado": r.get::<Decimal, _>("stock_calculado"),
+                "stock_materializado": r.get::<Decimal, _>("stock_materializado"),
+                "discrepancia": r.get::<Decimal, _>("discrepancia"),
+            })
+        })
+        .collect();
+
+    let sano = discrepancias.is_empty();
+    Ok(Json(serde_json::json!({
+        "discrepancias": discrepancias,
+        "sano": sano,
+    })))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar))
         .route("/area/{area_id}", get(stock_por_area))
         .route("/alertas", get(alertas))
         .route("/lotes-vencidos", get(lotes_vencidos))
+        .route("/balance-check", get(balance_check))
 }

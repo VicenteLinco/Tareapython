@@ -410,12 +410,9 @@ pub async fn importar_inventario(
         {
             Some(id) => id,
             None => {
-                let cod_lote: String = sqlx::query_scalar("SELECT generar_codigo_lote()")
-                    .fetch_one(&mut *tx)
-                    .await?;
                 sqlx::query_scalar(
-                    "INSERT INTO lotes (producto_id, numero_lote, fecha_vencimiento, codigo_interno, costo_unitario) VALUES ($1, $2, $3, $4, $5) RETURNING id"
-                ).bind(p_id).bind(num_lote).bind(fecha_venc).bind(&cod_lote).bind(costo).fetch_one(&mut *tx).await?
+                    "INSERT INTO lotes (producto_id, numero_lote, fecha_vencimiento, costo_unitario) VALUES ($1, $2, $3, $4) RETURNING id"
+                ).bind(p_id).bind(num_lote).bind(fecha_venc).bind(costo).fetch_one(&mut *tx).await?
             }
         };
 

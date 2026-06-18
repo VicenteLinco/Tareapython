@@ -133,11 +133,19 @@ export function useInactivityTimeout() {
           }
         } else {
           // Estaba en el timer de warning — descontar tiempo transcurrido
-          const deadline = warningDeadlineRef.current
-          if (!deadline || now >= deadline) {
+          const warningDeadline = warningDeadlineRef.current
+          if (!warningDeadline) {
             startLogoutCountdown()
+          } else if (now >= warningDeadline) {
+            // Warning ya disparó — calcular cuánto queda del countdown de logout
+            const logoutDeadline = warningDeadline + WARNING_DURATION_MS
+            if (now >= logoutDeadline) {
+              doLogout()
+            } else {
+              startLogoutCountdown(logoutDeadline - now)
+            }
           } else {
-            startWarningTimer(deadline - now)
+            startWarningTimer(warningDeadline - now)
           }
         }
       }

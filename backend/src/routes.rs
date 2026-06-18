@@ -1,5 +1,6 @@
 use axum::Router;
 use axum::middleware;
+use axum::routing::{get, post};
 use tower_http::services::ServeDir;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -48,6 +49,16 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
             handlers::presentaciones::nested_routes(),
         )
         .nest("/presentaciones", handlers::presentaciones::direct_routes())
+        // Par level endpoints — per-product global par levels
+        .route(
+            "/productos/{id}/par-level",
+            get(handlers::par_levels::get_par_level).put(handlers::par_levels::upsert_par_level),
+        )
+        // Par level recalculation (admin only)
+        .route(
+            "/par-levels/recalculate",
+            post(handlers::par_levels::recalculate_par_levels),
+        )
         .nest(
             "/presentacion-formatos",
             handlers::presentacion_formatos::routes(),
@@ -75,6 +86,8 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
         // Ledger y audit (lectura)
         .nest("/movimientos", handlers::movimientos::routes())
         .nest("/audit-log", handlers::audit_log::routes())
+        // Etiquetas (barcode data endpoints)
+        .nest("/etiquetas", handlers::etiquetas::routes())
         // Configuración del sistema
         .nest("/configuracion", handlers::configuracion::routes())
         // Setup (carga inicial)

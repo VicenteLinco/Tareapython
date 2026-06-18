@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Search, Eye, Tag, FileText, RotateCcw, Copy, Download, LayoutGrid, Table2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Eye, Tag, FileText, RotateCcw, Copy, Download, LayoutGrid, Table2, PackagePlus } from 'lucide-react'
 import { comprimirImagen } from '@/lib/image-utils'
 import { ProductoImage } from '@/components/ui/producto-image'
 import { DataTable } from '@/components/ui/data-table'
@@ -174,6 +174,7 @@ function isValidEan13(value: string) {
 
 export default function ProductosTab() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [searchActiveIndex, setSearchActiveIndex] = useState(-1)
@@ -333,6 +334,19 @@ export default function ProductosTab() {
         <div className="flex gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
           {item.activo ? (
             <>
+              {item.estado_stock === 'pendiente_inicializar' && (
+                <button
+                  className="btn btn-ghost btn-xs btn-square text-warning"
+                  title="Inicializar stock — crear primera recepción"
+                  onClick={() => {
+                    const params = new URLSearchParams({ producto_id: item.id })
+                    if (item.proveedor?.id) params.set('proveedor_id', String(item.proveedor.id))
+                    navigate(`/recepciones/nueva?${params.toString()}`)
+                  }}
+                >
+                  <PackagePlus className="h-3.5 w-3.5" />
+                </button>
+              )}
               <button className="btn btn-ghost btn-xs btn-square" onClick={() => setDetailId(item.id)}>
                 <Eye className="h-3.5 w-3.5 opacity-50" />
               </button>

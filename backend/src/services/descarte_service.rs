@@ -29,6 +29,12 @@ pub async fn procesar_descartes(
         stock_ops::validar_acceso_area(pool, usuario_id, item.area_id, rol).await?;
     }
 
+    let virtual_discarded_id: Option<i32> = sqlx::query_scalar(
+        "SELECT id FROM areas WHERE nombre = 'VIRTUAL_DISCARDED'"
+    )
+    .fetch_optional(pool)
+    .await?;
+
     let mut tx = pool.begin().await?;
     let grupo = Uuid::new_v4();
     let mut movimientos = Vec::new();
@@ -73,6 +79,7 @@ pub async fn procesar_descartes(
             grupo,
             item.nota.as_deref(),
             None,
+            virtual_discarded_id,
         )
         .await?;
 

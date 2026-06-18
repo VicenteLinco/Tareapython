@@ -100,6 +100,12 @@ impl ConsumoService {
             });
         }
 
+        let virtual_consumed_id: Option<i32> = sqlx::query_scalar(
+            "SELECT id FROM areas WHERE nombre = 'VIRTUAL_CONSUMED'"
+        )
+        .fetch_optional(pool)
+        .await?;
+
         let grupo = Uuid::new_v4();
         let movimientos = stock_ops::aplicar_salida_fefo(
             &mut tx,
@@ -110,6 +116,7 @@ impl ConsumoService {
             grupo,
             params.nota.as_deref(),
             None,
+            virtual_consumed_id,
         )
         .await?;
 
@@ -160,6 +167,12 @@ impl ConsumoService {
 
         // ORDENAR por producto_id para evitar deadlocks en base de datos al hacer FOR UPDATE
         item_pairs.sort_by_key(|(item, _)| item.producto_id);
+
+        let virtual_consumed_id: Option<i32> = sqlx::query_scalar(
+            "SELECT id FROM areas WHERE nombre = 'VIRTUAL_CONSUMED'"
+        )
+        .fetch_optional(pool)
+        .await?;
 
         let mut tx = pool.begin().await?;
         let grupo = Uuid::new_v4();
@@ -243,6 +256,7 @@ impl ConsumoService {
                 grupo,
                 params.nota.as_deref(),
                 None,
+                virtual_consumed_id,
             )
             .await?;
 

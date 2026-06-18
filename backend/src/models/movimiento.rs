@@ -18,4 +18,5 @@ pub struct Movimiento {
     pub origen: Option<String>,
     pub nota: Option<String>,
     pub created_at: DateTime<Utc>,
+    pub destino_area_id: Option<i32>,
 }

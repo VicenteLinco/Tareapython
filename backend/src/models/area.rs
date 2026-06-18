@@ -11,4 +11,5 @@ pub struct Area {
     pub conteo_frecuencia_dias: i32,
     pub version: i32,
     pub total_items_stock: Option<i32>,
+    pub es_virtual: bool,
 }

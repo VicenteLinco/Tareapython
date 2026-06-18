@@ -1,6 +1,7 @@
 pub mod areas;
 pub mod audit_log;
 pub mod auth_handler;
+pub mod etiquetas;
 pub mod categorias;
 pub mod configuracion;
 pub mod consumos;
@@ -10,6 +11,7 @@ pub mod health;
 pub mod lotes;
 pub mod movimientos;
 pub mod ordenes_compra;
+pub mod par_levels;
 pub mod presentacion_formatos;
 pub mod presentaciones;
 pub mod producto_proveedor_presentacion;

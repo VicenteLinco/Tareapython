@@ -214,6 +214,8 @@ async fn obtener(
         "producto_nombre": producto_nombre,
         "numero_lote": lote.numero_lote,
         "fecha_vencimiento": lote.fecha_vencimiento,
+        "fecha_fabricacion": lote.fecha_fabricacion,
+        "recepcion_id": lote.recepcion_id,
         "costo_unitario": lote.costo_unitario,
         "created_at": lote.created_at,
         "stock_por_area": stock_por_area,

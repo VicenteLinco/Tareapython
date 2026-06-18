@@ -119,6 +119,7 @@ pub async fn aplicar_salida_fefo(
     grupo_movimiento: Uuid,
     nota: Option<&str>,
     origen: Option<&str>,
+    destino_area_id: Option<i32>,
 ) -> Result<Vec<MovimientoGenerado>, AppError> {
     // Calcular distribución pura primero (sin DB)
     let plan = distribuir_fefo(lotes, cantidad_total)?;
@@ -132,8 +133,8 @@ pub async fn aplicar_salida_fefo(
     for (lote_id, consumir) in plan {
         let area_id = area_por_lote[&lote_id];
         let mov = sqlx::query_as::<_, MovimientoGenerado>(
-            r#"INSERT INTO movimientos (grupo_movimiento, lote_id, area_id, tipo, cantidad, usuario_id, origen, nota)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            r#"INSERT INTO movimientos (grupo_movimiento, lote_id, area_id, tipo, cantidad, usuario_id, origen, nota, destino_area_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                RETURNING id, numero_documento, cantidad, cantidad_resultante"#,
         )
         .bind(grupo_movimiento)
@@ -144,6 +145,7 @@ pub async fn aplicar_salida_fefo(
         .bind(usuario_id)
         .bind(origen)
         .bind(nota)
+        .bind(destino_area_id)
         .fetch_one(&mut **tx)
         .await?;
 
@@ -165,10 +167,11 @@ pub async fn aplicar_ingreso(
     grupo_movimiento: Option<Uuid>,
     nota: Option<&str>,
     origen: Option<&str>,
+    destino_area_id: Option<i32>,
 ) -> Result<MovimientoGenerado, AppError> {
     let mov = sqlx::query_as::<_, MovimientoGenerado>(
-        r#"INSERT INTO movimientos (grupo_movimiento, lote_id, area_id, tipo, cantidad, usuario_id, origen, nota)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        r#"INSERT INTO movimientos (grupo_movimiento, lote_id, area_id, tipo, cantidad, usuario_id, origen, nota, destino_area_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
            RETURNING id, numero_documento, cantidad, cantidad_resultante"#,
     )
     .bind(grupo_movimiento)
@@ -179,6 +182,7 @@ pub async fn aplicar_ingreso(
     .bind(usuario_id)
     .bind(origen)
     .bind(nota)
+    .bind(destino_area_id)
     .fetch_one(&mut **tx)
     .await?;
 

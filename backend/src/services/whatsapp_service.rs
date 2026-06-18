@@ -605,6 +605,7 @@ pub async fn registrar_recepcion_tool(
         Some(recepcion_id),
         Some("Ingreso vía WhatsApp Agent"),
         Some("RECEPCION"),
+        None,
     )
     .await?;
 
@@ -836,6 +837,12 @@ pub async fn registrar_consumo_fefo_tool(
                 area_id: row.area_id,
             }];
 
+            let virtual_consumed_id: Option<i32> = sqlx::query_scalar(
+                "SELECT id FROM areas WHERE nombre = 'VIRTUAL_CONSUMED'"
+            )
+            .fetch_optional(pool)
+            .await?;
+
             let _movimientos = crate::services::stock_ops::aplicar_salida_fefo(
                 &mut tx,
                 &lotes_fefo,
@@ -845,6 +852,7 @@ pub async fn registrar_consumo_fefo_tool(
                 uuid::Uuid::new_v4(),
                 Some("Consumo vía WhatsApp Agent"),
                 None,
+                virtual_consumed_id,
             )
             .await?;
 
@@ -983,6 +991,12 @@ pub async fn registrar_consumo_fefo_tool(
             area_id: row.area_id,
         }];
 
+        let virtual_consumed_id: Option<i32> = sqlx::query_scalar(
+            "SELECT id FROM areas WHERE nombre = 'VIRTUAL_CONSUMED'"
+        )
+        .fetch_optional(pool)
+        .await?;
+
         let _movimientos = crate::services::stock_ops::aplicar_salida_fefo(
             &mut tx,
             &lotes_fefo,
@@ -992,6 +1006,7 @@ pub async fn registrar_consumo_fefo_tool(
             uuid::Uuid::new_v4(),
             Some("Consumo vía WhatsApp Agent"),
             None,
+            virtual_consumed_id,
         )
         .await?;
 

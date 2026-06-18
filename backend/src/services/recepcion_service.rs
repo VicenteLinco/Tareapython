@@ -348,9 +348,9 @@ pub async fn crear_recepcion(
             .fetch_one(&mut *tx)
             .await?;
 
-            let (lote_id, _): (Uuid, String) = sqlx::query_as(
-                r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento, costo_unitario, presentacion_id, codigo_interno)
-                   VALUES ($1, $2, $3, $4, $5, $6, 'L' || LPAD(nextval('seq_lot_numero')::text, 6, '0'))
+            let lote_id: Uuid = sqlx::query_scalar(
+                r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento, costo_unitario, presentacion_id, recepcion_id)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7)
                    ON CONFLICT (producto_id, proveedor_id, numero_lote)
                    DO UPDATE SET
                        fecha_vencimiento = EXCLUDED.fecha_vencimiento,
@@ -358,8 +358,9 @@ pub async fn crear_recepcion(
                        presentacion_id = CASE
                            WHEN EXCLUDED.presentacion_id IS NOT NULL THEN EXCLUDED.presentacion_id
                            ELSE lotes.presentacion_id
-                       END
-                   RETURNING id, codigo_interno"#
+                       END,
+                       recepcion_id = COALESCE(lotes.recepcion_id, EXCLUDED.recepcion_id)
+                   RETURNING id"#
             )
             .bind(item.producto_id)
             .bind(req.proveedor_id)
@@ -367,6 +368,7 @@ pub async fn crear_recepcion(
             .bind(item.fecha_vencimiento)
             .bind(item.costo_unitario)
             .bind(item.presentacion_id)
+            .bind(recepcion_id)
             .fetch_one(&mut *tx)
             .await?;
 
@@ -420,6 +422,7 @@ pub async fn crear_recepcion(
                     Some(recepcion_id),
                     None,
                     Some("RECEPCION"),
+                    None,
                 )
                 .await?;
             }
@@ -538,6 +541,7 @@ pub async fn confirmar_borrador(
             Some(id),
             nota.as_deref(),
             Some("RECEPCION"),
+            None,
         )
         .await?;
     }
@@ -581,12 +585,12 @@ pub async fn obtener_detalles(
     id: Uuid,
 ) -> Result<Vec<DetalleRecepcionRow>, AppError> {
     sqlx::query_as::<_, DetalleRecepcionRow>(
-        r#"SELECT 
+        r#"SELECT
             rd.id, p.nombre as producto_nombre, l.numero_lote, l.fecha_vencimiento,
-            pr.nombre as presentacion_nombre, rd.cantidad_presentaciones, 
+            pr.nombre as presentacion_nombre, rd.cantidad_presentaciones,
             rd.factor_conversion_usado, rd.cantidad_unidades_base,
             um.nombre as unidad_base_nombre, um.nombre_plural as unidad_base_nombre_plural,
-            a.nombre as area_destino, rd.lote_id as lote_id, l.codigo_interno as codigo_interno
+            a.nombre as area_destino, rd.lote_id as lote_id
            FROM recepcion_detalle rd
            JOIN productos p ON p.id = rd.producto_id
            JOIN lotes l ON l.id = rd.lote_id

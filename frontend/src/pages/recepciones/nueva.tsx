@@ -170,6 +170,8 @@ export default function NuevaRecepcionPage() {
 
   const sqIdParam = searchParams.get('solicitud_id')
   const pIdParam = searchParams.get('proveedor_id')
+  const prodIdParam = searchParams.get('producto_id')
+  const autoAddProductoRef = useRef(false)
 
   useEffect(() => {
     if (pIdParam) wizard.setProveedorId(parseInt(pIdParam))
@@ -181,6 +183,18 @@ export default function NuevaRecepcionPage() {
     if (pIdParam && wizard.proveedorId !== parseInt(pIdParam)) return
     autoLinkedRef.current = true
     handleVincularSolicitud(sqIdParam, '', true).then(() => {
+      setPasoActual(2)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productos, wizard.proveedorId])
+
+  useEffect(() => {
+    if (!prodIdParam || autoAddProductoRef.current || !productos) return
+    if (pIdParam && wizard.proveedorId !== parseInt(pIdParam)) return
+    const prod = productos.find((p) => String(p.id) === prodIdParam)
+    if (!prod) return
+    autoAddProductoRef.current = true
+    addProducto(prod).then(() => {
       setPasoActual(2)
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps

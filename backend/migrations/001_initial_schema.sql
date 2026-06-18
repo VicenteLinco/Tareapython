@@ -1230,6 +1230,7 @@ CREATE TABLE public.usuarios (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
     whatsapp_phone character varying(50),
+    deleted_at timestamp with time zone,
     CONSTRAINT usuarios_rol_check CHECK (((rol)::text = ANY (ARRAY[('admin'::character varying)::text, ('tecnologo'::character varying)::text, ('consulta'::character varying)::text])))
 );
 

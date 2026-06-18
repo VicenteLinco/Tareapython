@@ -9,7 +9,7 @@ VALUES
     ('VIRTUAL_DISCARDED', true),
     ('VIRTUAL_ADJUSTED',  true),
     ('VIRTUAL_INITIAL',   true)
-ON CONFLICT (nombre) DO UPDATE SET es_virtual = true;
+ON CONFLICT (nombre) WHERE deleted_at IS NULL DO UPDATE SET es_virtual = true;
 
 -- C2.3: Add destino_area_id to movimientos
 ALTER TABLE public.movimientos

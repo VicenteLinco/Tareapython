@@ -1,5 +1,6 @@
 import { useSearchParams } from 'react-router-dom'
 import { Tag, Layers, MapPin, Truck, LayoutList, Package } from 'lucide-react'
+import { useFullWidthPage } from '@/components/layout/page-width'
 import { cn } from '@/lib/utils'
 import CategoriasTab from './categorias-tab'
 import UnidadesTab from './unidades-tab'
@@ -20,6 +21,7 @@ const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
 ]
 
 export default function CreadorProductosPage() {
+  useFullWidthPage()
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab') as TabId | null
   const tabActivo: TabId = TABS.some(t => t.id === tabParam) ? tabParam! : 'productos'

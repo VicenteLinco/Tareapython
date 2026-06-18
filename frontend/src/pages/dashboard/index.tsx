@@ -48,16 +48,14 @@ function StatCard({ label, value, icon, tone, loading, alert, onClick }: StatCar
       type="button"
       onClick={onClick}
       className={cn(
-        'rounded-box border border-base-300 bg-base-100 px-4 py-3 text-left shadow-sm transition hover:border-primary/40 hover:bg-base-100 focus:outline-none focus:ring-2 focus:ring-primary/25',
+        'flex flex-col justify-between gap-5 rounded-box border border-base-300 bg-base-100 p-5 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/25',
         activeAlert && 'border-error/30 bg-error/5',
       )}
     >
-      <div className="flex items-center gap-3">
-        <div className={cn('rounded-lg p-2', statToneClasses[tone])}>{icon}</div>
-        <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-base-content/60">{label}</p>
-          {loading ? <div className="skeleton mt-1 h-7 w-14" /> : <p className={cn('text-2xl font-bold leading-none tabular-nums', activeAlert && 'text-error')}>{value}</p>}
-        </div>
+      <div className={cn('w-fit rounded-lg p-2', statToneClasses[tone])}>{icon}</div>
+      <div className="min-w-0">
+        {loading ? <div className="skeleton h-9 w-16" /> : <p className={cn('text-3xl font-bold leading-none tabular-nums', activeAlert && 'text-error')}>{value}</p>}
+        <p className="mt-2 truncate text-xs font-medium text-base-content/60">{label}</p>
       </div>
     </button>
   )
@@ -84,9 +82,9 @@ function QuickAction({ label, description, icon, onClick }: QuickActionProps) {
     <button
       type="button"
       onClick={onClick}
-      className="group flex items-center gap-3 rounded-box border border-base-300 bg-base-100 px-3 py-2.5 text-left shadow-sm transition hover:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/25"
+      className="group flex items-center gap-3 rounded-box border border-base-300 bg-base-100 px-4 py-4 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/25"
     >
-      <div className="rounded-lg bg-primary/10 p-2 text-primary">{icon}</div>
+      <div className="rounded-lg bg-primary/10 p-2.5 text-primary">{icon}</div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold">{label}</p>
         <p className="truncate text-xs text-base-content/55">{description}</p>
@@ -173,7 +171,7 @@ export default function DashboardPage() {
   const totalAlertasPrioritarias = alertasQ.data?.total ?? alerts.length
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
+    <div className="space-y-6">
       <section className="flex flex-col gap-3 border-b border-base-300 pb-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-primary">
@@ -278,7 +276,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+      <section className="grid grid-cols-2 gap-4 lg:grid-cols-6">
         <StatCard
           label="Insumos activos"
           value={totalItems}
@@ -340,7 +338,7 @@ export default function DashboardPage() {
             <h2 className="text-sm font-semibold text-base-content">Acciones frecuentes</h2>
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <QuickAction
             label="Registrar consumo"
             description="Salida por uso"

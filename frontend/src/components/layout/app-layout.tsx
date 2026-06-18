@@ -8,7 +8,22 @@ import { useAuthStore } from '@/hooks/use-auth-store'
 import { useInactivityTimeout } from '@/hooks/use-inactivity-timeout'
 import { InactivityWarningDialog } from '@/components/auth/InactivityWarningDialog'
 import { GlobalSearch } from '@/components/ui/global-search'
+import { PageWidthProvider, usePageWidth } from './page-width'
 import { cn } from '@/lib/utils'
+
+function MainContent() {
+  const { fullWidth } = usePageWidth()
+  return (
+    <main
+      className={cn(
+        'w-full mx-auto px-4 sm:px-6 py-4 sm:py-6',
+        fullWidth ? 'max-w-none' : 'max-w-[1536px]',
+      )}
+    >
+      <Outlet />
+    </main>
+  )
+}
 
 export function AppLayout() {
   const accessToken = useAuthStore((s) => s.accessToken)
@@ -33,6 +48,7 @@ export function AppLayout() {
   }
 
   return (
+    <PageWidthProvider>
     <div className="min-h-screen bg-base-200/50">
       <Sidebar
         expanded={sidebarExpanded}
@@ -57,9 +73,7 @@ export function AppLayout() {
         </div>
         <Header onOpenSearch={() => setSearchOpen(true)} />
         <Breadcrumb />
-        <main className="w-full mx-auto max-w-6xl px-4 sm:px-6 py-4 sm:py-6">
-          <Outlet />
-        </main>
+        <MainContent />
       </div>
       <InactivityWarningDialog
         open={dialogOpen}
@@ -68,5 +82,6 @@ export function AppLayout() {
       />
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
+    </PageWidthProvider>
   )
 }

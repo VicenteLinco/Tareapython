@@ -20,6 +20,7 @@ import api from '@/lib/api'
 import type { PaginatedResponse, Movimiento, Area } from '@/types'
 import { formatDateTime, formatCantidad } from '@/lib/utils'
 import { useAreaStore } from '@/hooks/use-area-store'
+import { useFullWidthPage } from '@/components/layout/page-width'
 
 type Tab = 'historial' | 'tendencias'
 type Granularidad = 'dia' | 'mes' | 'trimestre' | 'semestre' | 'anio'
@@ -136,6 +137,7 @@ function downloadCsv(filename: string, rows: TendenciaRow[]) {
 }
 
 export default function MovimientosPage() {
+  useFullWidthPage()
   const selectedAreaId = useAreaStore((s) => s.selectedAreaId)
   const setSelectedArea = useAreaStore((s) => s.setSelectedArea)
   const MOV_DEFAULTS = { tab: 'historial' as Tab, tipo: '' }

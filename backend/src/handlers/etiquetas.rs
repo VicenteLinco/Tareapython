@@ -9,8 +9,8 @@ use crate::errors::AppError;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/presentacion/:id", get(get_etiqueta_presentacion))
-        .route("/lote/:id", get(get_etiqueta_lote))
+        .route("/presentacion/{id}", get(get_etiqueta_presentacion))
+        .route("/lote/{id}", get(get_etiqueta_lote))
 }
 
 async fn get_etiqueta_presentacion(

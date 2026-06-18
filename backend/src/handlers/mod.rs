@@ -14,7 +14,6 @@ pub mod ordenes_compra;
 pub mod par_levels;
 pub mod presentacion_formatos;
 pub mod presentaciones;
-pub mod producto_proveedor_presentacion;
 pub mod productos;
 pub mod proveedores;
 pub mod recepciones;

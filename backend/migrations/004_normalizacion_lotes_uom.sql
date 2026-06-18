@@ -1,7 +1,8 @@
 -- C1.1: Remove codigo_interno from lotes
+-- (DROP COLUMN also removes the column DEFAULT, so no separate DROP DEFAULT is needed;
+--  keeping every statement guarded by IF EXISTS makes this migration re-runnable.)
 DROP INDEX IF EXISTS public.idx_lotes_codigo_interno;
 ALTER TABLE public.lotes DROP CONSTRAINT IF EXISTS lotes_codigo_interno_key;
-ALTER TABLE public.lotes ALTER COLUMN codigo_interno DROP DEFAULT;
 ALTER TABLE public.lotes DROP COLUMN IF EXISTS codigo_interno;
 
 -- C1.2: Add recepcion_id FK (nullable — existing lotes won't have it)

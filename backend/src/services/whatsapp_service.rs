@@ -497,29 +497,15 @@ pub async fn registrar_recepcion_tool(
     let mut tx = pool.begin().await.map_err(|e| AppError::Internal(e.to_string()))?;
 
     let mut provider_id: Option<i32> = sqlx::query_scalar::<_, i32>(
-        r#"SELECT pp.proveedor_id
-           FROM producto_proveedor pp
-           JOIN proveedores prov ON prov.id = pp.proveedor_id
-           WHERE pp.producto_id = $1 AND pp.es_principal = true AND pp.activo = true AND prov.activa = true"#
+        r#"SELECT p.proveedor_id
+           FROM productos p
+           JOIN proveedores prov ON prov.id = p.proveedor_id
+           WHERE p.id = $1 AND prov.activa = true"#
     )
     .bind(resolved.producto_id)
     .fetch_optional(&mut *tx)
     .await
     .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    if provider_id.is_none() {
-        provider_id = sqlx::query_scalar::<_, i32>(
-            r#"SELECT pp.proveedor_id
-               FROM producto_proveedor pp
-               JOIN proveedores prov ON prov.id = pp.proveedor_id
-               WHERE pp.producto_id = $1 AND pp.activo = true AND prov.activa = true
-               LIMIT 1"#
-        )
-        .bind(resolved.producto_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    }
 
     if provider_id.is_none() {
         provider_id = sqlx::query_scalar::<_, i32>(

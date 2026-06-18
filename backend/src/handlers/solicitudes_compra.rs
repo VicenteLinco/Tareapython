@@ -89,14 +89,14 @@ async fn obtener_solicitud_por_id(
     let items = sqlx::query_as::<_, SolicitudDetalleItem>(
         r#"SELECT
             d.producto_id,
-            pp.proveedor_id,
+            p.proveedor_id,
             p.nombre as producto_nombre,
             d.cantidad_sugerida,
             d.unidad_basica_id,
             COALESCE(pres.nombre, ub.nombre) as unidad,
             COALESCE(pres.nombre_plural, ub.nombre_plural) as unidad_plural,
-            pp.codigo_proveedor,
-            pp.codigo_maestro,
+            p.sku as codigo_proveedor,
+            NULL::varchar as codigo_maestro,
             prov.nombre as proveedor_nombre,
             pres.nombre as presentacion_nombre,
             pres.nombre_plural as presentacion_nombre_plural,
@@ -104,15 +104,14 @@ async fn obtener_solicitud_por_id(
             d.precio_unitario,
             d.presentacion_id,
             d.cantidad_presentaciones,
-            pp.imagen_url AS imagen_url,
+            p.imagen_url AS imagen_url,
             d.horizonte_dias,
             d.horizonte_sugerido,
             d.horizonte_razon
            FROM solicitud_compra_detalle d
            JOIN productos p ON p.id = d.producto_id
-           LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = true
            LEFT JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-           LEFT JOIN proveedores prov ON prov.id = pp.proveedor_id
+           LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
            LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
            WHERE d.solicitud_id = $1
            ORDER BY p.nombre"#,
@@ -124,7 +123,7 @@ async fn obtener_solicitud_por_id(
     let envios = sqlx::query_as::<_, EnvioProveedorView>(
         r#"WITH proveedores_solicitud AS (
                SELECT
-                   pp.proveedor_id,
+                   p.proveedor_id,
                    COALESCE(prov.nombre, '[Proveedor eliminado]') AS proveedor_nombre,
                    COUNT(d.id)::integer AS total_items,
                    COALESCE(SUM(
@@ -140,11 +139,10 @@ async fn obtener_solicitud_por_id(
                    ), 0) AS monto_total
                FROM solicitud_compra_detalle d
                JOIN productos p ON p.id = d.producto_id
-               LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = TRUE
-               LEFT JOIN proveedores prov ON prov.id = pp.proveedor_id
+               LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
                LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
-               WHERE d.solicitud_id = $1 AND pp.proveedor_id IS NOT NULL
-               GROUP BY pp.proveedor_id, prov.nombre
+               WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
+               GROUP BY p.proveedor_id, prov.nombre
            )
            SELECT
                ps.proveedor_id,
@@ -317,8 +315,7 @@ async fn listar(
         count_builder.push(
             " AND EXISTS (SELECT 1 FROM solicitud_compra_detalle scd \
              JOIN productos p ON p.id = scd.producto_id \
-             JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = TRUE \
-             WHERE scd.solicitud_id = s.id AND pp.proveedor_id = ",
+             WHERE scd.solicitud_id = s.id AND p.proveedor_id = ",
         );
         count_builder.push_bind(proveedor_id);
         count_builder.push(")");
@@ -335,18 +332,16 @@ async fn listar(
                   (SELECT COUNT(*)::integer FROM solicitud_compra_detalle WHERE solicitud_id = s.id) as items_count,
                   s.fecha_envio, s.fecha_cierre,
                   COALESCE((
-                      SELECT COUNT(DISTINCT pp.proveedor_id)::integer
+                      SELECT COUNT(DISTINCT p.proveedor_id)::integer
                       FROM solicitud_compra_detalle scd
                       JOIN productos p ON p.id = scd.producto_id
-                      JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = TRUE
-                      WHERE scd.solicitud_id = s.id AND pp.proveedor_id IS NOT NULL
+                      WHERE scd.solicitud_id = s.id AND p.proveedor_id IS NOT NULL
                   ), 0) as proveedores_count,
                   (
                       SELECT string_agg(DISTINCT prov.nombre, ', ' ORDER BY prov.nombre)
                       FROM solicitud_compra_detalle scd
                       JOIN productos p ON p.id = scd.producto_id
-                      JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = TRUE
-                      JOIN proveedores prov ON prov.id = pp.proveedor_id
+                      JOIN proveedores prov ON prov.id = p.proveedor_id
                       WHERE scd.solicitud_id = s.id
                   ) as proveedores_nombres
            FROM solicitudes_compra s
@@ -368,8 +363,7 @@ async fn listar(
         list_builder.push(
             " AND EXISTS (SELECT 1 FROM solicitud_compra_detalle scd \
              JOIN productos p ON p.id = scd.producto_id \
-             JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = TRUE \
-             WHERE scd.solicitud_id = s.id AND pp.proveedor_id = ",
+             WHERE scd.solicitud_id = s.id AND p.proveedor_id = ",
         );
         list_builder.push_bind(proveedor_id);
         list_builder.push(")");
@@ -479,11 +473,10 @@ pub async fn recomendaciones(
             FROM solicitud_compra_detalle scd
             JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
             JOIN productos p2 ON p2.id = scd.producto_id
-            LEFT JOIN producto_proveedor pp2 ON pp2.producto_id = p2.id AND pp2.es_principal = true
-            LEFT JOIN proveedores prov2 ON prov2.id = pp2.proveedor_id
+            LEFT JOIN proveedores prov2 ON prov2.id = p2.proveedor_id
             WHERE sc.estado IN ('guardada', 'parcialmente_enviada', 'enviada', 'parcialmente_recibida')
               AND sc.fecha_creacion >= NOW() - (
-                  COALESCE(pp2.lead_time_dias,
+                  COALESCE(p2.lead_time_propio,
                            prov2.dias_despacho_tierra,
                            prov2.dias_despacho_aereo, 7)::int
                   * 2 * INTERVAL '1 day'
@@ -514,11 +507,11 @@ pub async fn recomendaciones(
         SELECT
             p.id                                                              AS producto_id,
             p.nombre                                                          AS producto_nombre,
-            pp.codigo_proveedor                                               AS codigo_proveedor,
-            pp.codigo_maestro                                                 AS codigo_maestro,
+            p.sku                                                             AS codigo_proveedor,
+            NULL::varchar                                                     AS codigo_maestro,
             prov.id                                                           AS proveedor_id,
             prov.nombre                                                       AS proveedor_nombre,
-            COALESCE(pp.lead_time_dias,
+            COALESCE(p.lead_time_propio,
                      prov.dias_despacho_tierra,
                      prov.dias_despacho_aereo, 7)::INT                        AS lead_time,
             COALESCE(st.stock_actual, 0)::FLOAT8                              AS stock_actual,
@@ -529,14 +522,13 @@ pub async fn recomendaciones(
             pres.nombre                                                       AS presentacion_nombre,
             pres.nombre_plural                                                AS presentacion_nombre_plural,
             pres.factor_conversion::FLOAT8                                    AS factor_conversion,
-            COALESCE(up.precio_unitario, pp.precio_unidad)::FLOAT8            AS precio_ultimo,
+            COALESCE(up.precio_unitario, p.precio_unidad)::FLOAT8             AS precio_ultimo,
             ub.nombre                                                         AS unidad_base,
             ub.nombre_plural                                                  AS unidad_base_plural,
-            pp.imagen_url                                                     AS imagen_url
+            p.imagen_url                                                      AS imagen_url
         FROM productos p
         JOIN series s ON s.producto_id = p.id
-        LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = true
-        LEFT JOIN proveedores prov ON prov.id = pp.proveedor_id
+        LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
         LEFT JOIN stock_total st ON st.producto_id = p.id
         LEFT JOIN ultimo_precio up ON up.producto_id = p.id
         LEFT JOIN pres ON pres.producto_id = p.id
@@ -695,8 +687,7 @@ async fn guardar(
     let sin_proveedor: i64 = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM solicitud_compra_detalle d
          JOIN productos p ON p.id = d.producto_id
-         LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = TRUE
-         WHERE d.solicitud_id = $1 AND pp.proveedor_id IS NULL",
+         WHERE d.solicitud_id = $1 AND p.proveedor_id IS NULL",
     )
     .bind(id)
     .fetch_one(&mut *tx)
@@ -724,11 +715,10 @@ async fn guardar(
 
     sqlx::query(
         "INSERT INTO solicitud_envios (solicitud_id, proveedor_id, estado)
-         SELECT DISTINCT $1, pp.proveedor_id, 'pendiente'
+         SELECT DISTINCT $1, p.proveedor_id, 'pendiente'
          FROM solicitud_compra_detalle d
          JOIN productos p ON p.id = d.producto_id
-         JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = TRUE
-         WHERE d.solicitud_id = $1 AND pp.proveedor_id IS NOT NULL
+         WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
          ON CONFLICT (solicitud_id, proveedor_id) DO NOTHING",
     )
     .bind(id)
@@ -746,11 +736,10 @@ async fn recalcular_estado_solicitud(
     let (total_provs, provs_enviados, fecha_max): (i64, i64, Option<DateTime<Utc>>) =
         sqlx::query_as(
             r#"WITH proveedores_items AS (
-                   SELECT DISTINCT pp.proveedor_id
+                   SELECT DISTINCT p.proveedor_id
                    FROM solicitud_compra_detalle d
                    JOIN productos p ON p.id = d.producto_id
-                   JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = TRUE
-                   WHERE d.solicitud_id = $1 AND pp.proveedor_id IS NOT NULL
+                   WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
                ),
                envios_ok AS (
                    SELECT proveedor_id
@@ -836,11 +825,10 @@ async fn enviar(
     // ON CONFLICT DO NOTHING preserva los envios granulares ya registrados
     sqlx::query(
         "INSERT INTO solicitud_envios (solicitud_id, proveedor_id, estado, metodo_envio, fecha_envio, usuario_envio_id)
-         SELECT DISTINCT $1, pp.proveedor_id, 'enviado', COALESCE($2, 'otro'), NOW(), $3
+         SELECT DISTINCT $1, p.proveedor_id, 'enviado', COALESCE($2, 'otro'), NOW(), $3
          FROM solicitud_compra_detalle d
          JOIN productos p ON p.id = d.producto_id
-         JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = TRUE
-         WHERE d.solicitud_id = $1 AND pp.proveedor_id IS NOT NULL
+         WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
          ON CONFLICT (solicitud_id, proveedor_id) DO NOTHING",
     )
     .bind(id)
@@ -891,8 +879,7 @@ async fn registrar_envio(
         "SELECT COUNT(*)
          FROM solicitud_compra_detalle d
          JOIN productos p ON p.id = d.producto_id
-         JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = TRUE
-         WHERE d.solicitud_id = $1 AND pp.proveedor_id = $2",
+         WHERE d.solicitud_id = $1 AND p.proveedor_id = $2",
     )
     .bind(id)
     .bind(req.proveedor_id)

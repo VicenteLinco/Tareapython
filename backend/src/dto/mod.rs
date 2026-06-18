@@ -5,7 +5,6 @@ pub mod etiqueta;
 pub mod pagination;
 pub mod par_level;
 pub mod presentacion;
-pub mod producto_proveedor_presentacion;
 pub mod proveedor;
 pub mod recepcion;
 pub mod reportes;

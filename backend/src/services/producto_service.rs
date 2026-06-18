@@ -1,6 +1,6 @@
 use rust_decimal::Decimal;
 use serde_json::json;
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::errors::AppError;
@@ -64,84 +64,6 @@ fn parse_gs1(codigo: &str) -> Option<Gs1Parsed> {
     })
 }
 
-async fn upsert_presentacion_proveedor(
-    tx: &mut Transaction<'_, Postgres>,
-    producto_id: Uuid,
-    prov: &crate::handlers::productos::ProveedorProductoInput,
-) -> Result<Option<i32>, AppError> {
-    if let Some(pres) = &prov.presentacion {
-        if let Some(id) = prov.presentacion_id {
-            sqlx::query(
-                r#"UPDATE presentaciones
-                   SET nombre = $1, nombre_plural = $2, factor_conversion = $3,
-                       codigo_barras = $4, gtin = $5, gs1_habilitado = $6
-                   WHERE id = $7 AND producto_id = $8"#,
-            )
-            .bind(pres.nombre.trim())
-            .bind(pres.nombre_plural.trim())
-            .bind(pres.factor_conversion)
-            .bind(&pres.codigo_barras)
-            .bind(&pres.gtin)
-            .bind(pres.gs1_habilitado.unwrap_or(false))
-            .bind(id)
-            .bind(producto_id)
-            .execute(&mut **tx)
-            .await?;
-
-            return Ok(Some(id));
-        }
-
-        let id: i32 = sqlx::query_scalar(
-            r#"INSERT INTO presentaciones
-               (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)
-               RETURNING id"#,
-        )
-        .bind(producto_id)
-        .bind(pres.nombre.trim())
-        .bind(pres.nombre_plural.trim())
-        .bind(pres.factor_conversion)
-        .bind(&pres.codigo_barras)
-        .bind(&pres.gtin)
-        .bind(pres.gs1_habilitado.unwrap_or(false))
-        .fetch_one(&mut **tx)
-        .await?;
-
-        return Ok(Some(id));
-    }
-
-    Ok(prov.presentacion_id)
-}
-
-async fn guardar_imagen_proveedor(
-    tx: &mut Transaction<'_, Postgres>,
-    producto_id: Uuid,
-    prov: &crate::handlers::productos::ProveedorProductoInput,
-    imagen_previa: Option<String>,
-) -> Result<Option<String>, AppError> {
-    if let Some(data_url) = prov.imagen_data_url.as_deref() {
-        if let Some(ref path) = imagen_previa {
-            crate::services::storage::delete_image(path).await?;
-        }
-
-        let nombre_archivo = format!("{}-proveedor-{}", producto_id, prov.proveedor_id);
-        let path =
-            crate::services::storage::save_base64_image(data_url, "productos", &nombre_archivo)
-                .await?;
-        return Ok(Some(path));
-    }
-
-    let imagen_url = prov.imagen_url.clone().or(imagen_previa);
-    if let Some(ref path) = imagen_url {
-        sqlx::query("SELECT $1")
-            .bind(path)
-            .execute(&mut **tx)
-            .await?;
-    }
-
-    Ok(imagen_url)
-}
-
 pub struct ProductoService;
 
 pub struct CrearProductoParams {
@@ -149,16 +71,23 @@ pub struct CrearProductoParams {
     pub descripcion: Option<String>,
     pub categoria_id: Option<i32>,
     pub unidad_base_id: i32,
-    pub codigo_maestro: Option<String>,
+    pub proveedor_id: Option<i32>,
+    pub sku: Option<String>,
+    pub precio_unidad: Option<Decimal>,
     pub stock_minimo: Option<Decimal>,
     pub ubicacion: Option<String>,
     pub temperatura_almacenamiento: Option<String>,
     pub requiere_cadena_frio: bool,
     pub dias_estabilidad_abierto: Option<i32>,
     pub clase_riesgo: Option<String>,
+    pub pres_nombre: Option<String>,
+    pub pres_nombre_plural: Option<String>,
+    pub pres_factor: Option<Decimal>,
+    pub pres_codigo_barras: Option<String>,
+    pub pres_gtin: Option<String>,
+    pub pres_gs1_habilitado: bool,
     pub presentaciones: Option<Vec<crate::handlers::productos::CreatePresentacionInline>>,
     pub area_ids: Option<Vec<i32>>,
-    pub proveedores: Option<Vec<crate::handlers::productos::ProveedorProductoInput>>,
     pub usuario_id: Uuid,
 }
 
@@ -167,21 +96,30 @@ pub struct ActualizarProductoParams {
     pub nombre: String,
     pub descripcion: Option<String>,
     pub categoria_id: Option<i32>,
-    pub codigo_maestro: Option<String>,
+    pub proveedor_id: Option<i32>,
+    pub sku: Option<String>,
+    pub precio_unidad: Option<Decimal>,
     pub stock_minimo: Option<Decimal>,
     pub ubicacion: Option<String>,
     pub temperatura_almacenamiento: Option<String>,
     pub requiere_cadena_frio: Option<bool>,
     pub dias_estabilidad_abierto: Option<i32>,
     pub clase_riesgo: Option<String>,
+    pub pres_nombre: Option<String>,
+    pub pres_nombre_plural: Option<String>,
+    pub pres_factor: Option<Decimal>,
+    pub pres_codigo_barras: Option<String>,
+    pub pres_gtin: Option<String>,
+    pub pres_gs1_habilitado: Option<bool>,
     pub area_ids: Option<Vec<i32>>,
-    pub proveedores: Option<Vec<crate::handlers::productos::ProveedorProductoInput>>,
     pub version_esperada: i32,
     pub usuario_id: Uuid,
 }
 
 impl ProductoService {
-    /// Crea un nuevo producto con sus presentaciones y áreas asociadas
+    /// Creates a new product with its flat supplier/presentation fields and optional areas.
+    /// Also upserts a row in `presentaciones` if pres_nombre is provided, so that
+    /// recepcion_detalle and other tables that FK into presentaciones still work.
     pub async fn crear_producto(
         pool: &PgPool,
         params: CrearProductoParams,
@@ -195,9 +133,11 @@ impl ProductoService {
         let producto = sqlx::query_as::<_, Producto>(
             r#"INSERT INTO productos
                (codigo_interno, nombre, descripcion, categoria_id, unidad_base_id,
+                proveedor_id, sku, precio_unidad,
                 stock_minimo, ubicacion,
-                temperatura_almacenamiento, requiere_cadena_frio, dias_estabilidad_abierto, clase_riesgo)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                temperatura_almacenamiento, requiere_cadena_frio, dias_estabilidad_abierto, clase_riesgo,
+                pres_nombre, pres_nombre_plural, pres_factor, pres_codigo_barras, pres_gtin, pres_gs1_habilitado)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
                RETURNING *"#,
         )
         .bind(&codigo)
@@ -205,21 +145,49 @@ impl ProductoService {
         .bind(&params.descripcion)
         .bind(params.categoria_id)
         .bind(params.unidad_base_id)
+        .bind(params.proveedor_id)
+        .bind(&params.sku)
+        .bind(params.precio_unidad)
         .bind(params.stock_minimo.unwrap_or(Decimal::ZERO))
         .bind(&params.ubicacion)
         .bind(&params.temperatura_almacenamiento)
         .bind(params.requiere_cadena_frio)
         .bind(params.dias_estabilidad_abierto)
         .bind(&params.clase_riesgo)
+        .bind(&params.pres_nombre)
+        .bind(&params.pres_nombre_plural)
+        .bind(params.pres_factor)
+        .bind(&params.pres_codigo_barras)
+        .bind(&params.pres_gtin)
+        .bind(params.pres_gs1_habilitado)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| match &e {
             sqlx::Error::Database(db_err) if db_err.is_foreign_key_violation() => {
-                AppError::Validation("Categoría, unidad o área no existe".into())
+                AppError::Validation("Categoría, unidad o proveedor no existe".into())
             }
             _ => e.into(),
         })?;
 
+        // Sync the primary presentation row in `presentaciones` (needed for recepcion_detalle FK)
+        if let Some(ref pres_nombre) = params.pres_nombre {
+            sqlx::query(
+                r#"INSERT INTO presentaciones
+                   (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado, activa)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, true)"#,
+            )
+            .bind(producto.id)
+            .bind(pres_nombre.trim())
+            .bind(params.pres_nombre_plural.as_deref().unwrap_or(pres_nombre.as_str()).trim())
+            .bind(params.pres_factor.unwrap_or(Decimal::ONE))
+            .bind(&params.pres_codigo_barras)
+            .bind(&params.pres_gtin)
+            .bind(params.pres_gs1_habilitado)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        // Extra presentations (if provided separately)
         if let Some(pres_list) = params.presentaciones {
             for pres in pres_list {
                 sqlx::query(
@@ -248,49 +216,22 @@ impl ProductoService {
             }
         }
 
-        if let Some(provs) = params.proveedores {
-            for prov in &provs {
-                let presentacion_id =
-                    upsert_presentacion_proveedor(&mut tx, producto.id, prov).await?;
-                let imagen_url = guardar_imagen_proveedor(&mut tx, producto.id, prov, None).await?;
-
-                sqlx::query(
-                    r#"INSERT INTO producto_proveedor
-                       (producto_id, proveedor_id, es_principal, codigo_proveedor, codigo_maestro, presentacion_id, precio_unidad, lead_time_dias, unidad_minima_pedido, imagen_url)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
-                )
-                .bind(producto.id)
-                .bind(prov.proveedor_id)
-                .bind(prov.es_principal)
-                .bind(&prov.codigo_proveedor)
-                .bind(&prov.codigo_maestro)
-                .bind(presentacion_id)
-                .bind(prov.precio_unidad)
-                .bind(prov.lead_time_dias)
-                .bind(prov.unidad_minima_pedido)
-                .bind(&imagen_url)
-                .execute(&mut *tx)
-                .await?;
-
-                if let Some(precio) = prov.precio_unidad {
-                    sqlx::query(
-                        r#"INSERT INTO producto_precio_historial
-                           (producto_id, proveedor_id, precio_unidad, presentacion_id, usuario_id, fuente, nota)
-                           VALUES ($1, $2, $3, $4, $5, 'manual', 'Precio inicial de proveedor')"#,
-                    )
-                    .bind(producto.id)
-                    .bind(prov.proveedor_id)
-                    .bind(precio)
-                    .bind(presentacion_id)
-                    .bind(params.usuario_id)
-                    .execute(&mut *tx)
-                    .await?;
-                }
-            }
-
+        // Record initial price in history
+        if let (Some(precio), Some(proveedor_id)) = (params.precio_unidad, params.proveedor_id) {
+            sqlx::query(
+                r#"INSERT INTO producto_precio_historial
+                   (producto_id, proveedor_id, precio_unidad, usuario_id, fuente, nota)
+                   VALUES ($1, $2, $3, $4, 'manual', 'Precio inicial de proveedor')"#,
+            )
+            .bind(producto.id)
+            .bind(proveedor_id)
+            .bind(precio)
+            .bind(params.usuario_id)
+            .execute(&mut *tx)
+            .await?;
         }
 
-        // Auditoría
+        // Audit
         sqlx::query(
             "INSERT INTO audit_log (tabla, registro_id, accion, datos_nuevos, usuario_id) VALUES ('productos', $1, 'CREATE', $2, $3)",
         )
@@ -304,7 +245,7 @@ impl ProductoService {
         Ok(producto)
     }
 
-    /// Obtiene un producto por ID con todos sus detalles (Categoría, Unidad, Áreas, etc)
+    /// Gets a product by ID with all details (category, unit, areas, presentations).
     pub async fn obtener_detalle(pool: &PgPool, id: Uuid) -> Result<serde_json::Value, AppError> {
         let result: Option<serde_json::Value> = sqlx::query_scalar(
             r#"SELECT json_build_object(
@@ -312,7 +253,7 @@ impl ProductoService {
                 'codigo_interno',  p.codigo_interno,
                 'nombre',          p.nombre,
                 'descripcion',     p.descripcion,
-                'codigo_maestro',  pp_prim.codigo_maestro,
+                'sku',             p.sku,
                 'stock_minimo',    p.stock_minimo,
                 'ubicacion',       p.ubicacion,
                 'temperatura_almacenamiento', p.temperatura_almacenamiento,
@@ -320,10 +261,17 @@ impl ProductoService {
                 'dias_estabilidad_abierto',   p.dias_estabilidad_abierto,
                 'clase_riesgo',               p.clase_riesgo,
                 'activo',          p.activo,
-                'precio_unidad',   pp_prim.precio_unidad,
+                'precio_unidad',   p.precio_unidad,
+                'imagen_url',      p.imagen_url,
                 'version',         p.version,
                 'created_at',      p.created_at,
                 'updated_at',      p.updated_at,
+                'pres_nombre',         p.pres_nombre,
+                'pres_nombre_plural',  p.pres_nombre_plural,
+                'pres_factor',         p.pres_factor,
+                'pres_codigo_barras',  p.pres_codigo_barras,
+                'pres_gtin',           p.pres_gtin,
+                'pres_gs1_habilitado', p.pres_gs1_habilitado,
                 'categoria', CASE WHEN c.id IS NOT NULL
                     THEN json_build_object('id', c.id, 'nombre', c.nombre)
                     ELSE NULL
@@ -333,43 +281,14 @@ impl ProductoService {
                     'nombre', ub.nombre,
                     'nombre_plural', ub.nombre_plural
                 ),
-                'proveedores', COALESCE(
-                    (SELECT json_agg(
-                        json_build_object(
-                            'id',               pp.id,
-                            'proveedor_id',     pp.proveedor_id,
-                            'proveedor_nombre', prov.nombre,
-                            'proveedor_icono',  prov.icono,
-                            'es_principal',     pp.es_principal,
-                            'codigo_proveedor', pp.codigo_proveedor,
-                            'codigo_maestro',   pp.codigo_maestro,
-                            'presentacion_id',  pp.presentacion_id,
-                            'presentacion', CASE WHEN pr.id IS NOT NULL THEN json_build_object(
-                                'id', pr.id,
-                                'producto_id', pr.producto_id,
-                                'nombre', pr.nombre,
-                                'nombre_plural', pr.nombre_plural,
-                                'factor_conversion', pr.factor_conversion,
-                                'codigo_barras', pr.codigo_barras,
-                                'gtin', pr.gtin,
-                                'gs1_habilitado', pr.gs1_habilitado,
-                                'activa', pr.activa,
-                                'version', pr.version,
-                                'created_at', pr.created_at
-                            ) ELSE NULL END,
-                            'precio_unidad',    pp.precio_unidad,
-                            'lead_time_dias',   pp.lead_time_dias,
-                            'unidad_minima_pedido', pp.unidad_minima_pedido,
-                            'imagen_url',       pp.imagen_url,
-                            'activo',           pp.activo,
-                            'version',          pp.version
-                        ) ORDER BY pp.es_principal DESC, prov.nombre
-                    ) FROM producto_proveedor pp
-                    JOIN proveedores prov ON prov.id = pp.proveedor_id
-                    LEFT JOIN presentaciones pr ON pr.id = pp.presentacion_id
-                    WHERE pp.producto_id = p.id AND pp.activo = TRUE),
-                    '[]'::json
-                ),
+                'proveedor', CASE WHEN prov.id IS NOT NULL
+                    THEN json_build_object(
+                        'id', prov.id,
+                        'nombre', prov.nombre,
+                        'icono', prov.icono
+                    )
+                    ELSE NULL
+                END,
                 'presentaciones', COALESCE(
                     (SELECT json_agg(
                         json_build_object(
@@ -400,8 +319,8 @@ impl ProductoService {
                 )
             )
             FROM productos p
-            LEFT JOIN producto_proveedor pp_prim ON pp_prim.producto_id = p.id AND pp_prim.es_principal = TRUE
             LEFT JOIN categorias c ON c.id = p.categoria_id
+            LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
             JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
             WHERE p.id = $1"#,
         )
@@ -451,7 +370,7 @@ impl ProductoService {
         .map_err(Into::into)
     }
 
-    /// Actualiza un producto existente con control de concurrencia (versión)
+    /// Updates an existing product with optimistic locking (version check).
     pub async fn actualizar_producto(
         pool: &PgPool,
         params: ActualizarProductoParams,
@@ -474,16 +393,28 @@ impl ProductoService {
         let producto = sqlx::query_as::<_, Producto>(
             r#"UPDATE productos
                SET nombre = $1, descripcion = $2, categoria_id = $3,
-                   stock_minimo = $4, ubicacion = $5,
-                   temperatura_almacenamiento = $6, requiere_cadena_frio = $7,
-                   dias_estabilidad_abierto = $8, clase_riesgo = $9,
+                   proveedor_id = COALESCE($4, proveedor_id),
+                   sku = COALESCE($5, sku),
+                   precio_unidad = COALESCE($6, precio_unidad),
+                   stock_minimo = $7, ubicacion = $8,
+                   temperatura_almacenamiento = $9, requiere_cadena_frio = $10,
+                   dias_estabilidad_abierto = $11, clase_riesgo = $12,
+                   pres_nombre = COALESCE($13, pres_nombre),
+                   pres_nombre_plural = COALESCE($14, pres_nombre_plural),
+                   pres_factor = COALESCE($15, pres_factor),
+                   pres_codigo_barras = COALESCE($16, pres_codigo_barras),
+                   pres_gtin = COALESCE($17, pres_gtin),
+                   pres_gs1_habilitado = COALESCE($18, pres_gs1_habilitado),
                    version = version + 1, updated_at = NOW()
-               WHERE id = $10 AND version = $11
+               WHERE id = $19 AND version = $20
                RETURNING *"#,
         )
         .bind(&params.nombre)
         .bind(&params.descripcion)
         .bind(params.categoria_id)
+        .bind(params.proveedor_id)
+        .bind(&params.sku)
+        .bind(params.precio_unidad)
         .bind(params.stock_minimo.unwrap_or(anterior.stock_minimo))
         .bind(&params.ubicacion)
         .bind(&params.temperatura_almacenamiento)
@@ -494,6 +425,12 @@ impl ProductoService {
         )
         .bind(params.dias_estabilidad_abierto)
         .bind(&params.clase_riesgo)
+        .bind(&params.pres_nombre)
+        .bind(&params.pres_nombre_plural)
+        .bind(params.pres_factor)
+        .bind(&params.pres_codigo_barras)
+        .bind(&params.pres_gtin)
+        .bind(params.pres_gs1_habilitado)
         .bind(params.id)
         .bind(params.version_esperada)
         .fetch_optional(&mut *tx)
@@ -502,6 +439,53 @@ impl ProductoService {
             esperada: params.version_esperada as i64,
             actual: anterior.version as i64,
         })?;
+
+        // Sync primary presentation row in presentaciones if pres_nombre changed
+        if let Some(ref pres_nombre) = params.pres_nombre {
+            let existing_id: Option<i32> = sqlx::query_scalar(
+                "SELECT id FROM presentaciones WHERE producto_id = $1 AND activa = true ORDER BY factor_conversion DESC LIMIT 1"
+            )
+            .bind(params.id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+            match existing_id {
+                Some(pres_id) => {
+                    sqlx::query(
+                        r#"UPDATE presentaciones
+                           SET nombre = $1, nombre_plural = $2,
+                               factor_conversion = $3, codigo_barras = $4,
+                               gtin = $5, gs1_habilitado = $6
+                           WHERE id = $7"#,
+                    )
+                    .bind(pres_nombre.trim())
+                    .bind(params.pres_nombre_plural.as_deref().unwrap_or(pres_nombre.as_str()).trim())
+                    .bind(params.pres_factor.unwrap_or(Decimal::ONE))
+                    .bind(&params.pres_codigo_barras)
+                    .bind(&params.pres_gtin)
+                    .bind(params.pres_gs1_habilitado.unwrap_or(false))
+                    .bind(pres_id)
+                    .execute(&mut *tx)
+                    .await?;
+                }
+                None => {
+                    sqlx::query(
+                        r#"INSERT INTO presentaciones
+                           (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado, activa)
+                           VALUES ($1, $2, $3, $4, $5, $6, $7, true)"#,
+                    )
+                    .bind(params.id)
+                    .bind(pres_nombre.trim())
+                    .bind(params.pres_nombre_plural.as_deref().unwrap_or(pres_nombre.as_str()).trim())
+                    .bind(params.pres_factor.unwrap_or(Decimal::ONE))
+                    .bind(&params.pres_codigo_barras)
+                    .bind(&params.pres_gtin)
+                    .bind(params.pres_gs1_habilitado.unwrap_or(false))
+                    .execute(&mut *tx)
+                    .await?;
+                }
+            }
+        }
 
         if let Some(ids) = params.area_ids {
             sqlx::query("DELETE FROM producto_area WHERE producto_id = $1")
@@ -517,60 +501,21 @@ impl ProductoService {
             }
         }
 
-        if let Some(provs) = params.proveedores {
-            sqlx::query("DELETE FROM producto_proveedor WHERE producto_id = $1")
-                .bind(params.id)
-                .execute(&mut *tx)
-                .await?;
-
-            for prov in &provs {
-                let imagen_previa: Option<String> = sqlx::query_scalar(
-                    "SELECT imagen_url FROM producto_proveedor WHERE producto_id = $1 AND proveedor_id = $2",
-                )
-                .bind(params.id)
-                .bind(prov.proveedor_id)
-                .fetch_optional(&mut *tx)
-                .await?
-                .flatten();
-                let presentacion_id =
-                    upsert_presentacion_proveedor(&mut tx, params.id, prov).await?;
-                let imagen_url =
-                    guardar_imagen_proveedor(&mut tx, params.id, prov, imagen_previa).await?;
-
+        // Record price change in history
+        if let (Some(precio), Some(proveedor_id)) = (params.precio_unidad, params.proveedor_id.or(anterior.proveedor_id)) {
+            if params.precio_unidad != anterior.precio_unidad {
                 sqlx::query(
-                    r#"INSERT INTO producto_proveedor
-                       (producto_id, proveedor_id, es_principal, codigo_proveedor, codigo_maestro, presentacion_id, precio_unidad, lead_time_dias, unidad_minima_pedido, imagen_url)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
+                    r#"INSERT INTO producto_precio_historial
+                       (producto_id, proveedor_id, precio_unidad, usuario_id, fuente, nota)
+                       VALUES ($1, $2, $3, $4, 'manual', 'Precio actualizado desde producto')"#,
                 )
                 .bind(params.id)
-                .bind(prov.proveedor_id)
-                .bind(prov.es_principal)
-                .bind(&prov.codigo_proveedor)
-                .bind(&prov.codigo_maestro)
-                .bind(presentacion_id)
-                .bind(prov.precio_unidad)
-                .bind(prov.lead_time_dias)
-                .bind(prov.unidad_minima_pedido)
-                .bind(&imagen_url)
+                .bind(proveedor_id)
+                .bind(precio)
+                .bind(params.usuario_id)
                 .execute(&mut *tx)
                 .await?;
-
-                if let Some(precio) = prov.precio_unidad {
-                    sqlx::query(
-                        r#"INSERT INTO producto_precio_historial
-                           (producto_id, proveedor_id, precio_unidad, presentacion_id, usuario_id, fuente, nota)
-                           VALUES ($1, $2, $3, $4, $5, 'manual', 'Precio actualizado desde producto')"#,
-                    )
-                    .bind(params.id)
-                    .bind(prov.proveedor_id)
-                    .bind(precio)
-                    .bind(presentacion_id)
-                    .bind(params.usuario_id)
-                    .execute(&mut *tx)
-                    .await?;
-                }
             }
-
         }
 
         sqlx::query(
@@ -587,7 +532,7 @@ impl ProductoService {
         Ok(producto)
     }
 
-    /// Desactiva un producto (soft delete) si no tiene stock
+    /// Soft-deletes a product if it has no active stock.
     pub async fn eliminar_producto(
         pool: &PgPool,
         id: Uuid,
@@ -631,7 +576,7 @@ impl ProductoService {
         Ok(())
     }
 
-    /// Reactiva un producto desactivado
+    /// Reactivates a soft-deleted product.
     pub async fn reactivar_producto(
         pool: &PgPool,
         id: Uuid,
@@ -656,7 +601,7 @@ impl ProductoService {
         Ok(producto)
     }
 
-    /// Busca un producto por código de barras o código interno para el escáner
+    /// Looks up a product by barcode, internal code, or lot number (for the scanner).
     pub async fn buscar_por_codigo(
         pool: &PgPool,
         codigo: &str,
@@ -683,21 +628,20 @@ impl ProductoService {
             precio_unidad: Option<Decimal>,
         }
 
-        // 1. Buscar por código de barras de presentación
+        // 1. Search by presentation barcode
         let gs1 = parse_gs1(codigo);
         let codigo_presentacion = gs1.as_ref().map(|g| g.gtin.as_str()).unwrap_or(codigo);
 
         let row = sqlx::query_as::<_, Row1>(
             r#"SELECT
-                 p.id as producto_id, p.nombre as producto_nombre, pp.proveedor_id,
+                 p.id as producto_id, p.nombre as producto_nombre, p.proveedor_id,
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
                  pr.id as presentacion_id, pr.nombre as presentacion_nombre, pr.factor_conversion,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
-                 pp.imagen_url AS imagen_url,
-                 pp.precio_unidad
+                 p.imagen_url AS imagen_url,
+                 p.precio_unidad
                FROM presentaciones pr
                JOIN productos p ON p.id = pr.producto_id
-               LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = true
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
                WHERE (pr.codigo_barras = $1 OR pr.gtin = $1) AND pr.activa = true AND p.activo = true
                LIMIT 1"#,
@@ -752,16 +696,15 @@ impl ProductoService {
             precio_unidad: Option<Decimal>,
         }
 
-        // 2. Buscar por código interno del producto
+        // 2. Search by product internal code
         let row2 = sqlx::query_as::<_, Row2>(
             r#"SELECT
-                 p.id as producto_id, p.nombre as producto_nombre, pp.proveedor_id,
+                 p.id as producto_id, p.nombre as producto_nombre, p.proveedor_id,
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
-                 pp.imagen_url AS imagen_url,
-                 pp.precio_unidad
+                 p.imagen_url AS imagen_url,
+                 p.precio_unidad
                FROM productos p
-               LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = true
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
                WHERE UPPER(p.codigo_interno) = UPPER($1) AND p.activo = true
                LIMIT 1"#,
@@ -788,7 +731,7 @@ impl ProductoService {
             }));
         }
 
-        // 3. Buscar por numero_lote del lote
+        // 3. Search by lot number
         #[derive(sqlx::FromRow)]
         struct Row3 {
             lote_id: Uuid,
@@ -815,7 +758,7 @@ impl ProductoService {
                  l.fecha_vencimiento,
                  p.id as producto_id,
                  p.nombre as producto_nombre,
-                 pp.proveedor_id,
+                 p.proveedor_id,
                  ub.nombre as unidad_base_nombre,
                  ub.nombre_plural as unidad_base_nombre_plural,
                  (SELECT pr.id FROM presentaciones pr
@@ -832,11 +775,10 @@ impl ProductoService {
                  (SELECT a.nombre FROM stock s JOIN areas a ON a.id = s.area_id
                   WHERE s.lote_id = l.id AND s.cantidad > 0
                   ORDER BY s.cantidad DESC LIMIT 1) as area_nombre,
-                 pp.imagen_url AS imagen_url,
-                 pp.precio_unidad
+                 p.imagen_url AS imagen_url,
+                 p.precio_unidad
                FROM lotes l
                JOIN productos p ON p.id = l.producto_id
-               LEFT JOIN producto_proveedor pp ON pp.producto_id = p.id AND pp.es_principal = true
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
                WHERE UPPER(l.numero_lote) = UPPER($1) AND p.activo = true
                LIMIT 1"#,

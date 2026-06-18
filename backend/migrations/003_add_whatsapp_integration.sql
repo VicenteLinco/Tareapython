@@ -65,7 +65,7 @@ CREATE INDEX IF NOT EXISTS idx_whatsapp_logs_status
     ON public.whatsapp_webhook_logs (status);
 
 -- Config entries for whatsapp integration
-INSERT INTO public.configuracion (clave, valor)
+INSERT INTO public.configuracion (clave, valor_texto)
 VALUES
     ('whatsapp_api_url', ''),
     ('whatsapp_api_key', ''),

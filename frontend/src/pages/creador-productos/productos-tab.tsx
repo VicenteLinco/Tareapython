@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Search, Eye, Package, Tag, FileText, Camera, RotateCcw, ImagePlus, X, Copy, Download, LayoutGrid, Table2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Eye, Tag, FileText, RotateCcw, Copy, Download, LayoutGrid, Table2 } from 'lucide-react'
 import { comprimirImagen } from '@/lib/image-utils'
 import { ProductoImage } from '@/components/ui/producto-image'
 import { DataTable } from '@/components/ui/data-table'
@@ -917,7 +917,6 @@ function CreateProductoDialog({
   const [newCatOpen, setNewCatOpen] = useState(false)
   const [newUnidadOpen, setNewUnidadOpen] = useState(false)
   const [newAreaOpen, setNewAreaOpen] = useState(false)
-  const [scannerOpen, setScannerOpen] = useState(false)
 
   useEffect(() => {
     if (!open || !duplicateSource) return
@@ -1007,15 +1006,6 @@ function CreateProductoDialog({
   function handleAreaChange(value: string) {
     if (value === '__new__') { setNewAreaOpen(true); return }
     setForm((f) => ({ ...f, area_id: value }))
-  }
-
-  function handlePresChange(nombre: string) {
-    const found = presFormatos.find(p => p.nombre === nombre)
-    setForm(f => ({
-      ...f,
-      pres_nombre: nombre,
-      pres_nombre_plural: found?.nombre_plural || '',
-    }))
   }
 
   return (
@@ -1473,6 +1463,7 @@ function EditProductoDialog({
     queryFn: () => api.get<PresFormatoRow[]>('/presentacion-formatos').then((r) => r.data),
   })
   const [newAreaOpen, setNewAreaOpen] = useState(false)
+  const [scannerOpen, setScannerOpen] = useState(false)
 
   const { data: producto, isLoading } = useQuery({
     queryKey: ['producto-detail', productoId],
@@ -1979,17 +1970,6 @@ function EditProductoDialog({
           </div>
 
             <div className="divider my-0" />
-
-                </div>
-              </div>
-              <input
-                ref={imageInputRef}
-                type="file"
-                accept="image/jpeg,image/png"
-                className="hidden"
-                onChange={handleImageUpload}
-              />
-            </div>
 
             {/* ── Descripción ── */}
             <div className="space-y-3">

@@ -2803,63 +2803,10 @@ ALTER TABLE ONLY public.whatsapp_webhook_logs
 -- SEED DATA (CONSOLIDATED)
 -- ============================================================
 
--- Seed Unidades de medida base
-INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES
-    ('unidad', 'unidades'),
-    ('mililitro', 'mililitros'),
-    ('gramo', 'gramos'),
-    ('prueba', 'pruebas'),
-    ('litro', 'litros'),
-    ('kilogramo', 'kilogramos')
-ON CONFLICT (nombre) DO NOTHING;
-
--- Seed 12 Áreas del laboratorio
-INSERT INTO areas (nombre, es_bodega) VALUES
-    ('Microbiología', false),
-    ('PCR', false),
-    ('Orinas', false),
-    ('Recepción', false),
-    ('Laboratorio Central', false),
-    ('Bodega Insumos', true),
-    ('Bodega Reactivos', true),
-    ('Serología', false),
-    ('Unidad de Medicina Transfusional', false),
-    ('Donantes', false),
-    ('Sala Entrevista Donantes', false),
-    ('Sala de Toma de Muestras', false)
-ON CONFLICT (nombre) DO NOTHING;
-
--- Seed Categorías iniciales
-INSERT INTO categorias (nombre, descripcion) VALUES
-    ('Reactivo',            'Compuestos químicos para reacciones diagnósticas'),
-    ('Consumible',          'Material de uso único: tubos, puntas, placas, lancetas, etc.'),
-    ('Calibrador',          'Materiales de calibración de equipos analíticos'),
-    ('Control',             'Sueros y materiales de control de calidad interno'),
-    ('Kit diagnóstico',     'Kits completos para pruebas específicas'),
-    ('Medio de cultivo',    'Medios sólidos y líquidos para microbiología'),
-    ('Material de extracción', 'Tubos vacutainer, agujas, torniquetes'),
-    ('Solución / Buffer',   'Diluyentes, soluciones de lavado y fijadores'),
-    ('EPP',                 'Equipos de protección personal: guantes, mascarillas, lentes'),
-    ('Papelería',           'Etiquetas, formularios y material administrativo')
-ON CONFLICT (nombre) DO NOTHING;
-
--- Seed Formatos de presentación predefinidos
-INSERT INTO presentacion_formatos (nombre, nombre_plural, es_predefinido) VALUES
-    ('Ampolla', 'Ampollas', TRUE),
-    ('Blister', 'Blisters', TRUE),
-    ('Bolsa', 'Bolsas', TRUE),
-    ('Botella', 'Botellas', TRUE),
-    ('Caja', 'Cajas', TRUE),
-    ('Frasco', 'Frascos', TRUE),
-    ('Jeringa', 'Jeringas', TRUE),
-    ('Kit', 'Kits', TRUE),
-    ('Lata', 'Latas', TRUE),
-    ('Paquete', 'Paquetes', TRUE),
-    ('Rollo', 'Rollos', TRUE),
-    ('Sobre', 'Sobres', TRUE),
-    ('Tubo', 'Tubos', TRUE),
-    ('Unidad', 'Unidades', TRUE)
-ON CONFLICT (nombre) DO NOTHING;
+-- Catalog seeds removed: the system starts empty.
+-- unidades_basicas, areas (lab), categorias and presentacion_formatos
+-- are now created by the user. Functional seeds (configuracion below and
+-- VIRTUAL_* areas in 005) are kept because the app depends on them.
 
 -- Seed Configuraciones iniciales
 INSERT INTO configuracion (clave, valor_texto) VALUES
@@ -3056,7 +3003,7 @@ ALTER TABLE public.lotes ADD CONSTRAINT lotes_producto_proveedor_lote_key
     UNIQUE NULLS NOT DISTINCT (producto_id, proveedor_id, numero_lote);
 
 -- 3. Add soft delete (deleted_at) to public.usuarios table
-ALTER TABLE public.usuarios ADD COLUMN deleted_at timestamp with time zone;
+ALTER TABLE public.usuarios ADD COLUMN IF NOT EXISTS deleted_at timestamp with time zone;
 
 -- 4. Recreate unique constraints for usuarios as partial indexes supporting soft delete
 ALTER TABLE public.usuarios DROP CONSTRAINT IF EXISTS usuarios_email_key;

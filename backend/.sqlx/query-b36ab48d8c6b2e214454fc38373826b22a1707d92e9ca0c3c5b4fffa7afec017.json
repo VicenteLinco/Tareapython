@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n            l.id AS lote_id,\n            pr.gtin,\n            l.numero_lote,\n            l.fecha_vencimiento,\n            l.fecha_fabricacion,\n            p.nombre AS producto_nombre,\n            pr.nombre AS \"presentacion_nombre?\",\n            prov.nombre AS \"proveedor_nombre?\"\n           FROM lotes l\n           JOIN productos p ON p.id = l.producto_id\n           LEFT JOIN presentaciones pr ON pr.id = l.presentacion_id\n           LEFT JOIN proveedores prov ON prov.id = l.proveedor_id\n           WHERE l.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "lote_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "gtin",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "numero_lote",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "fecha_vencimiento",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 4,
+        "name": "fecha_fabricacion",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "producto_nombre",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "presentacion_nombre?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "proveedor_nombre?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "b36ab48d8c6b2e214454fc38373826b22a1707d92e9ca0c3c5b4fffa7afec017"
+}

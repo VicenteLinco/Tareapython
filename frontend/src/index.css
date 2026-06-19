@@ -182,6 +182,22 @@
   animation: scan-flash 0.7s ease-out;
 }
 
+@keyframes pulse-cta {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-primary), transparent 55%); }
+  50%       { box-shadow: 0 0 0 6px color-mix(in oklab, var(--color-primary), transparent 100%); }
+}
+
+/* Soft attention pulse for a ready-to-press primary action. */
+.pulse-cta {
+  animation: pulse-cta 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-cta {
+    animation: none;
+  }
+}
+
 @layer components {
   .input,
   .select,

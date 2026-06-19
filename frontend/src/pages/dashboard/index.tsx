@@ -232,7 +232,7 @@ export default function DashboardPage() {
 
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-semibold text-base-content">
+                <h2 className="t-h2 text-base-content">
                   {`${totalAlertasPrioritarias} alerta${totalAlertasPrioritarias !== 1 ? 's' : ''} activa${totalAlertasPrioritarias !== 1 ? 's' : ''}`}
                 </h2>
                 <span className="text-xs text-base-content/55">requiere revisión</span>
@@ -276,7 +276,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-6">
+      <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <StatCard
           label="Insumos activos"
           value={totalItems}
@@ -335,7 +335,7 @@ export default function DashboardPage() {
       <section>
         <div className="mb-2 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-base-content">Acciones frecuentes</h2>
+            <h2 className="t-h2 text-base-content">Acciones frecuentes</h2>
           </div>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

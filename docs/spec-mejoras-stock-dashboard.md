@@ -41,7 +41,16 @@ Este spec cubre **lo que quedó pendiente o mal ubicado** alrededor de eso.
 - `docs/reglas-prediccion.md` documenta el modelo viejo de reglas (mínimos manuales), ya obsoleto tras la 009.
 **Acción:** corregir `CLAUDE.md` (sección "Estado actual" y "Arquitectura"), y reescribir o archivar `docs/reglas-prediccion.md` apuntando a `fn_estado_stock`.
 
-### 1.5 — Dead code ya removido (registro)
+### 1.5 — `generated.ts` desincronizado de Rust — **ALTA (mina activa)**
+**Problema:** `frontend/src/types/generated.ts` está stale respecto de los structs Rust. El frontend se escribió contra esa versión vieja. Al correr `cargo run --bin export_types` (regeneración limpia, como manda el CLAUDE.md), aparecen errores de build NO relacionados con el cambio en curso:
+- `@/types` ya no exporta `ProductoProveedor` (eliminado en el flatten 007).
+- `Usuario` requiere `deleted_at`; `Presentacion` requiere `sku`.
+- `Producto` ya no tiene `lead_time_propio` / `codigo_proveedor` / `codigo_maestro` (los usa `useSolicitudState.ts`).
+- `CreateSolicitudItem` requiere `unidad_basica_id`.
+**Por qué es grave:** `npm run build` (que corre `tsc -b`) SÍ typechequea y falla; `npx tsc --noEmit` sobre el tsconfig raíz NO (usa `references`). O sea, la validación "rápida" miente. El próximo que regenere tipos rompe el deploy.
+**Acción:** regenerar `generated.ts` y arreglar de una vez el drift en `useRecepcionItems.ts`, `useSolicitudState.ts`, `api/catalogos.ts`, `login/index.tsx`. Validar SIEMPRE con `npm run build`, no con `npx tsc --noEmit`.
+
+### 1.6 — Dead code ya removido (registro)
 Eliminados en este rebuild: vista `v_alertas_stock` (no la usaba nadie) y la query de alertas obsoleta dentro de `bin/inspect_db.rs`. Se deja constancia para no reintroducirlos.
 
 ---

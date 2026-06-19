@@ -72,11 +72,12 @@ function badgeDate(d: Date): string {
 }
 
 function getAlerta(item: StockItem): 'bajo' | 'vencer' | null {
-  const stock = item.stock_total ?? 0
-  if (stock <= 0 || (item.stock_minimo > 0 && stock < item.stock_minimo)) return 'bajo'
+  const e = item.estado_alerta
+  if (e === 'agotado' || e === 'critico' || e === 'reponer') return 'bajo'
+  if (e === 'riesgo_venc') return 'vencer'
   if (item.proximo_vencimiento) {
     const d = daysUntil(item.proximo_vencimiento)
-    if (d !== null && d <= 30) return 'vencer'
+    if (d !== null && d >= 0 && d <= 30) return 'vencer'
   }
   return null
 }
@@ -119,9 +120,9 @@ async function fetchGlobalResumenData(filters?: PdfOptions['filters']): Promise<
       ]
 
   return {
-    // total = todos los productos activos con stock>0 OR stock_minimo>0 (igual al dashboard)
+    // total = todos los productos activos (igual al dashboard)
     totalActivos: activosResp.total,
-    itemsBajo: allAlerts.filter(i => i.stock_minimo > 0 && (i.stock_total ?? 0) < i.stock_minimo),
+    itemsBajo: allAlerts.filter(i => ['critico', 'reponer', 'agotado'].includes(i.estado_alerta ?? '')),
     itemsPorVencer30: allAlerts.filter(i => {
       if (!i.proximo_vencimiento) return false
       const d = daysUntil(i.proximo_vencimiento)
@@ -311,7 +312,7 @@ function drawResumen(
   const kpiW   = (W - MARGIN * 2 - kpiGap * 3) / 4
   const kpis = [
     { val: totalActivos,         lbl: 'Insumos\nactivos',    color: C.black },
-    { val: itemsBajo.length,     lbl: 'Bajo\nmínimo',        color: C.red   },
+    { val: itemsBajo.length,     lbl: 'Stock\nbajo',        color: C.red   },
     { val: itemsVencer.length,   lbl: 'Por vencer\n30 días', color: C.amber },
     { val: itemsVencidos.length, lbl: 'Lotes\nvencidos',     color: C.gray  },
   ]
@@ -445,11 +446,11 @@ function drawResumen(
 
   // Columna izquierda — Bajo mínimo
   drawAlertCol(
-    colL, 'Stock Bajo Mínimo', itemsBajo.length,
+    colL, 'Stock Bajo', itemsBajo.length,
     C.redBorder, C.red, C.redDark, C.redDark,
     itemsBajo.map(i => ({
       name: i.producto_nombre,
-      val:  `${Math.round(i.stock_total ?? 0)} / ${Math.round(i.stock_minimo)} ${i.unidad}`
+      val:  `${Math.round(i.stock_total ?? 0)} ${i.unidad}${i.dias_autonomia != null ? ` · ~${i.dias_autonomia}d` : ''}`
     }))
   )
 
@@ -482,7 +483,7 @@ function drawAreaPage(
   const alertas = items.map(getAlerta)
 
   const bajoCuenta = items.filter(i =>
-    i.stock_minimo > 0 && (i.stock_total ?? 0) < i.stock_minimo
+    ['critico', 'reponer', 'agotado'].includes(i.estado_alerta ?? '')
   ).length
   const vencerCuenta = items.filter(i => {
     if (!i.proximo_vencimiento) return false
@@ -582,16 +583,20 @@ function drawAreaPage(
       if (data.section !== 'body' || data.column.index !== 6) return
 
       const item    = items[data.row.index]
-      const stock   = item.stock_total ?? 0
-      const minimo  = item.stock_minimo
 
-      let ratio: number
-      if (minimo <= 0) {
-        ratio = 0.7  // sin mínimo configurado → neutro
-      } else {
-        ratio = Math.min(stock / (minimo * 3), 1)
-        ratio = Math.max(ratio, 0)
-      }
+      // Sin mínimos: el llenado de la barra refleja el estado (días de cobertura).
+      const ratio = (() => {
+        switch (item.estado_alerta) {
+          case 'agotado':
+          case 'vencido':    return 0.05
+          case 'critico':    return 0.15
+          case 'reponer':
+          case 'riesgo_venc':
+          case 'por_vencer': return 0.4
+          case 'normal':     return 0.85
+          default:           return 0.7 // sin_datos / no_gestionado → neutro
+        }
+      })()
 
       const BAR_W  = data.cell.width - 10
       const BAR_H  = 3.5
@@ -653,7 +658,7 @@ function drawAreaPage(
           }
 
           if (bajoCuenta > 0) {
-            const pillTxt = `${bajoCuenta} bajo mínimo`
+            const pillTxt = `${bajoCuenta} stock bajo`
             const pW = doc.getTextWidth(pillTxt) + 8
             pillX -= pW + 4
             doc.setFillColor(...C.redLight)

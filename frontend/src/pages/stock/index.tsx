@@ -98,9 +98,10 @@ export default function StockPage() {
           <div className="flex items-center gap-3">
             <h1 className="t-h1 tracking-tight text-base-content">
               {estado === 'bajo'    ? 'Stock Bajo' :
-               estado === 'sin_stock' ? 'Stock Quebrado' :
+               estado === 'agotado' ? 'Stock Agotado' :
                estado === 'vencido' ? 'Stock Vencido' :
                estado === 'vence_pronto' ? 'Stock Por Vencer' :
+               estado === 'sin_datos' ? 'Sin Datos de Consumo' :
                estado === 'normal'  ? 'Stock Normal' : 'Inventario Global'}
             </h1>
             {estado !== 'todos' && (
@@ -180,8 +181,8 @@ export default function StockPage() {
         chips={[
           { label: 'Stock bajo', value: 'bajo', active: estado === 'bajo',
             onClick: () => setEstado(estado === 'bajo' ? 'todos' : 'bajo') },
-          { label: 'Sin stock', value: 'sin_stock', active: estado === 'sin_stock',
-            onClick: () => setEstado(estado === 'sin_stock' ? 'todos' : 'sin_stock') },
+          { label: 'Agotado', value: 'agotado', active: estado === 'agotado',
+            onClick: () => setEstado(estado === 'agotado' ? 'todos' : 'agotado') },
           { label: 'Vencido', value: 'vencido', active: estado === 'vencido',
             onClick: () => setEstado(estado === 'vencido' ? 'todos' : 'vencido') },
           { label: 'Por vencer', value: 'vence_pronto', active: estado === 'vence_pronto',

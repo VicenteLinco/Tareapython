@@ -56,9 +56,10 @@ export function StockSecondaryFilters({
           <option value="todos">Todos los estados</option>
           <option value="normal">Normal</option>
           <option value="bajo">Stock bajo</option>
-          <option value="sin_stock">Sin stock</option>
+          <option value="agotado">Agotado</option>
           <option value="vencido">Vencido</option>
           <option value="vence_pronto">Por vencer</option>
+          <option value="sin_datos">Sin datos</option>
         </select>
       </div>
     </>

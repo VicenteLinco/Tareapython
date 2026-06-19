@@ -515,7 +515,7 @@ pub async fn recomendaciones(
                      prov.dias_despacho_tierra,
                      prov.dias_despacho_aereo, 7)::INT                        AS lead_time,
             COALESCE(st.stock_actual, 0)::FLOAT8                              AS stock_actual,
-            COALESCE(plc.stock_minimo, p.stock_minimo, 0)::FLOAT8             AS stock_minimo,
+            COALESCE(plc.stock_minimo, 0)::FLOAT8                             AS stock_minimo,
             COALESCE(pev.cantidad_pedida, 0)::FLOAT8                          AS ya_pedido,
             s.serie                                                           AS serie,
             pres.id                                                           AS presentacion_id,
@@ -545,21 +545,14 @@ pub async fn recomendaciones(
     // 3. Para cada producto, ejecutar el forecast en Rust
     let mut items: Vec<serde_json::Value> = Vec::new();
     for r in rows {
-        let res = compute_forecast(
-            &r.serie,
-            r.stock_actual,
-            r.stock_minimo,
-            r.ya_pedido,
-            r.lead_time,
-            cfg,
-        );
+        let res = compute_forecast(&r.serie, r.stock_actual, r.ya_pedido, r.lead_time, cfg);
 
         // Solo aparecen en la lista los que tienen alguna urgencia
         let Some(urgencia) = res.urgencia else {
             continue;
         };
 
-        // Productos con confianza baja sólo se muestran si stock_actual < stock_minimo
+        // Con confianza baja sólo se muestran si el modelo sugiere reposición.
         if res.confianza == forecast::Confianza::Baja && res.cantidad_sugerida == 0.0 {
             continue;
         }
@@ -1110,7 +1103,7 @@ async fn horizonte_sugerido(
             LEFT JOIN consumo_dia cd ON cd.dia = d.dia
         )
         SELECT
-            COALESCE(plc.stock_minimo, p.stock_minimo, 0)::FLOAT8            AS stock_minimo,
+            COALESCE(plc.stock_minimo, 0)::FLOAT8                            AS stock_minimo,
             COALESCE((SELECT SUM(s.cantidad)::FLOAT8 FROM stock s
                       JOIN lotes l2 ON l2.id = s.lote_id WHERE l2.producto_id = p.id), 0)
                                                                               AS stock_actual,
@@ -1140,14 +1133,7 @@ async fn horizonte_sugerido(
     let row = row_opt.ok_or_else(|| AppError::NotFound("Producto no encontrado".into()))?;
 
     // 2. Forecast
-    let res = compute_forecast(
-        &row.serie,
-        row.stock_actual,
-        row.stock_minimo,
-        row.ya_pedido,
-        row.lead_time,
-        cfg,
-    );
+    let res = compute_forecast(&row.serie, row.stock_actual, row.ya_pedido, row.lead_time, cfg);
 
     // 3. Horizonte sugerido = lead_time + revisión, clampado a un piso de 7d.
     //    Si la confianza es baja, no inventar horizonte: devolver lead_time × 3.
@@ -1224,14 +1210,17 @@ async fn horizonte_sugerido(
 
 /// Carga la configuración del forecast desde la tabla `configuracion`.
 async fn load_forecast_config(pool: &sqlx::PgPool) -> Result<ForecastConfig, AppError> {
-    let row: (i32, i32, i32, f64, f64) = sqlx::query_as(
+    let row: (i32, i32, i32, f64, f64, i32, i32, i32) = sqlx::query_as(
         r#"
         SELECT
             COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'ventana_demanda_dias'), 60),
             COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'periodo_revision_dias'), 30),
             COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'dias_minimos_historia'), 14),
             COALESCE((SELECT valor_texto::float8 FROM configuracion WHERE clave = 'nivel_servicio_z'), 1.65),
-            COALESCE((SELECT valor_texto::float8 FROM configuracion WHERE clave = 'factor_historial_corto'), 0.35)
+            COALESCE((SELECT valor_texto::float8 FROM configuracion WHERE clave = 'factor_historial_corto'), 0.35),
+            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'dias_objetivo_cobertura'), 30),
+            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'vencimiento_riesgo_dias'), 30),
+            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'vencimiento_proximo_dias'), 90)
         "#
     )
     .fetch_one(pool)
@@ -1243,6 +1232,9 @@ async fn load_forecast_config(pool: &sqlx::PgPool) -> Result<ForecastConfig, App
         dias_minimos_historia: row.2,
         nivel_servicio_z: row.3,
         factor_historial_corto: row.4.clamp(0.0, 1.0),
+        dias_objetivo_cobertura: row.5,
+        vencimiento_riesgo_dias: row.6,
+        vencimiento_proximo_dias: row.7,
     })
 }
 

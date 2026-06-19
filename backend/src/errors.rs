@@ -70,7 +70,6 @@ fn foreign_key_violation_message(constraint: &str) -> String {
 
 fn check_violation_message(constraint: &str) -> String {
     match constraint {
-        "productos_stock_minimo_check" => "El stock minimo no puede ser negativo.".to_string(),
         "presentaciones_factor_conversion_check" => {
             "El factor de conversion debe ser mayor a cero.".to_string()
         }

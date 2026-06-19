@@ -74,7 +74,6 @@ pub struct CrearProductoParams {
     pub proveedor_id: Option<i32>,
     pub sku: Option<String>,
     pub precio_unidad: Option<Decimal>,
-    pub stock_minimo: Option<Decimal>,
     pub ubicacion: Option<String>,
     pub temperatura_almacenamiento: Option<String>,
     pub requiere_cadena_frio: bool,
@@ -99,7 +98,6 @@ pub struct ActualizarProductoParams {
     pub proveedor_id: Option<i32>,
     pub sku: Option<String>,
     pub precio_unidad: Option<Decimal>,
-    pub stock_minimo: Option<Decimal>,
     pub ubicacion: Option<String>,
     pub temperatura_almacenamiento: Option<String>,
     pub requiere_cadena_frio: Option<bool>,
@@ -134,10 +132,10 @@ impl ProductoService {
             r#"INSERT INTO productos
                (codigo_interno, nombre, descripcion, categoria_id, unidad_base_id,
                 proveedor_id, sku, precio_unidad,
-                stock_minimo, ubicacion,
+                ubicacion,
                 temperatura_almacenamiento, requiere_cadena_frio, dias_estabilidad_abierto, clase_riesgo,
                 pres_nombre, pres_nombre_plural, pres_factor, pres_codigo_barras, pres_gtin, pres_gs1_habilitado)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
                RETURNING *"#,
         )
         .bind(&codigo)
@@ -148,7 +146,6 @@ impl ProductoService {
         .bind(params.proveedor_id)
         .bind(&params.sku)
         .bind(params.precio_unidad)
-        .bind(params.stock_minimo.unwrap_or(Decimal::ZERO))
         .bind(&params.ubicacion)
         .bind(&params.temperatura_almacenamiento)
         .bind(params.requiere_cadena_frio)
@@ -254,7 +251,6 @@ impl ProductoService {
                 'nombre',          p.nombre,
                 'descripcion',     p.descripcion,
                 'sku',             p.sku,
-                'stock_minimo',    p.stock_minimo,
                 'ubicacion',       p.ubicacion,
                 'temperatura_almacenamiento', p.temperatura_almacenamiento,
                 'requiere_cadena_frio',       p.requiere_cadena_frio,
@@ -396,17 +392,17 @@ impl ProductoService {
                    proveedor_id = COALESCE($4, proveedor_id),
                    sku = COALESCE($5, sku),
                    precio_unidad = COALESCE($6, precio_unidad),
-                   stock_minimo = $7, ubicacion = $8,
-                   temperatura_almacenamiento = $9, requiere_cadena_frio = $10,
-                   dias_estabilidad_abierto = $11, clase_riesgo = $12,
-                   pres_nombre = COALESCE($13, pres_nombre),
-                   pres_nombre_plural = COALESCE($14, pres_nombre_plural),
-                   pres_factor = COALESCE($15, pres_factor),
-                   pres_codigo_barras = COALESCE($16, pres_codigo_barras),
-                   pres_gtin = COALESCE($17, pres_gtin),
-                   pres_gs1_habilitado = COALESCE($18, pres_gs1_habilitado),
+                   ubicacion = $7,
+                   temperatura_almacenamiento = $8, requiere_cadena_frio = $9,
+                   dias_estabilidad_abierto = $10, clase_riesgo = $11,
+                   pres_nombre = COALESCE($12, pres_nombre),
+                   pres_nombre_plural = COALESCE($13, pres_nombre_plural),
+                   pres_factor = COALESCE($14, pres_factor),
+                   pres_codigo_barras = COALESCE($15, pres_codigo_barras),
+                   pres_gtin = COALESCE($16, pres_gtin),
+                   pres_gs1_habilitado = COALESCE($17, pres_gs1_habilitado),
                    version = version + 1, updated_at = NOW()
-               WHERE id = $19 AND version = $20
+               WHERE id = $18 AND version = $19
                RETURNING *"#,
         )
         .bind(&params.nombre)
@@ -415,7 +411,6 @@ impl ProductoService {
         .bind(params.proveedor_id)
         .bind(&params.sku)
         .bind(params.precio_unidad)
-        .bind(params.stock_minimo.unwrap_or(anterior.stock_minimo))
         .bind(&params.ubicacion)
         .bind(&params.temperatura_almacenamiento)
         .bind(

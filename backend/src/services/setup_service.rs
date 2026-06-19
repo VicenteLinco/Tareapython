@@ -266,14 +266,13 @@ pub async fn importar_catalogo(
             None
         };
 
-        let stock_min = Decimal::from_str(stock_minimo_str).unwrap_or(Decimal::ZERO);
         let precio = Decimal::from_str(precio_str).ok();
 
         let p_id = uuid::Uuid::new_v4();
         sqlx::query(
             "INSERT INTO productos
-             (id, codigo_interno, nombre, descripcion, unidad_base_id, categoria_id, stock_minimo)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+             (id, codigo_interno, nombre, descripcion, unidad_base_id, categoria_id)
+             VALUES ($1, $2, $3, $4, $5, $6)",
         )
         .bind(p_id)
         .bind(codigo_interno)
@@ -285,7 +284,6 @@ pub async fn importar_catalogo(
         })
         .bind(u_id)
         .bind(cat_id)
-        .bind(stock_min)
         .execute(pool)
         .await?;
 

@@ -97,8 +97,8 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
   }, [lotes, searchParams, setSearchParams])
 
   const stockTotal = Math.round(item.stock_total ?? 0)
-  const isLow = stockTotal < item.stock_minimo && item.stock_minimo > 0
-  const minimoLabel = Math.round(item.stock_minimo)
+  const estado = item.estado_alerta ?? 'normal'
+  const isLow = estado === 'critico' || estado === 'reponer' || estado === 'agotado'
   const totalLotes = lotes?.reduce((s, l) => s + Math.round(l.stock_total ?? 0), 0) ?? stockTotal
 
   if (isLoadingLotes) {
@@ -146,22 +146,11 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
           <span className="text-4xl font-bold tabular-nums">{stockTotal}</span>
           <span className="text-sm opacity-40">{stockTotal === 1 ? item.unidad : (item.unidad_plural ?? item.unidad)}</span>
         </div>
-        <div className="flex items-center gap-1.5 mt-2">
-          <p className="text-xs opacity-35">
-            Mínimo: <CantidadConUnidad qty={minimoLabel} unidad={item.unidad} pluralUnidad={item.unidad_plural} />
-          </p>
-          <MetricTooltip
-            size="sm"
-            position="right"
-            text="Stock mínimo definido para el producto. Si el stock cae por debajo, el sistema genera una alerta."
-          />
-        </div>
-
         {isLow && (
           <div className="mt-4 p-3 bg-error/10 rounded-xl border border-error/20">
             <div className="flex items-center gap-2 text-xs font-bold text-error uppercase">
               <AlertCircle className="w-3.5 h-3.5" />
-              Stock bajo mínimo
+              {estado === 'agotado' ? 'Sin stock — reponer' : 'Reposición sugerida'}
             </div>
           </div>
         )}

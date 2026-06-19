@@ -11,7 +11,7 @@ use crate::errors::AppError;
 /// GET /api/v1/productos/:id/par-level
 ///
 /// Returns the global par level configuration for a product (area_id IS NULL).
-/// Falls back to productos.stock_minimo if no par_level_config row exists yet.
+/// If no par_level_config row exists yet, returns an empty auto-consumption default.
 pub async fn get_par_level(
     State(state): State<AppState>,
     Extension(_claims): Extension<Claims>,
@@ -48,24 +48,23 @@ pub async fn get_par_level(
         }));
     }
 
-    // Fall back to productos.stock_minimo
-    let fallback: Option<(Decimal,)> =
-        sqlx::query_as("SELECT stock_minimo FROM productos WHERE id = $1 AND deleted_at IS NULL")
+    // No config yet: confirm the product exists and return an empty auto default.
+    let existe: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1 AND deleted_at IS NULL)")
             .bind(producto_id)
-            .fetch_optional(&state.pool)
+            .fetch_one(&state.pool)
             .await?;
-
-    let stock_minimo = fallback
-        .map(|(v,)| v)
-        .ok_or_else(|| AppError::NotFound("Producto not found".into()))?;
+    if !existe {
+        return Err(AppError::NotFound("Producto not found".into()));
+    }
 
     Ok(Json(ParLevelResponse {
         producto_id,
         area_id: None,
-        stock_minimo,
+        stock_minimo: Decimal::ZERO,
         stock_maximo: None,
         safety_stock: Decimal::ZERO,
-        metodo: "manual".into(),
+        metodo: "auto_consumo".into(),
         horizonte_calculo_dias: Some(90),
         lead_time_dias: None,
     }))

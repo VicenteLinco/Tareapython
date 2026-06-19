@@ -97,10 +97,10 @@ async fn listar(
     let offset = pagination.offset();
 
     let estado = match params.estado.as_deref().unwrap_or("") {
-        "critico" | "bajo_minimo" => "bajo",
-        "sin-stock" => "sin_stock",
+        "critico" | "bajo_minimo" | "reponer" => "bajo",
+        "sin-stock" | "sin_stock" => "agotado",
         "vencidos" => "vencido",
-        "vencimiento" => "vence_pronto",
+        "vencimiento" | "riesgo_venc" | "por_vencer" => "vence_pronto",
         other => other,
     };
     let filter = params.filter.as_deref().unwrap_or("");
@@ -167,20 +167,6 @@ async fn listar(
         "".to_string()
     };
 
-    let stock_minimo_expr = if let Some(area_ids) = &scoped_area_array {
-        format!(
-            "COALESCE((
-                SELECT SUM(pa.stock_minimo)
-                FROM producto_area pa
-                WHERE pa.producto_id = p.id
-                  AND pa.area_id = ANY(ARRAY[{}]::integer[])
-                  AND pa.stock_minimo > 0
-            ), p.stock_minimo, 0)",
-            area_ids
-        )
-    } else {
-        "p.stock_minimo".to_string()
-    };
     let inicializado_expr = if let Some(area_ids) = &scoped_area_array {
         format!(
             "(EXISTS (SELECT 1 FROM movimientos mi JOIN lotes li ON li.id = mi.lote_id WHERE li.producto_id = p.id AND mi.area_id = ANY(ARRAY[{}]::integer[]))
@@ -193,18 +179,21 @@ async fn listar(
     };
 
     let type_filter = match estado {
-        "sin_stock" => "AND estado_alerta = 'sin_stock'",
+        "agotado" => "AND estado_alerta = 'agotado'",
         "vencido" => "AND estado_alerta = 'vencido'",
-        "bajo" => "AND estado_alerta IN ('bajo_minimo', 'critico', 'reponer')",
-        "vence_pronto" => "AND estado_alerta = 'vence_pronto'",
+        "bajo" => "AND estado_alerta IN ('critico', 'reponer')",
+        "vence_pronto" => "AND estado_alerta IN ('riesgo_venc', 'por_vencer')",
+        "sin_datos" => "AND estado_alerta = 'sin_datos'",
         "normal" => "AND estado_alerta = 'normal'",
-        _ if params.stock_bajo == Some(true) => "AND estado_alerta IN ('bajo_minimo', 'critico', 'reponer')",
-        _ if params.con_alertas == Some(true) => "AND estado_alerta <> 'normal'",
+        _ if params.stock_bajo == Some(true) => "AND estado_alerta IN ('critico', 'reponer')",
+        _ if params.con_alertas == Some(true) => {
+            "AND estado_alerta IN ('vencido','agotado','critico','reponer','riesgo_venc','por_vencer')"
+        }
         _ => match filter {
-            "vencimiento" => "AND estado_alerta = 'vence_pronto'",
+            "vencimiento" => "AND estado_alerta IN ('riesgo_venc', 'por_vencer')",
             "vencidos" => "AND estado_alerta = 'vencido'",
-            "sin-stock" => "AND estado_alerta = 'sin_stock'",
-            "bajo" | "critico" => "AND estado_alerta IN ('bajo_minimo', 'critico', 'reponer')",
+            "sin-stock" => "AND estado_alerta = 'agotado'",
+            "bajo" | "critico" => "AND estado_alerta IN ('critico', 'reponer')",
             _ => "",
         },
     };
@@ -287,9 +276,9 @@ async fn listar(
                    um.nombre_plural as unidad_plural,
                    COALESCE(ss.total, 0) as stock_total,
                    COALESCE(ss.lotes_con_stock, 0) as lotes_count,
-                   {} AS stock_minimo,
                    {} AS inicializado,
                    p.lead_time_propio,
+                   COALESCE(p.lead_time_propio, pv2.dias_despacho_tierra, pv2.dias_despacho_aereo, 7) AS lead_time_efectivo,
                    ss.proxima_fecha_venc as proximo_vencimiento,
                    fp.nombre as proveedor_nombre,
                    fp.icono as proveedor_icono,
@@ -301,7 +290,7 @@ async fn listar(
                            COALESCE(ms.consumo_diario_ponderado * (30.0 / GREATEST(ms.dias_vida_sistema, 7)), 0)::NUMERIC(15,4)
                        ELSE COALESCE(ms.consumo_diario_ponderado, 0)::NUMERIC(15,4)
                    END AS consumo_diario_ajustado,
-                   -- consumo_base_estimado replica la lógica de calcular_autonomia en Rust:
+                   -- consumo_base_estimado: única base de consumo para estado y autonomía.
                    -- ≥14 días con consumo → ponderado; 1-13 → total/días_reales; <1 → 0
                    CASE
                        WHEN COALESCE(ms.dias_con_consumo, 0) >= 14
@@ -313,6 +302,7 @@ async fn listar(
                FROM productos p
                JOIN unidades_basicas um ON um.id = p.unidad_base_id
                LEFT JOIN categorias c ON c.id = p.categoria_id
+               LEFT JOIN proveedores pv2 ON pv2.id = p.proveedor_id
                LEFT JOIN stock_stats ss ON ss.producto_id = p.id
                LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
                LEFT JOIN fefo_prov fp ON fp.producto_id = p.id
@@ -324,33 +314,30 @@ async fn listar(
                    final_stats.*,
                    CASE
                        WHEN stock_total > 0 AND consumo_base_estimado > 0.0001 AND dias_con_consumo >= 3
-                           THEN (stock_total / consumo_base_estimado)
+                           THEN LEAST(FLOOR(stock_total / consumo_base_estimado), 999)::INT
                        ELSE NULL
-                   END AS dias_autonomia_sql
+                   END AS dias_autonomia,
+                   fn_estado_stock(
+                       stock_total,
+                       consumo_base_estimado,
+                       dias_con_consumo::int,
+                       lead_time_efectivo::int,
+                       {},   -- dias_objetivo_cobertura
+                       proximo_vencimiento,
+                       inicializado,
+                       3,    -- dias_min_historia para estimar autonomía
+                       {},   -- vencimiento_riesgo_dias
+                       {}    -- vencimiento_proximo_dias
+                   ) AS estado_alerta
                FROM final_stats
            ),
-           enriched2 AS (
-               SELECT
-                   e.*,
-                   CASE
-                       WHEN inicializado AND stock_total <= 0 THEN 'sin_stock'
-                       WHEN proximo_vencimiento < CURRENT_DATE THEN 'vencido'
-                       WHEN dias_autonomia_sql IS NOT NULL AND dias_autonomia_sql <= COALESCE(lead_time_propio, 3) THEN 'critico'
-                       WHEN stock_minimo > 0 AND stock_total < stock_minimo AND stock_total > 0 THEN 'bajo_minimo'
-                       WHEN dias_autonomia_sql IS NOT NULL AND dias_autonomia_sql <= COALESCE(lead_time_propio, 3) + 7 THEN 'reponer'
-                       WHEN proximo_vencimiento >= CURRENT_DATE
-                            AND proximo_vencimiento <= CURRENT_DATE + INTERVAL '90 days' THEN 'vence_pronto'
-                       ELSE 'normal'
-                   END AS estado_alerta
-               FROM enriched e
-           ),
            filtered AS (
-               SELECT * FROM enriched2 WHERE 1=1 {} {}
+               SELECT * FROM enriched WHERE 1=1 {} {}
            ),
            total_count AS (
                SELECT COUNT(*) as full_count FROM filtered
            )
-           SELECT f.*, tc.full_count 
+           SELECT f.*, tc.full_count
            FROM filtered f, total_count tc
            ORDER BY f.producto_nombre
            LIMIT ${} OFFSET ${}"#,
@@ -359,17 +346,19 @@ async fn listar(
         area_filter,
         forecast_cfg.ventana_demanda_dias,
         movement_area_filter,
-        stock_minimo_expr,
         inicializado_expr,
         q_filter,
         cat_filter,
         prov_filter,
+        forecast_cfg.dias_objetivo_cobertura,
+        forecast_cfg.vencimiento_riesgo_dias,
+        forecast_cfg.vencimiento_proximo_dias,
         if !con_alertas
             && params.q.is_none()
             && params.categoria_id.is_none()
             && params.proveedor_id.is_none()
         {
-            "AND (stock_total > 0 OR (stock_minimo > 0 AND inicializado))"
+            "AND estado_alerta <> 'no_gestionado'"
         } else {
             ""
         },
@@ -388,7 +377,7 @@ async fn listar(
     let rows: Vec<StockItemRow> = rows
         .into_iter()
         .map(|mut row| {
-            calcular_autonomia(&mut row, forecast_cfg);
+            calcular_pico(&mut row, forecast_cfg);
             row
         })
         .collect();
@@ -414,20 +403,52 @@ async fn listar(
     .fetch_one(&state.pool)
     .await?;
 
-    let bajo_minimo: (i64,) = sqlx::query_as(
-        &format!(
-            r#"SELECT COUNT(DISTINCT producto_id) FROM (
-            SELECT l.producto_id FROM stock s
-            JOIN lotes l ON l.id = s.lote_id
-            JOIN productos p ON p.id = l.producto_id
-            LEFT JOIN producto_area pa ON pa.producto_id = p.id AND pa.area_id = s.area_id
-            WHERE s.cantidad > 0 AND COALESCE(pa.stock_minimo, p.stock_minimo, 0) > 0 AND p.activo = true {}
-            GROUP BY l.producto_id, s.area_id, pa.stock_minimo, p.stock_minimo
-            HAVING SUM(s.cantidad) < COALESCE(pa.stock_minimo, p.stock_minimo, 0)
-        ) sub"#,
-            resumen_area_filter
-        ),
-    )
+    // "Bajo" = productos que necesitan reposición según fn_estado_stock (critico + reponer).
+    // Mismo motor que la lista y el dashboard: imposible que diverja.
+    let bajo_minimo: (i64,) = sqlx::query_as(&format!(
+        r#"SELECT COUNT(*) FROM (
+            WITH stock_stats AS (
+                SELECT l.producto_id,
+                       SUM(s.cantidad) AS total,
+                       MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0) AS prox
+                FROM stock s JOIN lotes l ON l.id = s.lote_id
+                WHERE 1=1 {0}
+                GROUP BY l.producto_id
+            ),
+            mov AS (
+                SELECT l.producto_id,
+                    ((COALESCE(SUM(CASE WHEN m.created_at >= NOW() - INTERVAL '7 days' THEN m.cantidad ELSE 0 END), 0) / 7.0 * 0.7)
+                     + (COALESCE(SUM(CASE WHEN m.created_at BETWEEN NOW() - INTERVAL '30 days' AND NOW() - INTERVAL '7 days' THEN m.cantidad ELSE 0 END), 0) / 23.0 * 0.3)) AS cdp,
+                    COALESCE(SUM(m.cantidad), 0)::FLOAT8 AS total_cons,
+                    COUNT(DISTINCT m.created_at::date) AS dcc,
+                    EXTRACT(DAY FROM (NOW() - MIN(m.created_at)))::INT + 1 AS dvs
+                FROM lotes l
+                JOIN movimientos m ON m.lote_id = l.id AND m.tipo = 'CONSUMO'
+                    AND m.created_at >= NOW() - ({2}::int * INTERVAL '1 day') {1}
+                GROUP BY l.producto_id
+            )
+            SELECT fn_estado_stock(
+                COALESCE(ss.total, 0),
+                CASE WHEN COALESCE(mv.dcc, 0) >= 14 THEN COALESCE(mv.cdp, 0)::FLOAT8
+                     WHEN COALESCE(mv.dcc, 0) >= 1  THEN COALESCE(mv.total_cons, 0) / GREATEST(mv.dvs::FLOAT8, 1)
+                     ELSE 0.0 END,
+                COALESCE(mv.dcc, 0)::int,
+                COALESCE(p.lead_time_propio, pv.dias_despacho_tierra, pv.dias_despacho_aereo, 7)::int,
+                {3}, ss.prox, true, 3, {4}, {5}
+            ) AS est
+            FROM productos p
+            LEFT JOIN proveedores pv ON pv.id = p.proveedor_id
+            LEFT JOIN stock_stats ss ON ss.producto_id = p.id
+            LEFT JOIN mov mv ON mv.producto_id = p.id
+            WHERE p.activo = true
+        ) sub WHERE est IN ('critico', 'reponer')"#,
+        resumen_area_filter,
+        movement_area_filter,
+        forecast_cfg.ventana_demanda_dias,
+        forecast_cfg.dias_objetivo_cobertura,
+        forecast_cfg.vencimiento_riesgo_dias,
+        forecast_cfg.vencimiento_proximo_dias,
+    ))
     .fetch_one(&state.pool)
     .await?;
 
@@ -438,9 +459,10 @@ async fn listar(
            WHERE s.cantidad > 0
              AND p.activo = true
              AND l.fecha_vencimiento >= CURRENT_DATE
-             AND l.fecha_vencimiento <= CURRENT_DATE + INTERVAL '90 days'
-             {}"#,
-        resumen_area_filter
+             AND l.fecha_vencimiento <= CURRENT_DATE + ({1} * INTERVAL '1 day')
+             {0}"#,
+        resumen_area_filter,
+        forecast_cfg.vencimiento_proximo_dias,
     ))
     .fetch_one(&state.pool)
     .await?;
@@ -469,7 +491,6 @@ struct StockItemRow {
     unidad_plural: Option<String>,
     stock_total: Option<Decimal>,
     lotes_count: i64,
-    stock_minimo: Decimal,
     #[serde(skip)]
     #[allow(dead_code)]
     inicializado: bool,
@@ -477,13 +498,16 @@ struct StockItemRow {
     proveedor_nombre: Option<String>,
     proveedor_icono: Option<String>,
     imagen_url: Option<String>,
+    // estado_alerta proviene exclusivamente de fn_estado_stock (única fuente de verdad).
     estado_alerta: String,
     consumo_diario_ajustado: Decimal,
     dias_con_consumo: i64,
-    #[sqlx(default)]
+    // dias_autonomia se calcula en SQL con el mismo consumo que el estado.
     dias_autonomia: Option<i32>,
+    // dias_autonomia_pico es un escenario aparte; lo calcula Rust desde la serie.
     #[sqlx(default)]
     dias_autonomia_pico: Option<i32>,
+    #[allow(dead_code)]
     lead_time_propio: Option<i32>,
     #[serde(skip)]
     serie: Vec<f64>,
@@ -495,78 +519,31 @@ fn decimal_to_f64(value: Decimal) -> f64 {
     value.to_string().parse::<f64>().unwrap_or(0.0)
 }
 
-/// Calcula (dias_normal, dias_pico) para un producto.
-///
-/// - dias_normal: stock / consumo_base_adaptivo (ventana real, sin descuento)
-///   Si hay suficiente historia usa EWMA sobre serie winsorizada; con pocos datos
-///   usa la ventana real desde el primer evento.
-/// - dias_pico: stock / consumo_pico_7d. Solo se emite si el pico es ≥30% mayor
-///   que el consumo base (señal de variabilidad significativa).
-fn calcular_autonomia(row: &mut StockItemRow, cfg: ForecastConfig) {
+/// Calcula `dias_autonomia_pico`: días de autonomía si el consumo alcanzara el
+/// pico de 7 días observado recientemente. Es un escenario informativo aparte y
+/// NO toca `estado_alerta` ni `dias_autonomia`, que provienen de `fn_estado_stock`
+/// en SQL (única fuente de verdad). Solo se emite si el pico supera la base en ≥30%.
+fn calcular_pico(row: &mut StockItemRow, cfg: ForecastConfig) {
     let stock_actual = decimal_to_f64(row.stock_total.unwrap_or(Decimal::ZERO));
-    let lead_time = row.lead_time_propio.unwrap_or(3);
-    
     if stock_actual <= 0.0 {
-        row.dias_autonomia = Some(0);
         row.dias_autonomia_pico = None;
-        if row.inicializado {
-            row.estado_alerta = "sin_stock".to_string();
-        } else {
-            row.estado_alerta = "normal".to_string();
-        }
         return;
     }
 
     let dias_con_consumo = row.dias_con_consumo as i32;
-
     let consumo_base = if dias_con_consumo >= cfg.dias_minimos_historia {
         let serie_w = winsorize_p95(&row.serie);
         ewma(&serie_w, 0.2)
     } else {
         consumo_base_adaptivo(&row.serie)
     };
-
     let pico = consumo_pico_7d(&row.serie);
 
-    row.dias_autonomia = if consumo_base > 0.0001 {
-        Some((stock_actual / consumo_base).floor().min(999.0) as i32)
-    } else {
-        None
-    };
-
-    // Emitir días en pico solo cuando hay base válida y el pico la supera en ≥30%.
-    // Sin base válida no hay referencia contra la que comparar el pico.
     row.dias_autonomia_pico = if consumo_base > 0.0001 && pico > consumo_base * 1.3 {
         Some((stock_actual / pico).floor().min(999.0) as i32)
     } else {
         None
     };
-
-    // Recalcular y sobreescribir el estado para garantizar consistencia total con la lógica de autonomía en Rust
-    let hoy = chrono::Utc::now().date_naive();
-    if row.proximo_vencimiento.is_some() && row.proximo_vencimiento.unwrap() < hoy {
-        row.estado_alerta = "vencido".to_string();
-    } else if let Some(dias) = row.dias_autonomia {
-        if dias <= lead_time {
-            row.estado_alerta = "critico".to_string();
-        } else if row.stock_minimo > Decimal::ZERO && row.stock_total.unwrap_or(Decimal::ZERO) < row.stock_minimo {
-            row.estado_alerta = "bajo_minimo".to_string();
-        } else if dias <= lead_time + 7 {
-            row.estado_alerta = "reponer".to_string();
-        } else if row.proximo_vencimiento.is_some() && row.proximo_vencimiento.unwrap() <= hoy + chrono::Duration::days(90) {
-            row.estado_alerta = "vence_pronto".to_string();
-        } else {
-            row.estado_alerta = "normal".to_string();
-        }
-    } else {
-        if row.stock_minimo > Decimal::ZERO && row.stock_total.unwrap_or(Decimal::ZERO) < row.stock_minimo {
-            row.estado_alerta = "bajo_minimo".to_string();
-        } else if row.proximo_vencimiento.is_some() && row.proximo_vencimiento.unwrap() <= hoy + chrono::Duration::days(90) {
-            row.estado_alerta = "vence_pronto".to_string();
-        } else {
-            row.estado_alerta = "normal".to_string();
-        }
-    }
 }
 
 /// GET /api/v1/stock/area/:area_id — Stock de un área específica
@@ -600,7 +577,6 @@ async fn stock_por_area(
                p.nombre,
                um.nombre as unidad,
                um.nombre_plural as unidad_plural,
-               COALESCE(pa.stock_minimo, p.stock_minimo, 0) AS stock_minimo,
                COALESCE(SUM(s.cantidad), 0) AS stock,
                (
                    SELECT JSON_AGG(JSON_BUILD_OBJECT(
@@ -633,11 +609,10 @@ async fn stock_por_area(
            JOIN lotes l ON l.id = s.lote_id
            JOIN productos p ON p.id = l.producto_id
            JOIN unidades_basicas um ON um.id = p.unidad_base_id
-           LEFT JOIN producto_area pa ON pa.producto_id = p.id AND pa.area_id = $1
            LEFT JOIN presentaciones lpres ON lpres.id = l.presentacion_id AND lpres.deleted_at IS NULL
            WHERE s.area_id = $1 AND s.cantidad > 0 AND p.activo = true
            {}
-           GROUP BY p.id, p.codigo_interno, p.nombre, um.nombre, um.nombre_plural, pa.stock_minimo, p.stock_minimo
+           GROUP BY p.id, p.codigo_interno, p.nombre, um.nombre, um.nombre_plural
            ORDER BY p.nombre
            LIMIT ${} OFFSET ${}"#,
         if params.q.is_some() {
@@ -670,7 +645,6 @@ async fn stock_por_area(
         nombre: String,
         unidad: String,
         unidad_plural: String,
-        stock_minimo: Option<Decimal>,
         stock: Decimal,
         presentaciones: Option<serde_json::Value>,
         lotes: Option<serde_json::Value>,
@@ -699,7 +673,6 @@ async fn stock_por_area(
                 "nombre": row.nombre,
                 "unidad": row.unidad,
                 "unidad_plural": row.unidad_plural,
-                "stock_minimo": row.stock_minimo,
                 "stock": row.stock,
                 "presentaciones": row.presentaciones.unwrap_or(serde_json::json!([])),
                 "lotes": row.lotes.unwrap_or(serde_json::json!([])),
@@ -745,14 +718,17 @@ fn default_per_page() -> i64 {
 }
 
 async fn load_forecast_config(pool: &sqlx::PgPool) -> Result<ForecastConfig, AppError> {
-    let row: (i32, i32, i32, f64, f64) = sqlx::query_as(
+    let row: (i32, i32, i32, f64, f64, i32, i32, i32) = sqlx::query_as(
         r#"
         SELECT
             COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'ventana_demanda_dias'), 60),
             COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'periodo_revision_dias'), 30),
             COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'dias_minimos_historia'), 14),
             COALESCE((SELECT valor_texto::float8 FROM configuracion WHERE clave = 'nivel_servicio_z'), 1.65),
-            COALESCE((SELECT valor_texto::float8 FROM configuracion WHERE clave = 'factor_historial_corto'), 0.35)
+            COALESCE((SELECT valor_texto::float8 FROM configuracion WHERE clave = 'factor_historial_corto'), 0.35),
+            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'dias_objetivo_cobertura'), 30),
+            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'vencimiento_riesgo_dias'), 30),
+            COALESCE((SELECT valor_texto::int FROM configuracion WHERE clave = 'vencimiento_proximo_dias'), 90)
         "#
     )
     .fetch_one(pool)
@@ -764,6 +740,9 @@ async fn load_forecast_config(pool: &sqlx::PgPool) -> Result<ForecastConfig, App
         dias_minimos_historia: row.2,
         nivel_servicio_z: row.3,
         factor_historial_corto: row.4.clamp(0.0, 1.0),
+        dias_objetivo_cobertura: row.5,
+        vencimiento_riesgo_dias: row.6,
+        vencimiento_proximo_dias: row.7,
     })
 }
 
@@ -775,7 +754,6 @@ struct AlertaRow {
     unidad: String,
     unidad_plural: String,
     proxima_fecha_venc: Option<NaiveDate>,
-    stock_minimo: Option<Decimal>,
     tipo_alerta: Option<String>,
     dias_inactivo: Option<i32>,
     consumo_diario_30d: Option<Decimal>,
@@ -868,25 +846,7 @@ async fn alertas(
             )
         };
 
-    let stock_minimo_expr = if effective_area_ids.is_empty() {
-        "p.stock_minimo".to_string()
-    } else {
-        let arr = effective_area_ids
-            .iter()
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        format!(
-            "COALESCE((
-                SELECT SUM(pa.stock_minimo)
-                FROM producto_area pa
-                WHERE pa.producto_id = p.id
-                  AND pa.area_id = ANY(ARRAY[{}]::integer[])
-                  AND pa.stock_minimo > 0
-            ), p.stock_minimo)",
-            arr
-        )
-    };
+    let forecast_cfg = load_forecast_config(&state.pool).await?;
 
     let pedidos_cte = r#"pedidos_pendientes AS (
                SELECT
@@ -908,16 +868,16 @@ async fn alertas(
                        SELECT 1
                        FROM movimientos m
                        JOIN lotes lm ON lm.id = m.lote_id
-                       WHERE lm.producto_id = p.id {}
+                       WHERE lm.producto_id = p.id {0}
                    ) OR EXISTS (
                        SELECT 1
                        FROM stock si
                        JOIN lotes lsi ON lsi.id = si.lote_id
-                       WHERE lsi.producto_id = p.id {}
+                       WHERE lsi.producto_id = p.id {1}
                    ) AS inicializado
                FROM productos p
                LEFT JOIN lotes l ON l.producto_id = p.id
-               LEFT JOIN stock s ON s.lote_id = l.id {}
+               LEFT JOIN stock s ON s.lote_id = l.id {2}
                WHERE p.activo = true
                GROUP BY p.id
            ),
@@ -929,20 +889,20 @@ async fn alertas(
                      (COALESCE(SUM(CASE WHEN m.tipo = 'CONSUMO' AND m.created_at >= NOW() - INTERVAL '7 days' THEN m.cantidad ELSE 0 END), 0) / 7.0 * 0.7) +
                      (COALESCE(SUM(CASE WHEN m.tipo = 'CONSUMO' AND m.created_at BETWEEN NOW() - INTERVAL '30 days' AND NOW() - INTERVAL '7 days' THEN m.cantidad ELSE 0 END), 0) / 23.0 * 0.3)
                    )::DECIMAL AS consumo_diario_ponderado,
-                   COUNT(DISTINCT CASE WHEN m.tipo = 'CONSUMO' THEN m.created_at::date END) AS dias_con_consumo,
-                   EXTRACT(DAY FROM (NOW() - MIN(m.created_at)))::INT + 1 AS dias_vida_sistema,
+                   COUNT(DISTINCT CASE WHEN m.tipo = 'CONSUMO' AND m.created_at >= NOW() - ({3}::int * INTERVAL '1 day') THEN m.created_at::date END) AS dias_con_consumo,
+                   (EXTRACT(DAY FROM (NOW() - MIN(m.created_at) FILTER (WHERE m.tipo = 'CONSUMO' AND m.created_at >= NOW() - ({3}::int * INTERVAL '1 day'))))::INT + 1) AS dias_vida_sistema,
+                   COALESCE(SUM(CASE WHEN m.tipo = 'CONSUMO' AND m.created_at >= NOW() - ({3}::int * INTERVAL '1 day') THEN m.cantidad ELSE 0 END), 0)::FLOAT8 AS total_consumo_ventana,
                    (COALESCE(SUM(CASE WHEN m.tipo = 'CONSUMO' AND m.created_at >= NOW() - INTERVAL '7 days' THEN m.cantidad ELSE 0 END), 0) / 7.0)::DECIMAL AS consumo_7d
                FROM productos p
                LEFT JOIN lotes l ON l.producto_id = p.id
-               LEFT JOIN movimientos m ON m.lote_id = l.id {}
+               LEFT JOIN movimientos m ON m.lote_id = l.id {0}
                GROUP BY p.id
            ),
-           {}
+           {4}
            stats AS (
                SELECT
                    p.id as producto_id,
                    p.nombre,
-                   {} AS stock_minimo,
                    p.lead_time_propio,
                    p.created_at,
                    p.proveedor_id,
@@ -958,7 +918,14 @@ async fn alertas(
                    CASE
                        WHEN ms.dias_vida_sistema < 30 AND ms.dias_con_consumo >= 3 THEN
                            COALESCE(ms.consumo_diario_ponderado * (30.0 / GREATEST(ms.dias_vida_sistema, 7)), 0)::NUMERIC(15,4)
-                       ELSE COALESCE(ms.consumo_diario_ponderado, 0)::NUMERIC(15,4)                   END AS consumo_diario_ajustado,
+                       ELSE COALESCE(ms.consumo_diario_ponderado, 0)::NUMERIC(15,4)
+                   END AS consumo_diario_ajustado,
+                   -- consumo_base_estimado: idéntico al de /stock listar para que estado y conteos coincidan.
+                   CASE
+                       WHEN COALESCE(ms.dias_con_consumo, 0) >= 14 THEN COALESCE(ms.consumo_diario_ponderado, 0)::FLOAT8
+                       WHEN COALESCE(ms.dias_con_consumo, 0) >= 1  THEN COALESCE(ms.total_consumo_ventana, 0) / GREATEST(ms.dias_vida_sistema::FLOAT8, 1)
+                       ELSE 0.0
+                   END AS consumo_base_estimado,
                    ms.dias_con_consumo,
                    (ms.consumo_7d > ms.consumo_diario_ponderado * 3 AND ms.dias_con_consumo > 5) AS es_anomalia
                FROM productos p
@@ -968,17 +935,21 @@ async fn alertas(
                LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
                LEFT JOIN pedidos_pendientes pp ON pp.producto_id = p.id
                WHERE p.activo = true
-               {}
+               {5}
            ),
-           stats_with_autonomia AS (
+           con_estado AS (
                 SELECT
-                    *,
+                    s.*,
                     CASE
-                        WHEN total > 0 AND consumo_diario_ajustado > 0.0001 AND dias_con_consumo >= 3 THEN
-                            LEAST(FLOOR(total / consumo_diario_ajustado), 999)::INT
+                        WHEN total > 0 AND consumo_base_estimado > 0.0001 AND dias_con_consumo >= 3 THEN
+                            LEAST(FLOOR(total / consumo_base_estimado), 999)::INT
                         ELSE NULL
-                    END as dias_autonomia
-                FROM stats
+                    END AS dias_autonomia,
+                    fn_estado_stock(
+                        total, consumo_base_estimado, dias_con_consumo::int, dias_despacho::int,
+                        {6}, proxima_fecha_venc, inicializado, 3, {7}, {8}
+                    ) AS estado
+                FROM stats s
            ),
            filtered_alertas AS (
                SELECT
@@ -988,9 +959,6 @@ async fn alertas(
                    unidad,
                    unidad_plural,
                    proxima_fecha_venc,
-                   stock_minimo,
-                   lead_time_propio,
-                   created_at,
                    total_en_camino,
                    (total_en_camino > 0) AS tiene_pedido_pendiente,
                    proveedor_id,
@@ -1001,35 +969,19 @@ async fn alertas(
                    dias_con_consumo,
                    es_anomalia,
                    dias_autonomia,
-                   alerta.tipo as tipo_alerta
-               FROM stats_with_autonomia
-               CROSS JOIN LATERAL (
-                   SELECT 'vencido' as tipo WHERE proxima_fecha_venc < CURRENT_DATE
-                   UNION ALL
-                   SELECT 'sin_stock' WHERE inicializado AND total <= 0
-                   UNION ALL
-                   SELECT 'critico' WHERE total > 0 AND dias_autonomia IS NOT NULL AND dias_autonomia <= COALESCE(lead_time_propio, 3)
-                   UNION ALL
-                   SELECT 'bajo_minimo' WHERE stock_minimo > 0 AND total < stock_minimo AND total > 0
-                       AND NOT (dias_autonomia IS NOT NULL AND dias_autonomia <= COALESCE(lead_time_propio, 3))
-                   UNION ALL
-                   SELECT 'reponer' WHERE total > 0 AND dias_autonomia IS NOT NULL AND dias_autonomia > COALESCE(lead_time_propio, 3) AND dias_autonomia <= COALESCE(lead_time_propio, 3) + 7
-                       AND NOT (stock_minimo > 0 AND total < stock_minimo)
-                   UNION ALL
-                   SELECT 'vence_30d' WHERE proxima_fecha_venc >= CURRENT_DATE AND proxima_fecha_venc <= CURRENT_DATE + INTERVAL '30 days'
-                   UNION ALL
-                   SELECT 'vence_90d' WHERE proxima_fecha_venc > CURRENT_DATE + INTERVAL '30 days' AND proxima_fecha_venc <= CURRENT_DATE + INTERVAL '90 days'
-               ) alerta
+                   estado as tipo_alerta
+               FROM con_estado
+               WHERE estado IN ('vencido', 'agotado', 'critico', 'reponer', 'riesgo_venc', 'por_vencer')
            ),
            total_count AS (
                SELECT COUNT(*) as full_count FROM filtered_alertas
            ),
            resumen AS (
                SELECT
-                   COUNT(*) FILTER (WHERE tipo_alerta = 'sin_stock') AS sin_stock_count,
+                   COUNT(*) FILTER (WHERE tipo_alerta = 'agotado') AS sin_stock_count,
                    COUNT(*) FILTER (WHERE tipo_alerta = 'vencido') AS vencido_count,
-                   COUNT(*) FILTER (WHERE tipo_alerta IN ('bajo_minimo', 'critico', 'reponer')) AS bajo_minimo_count,
-                   COUNT(*) FILTER (WHERE tipo_alerta IN ('vence_30d', 'vence_90d')) AS vencimiento_count
+                   COUNT(*) FILTER (WHERE tipo_alerta IN ('critico', 'reponer')) AS bajo_minimo_count,
+                   COUNT(*) FILTER (WHERE tipo_alerta IN ('riesgo_venc', 'por_vencer')) AS vencimiento_count
                FROM filtered_alertas
            )
            SELECT
@@ -1042,23 +994,24 @@ async fn alertas(
            FROM filtered_alertas fa, total_count tc, resumen r
            ORDER BY
                CASE WHEN tipo_alerta = 'vencido' THEN 0
-                    WHEN tipo_alerta = 'sin_stock' THEN 1
+                    WHEN tipo_alerta = 'agotado' THEN 1
                     WHEN tipo_alerta = 'critico' THEN 2
-                    WHEN tipo_alerta = 'vence_30d' THEN 3
-                    WHEN tipo_alerta = 'bajo_minimo' THEN 4
-                    WHEN tipo_alerta = 'reponer' THEN 5
-                    WHEN tipo_alerta = 'vence_90d' THEN 6
-                    ELSE 7 END,
+                    WHEN tipo_alerta = 'riesgo_venc' THEN 3
+                    WHEN tipo_alerta = 'reponer' THEN 4
+                    WHEN tipo_alerta = 'por_vencer' THEN 5
+                    ELSE 6 END,
                proxima_fecha_venc ASC NULLS LAST,
                nombre ASC
            LIMIT $1 OFFSET $2"#,
         movement_area_filter,
         stock_exists_area_filter,
         stock_area_filter,
-        movement_area_filter,
+        forecast_cfg.ventana_demanda_dias,
         pedidos_cte,
-        stock_minimo_expr,
-        product_area_filter
+        product_area_filter,
+        forecast_cfg.dias_objetivo_cobertura,
+        forecast_cfg.vencimiento_riesgo_dias,
+        forecast_cfg.vencimiento_proximo_dias,
     );
 
     let rows = sqlx::query_as::<_, AlertaRow>(&sql)

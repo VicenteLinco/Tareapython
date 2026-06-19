@@ -141,7 +141,6 @@ pub async fn asignar_productos(
     for producto in &productos {
         repo.configurar_producto_area(area_id, ProductoAreaConfigInput {
             producto_id: producto.producto_id,
-            stock_minimo: producto.stock_minimo,
             stock_maximo: producto.stock_maximo,
             punto_reorden: producto.punto_reorden,
         }).await?;

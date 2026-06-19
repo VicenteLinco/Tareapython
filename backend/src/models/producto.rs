@@ -11,7 +11,6 @@ pub struct Producto {
     pub descripcion: Option<String>,
     pub categoria_id: Option<i32>,
     pub unidad_base_id: i32,
-    pub stock_minimo: Decimal,
     pub ubicacion: Option<String>,
     pub temperatura_almacenamiento: Option<String>,
     pub requiere_cadena_frio: bool,

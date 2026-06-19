@@ -3,7 +3,14 @@ import { useSearchParams } from 'react-router-dom'
 import { useFilterStorage } from '@/hooks/use-filter-storage'
 import type { StockItem } from '@/types'
 
-export type EstadoFiltro = 'todos' | 'normal' | 'bajo' | 'sin_stock' | 'vencido' | 'vence_pronto'
+export type EstadoFiltro =
+  | 'todos'
+  | 'normal'
+  | 'bajo'
+  | 'agotado'
+  | 'vencido'
+  | 'vence_pronto'
+  | 'sin_datos'
 
 const STOCK_FILTER_DEFAULTS = {
   categoriaId: null as number | null,
@@ -12,11 +19,13 @@ const STOCK_FILTER_DEFAULTS = {
 }
 
 function parseEstado(raw: string): EstadoFiltro {
-  const valid: EstadoFiltro[] = ['todos', 'normal', 'bajo', 'sin_stock', 'vencido', 'vence_pronto']
+  const valid: EstadoFiltro[] = ['todos', 'normal', 'bajo', 'agotado', 'vencido', 'vence_pronto', 'sin_datos']
   if ((valid as string[]).includes(raw)) return raw as EstadoFiltro
-  if (raw === 'sin-stock') return 'sin_stock' // compat legacy
-  if (raw === 'vencidos') return 'vencido' // compat legacy
-  if (raw === 'critico') return 'bajo' // compat legacy
+  // compat legacy
+  if (raw === 'sin_stock' || raw === 'sin-stock') return 'agotado'
+  if (raw === 'vencidos') return 'vencido'
+  if (raw === 'critico' || raw === 'reponer' || raw === 'bajo_minimo') return 'bajo'
+  if (raw === 'riesgo_venc' || raw === 'por_vencer' || raw === 'vencimiento') return 'vence_pronto'
   return 'todos'
 }
 

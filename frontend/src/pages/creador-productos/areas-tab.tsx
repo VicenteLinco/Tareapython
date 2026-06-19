@@ -16,7 +16,6 @@ interface ProductoAreaConfig {
   id: string
   codigo_interno: string
   nombre: string
-  stock_minimo: string | null
   stock_maximo: string | null
   punto_reorden: string | null
 }
@@ -96,7 +95,6 @@ export default function AreasTab() {
     mutationFn: () => api.put(`/areas/${configArea!.id}/productos`, {
       productos: productosConfig.map((p) => ({
         producto_id: p.id,
-        stock_minimo: p.stock_minimo || null,
         stock_maximo: p.stock_maximo || null,
         punto_reorden: p.punto_reorden || null,
       })),
@@ -323,7 +321,6 @@ export default function AreasTab() {
                 <thead>
                   <tr>
                     <th>Producto</th>
-                    <th className="w-28">Mín.</th>
                     <th className="w-28">Máx.</th>
                     <th className="w-32">Reorden</th>
                   </tr>
@@ -335,7 +332,7 @@ export default function AreasTab() {
                         <div className="font-medium text-sm">{p.nombre}</div>
                         <div className="text-[10px] font-mono opacity-40">{p.codigo_interno}</div>
                       </td>
-                      {(['stock_minimo', 'stock_maximo', 'punto_reorden'] as const).map((key) => (
+                      {(['stock_maximo', 'punto_reorden'] as const).map((key) => (
                         <td key={key}>
                           <input
                             type="number"

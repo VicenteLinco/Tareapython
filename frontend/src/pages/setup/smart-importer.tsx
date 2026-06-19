@@ -27,7 +27,6 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
     nombre: '',
     descripcion: '',
     unidad: '',
-    stock_minimo: ''
   })
   const [previewData, setPreviewData] = useState<ImportPreviewRow[]>([])
   const [errors, setErrors] = useState<ImportErrorRow[]>([])
@@ -39,7 +38,6 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
     { key: 'nombre', label: 'Nombre del Producto', required: true, desc: 'Identificador principal' },
     { key: 'unidad', label: 'Unidad de Medida', required: true, desc: 'Debe coincidir con las creadas' },
     { key: 'descripcion', label: 'Descripción', required: false, desc: 'Detalles adicionales' },
-    { key: 'stock_minimo', label: 'Stock Mínimo', required: false, desc: 'Valor numérico' },
   ]
 
   // --- Lógica de Procesamiento ---
@@ -68,7 +66,6 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
         if (lower.includes('nom') || lower.includes('prd')) newMap.nombre = col
         if (lower.includes('uni') || lower.includes('med')) newMap.unidad = col
         if (lower.includes('desc')) newMap.descripcion = col
-        if (lower.includes('min') || lower.includes('stock')) newMap.stock_minimo = col
       })
       setMapping(newMap)
       setStep('MAP')
@@ -306,7 +303,6 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                         <th className="pl-8">Fila</th>
                         <th>Nombre</th>
                         <th>Unidad</th>
-                        <th>Stock Mín.</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -315,7 +311,6 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                           <td className="pl-8 font-mono text-[10px] opacity-30">{row.fila}</td>
                           <td className="font-bold text-sm">{row.nombre}</td>
                           <td><span className="badge badge-ghost font-bold text-[10px] uppercase tracking-tighter">{row.unidad}</span></td>
-                          <td className="font-mono text-sm">{row.stock_minimo}</td>
                         </tr>
                       ))}
                     </tbody>

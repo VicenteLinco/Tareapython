@@ -38,7 +38,6 @@ struct ProductoListItem {
     unidad_base: UnidadRef,
     proveedor: Option<ProveedorRef>,
     area: Option<AreaRef>,
-    stock_minimo: Decimal,
     precio_unidad: Option<Decimal>,
     lead_time_propio: Option<i32>,
     activo: bool,
@@ -96,7 +95,6 @@ struct CreateProducto {
     proveedor_id: Option<i32>,
     sku: Option<String>,
     precio_unidad: Option<Decimal>,
-    stock_minimo: Option<Decimal>,
     ubicacion: Option<String>,
     temperatura_almacenamiento: Option<String>,
     requiere_cadena_frio: Option<bool>,
@@ -122,7 +120,6 @@ struct UpdateProducto {
     proveedor_id: Option<i32>,
     sku: Option<String>,
     precio_unidad: Option<Decimal>,
-    stock_minimo: Option<Decimal>,
     ubicacion: Option<String>,
     temperatura_almacenamiento: Option<String>,
     requiere_cadena_frio: Option<bool>,
@@ -147,7 +144,6 @@ struct ProductoRow {
     codigo_interno: String,
     nombre: String,
     sku: Option<String>,
-    stock_minimo: Decimal,
     precio_unidad: Option<Decimal>,
     lead_time_propio: Option<i32>,
     activo: bool,
@@ -235,7 +231,6 @@ async fn listar(
         Some("codigo") => "p.codigo_interno",
         Some("categoria") => "c.nombre",
         Some("proveedor") => "pr.nombre",
-        Some("stock_minimo") => "p.stock_minimo",
         Some("estado") => "p.activo",
         _ => "p.nombre",
     };
@@ -250,15 +245,13 @@ async fn listar(
     );
     let data_sql = format!(
         r#"SELECT p.id, p.codigo_interno, p.nombre, p.sku,
-                  p.stock_minimo, p.precio_unidad, p.lead_time_propio, p.activo,
+                  p.precio_unidad, p.lead_time_propio, p.activo,
                   CASE
                       WHEN NOT p.activo THEN 'inactivo'
-                      WHEN p.stock_minimo > 0
-                           AND COALESCE((SELECT SUM(s.cantidad) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = p.id), 0) <= 0
+                      WHEN COALESCE((SELECT SUM(s.cantidad) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = p.id), 0) <= 0
                            AND NOT EXISTS (SELECT 1 FROM movimientos m JOIN lotes lm ON lm.id = m.lote_id WHERE lm.producto_id = p.id)
                           THEN 'pendiente_inicializar'
-                      WHEN p.stock_minimo > 0
-                           AND COALESCE((SELECT SUM(s.cantidad) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = p.id), 0) <= 0
+                      WHEN COALESCE((SELECT SUM(s.cantidad) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = p.id), 0) <= 0
                           THEN 'sin_stock'
                       ELSE 'activo'
                   END AS estado_stock,
@@ -337,7 +330,6 @@ async fn listar(
                 id,
                 nombre: r.area_nombre.unwrap_or_default(),
             }),
-            stock_minimo: r.stock_minimo,
             precio_unidad: r.precio_unidad,
             lead_time_propio: r.lead_time_propio,
             activo: r.activo,
@@ -413,7 +405,6 @@ async fn crear(
             proveedor_id: req.proveedor_id,
             sku: req.sku,
             precio_unidad: req.precio_unidad,
-            stock_minimo: req.stock_minimo,
             ubicacion: req.ubicacion,
             temperatura_almacenamiento: req.temperatura_almacenamiento,
             requiere_cadena_frio: req.requiere_cadena_frio.unwrap_or(false),
@@ -467,7 +458,6 @@ async fn actualizar(
             proveedor_id: req.proveedor_id,
             sku: req.sku,
             precio_unidad: req.precio_unidad,
-            stock_minimo: req.stock_minimo,
             ubicacion: req.ubicacion,
             temperatura_almacenamiento: req.temperatura_almacenamiento,
             requiere_cadena_frio: req.requiere_cadena_frio,

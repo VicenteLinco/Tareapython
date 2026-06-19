@@ -41,6 +41,21 @@ export interface UpdateProfileRequest {
 
 // --- Frontend Specific Models or Complex Joins ---
 
+// Estado de stock — fuente única: fn_estado_stock en el backend (modelo días de cobertura).
+export type EstadoAlerta =
+  | 'normal'
+  | 'agotado'
+  | 'no_gestionado'
+  | 'vencido'
+  | 'critico'
+  | 'reponer'
+  | 'riesgo_venc'
+  | 'por_vencer'
+  | 'sin_datos'
+
+// Tipos de alerta que devuelve /stock/alertas (subconjunto accionable de EstadoAlerta).
+export type TipoAlerta = 'vencido' | 'agotado' | 'critico' | 'reponer' | 'riesgo_venc' | 'por_vencer'
+
 export interface StockItem {
   producto_id: string
   codigo_interno: string
@@ -50,7 +65,6 @@ export interface StockItem {
   unidad_plural: string | null
   stock_total: number | null
   lotes_count?: number
-  stock_minimo: number
   dias_autonomia?: number | null
   dias_autonomia_pico?: number | null
   dias_con_consumo?: number
@@ -58,7 +72,7 @@ export interface StockItem {
   proximo_vencimiento: string | null
   proveedor_nombre: string | null
   proveedor_icono: string | null
-  estado_alerta?: 'normal' | 'sin_stock' | 'vencido' | 'bajo_minimo' | 'vence_pronto' | 'critico' | 'reponer'
+  estado_alerta?: EstadoAlerta
   imagen_url?: string | null
   area_id?: number
   area_nombre?: string
@@ -78,11 +92,10 @@ export interface StockPorArea {
 }
 
 export interface Alerta {
-  tipo_alerta: 'bajo_minimo' | 'vence_30d' | 'vence_90d' | 'vencido' | 'sin_stock' | 'critico' | 'reponer'
+  tipo_alerta: TipoAlerta
   producto_id: string
   nombre: string
   proxima_fecha_venc: string | null
-  stock_minimo: number | null
   total: number | null
   unidad: string | null
   unidad_plural: string | null

@@ -115,12 +115,11 @@ impl AreaRepository for SqlxAreaRepository {
     async fn configurar_producto_area(&self, area_id: i32, config: ProductoAreaConfigInput) -> Result<(), AppError> {
         sqlx::query(
             r#"INSERT INTO producto_area
-               (producto_id, area_id, stock_minimo, stock_maximo, punto_reorden)
-               VALUES ($1, $2, $3, $4, $5)"#,
+               (producto_id, area_id, stock_maximo, punto_reorden)
+               VALUES ($1, $2, $3, $4)"#,
         )
         .bind(config.producto_id)
         .bind(area_id)
-        .bind(config.stock_minimo)
         .bind(config.stock_maximo)
         .bind(config.punto_reorden)
         .execute(&self.pool)
@@ -131,7 +130,7 @@ impl AreaRepository for SqlxAreaRepository {
     async fn obtener_config_producto_area(&self, id: i32) -> Result<Vec<ProductoAreaRow>, AppError> {
         sqlx::query_as::<_, ProductoAreaRow>(
             r#"SELECT p.id, p.codigo_interno, p.nombre,
-                      pa.stock_minimo, pa.stock_maximo, pa.punto_reorden
+                      pa.stock_maximo, pa.punto_reorden
                FROM producto_area pa
                JOIN productos p ON p.id = pa.producto_id
                WHERE pa.area_id = $1 AND p.activo = true

@@ -39,7 +39,6 @@ interface ProductoListItem {
   categoria: { id: number; nombre: string } | null
   unidad_base: { id: number; nombre: string; nombre_plural: string }
   area: { id: number; nombre: string } | null
-  stock_minimo: string
   precio_unidad: string | null
   lead_time_propio: number | null
   activo: boolean
@@ -76,7 +75,6 @@ interface ProductoDetailResponse {
   pres_gtin: string | null
   pres_gs1_habilitado: boolean | null
   imagen_url: string | null
-  stock_minimo: string
   ubicacion: string | null
   temperatura_almacenamiento: string | null
   requiere_cadena_frio: boolean
@@ -273,14 +271,6 @@ export default function ProductosTab() {
       ),
     },
     {
-      key: 'stock_minimo',
-      header: 'Mín.',
-      className: 'hidden lg:table-cell',
-      render: (item: ProductoListItem) => (
-        <span className="text-sm font-mono opacity-50">{Math.round(Number(item.stock_minimo))}</span>
-      ),
-    },
-    {
       key: 'activo',
       header: 'Estado',
       render: (item: ProductoListItem) => productoEstadoBadge(item),
@@ -341,7 +331,7 @@ export default function ProductosTab() {
   }
 
   function exportCurrentCsv() {
-    const header = ['codigo', 'nombre', 'categoria', 'proveedor', 'area', 'unidad', 'stock_minimo', 'estado']
+    const header = ['codigo', 'nombre', 'categoria', 'proveedor', 'area', 'unidad', 'estado']
     const lines = productos.map((p) => [
       p.codigo_interno,
       p.nombre,
@@ -349,7 +339,6 @@ export default function ProductosTab() {
       p.proveedor?.nombre,
       p.area?.nombre,
       p.unidad_base.nombre,
-      p.stock_minimo,
       productoEstadoTexto(p),
     ].map(csvEscape).join(';'))
     const blob = new Blob([[header.join(';'), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
@@ -514,7 +503,6 @@ export default function ProductosTab() {
             <option value="codigo">Código</option>
             <option value="categoria">Categoría</option>
             <option value="proveedor">Proveedor</option>
-            <option value="stock_minimo">Stock mínimo</option>
             <option value="estado">Estado</option>
           </select>
           <button
@@ -838,7 +826,6 @@ function CreateProductoDialog({
     unidad_base_id: '',
     area_id: '',
     ubicacion: '',
-    stock_minimo: '0',
     // flat supplier fields
     proveedor_id: '',
     sku: '',
@@ -871,7 +858,6 @@ function CreateProductoDialog({
       unidad_base_id: duplicateSource.unidad_base?.id ? String(duplicateSource.unidad_base.id) : '',
       area_id: duplicateSource.areas?.[0]?.id ? String(duplicateSource.areas[0].id) : '',
       ubicacion: duplicateSource.ubicacion ?? '',
-      stock_minimo: String(Math.round(Number(duplicateSource.stock_minimo))),
       proveedor_id: duplicateSource.proveedor_id ? String(duplicateSource.proveedor_id) : '',
       sku: duplicateSource.sku ?? '',
       precio_unidad: duplicateSource.precio_unidad ?? '',
@@ -902,7 +888,7 @@ function CreateProductoDialog({
     onClose()
     setForm({
       nombre: '', descripcion: '', categoria_id: '', unidad_base_id: '',
-      area_id: '', ubicacion: '', stock_minimo: '0',
+      area_id: '', ubicacion: '',
       proveedor_id: '', sku: '', precio_unidad: '',
       pres_nombre: '', pres_nombre_plural: '', pres_factor: '', pres_codigo_barras: '',
       imagen_data_url: null,
@@ -930,7 +916,6 @@ function CreateProductoDialog({
       proveedor_id: form.proveedor_id ? Number(form.proveedor_id) : undefined,
       sku: form.sku.trim() || undefined,
       precio_unidad: form.precio_unidad ? Number(form.precio_unidad) : undefined,
-      stock_minimo: Number(form.stock_minimo) || 0,
       area_ids: [Number(form.area_id)],
       ubicacion: form.ubicacion.trim() || undefined,
       pres_nombre: form.pres_nombre || undefined,
@@ -1243,20 +1228,6 @@ function CreateProductoDialog({
               )}
             </div>
 
-            <div className="form-control">
-              <label className="label py-0.5">
-                <span className="label-text text-sm font-medium">Stock mínimo</span>
-                <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-              </label>
-              <input
-                type="number"
-                className="input input-bordered input-sm h-9"
-                value={form.stock_minimo}
-                onChange={(e) => setForm((f) => ({ ...f, stock_minimo: e.target.value }))}
-                placeholder="Ej: 10"
-                min="0"
-              />
-            </div>
           </div>
 
           <div className="divider my-0" />
@@ -1409,7 +1380,6 @@ function EditProductoDialog({
     categoria_id: '',
     area_id: '',
     ubicacion: '',
-    stock_minimo: '0',
     // flat supplier fields
     proveedor_id: '',
     sku: '',
@@ -1437,7 +1407,6 @@ function EditProductoDialog({
         categoria_id: catId ? String(catId) : '',
         area_id: areaId ? String(areaId) : '',
         ubicacion: producto.ubicacion ?? '',
-        stock_minimo: String(Math.round(Number(producto.stock_minimo))),
         proveedor_id: producto.proveedor_id ? String(producto.proveedor_id) : '',
         sku: producto.sku ?? '',
         precio_unidad: producto.precio_unidad ?? '',
@@ -1480,7 +1449,6 @@ function EditProductoDialog({
       proveedor_id: form.proveedor_id ? Number(form.proveedor_id) : null,
       sku: form.sku.trim() || null,
       precio_unidad: form.precio_unidad ? Number(form.precio_unidad) : null,
-      stock_minimo: Number(form.stock_minimo),
       area_ids: form.area_id ? [Number(form.area_id)] : undefined,
       ubicacion: form.ubicacion.trim() || null,
       pres_nombre: form.pres_nombre || null,
@@ -1779,20 +1747,6 @@ function EditProductoDialog({
                 )}
               </div>
 
-              <div className="form-control">
-                <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Stock mínimo</span>
-                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
-                </label>
-                <input
-                  type="number"
-                  className="input input-bordered input-sm h-9"
-                  value={form.stock_minimo}
-                  onChange={(e) => setForm((f) => ({ ...f, stock_minimo: e.target.value }))}
-                  placeholder="Ej: 10"
-                  min="0"
-                />
-              </div>
             </div>
 
           <div className="divider my-0" />
@@ -2025,7 +1979,6 @@ function ProductoDetail({ id }: { id: string }) {
         )}
         <DetailRow label="Categoría" value={categoriaNombre} />
         <DetailRow label="Unidad base" value={producto.unidad_base?.nombre ?? '--'} />
-        <DetailRow label="Stock mínimo" value={String(Math.round(Number(producto.stock_minimo)))} mono />
         <DetailRow label="Estado" value={producto.activo ? 'Activo' : 'Inactivo'} />
 
         {producto.proveedor && (

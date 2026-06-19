@@ -38,7 +38,6 @@ pub struct ProductoAreaRow {
     pub id: Uuid,
     pub codigo_interno: String,
     pub nombre: String,
-    pub stock_minimo: Option<Decimal>,
     pub stock_maximo: Option<Decimal>,
     pub punto_reorden: Option<Decimal>,
 }
@@ -51,7 +50,6 @@ pub struct AsignarProductosRequest {
 #[derive(Debug, Deserialize, Serialize, Type)]
 pub struct ProductoAreaConfigInput {
     pub producto_id: Uuid,
-    pub stock_minimo: Option<Decimal>,
     pub stock_maximo: Option<Decimal>,
     pub punto_reorden: Option<Decimal>,
 }

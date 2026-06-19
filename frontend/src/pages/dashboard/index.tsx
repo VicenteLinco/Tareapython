@@ -150,18 +150,18 @@ export default function DashboardPage() {
   const alerts = alertasQ.data?.data ?? []
   const alertasResumen = alertasQ.data?.resumen
 
-  const sinStock = alertasResumen?.sin_stock ?? alerts.filter((a) => a.tipo_alerta === 'sin_stock').length
+  const sinStock = alertasResumen?.sin_stock ?? alerts.filter((a) => a.tipo_alerta === 'agotado').length
   const vencidos = alertasResumen?.vencido ?? alerts.filter((a) => a.tipo_alerta === 'vencido').length
   const stockBajo = alertasResumen?.bajo_minimo ?? alerts.filter(
-    (a) => ['bajo_minimo', 'critico', 'reponer'].includes(a.tipo_alerta)
+    (a) => ['critico', 'reponer'].includes(a.tipo_alerta)
   ).length
   const porVencer = alertasResumen?.vencimiento ?? alerts.filter(
-    (a) => a.tipo_alerta === 'vence_30d' || a.tipo_alerta === 'vence_90d',
+    (a) => a.tipo_alerta === 'riesgo_venc' || a.tipo_alerta === 'por_vencer',
   ).length
 
-  const alertasCriticas = alerts.filter((a) => ['sin_stock', 'vencido', 'critico'].includes(a.tipo_alerta))
+  const alertasCriticas = alerts.filter((a) => ['agotado', 'vencido', 'critico'].includes(a.tipo_alerta))
   const alertasWarning = alerts.filter((a) =>
-    ['bajo_minimo', 'reponer', 'vence_30d', 'vence_90d'].includes(a.tipo_alerta),
+    ['reponer', 'riesgo_venc', 'por_vencer'].includes(a.tipo_alerta),
   )
   const hayUrgencias = alerts.length > 0
   const severidadBanner = alertasCriticas.length > 0 ? 'critica' : 'warning'
@@ -301,7 +301,7 @@ export default function DashboardPage() {
           tone="error"
           loading={alertasQ.isLoading}
           alert
-          onClick={() => navigate(stockPath({ estado: 'sin_stock' }))}
+          onClick={() => navigate(stockPath({ estado: 'agotado' }))}
         />
         <StatCard
           label="Stock bajo"

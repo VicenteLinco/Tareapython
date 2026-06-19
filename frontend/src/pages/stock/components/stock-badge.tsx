@@ -1,28 +1,25 @@
 import { AlertTriangle, Clock, Info } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import type { StockItem } from '@/types'
+import type { StockItem, EstadoAlerta } from '@/types'
 import { cn, daysUntil } from '@/lib/utils'
 
-export function StockBadge({ item }: { item: StockItem }) {
+// Fallback de estado cuando el backend no lo envía (no debería ocurrir): se deriva
+// sin mínimos manuales, sólo por vencimiento y stock.
+function deriveEstado(item: StockItem): EstadoAlerta {
   const stock = item.stock_total ?? 0
-  const stockMinimo = item.stock_minimo ?? 0
   const days = item.proximo_vencimiento ? daysUntil(item.proximo_vencimiento) : null
-  const estadoAlerta = item.estado_alerta ?? (
-    stock <= 0
-      ? 'sin_stock'
-      : days !== null && days < 0
-      ? 'vencido'
-      : stockMinimo > 0 && stock < stockMinimo
-      ? 'bajo_minimo'
-      : days !== null && days <= 90
-      ? 'vence_pronto'
-      : 'normal'
-  )
-  const dias = item.dias_autonomia ?? null
-  const diasConConsumo = item.dias_con_consumo ?? 0
-  const pocosData = diasConConsumo > 0 && diasConConsumo < 14
+  if (stock <= 0) return 'agotado'
+  if (days !== null && days < 0) return 'vencido'
+  if (days !== null && days <= 90) return 'por_vencer'
+  return 'normal'
+}
 
-  if (estadoAlerta === 'sin_stock') return (
+export function StockBadge({ item }: { item: StockItem }) {
+  const days = item.proximo_vencimiento ? daysUntil(item.proximo_vencimiento) : null
+  const estado: EstadoAlerta = item.estado_alerta ?? deriveEstado(item)
+  const dias = item.dias_autonomia ?? null
+
+  if (estado === 'agotado') return (
     <div className="flex flex-col items-end gap-1">
       <Badge variant="destructive" className="gap-1 text-[10px] font-bold uppercase px-2">
         <Info className="h-3 w-3" /> Agotado
@@ -31,7 +28,7 @@ export function StockBadge({ item }: { item: StockItem }) {
     </div>
   )
 
-  if (estadoAlerta === 'vencido') return (
+  if (estado === 'vencido') return (
     <div className="flex flex-col items-end gap-1">
       <Badge variant="destructive" className="gap-1 text-[10px] font-bold uppercase px-2">
         <Clock className="h-3 w-3" /> Vencido
@@ -40,7 +37,7 @@ export function StockBadge({ item }: { item: StockItem }) {
     </div>
   )
 
-  if (estadoAlerta === 'critico') return (
+  if (estado === 'critico') return (
     <div className="flex flex-col items-end gap-1">
       <Badge variant="destructive" className="gap-1 text-[10px] font-bold uppercase px-2 animate-pulse">
         <AlertTriangle className="h-3 w-3" /> Critico
@@ -49,18 +46,7 @@ export function StockBadge({ item }: { item: StockItem }) {
     </div>
   )
 
-  if (estadoAlerta === 'bajo_minimo') return (
-    <div className="flex flex-col items-end gap-1">
-      <Badge variant="warning" className="gap-1 text-[10px] font-bold uppercase px-2">
-        <AlertTriangle className="h-3 w-3" /> Bajo minimo
-      </Badge>
-      <span className="text-[9px] font-bold text-warning opacity-80 uppercase tracking-tighter">
-        {Math.round(stock)} / {Math.round(stockMinimo)}
-      </span>
-    </div>
-  )
-
-  if (estadoAlerta === 'reponer') return (
+  if (estado === 'reponer') return (
     <div className="flex flex-col items-end gap-1">
       <Badge variant="warning" className="gap-1 text-[10px] font-bold uppercase px-2">
         <Clock className="h-3 w-3" /> Reponer
@@ -69,18 +55,18 @@ export function StockBadge({ item }: { item: StockItem }) {
     </div>
   )
 
-  if (estadoAlerta === 'vence_pronto') return (
+  if (estado === 'riesgo_venc' || estado === 'por_vencer') return (
     <div className="flex flex-col items-end gap-1">
       <Badge
         variant="warning"
         className={cn(
           'gap-1 text-[10px] font-bold uppercase px-2',
-          days !== null && days <= 30
+          estado === 'riesgo_venc'
             ? 'animate-pulse'
             : 'border-warning/30 bg-warning/10 text-warning',
         )}
       >
-        <Clock className="h-3 w-3" /> {days !== null && days <= 30 ? 'Riesgo' : 'Por vencer'}
+        <Clock className="h-3 w-3" /> {estado === 'riesgo_venc' ? 'Riesgo' : 'Por vencer'}
       </Badge>
       <span className="text-[9px] font-bold text-warning/80 uppercase">
         {days !== null ? `Vence en ${days} dias` : 'Vencimiento cercano'}
@@ -88,23 +74,40 @@ export function StockBadge({ item }: { item: StockItem }) {
     </div>
   )
 
-  const tieneEstimacionPocaData = pocosData && dias !== null
-  return (
+  if (estado === 'sin_datos') return (
     <div className="flex flex-col items-end gap-1">
       <Badge
         variant="outline"
-        className={cn(
-          'text-[10px] font-bold uppercase px-2',
-          tieneEstimacionPocaData
-            ? 'text-base-content/50 border-base-300 bg-base-200/50'
-            : 'text-success border-success/20 bg-success/5',
-        )}
-        title={tieneEstimacionPocaData ? `Estimado con solo ${diasConConsumo} dia(s) con consumo. Puede no ser preciso.` : undefined}
+        className="text-[10px] font-bold uppercase px-2 text-base-content/50 border-base-300 bg-base-200/50"
+        title="Sin historial de consumo suficiente para estimar la autonomía."
       >
-        {tieneEstimacionPocaData ? '~OK' : 'OK'}
+        Sin datos
+      </Badge>
+      <span className="text-[9px] font-bold opacity-40 uppercase tracking-tighter">Estimación no disponible</span>
+    </div>
+  )
+
+  if (estado === 'no_gestionado') return (
+    <div className="flex flex-col items-end gap-1">
+      <Badge
+        variant="outline"
+        className="text-[10px] font-bold uppercase px-2 text-base-content/40 border-base-300 bg-base-200/40"
+        title="Producto sin movimientos: nunca tuvo stock en el sistema."
+      >
+        Sin gestión
+      </Badge>
+      <span className="text-[9px] font-bold opacity-30 uppercase tracking-tighter">Nunca tuvo stock</span>
+    </div>
+  )
+
+  // normal
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Badge variant="outline" className="text-[10px] font-bold uppercase px-2 text-success border-success/20 bg-success/5">
+        OK
       </Badge>
       <span className="text-[9px] font-bold opacity-40 uppercase tracking-tighter">
-        {dias !== null ? `~${Math.round(dias)} dias${tieneEstimacionPocaData ? '*' : ''}` : 'Sin consumo reciente'}
+        {dias !== null ? `~${Math.round(dias)} dias` : 'Sin consumo reciente'}
       </span>
     </div>
   )

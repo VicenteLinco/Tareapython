@@ -45,6 +45,13 @@ pub struct ForecastConfig {
     pub dias_minimos_historia: i32,
     pub nivel_servicio_z: f64,
     pub factor_historial_corto: f64,
+    /// Días de stock que se quiere mantener como objetivo de cobertura.
+    /// Reemplaza al `stock_minimo` manual en el modelo de días de cobertura.
+    pub dias_objetivo_cobertura: i32,
+    /// Ventana de "riesgo" de vencimiento (días). Default 30.
+    pub vencimiento_riesgo_dias: i32,
+    /// Ventana de "por vencer" de vencimiento (días). Default 90.
+    pub vencimiento_proximo_dias: i32,
 }
 
 impl Default for ForecastConfig {
@@ -55,6 +62,9 @@ impl Default for ForecastConfig {
             dias_minimos_historia: 14,
             nivel_servicio_z: 1.65,
             factor_historial_corto: 0.35,
+            dias_objetivo_cobertura: 30,
+            vencimiento_riesgo_dias: 30,
+            vencimiento_proximo_dias: 90,
         }
     }
 }
@@ -215,21 +225,19 @@ pub fn estimate_short_history_demand(
 pub fn classify_urgencia(
     stock_actual: f64,
     ya_pedido: f64,
-    stock_minimo: f64,
     mu: f64,
     lead_time: f64,
     reorder_point: f64,
     target_stock: f64,
 ) -> Option<Urgencia> {
     let stock_efectivo = stock_actual + ya_pedido;
-    let critica = stock_efectivo < mu * lead_time;
-    let bajo_minimo = stock_minimo > 0.0 && stock_actual < stock_minimo;
+    let critica = mu > 0.0 && stock_efectivo < mu * lead_time;
 
     if critica {
         Some(Urgencia::Critica)
-    } else if stock_efectivo < reorder_point || bajo_minimo {
+    } else if reorder_point > 0.0 && stock_efectivo < reorder_point {
         Some(Urgencia::Alta)
-    } else if stock_efectivo < target_stock {
+    } else if target_stock > 0.0 && stock_efectivo < target_stock {
         Some(Urgencia::Media)
     } else {
         None
@@ -241,7 +249,6 @@ pub fn classify_urgencia(
 pub fn compute_forecast(
     serie_diaria: &[f64],
     stock_actual: f64,
-    stock_minimo: f64,
     ya_pedido: f64,
     lead_time_dias: i32,
     cfg: ForecastConfig,
@@ -250,34 +257,63 @@ pub fn compute_forecast(
     let confianza = classify_confianza(dias_con_consumo, cfg.dias_minimos_historia);
 
     let l = lead_time_dias.max(0) as f64;
-    let t = cfg.periodo_revision_dias.max(0) as f64;
+    // T = horizonte de cobertura objetivo (unifica el número del estado y del forecast).
+    let t = cfg.dias_objetivo_cobertura.max(0) as f64;
     let z = cfg.nivel_servicio_z;
 
     if confianza == Confianza::Baja {
-        let cantidad = (stock_minimo - stock_actual - ya_pedido).max(0.0);
-        let urgencia = if stock_actual < stock_minimo && stock_minimo > 0.0 {
-            Some(Urgencia::Alta)
-        } else if cantidad > 0.0 {
-            Some(Urgencia::Media)
-        } else {
-            None
-        };
-        return ForecastResult {
-            mu: 0.0,
-            sigma: 0.0,
-            dias_con_consumo,
-            confianza,
-            razon: format!(
-                "Historial insuficiente ({} día(s) con consumo, mínimo {}). \
-                 Sugerencia basada en stock mínimo manual.",
-                dias_con_consumo, cfg.dias_minimos_historia
-            ),
-            safety_stock: 0.0,
-            target_stock: stock_minimo,
-            reorder_point: stock_minimo,
-            cantidad_sugerida: cantidad,
-            urgencia,
-        };
+        // Modelo días de cobertura: sin stock mínimo manual. Con algo de historial
+        // (1..min) se estima la demanda y se proyecta sobre L+T; sin historial real
+        // no hay señal para sugerir nada.
+        match estimate_short_history_demand(
+            serie_diaria,
+            cfg.dias_minimos_historia,
+            cfg.factor_historial_corto,
+        ) {
+            Some(est) => {
+                let mu = est.consumo_diario;
+                let target_stock = mu * (l + t);
+                let reorder_point = mu * l;
+                let cantidad = (target_stock - stock_actual - ya_pedido).max(0.0);
+                let urgencia =
+                    classify_urgencia(stock_actual, ya_pedido, mu, l, reorder_point, target_stock);
+                return ForecastResult {
+                    mu,
+                    sigma: 0.0,
+                    dias_con_consumo,
+                    confianza,
+                    razon: format!(
+                        "Historial corto ({} día(s) con consumo). Estimación por días de \
+                         cobertura: μ≈{:.2} u/día sobre L+T={:.0}d.",
+                        dias_con_consumo,
+                        mu,
+                        l + t
+                    ),
+                    safety_stock: 0.0,
+                    target_stock,
+                    reorder_point,
+                    cantidad_sugerida: cantidad,
+                    urgencia,
+                };
+            }
+            None => {
+                return ForecastResult {
+                    mu: 0.0,
+                    sigma: 0.0,
+                    dias_con_consumo,
+                    confianza,
+                    razon: format!(
+                        "Sin historial de consumo suficiente para estimar ({} día(s)).",
+                        dias_con_consumo
+                    ),
+                    safety_stock: 0.0,
+                    target_stock: 0.0,
+                    reorder_point: 0.0,
+                    cantidad_sugerida: 0.0,
+                    urgencia: None,
+                };
+            }
+        }
     }
 
     let serie_w = winsorize_p95(serie_diaria);
@@ -290,15 +326,7 @@ pub fn compute_forecast(
     let reorder_point = mu * l + safety_stock_lead;
 
     let cantidad_sugerida = (target_stock - stock_actual - ya_pedido).max(0.0);
-    let urgencia = classify_urgencia(
-        stock_actual,
-        ya_pedido,
-        stock_minimo,
-        mu,
-        l,
-        reorder_point,
-        target_stock,
-    );
+    let urgencia = classify_urgencia(stock_actual, ya_pedido, mu, l, reorder_point, target_stock);
 
     let razon = format!(
         "μ={:.2} u/día (EWMA winsorizada p95, {} días con consumo de {}), \
@@ -456,20 +484,21 @@ mod tests {
     }
 
     #[test]
-    fn forecast_baja_confianza_usa_stock_minimo_no_extrapola() {
-        // Reproduce el caso "prueba pcr": serie de 60 días, sólo 3 con consumo
-        // (uno de 100, uno de 1, uno de 30). Con confianza baja NO debe sugerir
-        // ~1093 unidades. Debe usar stock_mínimo como referencia.
+    fn forecast_baja_confianza_estima_por_dias_cobertura() {
+        // Serie de 60 días, sólo 3 con consumo (100, 1, 30). Confianza Baja,
+        // pero ahora SÍ hay señal: se estima por días de cobertura (dampeada por
+        // factor_historial_corto) en vez de depender de un mínimo manual.
         let mut serie = vec![0.0; 60];
         serie[56] = 100.0; // hace 4 días
         serie[57] = 1.0; // hace 3 días
         serie[59] = 30.0; // hoy
-        let r = compute_forecast(&serie, 169.0, 50.0, 0.0, 10, ForecastConfig::default());
+        let r = compute_forecast(&serie, 169.0, 0.0, 10, ForecastConfig::default());
         assert_eq!(r.confianza, Confianza::Baja);
         assert_eq!(r.dias_con_consumo, 3);
-        // Stock 169 ya cubre el mínimo 50 → cantidad sugerida = 0
-        assert_eq!(r.cantidad_sugerida, 0.0);
-        assert!(r.razon.contains("Historial insuficiente"));
+        // Hay estimación short-history → target > 0 y sugiere reposición.
+        assert!(r.target_stock > 0.0, "debe proyectar un target por cobertura");
+        assert!(r.cantidad_sugerida > 0.0);
+        assert!(r.razon.contains("Historial corto"));
     }
 
     #[test]
@@ -504,7 +533,7 @@ mod tests {
         // 60 días con consumo regular de 5 u/día → μ ≈ 5, σ ≈ 0
         let serie = vec![5.0; 60];
         let cfg = ForecastConfig::default();
-        let r = compute_forecast(&serie, 100.0, 0.0, 0.0, 7, cfg);
+        let r = compute_forecast(&serie, 100.0, 0.0, 7, cfg);
         assert_eq!(r.confianza, Confianza::Alta);
         assert!(approx(r.mu, 5.0, 0.01));
         assert!(approx(r.sigma, 0.0, 0.01));
@@ -520,7 +549,7 @@ mod tests {
         // Sin winsorizar, μ saltaría a ~13. Con winsorización, debe quedar ~5.
         let mut serie = vec![5.0; 60];
         serie[0] = 500.0;
-        let r = compute_forecast(&serie, 100.0, 0.0, 0.0, 7, ForecastConfig::default());
+        let r = compute_forecast(&serie, 100.0, 0.0, 7, ForecastConfig::default());
         assert!(
             r.mu < 6.0,
             "μ con winsorización debería ser ~5, dio {}",
@@ -531,20 +560,20 @@ mod tests {
     #[test]
     fn urgencia_critica_cuando_stock_no_alcanza_lead_time() {
         // μ=10, L=10 → necesita 100 unidades para cubrir lead time. Stock 50 → crítica.
-        let u = classify_urgencia(50.0, 0.0, 0.0, 10.0, 10.0, 120.0, 400.0);
+        let u = classify_urgencia(50.0, 0.0, 10.0, 10.0, 120.0, 400.0);
         assert_eq!(u, Some(Urgencia::Critica));
     }
 
     #[test]
     fn urgencia_alta_cuando_bajo_reorder_point() {
         // Stock 110 cubre lead time (μ·L=100) pero está bajo ROP (120).
-        let u = classify_urgencia(110.0, 0.0, 0.0, 10.0, 10.0, 120.0, 400.0);
+        let u = classify_urgencia(110.0, 0.0, 10.0, 10.0, 120.0, 400.0);
         assert_eq!(u, Some(Urgencia::Alta));
     }
 
     #[test]
     fn urgencia_none_cuando_cubierto() {
-        let u = classify_urgencia(500.0, 0.0, 0.0, 10.0, 10.0, 120.0, 400.0);
+        let u = classify_urgencia(500.0, 0.0, 10.0, 10.0, 120.0, 400.0);
         assert_eq!(u, None);
     }
 
@@ -557,7 +586,7 @@ mod tests {
         // 60 días con consumo constante de 10 u/día → 60 días con consumo ≥ 30 → Alta
         let serie = vec![10.0; 60];
         let cfg = ForecastConfig::default();
-        let r = compute_forecast(&serie, 50.0, 0.0, 0.0, 7, cfg);
+        let r = compute_forecast(&serie, 50.0, 0.0, 7, cfg);
         assert_eq!(
             r.confianza,
             Confianza::Alta,
@@ -586,14 +615,14 @@ mod tests {
         serie[50] = 10.0;
         serie[58] = 5.0;
         let cfg = ForecastConfig::default();
-        let r = compute_forecast(&serie, 100.0, 50.0, 0.0, 7, cfg);
+        let r = compute_forecast(&serie, 100.0, 0.0, 7, cfg);
         assert_eq!(
             r.confianza,
             Confianza::Baja,
             "consumo esporádico con <14 días activos debe dar confianza Baja"
         );
         assert_eq!(r.dias_con_consumo, 5);
-        // Con confianza baja y stock_actual=100 >= stock_minimo=50 → cantidad_sugerida = 0
+        // Stock 100 cubre el target estimado por días de cobertura → no sugiere
         assert_eq!(r.cantidad_sugerida, 0.0);
     }
 
@@ -603,8 +632,8 @@ mod tests {
         // 60 días con cero consumo (producto nuevo o sin movimientos)
         let serie = vec![0.0; 60];
         let cfg = ForecastConfig::default();
-        // stock_actual=0, stock_minimo=100 → debe sugerir 100
-        let r = compute_forecast(&serie, 0.0, 100.0, 0.0, 7, cfg);
+        // Sin señal de consumo no hay base para sugerir → cantidad 0.
+        let r = compute_forecast(&serie, 0.0, 0.0, 7, cfg);
         assert_eq!(
             r.confianza,
             Confianza::Baja,
@@ -612,12 +641,11 @@ mod tests {
         );
         assert_eq!(r.dias_con_consumo, 0);
         assert_eq!(r.mu, 0.0);
-        // cantidad_sugerida = stock_minimo - stock_actual - ya_pedido = 100 - 0 - 0 = 100
-        assert!(
-            approx(r.cantidad_sugerida, 100.0, 0.01),
-            "sin historia debe sugerir stock_mínimo, dio {}",
-            r.cantidad_sugerida
+        // Sin historial real de consumo, el modelo de días de cobertura no sugiere nada.
+        assert_eq!(
+            r.cantidad_sugerida, 0.0,
+            "sin historia no debe sugerir cantidad"
         );
-        assert!(r.razon.contains("Historial insuficiente"));
+        assert!(r.razon.contains("Sin historial"));
     }
 }

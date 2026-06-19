@@ -22,7 +22,9 @@ ALTER TABLE productos
     ADD COLUMN IF NOT EXISTS pres_gs1_habilitado BOOLEAN NOT NULL DEFAULT false;
 
 -- ─── Step 2: Migrate data from producto_proveedor (principal rows) ────────────
--- Wrapped in DO block: safe to skip if table was already dropped or never existed.
+-- Uses EXECUTE (dynamic SQL) so the UPDATE is only analyzed at runtime, after the
+-- IF EXISTS check confirms the table exists. Static SQL inside DO blocks is
+-- compiled eagerly by PostgreSQL and would fail if the table doesn't exist.
 
 DO $$
 BEGIN
@@ -30,32 +32,36 @@ BEGIN
         SELECT FROM pg_tables
         WHERE schemaname = 'public' AND tablename = 'producto_proveedor'
     ) THEN
-        UPDATE productos p
-        SET
-            proveedor_id  = pp.proveedor_id,
-            sku           = COALESCE(pp.codigo_proveedor, p.sku),
-            precio_unidad = COALESCE(pp.precio_unidad, p.precio_unidad),
-            imagen_url    = pp.imagen_url
-        FROM producto_proveedor pp
-        WHERE pp.producto_id = p.id
-          AND pp.es_principal = true
-          AND pp.activo = true;
+        EXECUTE '
+            UPDATE productos p
+            SET
+                proveedor_id  = pp.proveedor_id,
+                sku           = COALESCE(pp.codigo_proveedor, p.sku),
+                precio_unidad = COALESCE(pp.precio_unidad, p.precio_unidad),
+                imagen_url    = pp.imagen_url
+            FROM producto_proveedor pp
+            WHERE pp.producto_id = p.id
+              AND pp.es_principal = true
+              AND pp.activo = true
+        ';
 
-        UPDATE productos p
-        SET
-            proveedor_id  = pp.proveedor_id,
-            sku           = COALESCE(pp.codigo_proveedor, p.sku),
-            precio_unidad = COALESCE(pp.precio_unidad, p.precio_unidad),
-            imagen_url    = COALESCE(p.imagen_url, pp.imagen_url)
-        FROM producto_proveedor pp
-        WHERE pp.producto_id = p.id
-          AND p.proveedor_id IS NULL
-          AND pp.activo = true;
+        EXECUTE '
+            UPDATE productos p
+            SET
+                proveedor_id  = pp.proveedor_id,
+                sku           = COALESCE(pp.codigo_proveedor, p.sku),
+                precio_unidad = COALESCE(pp.precio_unidad, p.precio_unidad),
+                imagen_url    = COALESCE(p.imagen_url, pp.imagen_url)
+            FROM producto_proveedor pp
+            WHERE pp.producto_id = p.id
+              AND p.proveedor_id IS NULL
+              AND pp.activo = true
+        ';
     END IF;
 END $$;
 
 -- ─── Step 3: Migrate sku fallback from codigo_proveedor if still empty ────────
--- Wrapped in DO block: safe to skip if column was already dropped.
+-- Uses EXECUTE (dynamic SQL) so the column reference is only resolved at runtime.
 
 DO $$
 BEGIN
@@ -65,9 +71,11 @@ BEGIN
           AND table_name   = 'productos'
           AND column_name  = 'codigo_proveedor'
     ) THEN
-        UPDATE productos
-        SET sku = codigo_proveedor
-        WHERE sku IS NULL AND codigo_proveedor IS NOT NULL;
+        EXECUTE '
+            UPDATE productos
+            SET sku = codigo_proveedor
+            WHERE sku IS NULL AND codigo_proveedor IS NOT NULL
+        ';
     END IF;
 END $$;
 

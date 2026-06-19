@@ -858,6 +858,7 @@ function CreateProductoDialog({
   const [claseRiesgo, setClaseRiesgo] = useState<string | null>(null)
   const [scannerOpen, setScannerOpen] = useState(false)
 
+  const [presExpanded, setPresExpanded] = useState(false)
   const [newCatOpen, setNewCatOpen] = useState(false)
   const [newUnidadOpen, setNewUnidadOpen] = useState(false)
   const [newAreaOpen, setNewAreaOpen] = useState(false)
@@ -883,6 +884,7 @@ function CreateProductoDialog({
       pres_gs1_habilitado: duplicateSource.pres_gs1_habilitado ?? false,
       imagen_data_url: null,
     })
+    setPresExpanded(!!(duplicateSource.pres_nombre))
     setTemperaturaAlmacenamiento(duplicateSource.temperatura_almacenamiento ?? null)
     setRequiereCadenaFrio(duplicateSource.requiere_cadena_frio ?? false)
     setDiasEstabilidadAbierto(duplicateSource.dias_estabilidad_abierto ?? null)
@@ -908,6 +910,7 @@ function CreateProductoDialog({
       pres_nombre: '', pres_nombre_plural: '', pres_factor: '', pres_codigo_barras: '',
       pres_gtin: '', pres_gs1_habilitado: false, imagen_data_url: null,
     })
+    setPresExpanded(false)
     setTemperaturaAlmacenamiento(null)
     setRequiereCadenaFrio(false)
     setDiasEstabilidadAbierto(null)
@@ -1064,6 +1067,33 @@ function CreateProductoDialog({
               <p className="text-[10px] text-base-content/40 mt-0.5">Lugar físico exacto: refrigerador, armario, estante</p>
             </div>
 
+            <div className="flex items-center gap-2">
+              {form.imagen_data_url && (
+                <div className="w-8 h-8 rounded-lg overflow-hidden border border-base-300 shrink-0">
+                  <img src={form.imagen_data_url} alt="Vista previa" className="w-full h-full object-cover" />
+                </div>
+              )}
+              <label className="btn btn-xs btn-outline gap-1">
+                {form.imagen_data_url ? 'Cambiar foto' : 'Foto del producto'}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  className="hidden"
+                  onChange={async e => {
+                    const file = e.target.files?.[0]
+                    e.target.value = ''
+                    if (!file) return
+                    try {
+                      const dataUrl = await comprimirImagen(file)
+                      setForm((f) => ({ ...f, imagen_data_url: dataUrl }))
+                    } catch (err) {
+                      notify.error(err instanceof Error ? err.message : 'Error cargando imagen')
+                    }
+                  }}
+                />
+              </label>
+            </div>
+
             {/* ── Proveedor (flat) ── */}
             <div className="space-y-2 p-3 bg-base-200/50 border border-base-300 rounded-xl">
               <p className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Proveedor</p>
@@ -1117,127 +1147,117 @@ function CreateProductoDialog({
 
             {/* ── Presentación (flat) ── */}
             <div className="space-y-2 p-3 bg-base-200/50 border border-base-300 rounded-xl">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Presentación</p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Formato / Pres.</span>
-                  <select
-                    className="select select-xs select-bordered bg-base-100 w-full"
-                    value={form.pres_nombre}
-                    onChange={e => {
-                      const found = presFormatos.find(p => p.nombre === e.target.value)
-                      setForm((f) => ({
-                        ...f,
-                        pres_nombre: e.target.value,
-                        pres_nombre_plural: found?.nombre_plural || '',
-                        pres_factor: e.target.value ? f.pres_factor : '',
-                      }))
-                    }}
-                  >
-                    <option value="">Unidad base</option>
-                    {presFormatos.map(p => <option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
-                  </select>
-                </div>
-
-                <div className="flex flex-col gap-0.5" title={!form.pres_nombre
-                  ? "Bloqueado: La Unidad base siempre equivale a 1 unidad. Selecciona un formato para cambiarlo"
-                  : `Cantidad de unidades base contenidas en este formato`
-                }>
-                  <span className={cn(
-                    "text-[9px] uppercase font-bold tracking-wider cursor-help transition-opacity duration-200",
-                    !form.pres_nombre ? "opacity-30" : "opacity-60"
-                  )}>
-                    Unidades por {form.pres_nombre || 'Envase'} {!form.pres_nombre ? '🔒' : '🛈'}
+              <p className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Presentación de compra</p>
+              {!presExpanded ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-base-content/60">
+                    Recibiendo por{' '}
+                    <span className="font-mono font-semibold text-base-content/80">
+                      {(() => {
+                        const u = unidades.find(u => String(u.id) === form.unidad_base_id)
+                        return u ? `${u.nombre} / ${u.nombre_plural}` : 'unidad base'
+                      })()}
+                    </span>
                   </span>
-                  <input
-                    type="number"
-                    placeholder={!form.pres_nombre ? "1" : "Ej: 10"}
-                    value={!form.pres_nombre ? "1" : form.pres_factor}
-                    onChange={e => setForm((f) => ({ ...f, pres_factor: e.target.value }))}
-                    className="input input-xs input-bordered w-full disabled:bg-base-300/60 disabled:text-base-content/40 disabled:cursor-not-allowed"
-                    min="1"
-                    disabled={!form.pres_nombre}
-                  />
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-outline gap-1 shrink-0"
+                    onClick={() => setPresExpanded(true)}
+                  >
+                    <Plus className="h-3 w-3" />
+                    Agregar presentación
+                  </button>
                 </div>
-
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Cód. de barras</span>
-                  <div className="flex gap-1">
-                    <input
-                      type="text"
-                      placeholder="EAN-13"
-                      value={form.pres_codigo_barras}
-                      onChange={e => setForm((f) => ({ ...f, pres_codigo_barras: e.target.value }))}
-                      className="input input-xs input-bordered flex-1 min-w-0"
-                      disabled={!form.pres_nombre}
-                    />
+              ) : (
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Formato de compra</span>
                     <button
                       type="button"
-                      className="btn btn-xs btn-ghost px-1"
-                      onClick={() => setScannerOpen(true)}
-                      disabled={!form.pres_nombre}
-                      title="Escanear código de barras"
+                      className="text-[10px] text-base-content/40 hover:text-base-content/70 transition-colors underline underline-offset-2"
+                      onClick={() => {
+                        setPresExpanded(false)
+                        setForm(f => ({
+                          ...f,
+                          pres_nombre: '',
+                          pres_nombre_plural: '',
+                          pres_factor: '',
+                          pres_codigo_barras: '',
+                          pres_gs1_habilitado: false,
+                        }))
+                      }}
                     >
-                      📷
+                      ← Recibir solo por {unidades.find(u => String(u.id) === form.unidad_base_id)?.nombre ?? 'unidad'}
                     </button>
                   </div>
-                </div>
-
-                <div className="flex flex-col gap-0.5" title="Global Trade Item Number de 14 dígitos.">
-                  <span className="text-[9px] uppercase font-bold tracking-wider opacity-60 cursor-help">GTIN-14 🛈</span>
-                  <input
-                    type="text"
-                    placeholder="14 dígitos"
-                    value={form.pres_gtin}
-                    onChange={e => setForm((f) => ({ ...f, pres_gtin: e.target.value.replace(/\D/g, '').slice(0, 14) }))}
-                    className="input input-xs input-bordered w-full"
-                    disabled={!form.pres_nombre}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between gap-4 mt-2 bg-base-300/40 p-1.5 px-3 rounded-lg">
-                <label
-                  className="flex items-center gap-1.5 text-[10px] font-bold uppercase opacity-80 cursor-help select-none"
-                  title="Si se habilita, al escanear el código de barras en recepciones se extraerán de forma automática el Lote y Fecha de Vencimiento."
-                >
-                  <input
-                    type="checkbox"
-                    className="checkbox checkbox-xs checkbox-primary"
-                    checked={form.pres_gs1_habilitado}
-                    disabled={!form.pres_nombre}
-                    onChange={e => setForm((f) => ({ ...f, pres_gs1_habilitado: e.target.checked }))}
-                  />
-                  GS1 Habilitado 🛈
-                </label>
-
-                <div className="flex items-center gap-2">
-                  {form.imagen_data_url && (
-                    <div className="w-6 h-6 rounded bg-base-100 overflow-hidden border border-base-300">
-                      <img src={form.imagen_data_url} alt="Vista previa" className="w-full h-full object-cover" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Formato</span>
+                      <select
+                        className="select select-xs select-bordered bg-base-100 w-full"
+                        value={form.pres_nombre}
+                        onChange={e => {
+                          const found = presFormatos.find(p => p.nombre === e.target.value)
+                          setForm(f => ({
+                            ...f,
+                            pres_nombre: e.target.value,
+                            pres_nombre_plural: found?.nombre_plural || '',
+                            pres_factor: e.target.value ? f.pres_factor : '',
+                          }))
+                        }}
+                      >
+                        <option value="">Seleccionar...</option>
+                        {presFormatos.map(p => <option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
+                      </select>
                     </div>
-                  )}
-                  <label className="btn btn-xs btn-outline font-semibold gap-1">
-                    {form.imagen_data_url ? 'Cambiar Foto' : 'Subir Foto'}
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">
+                        {unidades.find(u => String(u.id) === form.unidad_base_id)?.nombre_plural ?? 'unidades'} por {form.pres_nombre || 'envase'}
+                      </span>
+                      <input
+                        type="number"
+                        placeholder="Ej: 10"
+                        value={form.pres_factor}
+                        onChange={e => setForm(f => ({ ...f, pres_factor: e.target.value }))}
+                        className="input input-xs input-bordered w-full"
+                        min="1"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Código de barras</span>
+                    <div className="flex gap-1">
+                      <input
+                        type="text"
+                        placeholder="EAN-13 o Code-128"
+                        value={form.pres_codigo_barras}
+                        onChange={e => setForm(f => ({ ...f, pres_codigo_barras: e.target.value }))}
+                        className="input input-xs input-bordered flex-1 min-w-0"
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-ghost px-1"
+                        onClick={() => setScannerOpen(true)}
+                        title="Escanear código de barras"
+                      >
+                        📷
+                      </button>
+                    </div>
+                  </div>
+                  <label
+                    className="flex items-center gap-2 cursor-pointer text-[11px] select-none"
+                    title="Si se habilita, al escanear en recepciones se extraerán automáticamente el Lote y Fecha de Vencimiento desde el código GS1-128."
+                  >
                     <input
-                      type="file"
-                      accept="image/jpeg,image/png"
-                      className="hidden"
-                      onChange={async e => {
-                        const file = e.target.files?.[0]
-                        e.target.value = ''
-                        if (!file) return
-                        try {
-                          const dataUrl = await comprimirImagen(file)
-                          setForm((f) => ({ ...f, imagen_data_url: dataUrl }))
-                        } catch (err) {
-                          notify.error(err instanceof Error ? err.message : 'Error cargando imagen')
-                        }
-                      }}
+                      type="checkbox"
+                      className="checkbox checkbox-xs checkbox-primary"
+                      checked={form.pres_gs1_habilitado}
+                      onChange={e => setForm(f => ({ ...f, pres_gs1_habilitado: e.target.checked }))}
                     />
+                    <span className="opacity-70">GS1 habilitado — extrae lote y vencimiento automáticamente</span>
                   </label>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="form-control">
@@ -1390,6 +1410,7 @@ function EditProductoDialog({
     queryKey: ['presentacion-formatos'],
     queryFn: () => api.get<PresFormatoRow[]>('/presentacion-formatos').then((r) => r.data),
   })
+  const [presExpanded, setPresExpanded] = useState(false)
   const [newAreaOpen, setNewAreaOpen] = useState(false)
   const [scannerOpen, setScannerOpen] = useState(false)
 
@@ -1447,6 +1468,7 @@ function EditProductoDialog({
         pres_gs1_habilitado: producto.pres_gs1_habilitado ?? false,
         imagen_data_url: null,
       })
+      setPresExpanded(!!(producto.pres_nombre))
       setTemperaturaAlmacenamientoEdit(producto.temperatura_almacenamiento ?? null)
       setRequiereCadenaFrioEdit(producto.requiere_cadena_frio ?? false)
       setDiasEstabilidadAbiertoEdit(producto.dias_estabilidad_abierto ?? null)
@@ -1596,6 +1618,37 @@ function EditProductoDialog({
                 <p className="text-[10px] text-base-content/40 mt-0.5">Lugar físico exacto: refrigerador, armario, estante</p>
               </div>
 
+              <div className="flex items-center gap-2">
+                {(form.imagen_data_url || producto?.imagen_url) && (
+                  <div className="w-8 h-8 rounded-lg overflow-hidden border border-base-300 shrink-0">
+                    <img
+                      src={form.imagen_data_url ?? producto?.imagen_url ?? ''}
+                      alt="Vista previa"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+                <label className="btn btn-xs btn-outline gap-1">
+                  {(form.imagen_data_url || producto?.imagen_url) ? 'Cambiar foto' : 'Foto del producto'}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png"
+                    className="hidden"
+                    onChange={async e => {
+                      const file = e.target.files?.[0]
+                      e.target.value = ''
+                      if (!file) return
+                      try {
+                        const dataUrl = await comprimirImagen(file)
+                        setForm((f) => ({ ...f, imagen_data_url: dataUrl }))
+                      } catch (err) {
+                        notify.error(err instanceof Error ? err.message : 'Error cargando imagen')
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+
               {/* ── Proveedor (flat) ── */}
               <div className="space-y-2 p-3 bg-base-200/50 border border-base-300 rounded-xl">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Proveedor</p>
@@ -1649,131 +1702,116 @@ function EditProductoDialog({
 
               {/* ── Presentación (flat) ── */}
               <div className="space-y-2 p-3 bg-base-200/50 border border-base-300 rounded-xl">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Presentación</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Formato / Pres.</span>
-                    <select
-                      className="select select-xs select-bordered bg-base-100 w-full"
-                      value={form.pres_nombre}
-                      onChange={e => {
-                        const found = presFormatos.find(p => p.nombre === e.target.value)
-                        setForm((f) => ({
-                          ...f,
-                          pres_nombre: e.target.value,
-                          pres_nombre_plural: found?.nombre_plural || '',
-                          pres_factor: e.target.value ? f.pres_factor : '',
-                        }))
-                      }}
-                    >
-                      <option value="">Unidad base</option>
-                      {presFormatos.map(p => <option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-0.5" title={!form.pres_nombre
-                    ? "Bloqueado: La Unidad base siempre equivale a 1 unidad. Selecciona un formato para cambiarlo"
-                    : `Cantidad de unidades base contenidas en este formato`
-                  }>
-                    <span className={cn(
-                      "text-[9px] uppercase font-bold tracking-wider cursor-help transition-opacity duration-200",
-                      !form.pres_nombre ? "opacity-30" : "opacity-60"
-                    )}>
-                      Unidades por {form.pres_nombre || 'Envase'} {!form.pres_nombre ? '🔒' : '🛈'}
+                <p className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Presentación de compra</p>
+                {!presExpanded ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-base-content/60">
+                      Recibiendo por{' '}
+                      <span className="font-mono font-semibold text-base-content/80">
+                        {producto?.unidad_base
+                          ? `${producto.unidad_base.nombre} / ${producto.unidad_base.nombre_plural ?? producto.unidad_base.nombre}`
+                          : 'unidad base'}
+                      </span>
                     </span>
-                    <input
-                      type="number"
-                      placeholder={!form.pres_nombre ? "1" : "Ej: 10"}
-                      value={!form.pres_nombre ? "1" : form.pres_factor}
-                      onChange={e => setForm((f) => ({ ...f, pres_factor: e.target.value }))}
-                      className="input input-xs input-bordered w-full disabled:bg-base-300/60 disabled:text-base-content/40 disabled:cursor-not-allowed"
-                      min="1"
-                      disabled={!form.pres_nombre}
-                    />
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-outline gap-1 shrink-0"
+                      onClick={() => setPresExpanded(true)}
+                    >
+                      <Plus className="h-3 w-3" />
+                      Agregar presentación
+                    </button>
                   </div>
-
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Cód. de barras</span>
-                    <div className="flex gap-1">
-                      <input
-                        type="text"
-                        placeholder="EAN-13"
-                        value={form.pres_codigo_barras}
-                        onChange={e => setForm((f) => ({ ...f, pres_codigo_barras: e.target.value }))}
-                        className="input input-xs input-bordered flex-1 min-w-0"
-                        disabled={!form.pres_nombre}
-                      />
+                ) : (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Formato de compra</span>
                       <button
                         type="button"
-                        className="btn btn-xs btn-ghost px-1"
-                        onClick={() => setScannerOpen(true)}
-                        disabled={!form.pres_nombre}
-                        title="Escanear código de barras"
+                        className="text-[10px] text-base-content/40 hover:text-base-content/70 transition-colors underline underline-offset-2"
+                        onClick={() => {
+                          setPresExpanded(false)
+                          setForm(f => ({
+                            ...f,
+                            pres_nombre: '',
+                            pres_nombre_plural: '',
+                            pres_factor: '',
+                            pres_codigo_barras: '',
+                            pres_gs1_habilitado: false,
+                          }))
+                        }}
                       >
-                        📷
+                        ← Recibir solo por {producto?.unidad_base?.nombre ?? 'unidad'}
                       </button>
                     </div>
-                  </div>
-
-                  <div className="flex flex-col gap-0.5" title="Global Trade Item Number de 14 dígitos.">
-                    <span className="text-[9px] uppercase font-bold tracking-wider opacity-60 cursor-help">GTIN-14 🛈</span>
-                    <input
-                      type="text"
-                      placeholder="14 dígitos"
-                      value={form.pres_gtin}
-                      onChange={e => setForm((f) => ({ ...f, pres_gtin: e.target.value.replace(/\D/g, '').slice(0, 14) }))}
-                      className="input input-xs input-bordered w-full"
-                      disabled={!form.pres_nombre}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-4 mt-2 bg-base-300/40 p-1.5 px-3 rounded-lg">
-                  <label
-                    className="flex items-center gap-1.5 text-[10px] font-bold uppercase opacity-80 cursor-help select-none"
-                    title="Si se habilita, al escanear el código de barras en recepciones se extraerán de forma automática el Lote y Fecha de Vencimiento."
-                  >
-                    <input
-                      type="checkbox"
-                      className="checkbox checkbox-xs checkbox-primary"
-                      checked={form.pres_gs1_habilitado}
-                      disabled={!form.pres_nombre}
-                      onChange={e => setForm((f) => ({ ...f, pres_gs1_habilitado: e.target.checked }))}
-                    />
-                    GS1 Habilitado 🛈
-                  </label>
-
-                  <div className="flex items-center gap-2">
-                    {form.imagen_data_url ? (
-                      <div className="w-6 h-6 rounded bg-base-100 overflow-hidden border border-base-300">
-                        <img src={form.imagen_data_url} alt="Vista previa" className="w-full h-full object-cover" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Formato</span>
+                        <select
+                          className="select select-xs select-bordered bg-base-100 w-full"
+                          value={form.pres_nombre}
+                          onChange={e => {
+                            const found = presFormatos.find(p => p.nombre === e.target.value)
+                            setForm(f => ({
+                              ...f,
+                              pres_nombre: e.target.value,
+                              pres_nombre_plural: found?.nombre_plural || '',
+                              pres_factor: e.target.value ? f.pres_factor : '',
+                            }))
+                          }}
+                        >
+                          <option value="">Seleccionar...</option>
+                          {presFormatos.map(p => <option key={p.nombre} value={p.nombre}>{p.nombre}</option>)}
+                        </select>
                       </div>
-                    ) : producto?.imagen_url ? (
-                      <div className="w-6 h-6 rounded bg-base-100 overflow-hidden border border-base-300">
-                        <img src={producto.imagen_url} alt="Imagen actual" className="w-full h-full object-cover" />
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">
+                          {(producto?.unidad_base?.nombre_plural ?? producto?.unidad_base?.nombre ?? 'unidades')} por {form.pres_nombre || 'envase'}
+                        </span>
+                        <input
+                          type="number"
+                          placeholder="Ej: 10"
+                          value={form.pres_factor}
+                          onChange={e => setForm(f => ({ ...f, pres_factor: e.target.value }))}
+                          className="input input-xs input-bordered w-full"
+                          min="1"
+                        />
                       </div>
-                    ) : null}
-                    <label className="btn btn-xs btn-outline font-semibold gap-1">
-                      {(form.imagen_data_url || producto?.imagen_url) ? 'Cambiar Foto' : 'Subir Foto'}
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Código de barras</span>
+                      <div className="flex gap-1">
+                        <input
+                          type="text"
+                          placeholder="EAN-13 o Code-128"
+                          value={form.pres_codigo_barras}
+                          onChange={e => setForm(f => ({ ...f, pres_codigo_barras: e.target.value }))}
+                          className="input input-xs input-bordered flex-1 min-w-0"
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-xs btn-ghost px-1"
+                          onClick={() => setScannerOpen(true)}
+                          title="Escanear código de barras"
+                        >
+                          📷
+                        </button>
+                      </div>
+                    </div>
+                    <label
+                      className="flex items-center gap-2 cursor-pointer text-[11px] select-none"
+                      title="Si se habilita, al escanear en recepciones se extraerán automáticamente el Lote y Fecha de Vencimiento desde el código GS1-128."
+                    >
                       <input
-                        type="file"
-                        accept="image/jpeg,image/png"
-                        className="hidden"
-                        onChange={async e => {
-                          const file = e.target.files?.[0]
-                          e.target.value = ''
-                          if (!file) return
-                          try {
-                            const dataUrl = await comprimirImagen(file)
-                            setForm((f) => ({ ...f, imagen_data_url: dataUrl }))
-                          } catch (err) {
-                            notify.error(err instanceof Error ? err.message : 'Error cargando imagen')
-                          }
-                        }}
+                        type="checkbox"
+                        className="checkbox checkbox-xs checkbox-primary"
+                        checked={form.pres_gs1_habilitado}
+                        onChange={e => setForm(f => ({ ...f, pres_gs1_habilitado: e.target.checked }))}
                       />
+                      <span className="opacity-70">GS1 habilitado — extrae lote y vencimiento automáticamente</span>
                     </label>
                   </div>
-                </div>
+                )}
               </div>
 
               <div className="form-control">

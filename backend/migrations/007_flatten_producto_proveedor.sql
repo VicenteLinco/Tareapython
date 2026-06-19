@@ -22,35 +22,54 @@ ALTER TABLE productos
     ADD COLUMN IF NOT EXISTS pres_gs1_habilitado BOOLEAN NOT NULL DEFAULT false;
 
 -- ─── Step 2: Migrate data from producto_proveedor (principal rows) ────────────
+-- Wrapped in DO block: safe to skip if table was already dropped or never existed.
 
-UPDATE productos p
-SET
-    proveedor_id  = pp.proveedor_id,
-    sku           = COALESCE(pp.codigo_proveedor, p.codigo_proveedor),
-    precio_unidad = COALESCE(pp.precio_unidad, p.precio_unidad),
-    imagen_url    = pp.imagen_url
-FROM producto_proveedor pp
-WHERE pp.producto_id = p.id
-  AND pp.es_principal = true
-  AND pp.activo = true;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT FROM pg_tables
+        WHERE schemaname = 'public' AND tablename = 'producto_proveedor'
+    ) THEN
+        UPDATE productos p
+        SET
+            proveedor_id  = pp.proveedor_id,
+            sku           = COALESCE(pp.codigo_proveedor, p.sku),
+            precio_unidad = COALESCE(pp.precio_unidad, p.precio_unidad),
+            imagen_url    = pp.imagen_url
+        FROM producto_proveedor pp
+        WHERE pp.producto_id = p.id
+          AND pp.es_principal = true
+          AND pp.activo = true;
 
--- Fill proveedor_id for products that have a non-principal link but no principal
-UPDATE productos p
-SET
-    proveedor_id  = pp.proveedor_id,
-    sku           = COALESCE(pp.codigo_proveedor, p.codigo_proveedor),
-    precio_unidad = COALESCE(pp.precio_unidad, p.precio_unidad),
-    imagen_url    = COALESCE(p.imagen_url, pp.imagen_url)
-FROM producto_proveedor pp
-WHERE pp.producto_id = p.id
-  AND p.proveedor_id IS NULL
-  AND pp.activo = true;
+        UPDATE productos p
+        SET
+            proveedor_id  = pp.proveedor_id,
+            sku           = COALESCE(pp.codigo_proveedor, p.sku),
+            precio_unidad = COALESCE(pp.precio_unidad, p.precio_unidad),
+            imagen_url    = COALESCE(p.imagen_url, pp.imagen_url)
+        FROM producto_proveedor pp
+        WHERE pp.producto_id = p.id
+          AND p.proveedor_id IS NULL
+          AND pp.activo = true;
+    END IF;
+END $$;
 
 -- ─── Step 3: Migrate sku fallback from codigo_proveedor if still empty ────────
+-- Wrapped in DO block: safe to skip if column was already dropped.
 
-UPDATE productos
-SET sku = codigo_proveedor
-WHERE sku IS NULL AND codigo_proveedor IS NOT NULL;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name   = 'productos'
+          AND column_name  = 'codigo_proveedor'
+    ) THEN
+        UPDATE productos
+        SET sku = codigo_proveedor
+        WHERE sku IS NULL AND codigo_proveedor IS NOT NULL;
+    END IF;
+END $$;
 
 -- ─── Step 4: Migrate presentation fields from presentaciones (active, not deleted) ─
 

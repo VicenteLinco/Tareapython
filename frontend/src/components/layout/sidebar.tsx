@@ -31,7 +31,7 @@ import {
   MessageCircle,
   Tag,
 } from 'lucide-react'
-import { useAuthStore } from '@/hooks/use-auth-store'
+import { useAuthStore, useCanOperate } from '@/hooks/use-auth-store'
 
 const navGroups = [
   {
@@ -50,9 +50,9 @@ const navGroups = [
   {
     label: 'Operaciones',
     items: [
-      { to: '/consumos', icon: ClipboardList, label: 'Consumos' },
-      { to: '/descartes', icon: Trash2, label: 'Descartes' },
-      { to: '/conteo', icon: ClipboardCheck, label: 'Conteo' },
+      { to: '/consumos', icon: ClipboardList, label: 'Consumos', operativo: true },
+      { to: '/descartes', icon: Trash2, label: 'Descartes', operativo: true },
+      { to: '/conteo', icon: ClipboardCheck, label: 'Conteo', operativo: true },
     ],
   },
   {
@@ -94,6 +94,7 @@ export function Sidebar({ expanded, onExpandedChange, mobileOpen, onMobileClose 
   )
   const usuario = useAuthStore((s) => s.usuario)
   const isAdmin = usuario?.rol === 'admin'
+  const canOperate = useCanOperate()
 
   const effectiveExpanded = expanded || mobileOpen
 
@@ -145,24 +146,31 @@ export function Sidebar({ expanded, onExpandedChange, mobileOpen, onMobileClose 
       <nav className={cn(
         "flex-1 min-h-0 px-2 py-[clamp(0.25rem,1vh,0.5rem)] overflow-y-auto overflow-x-hidden transition-all duration-300"
       )}>
-        {navGroups.map((group, i) => (
-          <div key={i}>
-            {i > 0 && <div className="mx-2 my-[clamp(0.375rem,1.4vh,0.75rem)] h-px bg-base-200" />}
-            {group.label && (
-              <p className={cn(
-                'px-3 mb-[clamp(0.125rem,0.5vh,0.25rem)] text-[10px] font-semibold uppercase tracking-widest opacity-40 transition-all duration-300',
-                effectiveExpanded ? 'opacity-40' : 'opacity-0'
-              )}>
-                {group.label}
-              </p>
-            )}
-            <div className="space-y-0.5">
-              {group.items.map((item) => (
-                <SidebarLink key={item.to} {...item} expanded={effectiveExpanded} />
-              ))}
+        {navGroups.map((group, i) => {
+          // consulta (solo lectura) no ve las páginas de mutación de stock.
+          const items = group.items.filter(
+            (item) => canOperate || !('operativo' in item && item.operativo)
+          )
+          if (items.length === 0) return null
+          return (
+            <div key={i}>
+              {i > 0 && <div className="mx-2 my-[clamp(0.375rem,1.4vh,0.75rem)] h-px bg-base-200" />}
+              {group.label && (
+                <p className={cn(
+                  'px-3 mb-[clamp(0.125rem,0.5vh,0.25rem)] text-[10px] font-semibold uppercase tracking-widest opacity-40 transition-all duration-300',
+                  effectiveExpanded ? 'opacity-40' : 'opacity-0'
+                )}>
+                  {group.label}
+                </p>
+              )}
+              <div className="space-y-0.5">
+                {items.map((item) => (
+                  <SidebarLink key={item.to} {...item} expanded={effectiveExpanded} />
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
 
         {isAdmin && (
           <>

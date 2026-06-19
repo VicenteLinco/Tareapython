@@ -9,6 +9,7 @@ import { CantidadConUnidad } from '@/components/ui/cantidad'
 import { LOTE_ROW_COLORS, STOCK_ALERT_COLORS } from '@/lib/theme'
 import type { StockItem, Movimiento, PaginatedResponse } from '@/types'
 import { DiscardLoteDialog } from './discard-lote-dialog'
+import { useCanOperate } from '@/hooks/use-auth-store'
 import { Trash2, AlertCircle, Play, History, Box, ArrowUpRight, ArrowDownLeft, FileText, User, TrendingUp, Info } from 'lucide-react'
 import { MetricTooltip } from '@/components/ui/metric-tooltip'
 import { ProductoImage } from '@/components/ui/producto-image'
@@ -33,6 +34,7 @@ interface LoteAreaPresentacion {
 
 export function StockDetail({ item, areaId }: { item: StockItem; areaId: number | null }) {
   const navigate = useNavigate()
+  const canOperate = useCanOperate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [activeTab, setActiveTab] = useState<'lotes' | 'historial'>('lotes')
   const [discardLote, setDiscardLote] = useState<{id: string, numeroLote: string} | null>(null)
@@ -324,30 +326,32 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
                       </div>
                     </div>
 
-                    <div className="mt-3 flex justify-end gap-2">
-                      <button
-                        onClick={() => navigate(`/consumos?search=${encodeURIComponent(item.producto_nombre)}`)}
-                        className="btn btn-xs gap-1 h-7 btn-ghost hover:bg-primary/10 text-primary"
-                      >
-                        <Play className="w-3 h-3" />
-                        Consumir
-                      </button>
-                      
-                      <button
-                        onClick={() => setDiscardLote({ id: lote.id, numeroLote: lote.numero_lote })}
-                        className={cn(
-                          "btn btn-xs gap-1 h-7 transition-all duration-300",
-                          isExpired
-                            ? "btn-error shadow-[0_0_15px_rgba(239,68,68,0.4)] animate-pulse border-none text-white hover:bg-error/90"
-                            : isSoon
-                            ? "btn-ghost text-warning hover:bg-warning/10"
-                            : "btn-ghost text-base-content/40 hover:bg-base-200 hover:text-base-100"
-                        )}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        {isExpired ? 'Descartar Vencido' : 'Descartar'}
-                      </button>
-                    </div>
+                    {canOperate && (
+                      <div className="mt-3 flex justify-end gap-2">
+                        <button
+                          onClick={() => navigate(`/consumos?search=${encodeURIComponent(item.producto_nombre)}`)}
+                          className="btn btn-xs gap-1 h-7 btn-ghost hover:bg-primary/10 text-primary"
+                        >
+                          <Play className="w-3 h-3" />
+                          Consumir
+                        </button>
+
+                        <button
+                          onClick={() => setDiscardLote({ id: lote.id, numeroLote: lote.numero_lote })}
+                          className={cn(
+                            "btn btn-xs gap-1 h-7 transition-all duration-300",
+                            isExpired
+                              ? "btn-error shadow-[0_0_15px_rgba(239,68,68,0.4)] animate-pulse border-none text-white hover:bg-error/90"
+                              : isSoon
+                              ? "btn-ghost text-warning hover:bg-warning/10"
+                              : "btn-ghost text-base-content/40 hover:bg-base-200 hover:text-base-100"
+                          )}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          {isExpired ? 'Descartar Vencido' : 'Descartar'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )
               })

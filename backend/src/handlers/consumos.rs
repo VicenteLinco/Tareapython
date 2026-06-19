@@ -53,8 +53,8 @@ async fn consumo(
     }
     validate_text_length(&req.unidad, "unidad", 50)?;
 
-    // Validar acceso al área
-    stock_ops::validar_acceso_area(&state.pool, claims.sub, req.area_id, &claims.rol).await?;
+    // Solo roles operativos mutan stock (el área ya no es barrera de permiso)
+    stock_ops::validar_puede_operar_stock(&claims.rol)?;
 
     // Idempotency
     let idem_key = idempotency::extract_idempotency_key(&headers)?;
@@ -96,21 +96,8 @@ async fn consumo_batch(
         return Err(AppError::Validation("items no puede estar vacío".into()));
     }
 
-    // Validar acceso a TODOS los área_id mencionados (global + por ítem), deduplicados
-    {
-        let mut areas_a_validar: std::collections::HashSet<i32> = std::collections::HashSet::new();
-        if let Some(a) = req.area_id {
-            areas_a_validar.insert(a);
-        }
-        for item in &req.items {
-            if let Some(a) = item.area_id {
-                areas_a_validar.insert(a);
-            }
-        }
-        for area_id in areas_a_validar {
-            stock_ops::validar_acceso_area(&state.pool, claims.sub, area_id, &claims.rol).await?;
-        }
-    }
+    // Solo roles operativos mutan stock (el área ya no es barrera de permiso)
+    stock_ops::validar_puede_operar_stock(&claims.rol)?;
 
     // Idempotency
     let idem_key = idempotency::extract_idempotency_key(&headers)?;

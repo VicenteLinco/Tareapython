@@ -148,31 +148,14 @@ fn dimension_sql(agrupar_por: &str) -> Result<(&'static str, &'static str), AppE
 }
 
 fn restrict_area_filter(
-    claims: &Claims,
-    requested_area_id: Option<i32>,
-    table_alias: &str,
-    param_idx: &mut u32,
+    _claims: &Claims,
+    _requested_area_id: Option<i32>,
+    _table_alias: &str,
+    _param_idx: &mut u32,
 ) -> Result<Option<(String, Vec<i32>)>, AppError> {
-    if claims.rol == "admin" {
-        return Ok(None);
-    }
-
-    if let Some(area_id) = requested_area_id {
-        if !claims.area_ids.contains(&area_id) {
-            return Err(AppError::Forbidden("Sin acceso al area solicitada".into()));
-        }
-        return Ok(None);
-    }
-
-    if claims.area_ids.is_empty() {
-        return Ok(Some(("FALSE".to_string(), Vec::new())));
-    }
-
-    *param_idx += 1;
-    Ok(Some((
-        format!("{}.area_id = ANY(${})", table_alias, *param_idx),
-        claims.area_ids.clone(),
-    )))
+    // El área dejó de ser barrera de permiso: ningún rol queda restringido por área.
+    // El filtrado explícito por área (params.area_id) se aplica aparte en cada handler.
+    Ok(None)
 }
 
 /// GET /api/v1/movimientos/tendencias-consumo
@@ -454,20 +437,11 @@ async fn listar(
 /// GET /api/v1/movimientos/:id
 async fn obtener(
     State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
+    Extension(_claims): Extension<Claims>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if claims.rol != "admin" && claims.area_ids.is_empty() {
-        return Err(AppError::Forbidden("Sin acceso a movimientos".into()));
-    }
-
-    let area_filter = if claims.rol == "admin" {
-        ""
-    } else {
-        " AND m.area_id = ANY($2)"
-    };
-    let sql = format!(
-        r#"SELECT m.id, m.numero_documento, m.grupo_movimiento, m.tipo,
+    // El área no restringe la consulta de un movimiento: cualquier rol lo ve por su id.
+    let sql = r#"SELECT m.id, m.numero_documento, m.grupo_movimiento, m.tipo,
                   m.cantidad, m.cantidad_resultante,
                   l.numero_lote as lote_numero, p.nombre as producto_nombre,
                   a.nombre as area_nombre, u.nombre as usuario_nombre,
@@ -479,14 +453,9 @@ async fn obtener(
            JOIN areas a ON a.id = m.area_id
            JOIN usuarios u ON u.id = m.usuario_id
            JOIN unidades_basicas um ON um.id = p.unidad_base_id
-           WHERE m.id = $1{}"#,
-        area_filter
-    );
-    let mut mov = sqlx::query_as::<_, MovimientoListItem>(&sql).bind(id);
-    if claims.rol != "admin" {
-        mov = mov.bind(claims.area_ids.clone());
-    }
-    let mut mov = mov
+           WHERE m.id = $1"#;
+    let mut mov = sqlx::query_as::<_, MovimientoListItem>(sql)
+        .bind(id)
         .fetch_optional(&state.pool)
         .await?
         .ok_or(AppError::NotFound("Movimiento no encontrado".into()))?;

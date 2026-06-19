@@ -60,7 +60,7 @@ fn escape_like(value: &str) -> String {
 /// GET /api/v1/stock — Vista principal de stock
 async fn listar(
     State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
+    Extension(_claims): Extension<Claims>,
     Query(params): Query<StockQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let forecast_cfg = load_forecast_config(&state.pool).await?;
@@ -73,19 +73,12 @@ async fn listar(
         ));
     }
 
+    // El área es solo un filtro opcional: cualquier rol puede consultar cualquier área.
     let scoped_area_ids = if let Some(aid) = params.area_id {
         vec![aid]
     } else {
         requested_area_ids
     };
-
-    // Si se filtra por área, validar acceso
-    if let Some(aid) = params.area_id {
-        stock_ops::validar_acceso_area(&state.pool, claims.sub, aid, &claims.rol).await?;
-    }
-    for aid in &scoped_area_ids {
-        stock_ops::validar_acceso_area(&state.pool, claims.sub, *aid, &claims.rol).await?;
-    }
 
     let pagination = PaginationParams {
         page: params.page,
@@ -549,11 +542,11 @@ fn calcular_pico(row: &mut StockItemRow, cfg: ForecastConfig) {
 /// GET /api/v1/stock/area/:area_id — Stock de un área específica
 async fn stock_por_area(
     State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
+    Extension(_claims): Extension<Claims>,
     Path(area_id): Path<i32>,
     Query(params): Query<StockQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    stock_ops::validar_acceso_area(&state.pool, claims.sub, area_id, &claims.rol).await?;
+    // El área es solo un filtro: cualquier rol puede ver el stock de cualquier área.
     let area = sqlx::query_as::<_, AreaRef>("SELECT id, nombre FROM areas WHERE id = $1")
         .bind(area_id)
         .fetch_optional(&state.pool)
@@ -780,7 +773,7 @@ struct AlertaRow {
 /// GET /api/v1/stock/alertas — Productos que necesitan atención
 async fn alertas(
     State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
+    Extension(_claims): Extension<Claims>,
     Query(params): Query<AlertasParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let per_page = params.per_page.clamp(1, 100);
@@ -804,34 +797,12 @@ async fn alertas(
         })
         .transpose()?;
 
-    let effective_area_ids = if claims.rol == "admin" {
-        requested_area_ids.unwrap_or_default()
-    } else {
-        match requested_area_ids {
-            Some(ids) => {
-                if ids.iter().any(|id| !claims.area_ids.contains(id)) {
-                    return Err(AppError::Forbidden(
-                        "Sin acceso a una de las áreas solicitadas".into(),
-                    ));
-                }
-                ids
-            }
-            None => claims.area_ids.clone(),
-        }
-    };
+    // El área es solo un filtro opcional: cualquier rol puede pedir cualquier área (o todas).
+    let effective_area_ids = requested_area_ids.unwrap_or_default();
 
     let (stock_area_filter, stock_exists_area_filter, movement_area_filter, product_area_filter) =
         if effective_area_ids.is_empty() {
-            if claims.rol == "admin" {
-                (String::new(), String::new(), String::new(), String::new())
-            } else {
-                (
-                    String::new(),
-                    String::new(),
-                    String::new(),
-                    "AND FALSE".to_string(),
-                )
-            }
+            (String::new(), String::new(), String::new(), String::new())
         } else {
             let arr = effective_area_ids
                 .iter()
@@ -1068,7 +1039,7 @@ struct LoteVencidoItem {
 
 async fn lotes_vencidos(
     State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
+    Extension(_claims): Extension<Claims>,
     Query(params): Query<LotesVencidosQuery>,
 ) -> Result<Json<Vec<LoteVencidoItem>>, AppError> {
     let dias = params.dias_alerta.unwrap_or(0);
@@ -1093,21 +1064,7 @@ async fn lotes_vencidos(
         "p.activo = true".to_string(),
     ];
     let mut param_idx = 2u32;
-    let allowed_area_ids = if claims.rol == "admin" {
-        None
-    } else if let Some(area_id) = params.area_id {
-        if !claims.area_ids.contains(&area_id) {
-            return Err(AppError::Forbidden("Sin acceso al area solicitada".into()));
-        }
-        None
-    } else if claims.area_ids.is_empty() {
-        conditions.push("FALSE".to_string());
-        None
-    } else {
-        param_idx += 1;
-        conditions.push(format!("s.area_id = ANY(${})", param_idx));
-        Some(claims.area_ids.clone())
-    };
+    // El área es solo un filtro opcional (params.area_id); no hay recorte implícito por rol.
 
     if params.area_id.is_some() {
         param_idx += 1;
@@ -1148,9 +1105,6 @@ async fn lotes_vencidos(
     let mut query = sqlx::query_as::<_, LoteVencidoItem>(&sql)
         .bind(dias)
         .bind(q);
-    if let Some(ids) = allowed_area_ids {
-        query = query.bind(ids);
-    }
     if let Some(v) = params.area_id {
         query = query.bind(v);
     }

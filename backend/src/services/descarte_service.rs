@@ -19,14 +19,15 @@ pub async fn procesar_descartes(
         return Err(AppError::Validation("items no puede estar vacío".into()));
     }
 
-    // Validar acceso a las áreas y cantidades
+    // Solo roles operativos mutan stock (el área ya no es barrera de permiso)
+    stock_ops::validar_puede_operar_stock(rol)?;
+
     for item in &req.items {
         if item.cantidad <= Decimal::ZERO {
             return Err(AppError::Validation(
                 "La cantidad debe ser mayor a 0".into(),
             ));
         }
-        stock_ops::validar_acceso_area(pool, usuario_id, item.area_id, rol).await?;
     }
 
     let virtual_discarded_id: Option<i32> = sqlx::query_scalar(

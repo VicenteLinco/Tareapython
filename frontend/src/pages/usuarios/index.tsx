@@ -6,10 +6,8 @@ import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { PageLoading } from '@/components/ui/page-state'
-import type { Area } from '@/types'
 import type {
   UsuarioResponse,
-  AreaSimple,
   CreateUsuario,
   UpdateUsuario
 } from '@/types/generated'
@@ -47,7 +45,6 @@ interface ModalUsuarioProps {
   open: boolean
   onClose: () => void
   usuario?: UsuarioResponse | null
-  areas: AreaSimple[]
 }
 
 const EMPTY_FORM = {
@@ -56,10 +53,9 @@ const EMPTY_FORM = {
   whatsapp_phone: '',
   password: '',
   rol: 'tecnologo' as string,
-  area_ids: [] as number[],
 }
 
-function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
+function ModalUsuario({ open, onClose, usuario }: ModalUsuarioProps) {
   const qc = useQueryClient()
   const isEdit = !!usuario
 
@@ -71,7 +67,6 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
           whatsapp_phone: usuario.whatsapp_phone || '',
           password: '',
           rol: usuario.rol,
-          area_ids: usuario.areas.map((a) => a.id),
           version: usuario.version,
         }
       : { ...EMPTY_FORM, version: 1 }
@@ -83,13 +78,12 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
     setPrevUsuario(usuario)
     setForm(
       usuario
-        ? { 
-            nombre: usuario.nombre, 
-            email: usuario.email, 
+        ? {
+            nombre: usuario.nombre,
+            email: usuario.email,
             whatsapp_phone: usuario.whatsapp_phone || '',
-            password: '', 
-            rol: usuario.rol, 
-            area_ids: usuario.areas.map((a) => a.id),
+            password: '',
+            rol: usuario.rol,
             version: usuario.version
           }
         : { ...EMPTY_FORM, version: 1 }
@@ -126,20 +120,6 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
 
   const isPending = createMut.isPending || updateMut.isPending
 
-  const [busquedaArea, setBusquedaArea] = useState('')
-  const areasFiltered = areas.filter(a =>
-    a.nombre.toLowerCase().includes(busquedaArea.toLowerCase())
-  )
-
-  function toggleArea(id: number) {
-    setForm((f) => ({
-      ...f,
-      area_ids: f.area_ids.includes(id)
-        ? f.area_ids.filter((a) => a !== id)
-        : [...f.area_ids, id],
-    }))
-  }
-
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.nombre.trim() || !form.email.trim()) return
@@ -161,7 +141,8 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
         email: form.email,
         whatsapp_phone: cleanPhone,
         rol: form.rol,
-        area_ids: form.area_ids,
+        // El área ya no se asigna por usuario; null = no modificar.
+        area_ids: null,
         version: form.version,
       })
     } else {
@@ -172,7 +153,8 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
         whatsapp_phone: cleanPhone,
         password: form.password,
         rol: form.rol,
-        area_ids: form.area_ids,
+        // El área ya no autoriza nada; no se asigna por usuario.
+        area_ids: [],
       })
     }
   }
@@ -253,39 +235,6 @@ function ModalUsuario({ open, onClose, usuario, areas }: ModalUsuarioProps) {
               <option value="tecnologo">Tecnólogo</option>
               <option value="consulta">Consulta</option>
             </select>
-          </div>
-
-          {/* Áreas */}
-          <div className="form-control">
-            <label className="label">
-              <span className="label-text">Áreas asignadas</span>
-              <span className="label-text-alt text-base-content/40">{form.area_ids.length} seleccionadas</span>
-            </label>
-            <input
-              type="text"
-              className="input input-xs input-bordered w-full rounded-lg mb-1"
-              placeholder="Buscar área…"
-              value={busquedaArea}
-              onChange={e => setBusquedaArea(e.target.value)}
-            />
-            <div className="flex flex-wrap gap-2 p-3 border border-base-300 rounded-lg max-h-40 overflow-y-auto">
-              {areasFiltered.map((a) => (
-                <label key={a.id} className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="checkbox checkbox-xs checkbox-primary"
-                    checked={form.area_ids.includes(a.id)}
-                    onChange={() => toggleArea(a.id)}
-                  />
-                  <span className="text-sm">{a.nombre}</span>
-                </label>
-              ))}
-              {areasFiltered.length === 0 && (
-                <span className="text-sm text-base-content/40">
-                  {busquedaArea ? 'Sin áreas que coincidan' : 'No hay áreas disponibles'}
-                </span>
-              )}
-            </div>
           </div>
 
           <div className="modal-action mt-2">
@@ -393,21 +342,15 @@ export default function UsuariosPage() {
       }).then((r) => r.data),
   })
 
-  const { data: areas = [] } = useQuery<Area[]>({
-    queryKey: ['areas'],
-    queryFn: () => api.get<Area[]>('/areas').then((r) => r.data),
-  })
-
   const toggleActivoMut = useMutation({
     mutationFn: (u: UsuarioResponse) =>
       u.activo
         ? api.delete(`/usuarios/${u.id}`)
-        : api.put(`/usuarios/${u.id}`, { 
-            nombre: u.nombre, 
-            email: u.email, 
+        : api.put(`/usuarios/${u.id}`, {
+            nombre: u.nombre,
+            email: u.email,
             whatsapp_phone: u.whatsapp_phone,
-            rol: u.rol, 
-            area_ids: u.areas.map((a) => a.id),
+            rol: u.rol,
             version: u.version
           }),
     onSuccess: (_, u) => {
@@ -515,19 +458,6 @@ export default function UsuariosPage() {
                   <RolBadge rol={u.rol} />
                 </div>
 
-                {/* Áreas */}
-                <div className="flex flex-wrap gap-1 mt-3 min-h-[22px]">
-                  {u.areas.slice(0, 3).map((a) => (
-                    <span key={a.id} className="inline-flex items-center px-2 py-0.5 rounded-lg bg-base-200 text-[11px] text-base-content/60">{a.nombre}</span>
-                  ))}
-                  {u.areas.length > 3 && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-base-200 text-[11px] text-base-content/60">+{u.areas.length - 3} más</span>
-                  )}
-                  {u.areas.length === 0 && (
-                    <span className="text-[11px] text-base-content/30 italic">Sin áreas asignadas</span>
-                  )}
-                </div>
-
                 {/* Separador + Acciones */}
                 <div className="flex flex-wrap items-center justify-end gap-0.5 mt-3 pt-3 border-t border-base-200">
                   <button
@@ -566,7 +496,6 @@ export default function UsuariosPage() {
         open={editando !== undefined}
         onClose={() => setEditando(undefined)}
         usuario={editando ?? null}
-        areas={areas}
       />
 
       {/* Modal cambiar contraseña */}

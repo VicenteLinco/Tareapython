@@ -11,6 +11,7 @@ import { PageLoading } from '@/components/ui/page-state'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import { Dialog } from '@/components/ui/dialog'
 import { LabelsSection } from './components/labels-section'
+import { useCanOperate } from '@/hooks/use-auth-store'
 import api from '@/lib/api'
 import { formatDate, daysUntil, cn, formatCantidad } from '@/lib/utils'
 import { CantidadConUnidad } from '@/components/ui/cantidad'
@@ -44,7 +45,6 @@ interface DetalleItem {
   unidad_base_nombre_plural: string
   area_destino: string
   lote_id: string
-  codigo_interno: string
 }
 
 interface RecepcionDetalleResponse {
@@ -59,6 +59,7 @@ export default function RecepcionDetallePage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const canOperate = useCanOperate()
   const [fotoOpen, setFotoOpen] = useState(false)
   const [confirmReplace, setConfirmReplace] = useState(false)
   const [showQrScanner, setShowQrScanner] = useState(false)
@@ -281,7 +282,7 @@ export default function RecepcionDetallePage() {
           <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFotoFile} />
           <input ref={fileInputFirstRef} type="file" accept="image/*" className="hidden" onChange={handleFotoFile} />
 
-          {!foto_documento && (
+          {canOperate && !foto_documento && (
             <button
               className={cn('btn btn-sm btn-primary shadow-md gap-2 font-bold px-5 hover:scale-[1.02] transition-all animate-pulse', uploadFotoMut.isPending && 'loading')}
               onClick={() => fileInputFirstRef.current?.click()}
@@ -292,7 +293,7 @@ export default function RecepcionDetallePage() {
             </button>
           )}
 
-          {foto_documento && !confirmReplace && (
+          {canOperate && foto_documento && !confirmReplace && (
             <button
               className="btn btn-sm btn-outline gap-2 hover:scale-[1.02] transition-all"
               onClick={() => setConfirmReplace(true)}
@@ -316,7 +317,7 @@ export default function RecepcionDetallePage() {
             Imprimir etiquetas
           </button>
 
-          {!esConfirmada && (
+          {canOperate && !esConfirmada && (
             <>
               <button
                 className="btn btn-outline btn-sm gap-2"
@@ -525,13 +526,13 @@ export default function RecepcionDetallePage() {
           <LabelsSection
             lotesConfirmados={detalle.map(item => ({
               lote_id: item.lote_id,
-              codigo_interno: item.codigo_interno,
               numero_lote: item.numero_lote,
               fecha_vencimiento: item.fecha_vencimiento,
               producto_nombre: item.producto_nombre,
               presentacion_nombre: item.presentacion_nombre,
               area_nombre: item.area_destino,
-              cantidad_etiquetas: 1
+              // Preset = cantidad recibida (paquetes/ítems), editable antes de imprimir.
+              cantidad_etiquetas: Math.max(1, Math.round(toNum(item.cantidad_presentaciones))),
             }))}
           />
           <div className="mt-4 border-t border-base-200 pt-3">

@@ -126,13 +126,10 @@ async fn reconciliar_solicitud_recepcion(
 pub async fn listar(
     pool: &PgPool,
     params: RecepcionQuery,
-    usuario_id: Uuid,
-    rol: &str,
+    _usuario_id: Uuid,
+    _rol: &str,
 ) -> Result<PaginatedRecepciones, AppError> {
-    if let Some(aid) = params.area_id {
-        stock_ops::validar_acceso_area(pool, usuario_id, aid, rol).await?;
-    }
-
+    // El área es solo un filtro opcional; no restringe qué recepciones se listan.
     let per_page = params.per_page.unwrap_or(15).clamp(1, 100);
     let page = params.page.unwrap_or(1).max(1);
     let offset = (page - 1) * per_page;

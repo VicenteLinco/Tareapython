@@ -10,6 +10,7 @@ import { ProveedorSelect, ProveedorIcon } from '@/components/ui/proveedor-select
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { KeyboardLegend } from '@/components/ui/keyboard-legend'
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut'
+import { useCanOperate } from '@/hooks/use-auth-store'
 import { Dialog } from '@/components/ui/dialog'
 import { LabelsSection } from './components/labels-section'
 import api from '@/lib/api'
@@ -338,6 +339,7 @@ export default function RecepcionesPage() {
   const [printModalOpen, setPrintModalOpen] = useState(false)
   
   const navigate = useNavigate()
+  const canOperate = useCanOperate()
   const queryClient = useQueryClient()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -474,10 +476,12 @@ export default function RecepcionesPage() {
               { keys: ['n'], description: 'Nueva recepción' },
               { keys: ['Esc'], description: 'Limpiar búsqueda' },
             ]} />
-            <button className="btn btn-primary" onClick={() => navigate('/recepciones/nueva')}>
-              <Plus className="h-4 w-4" />
-              Nueva Recepción
-            </button>
+            {canOperate && (
+              <button className="btn btn-primary" onClick={() => navigate('/recepciones/nueva')}>
+                <Plus className="h-4 w-4" />
+                Nueva Recepción
+              </button>
+            )}
           </div>
         </div>
 

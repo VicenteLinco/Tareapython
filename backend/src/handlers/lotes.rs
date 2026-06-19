@@ -55,35 +55,22 @@ struct MovimientoLote {
 /// GET /api/v1/lotes
 async fn listar(
     State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
+    Extension(_claims): Extension<Claims>,
     Query(params): Query<LoteQuery>,
 ) -> Result<Json<Vec<LoteListItem>>, AppError> {
     let mut conditions = Vec::new();
     let mut param_idx = 0u32;
-    let mut allowed_area_id = None;
-    let allowed_area_ids = if claims.rol == "admin" {
-        None
-    } else if let Some(area_id) = params.area_id {
-        if !claims.area_ids.contains(&area_id) {
-            return Err(AppError::Forbidden("Sin acceso al area solicitada".into()));
-        }
+
+    // El área es solo un filtro opcional, no un permiso: cualquier rol ve todos los lotes.
+    let allowed_area_id = if let Some(area_id) = params.area_id {
         param_idx += 1;
         conditions.push(format!(
             "EXISTS (SELECT 1 FROM stock s_scope WHERE s_scope.lote_id = l.id AND s_scope.area_id = ${} AND s_scope.cantidad > 0)",
             param_idx
         ));
-        allowed_area_id = Some(area_id);
-        None
-    } else if claims.area_ids.is_empty() {
-        conditions.push("FALSE".to_string());
-        None
+        Some(area_id)
     } else {
-        param_idx += 1;
-        conditions.push(format!(
-            "EXISTS (SELECT 1 FROM stock s_scope WHERE s_scope.lote_id = l.id AND s_scope.area_id = ANY(${}) AND s_scope.cantidad > 0)",
-            param_idx
-        ));
-        Some(claims.area_ids.clone())
+        None
     };
 
     if params.producto_id.is_some() {
@@ -133,9 +120,6 @@ async fn listar(
 
     let mut query = sqlx::query_as::<_, LoteListItem>(&sql);
 
-    if let Some(ids) = allowed_area_ids {
-        query = query.bind(ids);
-    }
     if let Some(id) = allowed_area_id {
         query = query.bind(id);
     }
@@ -153,30 +137,15 @@ async fn listar(
 /// GET /api/v1/lotes/:id
 async fn obtener(
     State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
+    Extension(_claims): Extension<Claims>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if claims.rol != "admin" && claims.area_ids.is_empty() {
-        return Err(AppError::Forbidden("Sin acceso al lote".into()));
-    }
-
-    let area_filter = if claims.rol == "admin" {
-        ""
-    } else {
-        " AND EXISTS (SELECT 1 FROM stock s_scope WHERE s_scope.lote_id = lotes.id AND s_scope.area_id = ANY($2) AND s_scope.cantidad > 0)"
-    };
-    let lote_sql = format!("SELECT * FROM lotes WHERE id = $1{}", area_filter);
-    let lote = sqlx::query_as::<_, Lote>("SELECT * FROM lotes WHERE id = $1").bind(id);
-    let lote = if claims.rol == "admin" {
-        lote.fetch_optional(&state.pool).await?
-    } else {
-        sqlx::query_as::<_, Lote>(&lote_sql)
-            .bind(id)
-            .bind(claims.area_ids.clone())
-            .fetch_optional(&state.pool)
-            .await?
-    }
-    .ok_or(AppError::NotFound("Lote no encontrado".into()))?;
+    // El área no restringe la consulta de un lote: cualquier rol lo ve por su id.
+    let lote = sqlx::query_as::<_, Lote>("SELECT * FROM lotes WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(AppError::NotFound("Lote no encontrado".into()))?;
 
     let producto_nombre: String = sqlx::query_scalar("SELECT nombre FROM productos WHERE id = $1")
         .bind(lote.producto_id)

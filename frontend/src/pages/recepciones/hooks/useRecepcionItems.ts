@@ -26,7 +26,6 @@ export interface PendingScan {
 
 interface LoteConfirmadoApi {
   lote_id: string
-  codigo_interno: string
   numero_lote: string
   fecha_vencimiento: string
   producto_nombre: string
@@ -606,7 +605,6 @@ export function useRecepcionItems({
             if (lote?.incluir_etiqueta) {
               return {
                 lote_id: l.lote_id,
-                codigo_interno: l.codigo_interno,
                 numero_lote: l.numero_lote,
                 fecha_vencimiento: l.fecha_vencimiento,
                 producto_nombre: l.producto_nombre,

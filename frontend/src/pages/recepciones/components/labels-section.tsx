@@ -43,14 +43,32 @@ export function LabelsSection({ detalles, onToggleEtiqueta, onCantidadEtiqueta, 
   const [espacioX, setEspacioX] = useState(2)
   const [espacioY, setEspacioY] = useState(2)
 
+  // Cantidad de etiquetas por lote (editable). Se seedea una vez desde los lotes
+  // confirmados (preset = cantidad recibida) y queda editable antes de imprimir.
+  const [cantidades, setCantidades] = useState<number[]>(
+    () => (lotesConfirmados ?? []).map(l => Math.max(1, Math.round(l.cantidad_etiquetas)))
+  )
+
   // ── Fase post-confirmación ────────────────────────────────────────────────
   if (lotesConfirmados) {
-    const total = lotesConfirmados.reduce((s, l) => s + l.cantidad_etiquetas, 0)
+    const cantidadDe = (i: number) => cantidades[i] ?? Math.max(1, Math.round(lotesConfirmados[i].cantidad_etiquetas))
+    const total = lotesConfirmados.reduce((s, _l, i) => s + cantidadDe(i), 0)
+
+    const setCantidad = (i: number, val: number) => {
+      const safe = Math.max(1, Math.min(999, Math.round(val) || 1))
+      setCantidades(prev => {
+        const next = lotesConfirmados.map((_l, idx) => prev[idx] ?? cantidadDe(idx))
+        next[i] = safe
+        return next
+      })
+    }
 
     const handlePrint = async () => {
       setImprimiendo(true)
       try {
-        await imprimirEtiquetas(lotesConfirmados, {
+        await imprimirEtiquetas(
+          lotesConfirmados.map((l, i) => ({ ...l, cantidad_etiquetas: cantidadDe(i) })),
+          {
           formato,
           rolloTamano,
           rolloAnchoCustom,
@@ -422,16 +440,42 @@ export function LabelsSection({ detalles, onToggleEtiqueta, onCantidadEtiqueta, 
           </div>
         )}
 
-        {/* Resumen de etiquetas a imprimir */}
+        {/* Resumen editable: cantidad de etiquetas por lote */}
         <div className="bg-base-200/50 rounded-xl p-3 text-xs space-y-1.5 border border-base-200">
-          <p className="font-semibold text-base-content/80 mb-1">🏷️ Resumen de etiquetas:</p>
-          <div className="max-h-28 overflow-y-auto divide-y divide-base-200/80 pr-1">
-            {lotesConfirmados.map(l => (
-              <div key={l.lote_id} className="flex justify-between py-1 text-base-content/75 text-xs">
-                <span className="truncate pr-2 font-medium">{l.producto_nombre}</span>
-                <span className="font-mono flex-shrink-0 text-base-content/60">
-                  Lote: {l.numero_lote} · <strong className="text-base-content font-bold">{l.cantidad_etiquetas}</strong>
-                </span>
+          <p className="font-semibold text-base-content/80 mb-2">🏷️ Etiquetas a imprimir:</p>
+          <div className="max-h-48 overflow-y-auto divide-y divide-base-200/80 pr-1">
+            {lotesConfirmados.map((l, i) => (
+              <div key={`${l.lote_id}-${i}`} className="flex items-center gap-2 py-1.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium text-base-content/80">{l.producto_nombre}</p>
+                  <p className="font-mono text-[10px] text-base-content/50 truncate">Lote: {l.numero_lote}</p>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-circle btn-ghost"
+                    aria-label="Quitar una etiqueta"
+                    onClick={() => setCantidad(i, cantidadDe(i) - 1)}
+                  >
+                    −
+                  </button>
+                  <input
+                    type="number"
+                    min={1}
+                    max={999}
+                    className="input input-xs input-bordered w-14 text-center font-semibold"
+                    value={cantidadDe(i)}
+                    onChange={e => setCantidad(i, Number(e.target.value))}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-circle btn-ghost"
+                    aria-label="Agregar una etiqueta"
+                    onClick={() => setCantidad(i, cantidadDe(i) + 1)}
+                  >
+                    +
+                  </button>
+                </div>
               </div>
             ))}
           </div>

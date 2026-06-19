@@ -20,6 +20,23 @@ import { KeyboardLegend } from '@/components/ui/keyboard-legend'
 import { cn, formatCantidad } from '@/lib/utils'
 import { ProductoImage } from '@/components/ui/producto-image'
 
+// UUID v4 (codificado en el QR de nuestras etiquetas de lote)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+interface LoteDetalleResponse {
+  producto_id: string
+  producto_nombre: string
+  fecha_vencimiento: string | null
+  stock_por_area: { area_id: number; area_nombre: string; cantidad: string | number }[]
+}
+
+interface ProductoDetalleResponse {
+  codigo_interno: string | null
+  categoria: { nombre: string } | null
+  unidad_base: { nombre: string; nombre_plural: string | null } | null
+  imagen_url: string | null
+}
+
 // ─── Helpers localStorage para productos recientes ───────────────────────────
 
 function getRecentIds(userId: string): string[] {
@@ -380,11 +397,19 @@ export default function ConsumosPage() {
 
   // ── Agregar al carrito ─────────────────────────────────────────────────────
 
-  const addToCart = useCallback((p: StockItem) => {
+  const addToCart = useCallback((p: StockItem, preselectLoteId?: string | null) => {
     if ((p.stock_total ?? 0) <= 0) { notify.error('Sin stock disponible'); return }
     const key = p.producto_id
     setCart(prev => {
-      if (prev[key]) return { ...prev, [key]: { ...prev[key], cantidad_descontar: prev[key].cantidad_descontar + 1 } }
+      if (prev[key]) return {
+        ...prev,
+        [key]: {
+          ...prev[key],
+          cantidad_descontar: prev[key].cantidad_descontar + 1,
+          // Si se escaneó un lote específico, fijarlo aunque el ítem ya estuviera en el carrito.
+          ...(preselectLoteId ? { lote_elegido_id: preselectLoteId } : {}),
+        },
+      }
       return {
         ...prev,
         [key]: {
@@ -400,7 +425,7 @@ export default function ConsumosPage() {
           categoria: p.categoria ?? null,
           lotes: [],
           cargando_lotes: true,
-          lote_elegido_id: null,
+          lote_elegido_id: preselectLoteId ?? null,
           cantidad_descontar: 1,
         }
       }
@@ -483,17 +508,53 @@ export default function ConsumosPage() {
 
   // ── Escaneo (QR + HID comparten esta función) ──────────────────────────────
 
+  // Resuelve un QR propio (lote_id) al lote exacto y lo agrega al carrito ya seleccionado,
+  // salteando FEFO. El lote se resuelve por clave primaria → sin ambigüedad.
+  const handleScanLote = useCallback(async (loteId: string) => {
+    try {
+      const { data: lote } = await api.get<LoteDetalleResponse>(`/lotes/${loteId}`)
+      const { data: prod } = await api.get<ProductoDetalleResponse>(`/productos/${lote.producto_id}`)
+      const areasConStock = lote.stock_por_area ?? []
+      const areaSel = (areaFiltro && areasConStock.find(a => a.area_id === areaFiltro)) || areasConStock[0]
+      const stockTotal = areasConStock.reduce((s, a) => s + Number(a.cantidad), 0)
+
+      const item: StockItem = {
+        producto_id: lote.producto_id,
+        codigo_interno: prod.codigo_interno ?? '',
+        producto_nombre: lote.producto_nombre,
+        categoria: prod.categoria?.nombre ?? null,
+        unidad: prod.unidad_base?.nombre ?? '',
+        unidad_plural: prod.unidad_base?.nombre_plural ?? null,
+        stock_total: stockTotal,
+        proximo_vencimiento: lote.fecha_vencimiento ?? null,
+        proveedor_nombre: null,
+        proveedor_icono: null,
+        imagen_url: prod.imagen_url ?? null,
+        area_id: areaSel?.area_id ?? areaFiltro ?? undefined,
+        area_nombre: areaSel?.area_nombre ?? '',
+      }
+      addToCart(item, loteId)
+      setIsScannerOpen(false)
+    } catch {
+      notify.error('No se pudo resolver el lote escaneado')
+    }
+  }, [areaFiltro, addToCart])
+
   const handleScanCode = useCallback(async (code: string) => {
+    const trimmed = code.trim()
+    // Nuestras etiquetas codifican el lote_id (UUID) → resolución por lote exacto.
+    if (UUID_RE.test(trimmed)) { await handleScanLote(trimmed); return }
+    // Otro código (texto, código de barras de proveedor) → búsqueda de producto + FEFO.
     try {
       const res = await api.get<PaginatedResponse<StockItem>>('/stock', {
-        params: { q: code, ...(areaFiltro && { area_id: areaFiltro }) }
+        params: { q: trimmed, ...(areaFiltro && { area_id: areaFiltro }) }
       })
       const items = res.data.data
       if (items.length === 0) { notify.error('Producto no encontrado'); return }
       addToCart(items[0])
       setIsScannerOpen(false)
     } catch { notify.error('Error al escanear') }
-  }, [areaFiltro, addToCart])
+  }, [areaFiltro, addToCart, handleScanLote])
 
   // ── Mutation batch ─────────────────────────────────────────────────────────
 

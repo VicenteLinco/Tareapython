@@ -53,3 +53,11 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 )
+
+/**
+ * Permiso para mutar stock (consumir, descartar, recibir, contar).
+ * El área no autoriza nada: el permiso es por rol. `admin` y `tecnologo` operan;
+ * `consulta` es solo lectura.
+ */
+export const useCanOperate = () =>
+  useAuthStore((s) => s.usuario?.rol === 'admin' || s.usuario?.rol === 'tecnologo')

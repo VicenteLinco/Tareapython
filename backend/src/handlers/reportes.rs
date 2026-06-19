@@ -38,19 +38,12 @@ fn parse_rango(params: &ReporteParams) -> (NaiveDate, NaiveDate) {
 
 async fn consumo_por_area(
     State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
+    Extension(_claims): Extension<Claims>,
     Query(params): Query<ReporteParams>,
 ) -> Result<Json<Vec<ConsumoAreaRow>>, AppError> {
     let (desde, hasta) = parse_rango(&params);
-    if claims.rol != "admin" && claims.area_ids.is_empty() {
-        return Ok(Json(Vec::new()));
-    }
-
-    let area_filter = if claims.rol == "admin" {
-        ""
-    } else {
-        "AND m.area_id = ANY($3)"
-    };
+    // El área no restringe el reporte: se muestran todas (el reporte ya agrupa por área).
+    let area_filter = "";
 
     let sql = format!(
         r#"
@@ -74,32 +67,22 @@ async fn consumo_por_area(
         area_filter
     );
 
-    let mut query = sqlx::query_as::<_, ConsumoAreaRow>(&sql)
+    let query = sqlx::query_as::<_, ConsumoAreaRow>(&sql)
         .bind(desde)
         .bind(hasta);
-    if claims.rol != "admin" {
-        query = query.bind(claims.area_ids.clone());
-    }
 
     Ok(Json(query.fetch_all(&state.pool).await?))
 }
 
 async fn top_descartados(
     State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
+    Extension(_claims): Extension<Claims>,
     Query(params): Query<ReporteParams>,
 ) -> Result<Json<Vec<TopDescartadoRow>>, AppError> {
     let (desde, hasta) = parse_rango(&params);
     let limit = params.limit.unwrap_or(20).clamp(1, 100);
-    if claims.rol != "admin" && claims.area_ids.is_empty() {
-        return Ok(Json(Vec::new()));
-    }
-
-    let area_filter = if claims.rol == "admin" {
-        ""
-    } else {
-        "AND m.area_id = ANY($6)"
-    };
+    // El área no restringe el reporte: filtro opcional vía params.area_id ($4).
+    let area_filter = "";
 
     let sql = format!(
         r#"
@@ -131,35 +114,25 @@ async fn top_descartados(
         .producto_id
         .as_deref()
         .and_then(|s| uuid::Uuid::parse_str(s).ok());
-    let mut query = sqlx::query_as::<_, TopDescartadoRow>(&sql)
+    let query = sqlx::query_as::<_, TopDescartadoRow>(&sql)
         .bind(desde)
         .bind(hasta)
         .bind(limit)
         .bind(params.area_id)
         .bind(producto_id);
-    if claims.rol != "admin" {
-        query = query.bind(claims.area_ids.clone());
-    }
 
     Ok(Json(query.fetch_all(&state.pool).await?))
 }
 
 async fn consumo_calendario(
     State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
+    Extension(_claims): Extension<Claims>,
     Query(params): Query<ReporteParams>,
 ) -> Result<Json<Vec<ConsumoCalendarioRow>>, AppError> {
     let (desde, hasta) = parse_rango(&params);
     let limit = params.limit.unwrap_or(300).clamp(1, 1000);
-    if claims.rol != "admin" && claims.area_ids.is_empty() {
-        return Ok(Json(Vec::new()));
-    }
-
-    let area_filter = if claims.rol == "admin" {
-        ""
-    } else {
-        "AND m.area_id = ANY($6)"
-    };
+    // El área no restringe el reporte: filtro opcional vía params.area_id ($3).
+    let area_filter = "";
 
     let sql = format!(
         r#"
@@ -196,35 +169,25 @@ async fn consumo_calendario(
         .producto_id
         .as_deref()
         .and_then(|s| uuid::Uuid::parse_str(s).ok());
-    let mut query = sqlx::query_as::<_, ConsumoCalendarioRow>(&sql)
+    let query = sqlx::query_as::<_, ConsumoCalendarioRow>(&sql)
         .bind(desde)
         .bind(hasta)
         .bind(params.area_id)
         .bind(producto_id)
         .bind(limit);
-    if claims.rol != "admin" {
-        query = query.bind(claims.area_ids.clone());
-    }
 
     Ok(Json(query.fetch_all(&state.pool).await?))
 }
 
 async fn consumo_productos(
     State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
+    Extension(_claims): Extension<Claims>,
     Query(params): Query<ReporteParams>,
 ) -> Result<Json<Vec<ConsumoProductoRow>>, AppError> {
     let (desde, hasta) = parse_rango(&params);
     let limit = params.limit.unwrap_or(50).clamp(1, 200);
-    if claims.rol != "admin" && claims.area_ids.is_empty() {
-        return Ok(Json(Vec::new()));
-    }
-
-    let area_filter = if claims.rol == "admin" {
-        ""
-    } else {
-        "AND m.area_id = ANY($6)"
-    };
+    // El área no restringe el reporte: filtro opcional vía params.area_id ($3).
+    let area_filter = "";
 
     let sql = format!(
         r#"
@@ -259,15 +222,12 @@ async fn consumo_productos(
         .producto_id
         .as_deref()
         .and_then(|s| uuid::Uuid::parse_str(s).ok());
-    let mut query = sqlx::query_as::<_, ConsumoProductoRow>(&sql)
+    let query = sqlx::query_as::<_, ConsumoProductoRow>(&sql)
         .bind(desde)
         .bind(hasta)
         .bind(params.area_id)
         .bind(producto_id)
         .bind(limit);
-    if claims.rol != "admin" {
-        query = query.bind(claims.area_ids.clone());
-    }
 
     Ok(Json(query.fetch_all(&state.pool).await?))
 }

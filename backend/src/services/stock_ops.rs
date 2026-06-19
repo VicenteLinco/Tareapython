@@ -197,30 +197,19 @@ pub struct MovimientoGenerado {
     pub cantidad_resultante: Decimal,
 }
 
-/// Valida que el usuario tiene acceso al área
-pub async fn validar_acceso_area(
-    pool: &PgPool,
-    usuario_id: Uuid,
-    area_id: i32,
-    rol: &str,
-) -> Result<(), AppError> {
-    if rol == "admin" {
-        return Ok(());
+/// Verifica que el rol puede mutar stock (consumir, descartar, recibir, ajustar).
+///
+/// El área dejó de ser una barrera de permiso: es solo una dimensión física/organizativa
+/// (para filtrar y reportar). El permiso se decide por rol: `admin` y `tecnologo` operan
+/// sobre cualquier área; `consulta` es solo lectura.
+pub fn validar_puede_operar_stock(rol: &str) -> Result<(), AppError> {
+    if rol == "admin" || rol == "tecnologo" {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "Tu rol no permite modificar el stock".into(),
+        ))
     }
-
-    let tiene_acceso: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM usuario_area WHERE usuario_id = $1 AND area_id = $2)",
-    )
-    .bind(usuario_id)
-    .bind(area_id)
-    .fetch_one(pool)
-    .await?;
-
-    if !tiene_acceso {
-        return Err(AppError::Forbidden("Sin acceso a esta área".into()));
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

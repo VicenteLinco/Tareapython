@@ -2,9 +2,8 @@
 import QRCode from 'qrcode'
 
 export interface LoteParaEtiqueta {
-  lote_id: string
-  codigo_interno: string   // valor codificado en el QR
-  numero_lote: string
+  lote_id: string       // codificado en el QR: el consumo lo resuelve por clave primaria (sin ambigüedad)
+  numero_lote: string   // se muestra como texto legible en la etiqueta
   fecha_vencimiento: string
   producto_nombre: string
   presentacion_nombre?: string | null
@@ -114,7 +113,13 @@ export async function imprimirEtiquetas(
   const allLabels: string[] = []
 
   for (const lote of lotes) {
-    const qrDataUrl = await QRCode.toDataURL(lote.codigo_interno, {
+    // El QR codifica el lote_id (UUID). Al escanear en consumo se resuelve por
+    // clave primaria → el lote exacto, sin la ambigüedad de numero_lote (que no es
+    // único entre productos).
+    const qrPayload = lote.lote_id?.trim()
+    if (!qrPayload) continue // sin lote_id no hay nada que codificar; evita romper toda la tanda
+
+    const qrDataUrl = await QRCode.toDataURL(qrPayload, {
       width: 128, // Mayor resolución para impresión nítida
       margin: 1,
       errorCorrectionLevel: 'M',
@@ -135,7 +140,7 @@ export async function imprimirEtiquetas(
 
     const labelHtml = `
       <div class="label-cell">
-        <img class="qr" src="${qrDataUrl}" alt="QR ${lote.codigo_interno}" />
+        <img class="qr" src="${qrDataUrl}" alt="QR ${lote.numero_lote}" />
         <div class="info">
           <div class="nombre">${nombreCorto}</div>
           <div class="sub">${unidad ? unidad + ' · ' : ''}${lote.area_nombre}</div>

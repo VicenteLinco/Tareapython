@@ -676,6 +676,62 @@ impl ProductoService {
             return Ok(out);
         }
 
+        // 1.5. Search by alias barcode (producto_codigos_barras)
+        // Uses codigo_presentacion (extracted GTIN when GS1) so GS1-encoded aliases resolve correctly.
+        // LEFT JOIN on presentaciones: a product missing an active presentation still matches.
+        #[derive(sqlx::FromRow)]
+        struct AliasRow {
+            producto_id: Uuid,
+            producto_nombre: String,
+            proveedor_id: Option<i32>,
+            unidad_base_nombre: String,
+            unidad_base_nombre_plural: String,
+            presentacion_id: Option<i32>,
+            presentacion_nombre: Option<String>,
+            factor_conversion: Option<Decimal>,
+            stock_total: Option<Decimal>,
+            imagen_url: Option<String>,
+            precio_unidad: Option<Decimal>,
+        }
+
+        let alias_row = sqlx::query_as::<_, AliasRow>(
+            r#"SELECT
+                 p.id as producto_id, p.nombre as producto_nombre, p.proveedor_id,
+                 ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
+                 pr.id as presentacion_id, pr.nombre as presentacion_nombre, pr.factor_conversion,
+                 (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
+                 p.imagen_url AS imagen_url,
+                 p.precio_unidad
+               FROM producto_codigos_barras pcb
+               JOIN productos p ON p.id = pcb.producto_id
+               JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
+               LEFT JOIN presentaciones pr ON pr.producto_id = p.id AND pr.activa = true
+               WHERE pcb.codigo = $1 AND pcb.activo = true AND p.activo = true
+               ORDER BY pr.factor_conversion DESC NULLS LAST
+               LIMIT 1"#,
+        )
+        .bind(codigo_presentacion)
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some(ar) = alias_row {
+            return Ok(json!({
+                "encontrado": true,
+                "tipo": "alias",
+                "producto_id": ar.producto_id,
+                "producto_nombre": ar.producto_nombre,
+                "proveedor_id": ar.proveedor_id,
+                "unidad_base_nombre": ar.unidad_base_nombre,
+                "unidad_base_nombre_plural": ar.unidad_base_nombre_plural,
+                "presentacion_id": ar.presentacion_id,
+                "presentacion_nombre": ar.presentacion_nombre,
+                "factor_conversion": ar.factor_conversion,
+                "stock_total": ar.stock_total,
+                "imagen_url": ar.imagen_url,
+                "precio_unidad": ar.precio_unidad,
+            }));
+        }
+
         if parse_gs1(codigo).is_some() {
             return Ok(json!({
                 "encontrado": false,
@@ -809,6 +865,6 @@ impl ProductoService {
             }));
         }
 
-        Ok(json!({ "encontrado": false }))
+        Ok(json!({ "encontrado": false, "codigo": codigo }))
     }
 }

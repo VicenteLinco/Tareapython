@@ -5,6 +5,8 @@ import { ProductoAutocomplete } from '../components/producto-autocomplete'
 import { LabelsSection } from '../components/labels-section'
 import { ScannerPanel } from '../components/scanner-panel'
 import { isCardComplete } from '../components/item-card-utils'
+import { AsignarCodigoModal } from '@/components/shared/AsignarCodigoModal'
+import { notify } from '@/lib/notify'
 import type { RecepcionWizardReturn } from '../hooks/useRecepcionWizard'
 import type { RecepcionItemsReturn } from '../hooks/useRecepcionItems'
 import type { Area, Producto } from '@/types'
@@ -23,6 +25,8 @@ export function ItemsStep({ wizard, items, productos, areas, monedaSimbolo }: Pr
     detalles,
     scannerPaused,
     scanCount,
+    pendingUnknownCode,
+    clearPendingUnknownCode,
     addProducto,
     handleSearch,
     handleScanDetected,
@@ -51,6 +55,19 @@ export function ItemsStep({ wizard, items, productos, areas, monedaSimbolo }: Pr
         scanCount={scanCount}
         paused={scannerPaused}
       />
+
+      {pendingUnknownCode && (
+        <AsignarCodigoModal
+          codigo={pendingUnknownCode}
+          productos={productos?.map(p => ({ id: String(p.id), nombre: p.nombre, codigo_interno: p.codigo_interno ?? null })) ?? []}
+          onClose={clearPendingUnknownCode}
+          onAsignado={() => {
+            const code = pendingUnknownCode
+            clearPendingUnknownCode()
+            handleSearch(code)
+          }}
+        />
+      )}
 
       {/* Lista de ítems */}
       {detalles.length === 0 ? (

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Search, Eye, Tag, FileText, RotateCcw, Copy, Download, LayoutGrid, Table2, PackagePlus } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Eye, Tag, FileText, RotateCcw, Copy, Download, LayoutGrid, Table2, PackagePlus, X } from 'lucide-react'
 import { comprimirImagen } from '@/lib/image-utils'
 import { ProductoImage } from '@/components/ui/producto-image'
 import { DataTable } from '@/components/ui/data-table'
@@ -84,6 +84,7 @@ interface ProductoDetailResponse {
   clase_riesgo: string | null
   activo: boolean
   version: number
+  codigos_barras?: { id: number; codigo: string }[]
 }
 
 type PresFormatoRow = PresFormato & { id: number }
@@ -847,8 +848,6 @@ function CreateProductoDialog({
     pres_nombre_plural: '',
     pres_factor: '',
     pres_codigo_barras: '',
-    pres_gtin: '',
-    pres_gs1_habilitado: false,
     imagen_data_url: null as string | null,
   })
 
@@ -880,8 +879,6 @@ function CreateProductoDialog({
       pres_nombre_plural: duplicateSource.pres_nombre_plural ?? '',
       pres_factor: duplicateSource.pres_factor ? String(Math.round(Number(duplicateSource.pres_factor))) : '',
       pres_codigo_barras: duplicateSource.pres_codigo_barras ?? '',
-      pres_gtin: duplicateSource.pres_gtin ?? '',
-      pres_gs1_habilitado: duplicateSource.pres_gs1_habilitado ?? false,
       imagen_data_url: null,
     })
     setPresExpanded(!!(duplicateSource.pres_nombre))
@@ -908,7 +905,7 @@ function CreateProductoDialog({
       area_id: '', ubicacion: '', stock_minimo: '0',
       proveedor_id: '', sku: '', precio_unidad: '',
       pres_nombre: '', pres_nombre_plural: '', pres_factor: '', pres_codigo_barras: '',
-      pres_gtin: '', pres_gs1_habilitado: false, imagen_data_url: null,
+      imagen_data_url: null,
     })
     setPresExpanded(false)
     setTemperaturaAlmacenamiento(null)
@@ -925,9 +922,6 @@ function CreateProductoDialog({
     if (form.pres_codigo_barras && /^\d{13}$/.test(form.pres_codigo_barras) && !isValidEan13(form.pres_codigo_barras)) {
       notify.error('El EAN-13 ingresado no tiene un dígito de control válido'); return
     }
-    if (form.pres_gtin && !/^\d{14}$/.test(form.pres_gtin)) {
-      notify.error('GTIN debe tener 14 dígitos'); return
-    }
     createMut.mutate({
       nombre: form.nombre.trim(),
       descripcion: form.descripcion.trim() || undefined,
@@ -943,8 +937,6 @@ function CreateProductoDialog({
       pres_nombre_plural: form.pres_nombre_plural || undefined,
       pres_factor: form.pres_factor ? Number(form.pres_factor) : undefined,
       pres_codigo_barras: form.pres_codigo_barras || undefined,
-      pres_gtin: form.pres_gtin || undefined,
-      pres_gs1_habilitado: form.pres_gs1_habilitado || undefined,
       imagen_data_url: form.imagen_data_url || undefined,
       temperatura_almacenamiento: temperaturaAlmacenamiento,
       requiere_cadena_frio: requiereCadenaFrio,
@@ -1050,6 +1042,31 @@ function CreateProductoDialog({
                 </select>
                 <p className="text-[10px] text-base-content/40 mt-0.5">Sección del laboratorio donde este producto pertenece y se usa</p>
               </div>
+            </div>
+
+            <div className="form-control">
+              <label className="label py-0.5">
+                <span className="label-text text-sm font-medium">Código de barras</span>
+                <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+              </label>
+              <div className="flex gap-1">
+                <input
+                  type="text"
+                  className="input input-bordered input-sm h-9 flex-1 font-mono"
+                  value={form.pres_codigo_barras}
+                  onChange={(e) => setForm((f) => ({ ...f, pres_codigo_barras: e.target.value }))}
+                  placeholder="EAN-13, Code-128..."
+                />
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost px-2"
+                  onClick={() => setScannerOpen(true)}
+                  title="Escanear código de barras"
+                >
+                  📷
+                </button>
+              </div>
+              <p className="text-[10px] text-base-content/40 mt-0.5">Código para escanear en recepción y consumos</p>
             </div>
 
             <div className="form-control">
@@ -1182,8 +1199,6 @@ function CreateProductoDialog({
                           pres_nombre: '',
                           pres_nombre_plural: '',
                           pres_factor: '',
-                          pres_codigo_barras: '',
-                          pres_gs1_habilitado: false,
                         }))
                       }}
                     >
@@ -1222,26 +1237,6 @@ function CreateProductoDialog({
                         className="input input-xs input-bordered w-full"
                         min="1"
                       />
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Código de barras</span>
-                    <div className="flex gap-1">
-                      <input
-                        type="text"
-                        placeholder="EAN-13 o Code-128"
-                        value={form.pres_codigo_barras}
-                        onChange={e => setForm(f => ({ ...f, pres_codigo_barras: e.target.value }))}
-                        className="input input-xs input-bordered flex-1 min-w-0"
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-xs btn-ghost px-1"
-                        onClick={() => setScannerOpen(true)}
-                        title="Escanear código de barras"
-                      >
-                        📷
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -1424,8 +1419,6 @@ function EditProductoDialog({
     pres_nombre_plural: '',
     pres_factor: '',
     pres_codigo_barras: '',
-    pres_gtin: '',
-    pres_gs1_habilitado: false,
     imagen_data_url: null as string | null,
   })
 
@@ -1452,8 +1445,6 @@ function EditProductoDialog({
         pres_nombre_plural: producto.pres_nombre_plural ?? '',
         pres_factor: producto.pres_factor ? String(Math.round(Number(producto.pres_factor))) : '',
         pres_codigo_barras: producto.pres_codigo_barras ?? '',
-        pres_gtin: producto.pres_gtin ?? '',
-        pres_gs1_habilitado: producto.pres_gs1_habilitado ?? false,
         imagen_data_url: null,
       })
       setPresExpanded(!!(producto.pres_nombre))
@@ -1481,9 +1472,6 @@ function EditProductoDialog({
     if (form.pres_codigo_barras && /^\d{13}$/.test(form.pres_codigo_barras) && !isValidEan13(form.pres_codigo_barras)) {
       notify.error('El EAN-13 ingresado no tiene un dígito de control válido'); return
     }
-    if (form.pres_gtin && !/^\d{14}$/.test(form.pres_gtin)) {
-      notify.error('GTIN debe tener 14 dígitos'); return
-    }
 
     const payload: UpdateProducto = {
       nombre: form.nombre.trim() || undefined,
@@ -1499,8 +1487,6 @@ function EditProductoDialog({
       pres_nombre_plural: form.pres_nombre_plural || null,
       pres_factor: form.pres_factor ? Number(form.pres_factor) : null,
       pres_codigo_barras: form.pres_codigo_barras || null,
-      pres_gtin: form.pres_gtin || null,
-      pres_gs1_habilitado: form.pres_gs1_habilitado || null,
       imagen_data_url: form.imagen_data_url || null,
       temperatura_almacenamiento: temperaturaAlmacenamiento,
       requiere_cadena_frio: requiereCadenaFrio,
@@ -1589,6 +1575,31 @@ function EditProductoDialog({
                   </select>
                   <p className="text-[10px] text-base-content/40 mt-0.5">Sección del laboratorio donde este producto pertenece y se usa</p>
                 </div>
+              </div>
+
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Código de barras</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                </label>
+                <div className="flex gap-1">
+                  <input
+                    type="text"
+                    className="input input-bordered input-sm h-9 flex-1 font-mono"
+                    value={form.pres_codigo_barras}
+                    onChange={(e) => setForm((f) => ({ ...f, pres_codigo_barras: e.target.value }))}
+                    placeholder="EAN-13, Code-128..."
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost px-2"
+                    onClick={() => setScannerOpen(true)}
+                    title="Escanear código de barras"
+                  >
+                    📷
+                  </button>
+                </div>
+                <p className="text-[10px] text-base-content/40 mt-0.5">Código para escanear en recepción y consumos</p>
               </div>
 
               <div className="form-control">
@@ -1724,8 +1735,6 @@ function EditProductoDialog({
                             pres_nombre: '',
                             pres_nombre_plural: '',
                             pres_factor: '',
-                            pres_codigo_barras: '',
-                            pres_gs1_habilitado: false,
                           }))
                         }}
                       >
@@ -1764,26 +1773,6 @@ function EditProductoDialog({
                           className="input input-xs input-bordered w-full"
                           min="1"
                         />
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] uppercase font-bold tracking-wider opacity-60">Código de barras</span>
-                      <div className="flex gap-1">
-                        <input
-                          type="text"
-                          placeholder="EAN-13 o Code-128"
-                          value={form.pres_codigo_barras}
-                          onChange={e => setForm(f => ({ ...f, pres_codigo_barras: e.target.value }))}
-                          className="input input-xs input-bordered flex-1 min-w-0"
-                        />
-                        <button
-                          type="button"
-                          className="btn btn-xs btn-ghost px-1"
-                          onClick={() => setScannerOpen(true)}
-                          title="Escanear código de barras"
-                        >
-                          📷
-                        </button>
                       </div>
                     </div>
                   </div>
@@ -1886,6 +1875,11 @@ function EditProductoDialog({
               </div>
             </div>
 
+            <div className="divider my-0" />
+
+            {/* ── Códigos adicionales ── */}
+            <CodigosAdicionalesSection productoId={productoId} />
+
             <div className="flex justify-end gap-2 pt-2 border-t border-base-300">
               <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Cancelar</button>
               <button type="submit" className="btn btn-primary btn-sm" disabled={updateMut.isPending}>
@@ -1910,6 +1904,93 @@ function EditProductoDialog({
         )}
       </Dialog>
     </>
+  )
+}
+
+// ── Códigos adicionales ─────────────────────────────────────
+
+function CodigosAdicionalesSection({ productoId }: { productoId: string }) {
+  const queryClient = useQueryClient()
+  const [nuevoCodigo, setNuevoCodigo] = useState('')
+
+  const { data: codigos = [], isLoading } = useQuery({
+    queryKey: ['producto-codigos', productoId],
+    queryFn: () =>
+      api.get<{ id: number; codigo: string }[]>(`/productos/${productoId}/codigos`).then(r => r.data),
+  })
+
+  const agregarMut = useMutation({
+    mutationFn: () =>
+      api.post(`/productos/${productoId}/codigos`, { codigo: nuevoCodigo.trim() }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['producto-codigos', productoId] })
+      notify.success('Código agregado')
+      setNuevoCodigo('')
+    },
+    onError: (err) => notify.error(parseApiError(err)),
+  })
+
+  const eliminarMut = useMutation({
+    mutationFn: (codigoId: number) =>
+      api.delete(`/productos/${productoId}/codigos/${codigoId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['producto-codigos', productoId] })
+      notify.success('Código eliminado')
+    },
+    onError: (err) => notify.error(parseApiError(err)),
+  })
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Códigos adicionales</p>
+      {isLoading ? (
+        <span className="loading loading-spinner loading-xs opacity-40" />
+      ) : codigos.length === 0 ? (
+        <p className="text-xs text-base-content/40">Sin códigos adicionales registrados</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {codigos.map(c => (
+            <span
+              key={c.id}
+              className="inline-flex items-center gap-1 font-mono text-xs bg-base-200 border border-base-300 rounded-lg px-2 py-0.5"
+            >
+              {c.codigo}
+              <button
+                type="button"
+                className="text-base-content/40 hover:text-error transition-colors"
+                onClick={() => eliminarMut.mutate(c.id)}
+                disabled={eliminarMut.isPending}
+                title="Eliminar"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <form
+        className="flex gap-1.5 mt-1"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (nuevoCodigo.trim()) agregarMut.mutate()
+        }}
+      >
+        <input
+          type="text"
+          className="input input-bordered input-xs h-7 flex-1 font-mono"
+          value={nuevoCodigo}
+          onChange={(e) => setNuevoCodigo(e.target.value)}
+          placeholder="EAN-13, Code-128..."
+        />
+        <button
+          type="submit"
+          className="btn btn-xs btn-outline"
+          disabled={!nuevoCodigo.trim() || agregarMut.isPending}
+        >
+          {agregarMut.isPending ? <span className="loading loading-spinner loading-xs" /> : 'Agregar'}
+        </button>
+      </form>
+    </div>
   )
 }
 

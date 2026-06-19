@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { X, Smartphone } from 'lucide-react'
 import QRCode from 'qrcode'
+import { useQuery } from '@tanstack/react-query'
 import { notify } from '@/lib/notify'
 import api from '@/lib/api'
+import { AsignarCodigoModal } from '@/components/shared/AsignarCodigoModal'
 
 interface ScannedItem {
   id: string
@@ -21,6 +23,17 @@ export function QrScannerSession({ onItemsScanned, onClose }: QrScannerSessionPr
   const [expiresAt, setExpiresAt] = useState<Date | null>(null)
   const [accumulatedItems, setAccumulatedItems] = useState<ScannedItem[]>([])
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
+  const [asignarCodigo, setAsignarCodigo] = useState<string | null>(null)
+
+  const { data: productos = [] } = useQuery({
+    queryKey: ['productos-scan-list'],
+    queryFn: () =>
+      api.get<{ data: { id: string; nombre: string; codigo_interno: string | null }[] }>(
+        '/productos',
+        { params: { per_page: 2000, activo: true } }
+      ).then(r => r.data.data),
+    staleTime: 5 * 60 * 1000,
+  })
 
   useEffect(() => {
     api.post<{ token: string; expires_at: string }>('/recepciones/scanner-session')
@@ -89,8 +102,18 @@ export function QrScannerSession({ onItemsScanned, onClose }: QrScannerSessionPr
             <p className="text-xs font-bold uppercase opacity-50">Escaneados ({accumulatedItems.length})</p>
             {accumulatedItems.map(item => (
               <div key={item.id} className="flex items-center gap-2 p-2 bg-success/5 rounded-lg border border-success/20 text-sm">
-                <span className="font-semibold text-xs">{item.producto_nombre || item.codigo}</span>
-                {!item.producto_id && <span className="badge badge-warning badge-xs">Sin match</span>}
+                <span className="font-semibold text-xs flex-1 min-w-0 truncate">{item.producto_nombre || item.codigo}</span>
+                {!item.producto_id && (
+                  <>
+                    <span className="badge badge-warning badge-xs">Sin match</span>
+                    <button
+                      className="btn btn-xs btn-warning"
+                      onClick={() => setAsignarCodigo(item.codigo)}
+                    >
+                      Asignar
+                    </button>
+                  </>
+                )}
               </div>
             ))}
           </div>
@@ -108,6 +131,15 @@ export function QrScannerSession({ onItemsScanned, onClose }: QrScannerSessionPr
         </div>
       </div>
       <div className="modal-backdrop" onClick={onClose} />
+
+      {asignarCodigo && (
+        <AsignarCodigoModal
+          codigo={asignarCodigo}
+          productos={productos}
+          onClose={() => setAsignarCodigo(null)}
+          onAsignado={() => setAsignarCodigo(null)}
+        />
+      )}
     </div>
   )
 }

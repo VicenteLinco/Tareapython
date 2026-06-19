@@ -127,6 +127,7 @@ export function useRecepcionItems({
   const [scannerPaused, setScannerPaused] = useState(false)
   const [scanCount, setScanCount] = useState(0)
   const [pendingScan, setPendingScan] = useState<PendingScan | null>(null)
+  const [pendingUnknownCode, setPendingUnknownCode] = useState<string | null>(null)
 
   // Post-confirmación (imprimir etiquetas)
   const [lotesConfirmados, setLotesConfirmados] = useState<LoteParaEtiqueta[] | null>(null)
@@ -297,7 +298,7 @@ export function useRecepcionItems({
           p.codigo_interno.toLowerCase() === q.toLowerCase()
         )
         if (found) { await addProducto(found); return }
-        notify.error('Producto no encontrado')
+        setPendingUnknownCode(data.codigo || q)
         return
       }
 
@@ -379,7 +380,8 @@ export function useRecepcionItems({
 
       if (!data.encontrado) {
         navigator.vibrate?.([80, 40, 80])
-        notify.error('Producto no encontrado')
+        setScannerPaused(true)
+        setPendingUnknownCode(data.codigo || q)
         return
       }
 
@@ -736,6 +738,8 @@ export function useRecepcionItems({
     setScanCount,
     pendingScan,
     setPendingScan,
+    pendingUnknownCode,
+    clearPendingUnknownCode: () => { setPendingUnknownCode(null); setScannerPaused(false) },
     lotesConfirmados,
     solicitudItemsRef,
     setSolicitudItemsRef,

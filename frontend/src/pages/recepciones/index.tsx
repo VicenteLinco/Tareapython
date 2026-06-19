@@ -261,8 +261,8 @@ function RecepcionDetailPanel({
                         )}>
                           {formatDate(item.fecha_vencimiento)}
                         </span>
-                        {isExpired && <Badge variant="destructive" className="text-[9px] py-0 px-1">Venc.</Badge>}
-                        {isSoon && !isExpired && <Badge variant="warning" className="text-[9px] py-0 px-1">{days}d</Badge>}
+                        {isExpired && <Badge variant="destructive" className="text-[10px] py-0 px-1">Venc.</Badge>}
+                        {isSoon && !isExpired && <Badge variant="warning" className="text-[10px] py-0 px-1">{days}d</Badge>}
                       </div>
                     </div>
                     <div className="text-right shrink-0">
@@ -531,7 +531,7 @@ export default function RecepcionesPage() {
           {(hasRfActive || search) && (
             <button
               onClick={() => { clearRf(); setSearchInput(''); setSearch(''); setPage(1) }}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-base-300 text-[11px] font-bold text-base-content/60 hover:text-error hover:border-error/40 transition-all self-end mb-0.5"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-base-300 text-xs font-bold text-base-content/60 hover:text-error hover:border-error/40 transition-all self-end mb-0.5"
             >
               <X className="w-3 h-3" />
               Limpiar filtros
@@ -545,7 +545,7 @@ export default function RecepcionesPage() {
           <>
             <div className="rounded-xl border border-base-200 overflow-hidden">
               <table className="table table-sm w-full">
-                <thead className="bg-base-200/60 text-[11px] uppercase tracking-wider">
+                <thead className="bg-base-200/60 text-xs uppercase tracking-wider">
                   <tr>
                     <th className="font-semibold opacity-60">N° Documento</th>
                     <th className="font-semibold opacity-60">Proveedor</th>
@@ -608,7 +608,7 @@ export default function RecepcionesPage() {
                             <EstadoBadge estado={item.estado === 'completa' ? 'confirmada' : item.estado} size="sm" />
                             {/* Badge items/lotes */}
                             {item.items_count > 0 && (
-                              <span className="text-[9px] text-base-content/40 font-medium">
+                              <span className="text-[10px] text-base-content/40 font-medium">
                                 {item.items_count} {item.items_count === 1 ? 'item' : 'items'} · {item.lotes_count} {item.lotes_count === 1 ? 'lote' : 'lotes'}
                               </span>
                             )}
@@ -618,8 +618,8 @@ export default function RecepcionesPage() {
                           {/* Completitud para borradores */}
                           {(item.estado === 'borrador') ? (
                             item.items_count > 0 && item.lotes_count >= item.items_count
-                              ? <span className="text-[9px] font-bold text-success flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Listo</span>
-                              : <span className="text-[9px] font-bold text-warning flex items-center gap-1" title="Faltan lotes en algunos items">⚠ Incompleto</span>
+                              ? <span className="text-[10px] font-bold text-success flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Listo</span>
+                              : <span className="text-[10px] font-bold text-warning flex items-center gap-1" title="Faltan lotes en algunos items">⚠ Incompleto</span>
                           ) : (
                             item.tiene_foto
                               ? <FileText className="h-4 w-4 text-primary/60" />

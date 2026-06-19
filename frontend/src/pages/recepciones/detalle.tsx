@@ -435,7 +435,7 @@ export default function RecepcionDetallePage() {
 
       {/* ── Tabla de ítems ── */}
       <div>
-        <h2 className="text-[11px] font-semibold uppercase tracking-widest opacity-35 mb-3 flex items-center gap-2">
+        <h2 className="text-xs font-semibold uppercase tracking-widest opacity-35 mb-3 flex items-center gap-2">
           <Package className="h-3.5 w-3.5" />
           Ítems recibidos ({detalle.length})
         </h2>
@@ -445,7 +445,7 @@ export default function RecepcionDetallePage() {
         ) : (
           <div className="rounded-xl border border-base-200 overflow-hidden">
             <table className="table table-sm w-full">
-              <thead className="bg-base-200/60 text-[11px] uppercase tracking-wider">
+              <thead className="bg-base-200/60 text-xs uppercase tracking-wider">
                 <tr>
                   <th className="font-semibold opacity-60">Producto</th>
                   <th className="font-semibold opacity-60">Lote</th>
@@ -484,7 +484,7 @@ export default function RecepcionDetallePage() {
                             <span className="font-mono font-semibold text-sm">
                               {qtyPresStr} {item.presentacion_nombre}
                             </span>
-                            <span className="text-[11px] text-base-content/40 font-mono">
+                            <span className="text-xs text-base-content/40 font-mono">
                               = <CantidadConUnidad qty={qty} unidad={item.unidad_base_nombre} pluralUnidad={item.unidad_base_nombre_plural} />
                             </span>
                           </div>

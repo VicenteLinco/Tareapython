@@ -4,7 +4,6 @@ import { Trash2, ChevronDown, ChevronUp, Plus, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ProductoImage } from '@/components/ui/producto-image'
 import { formatCantidad } from '@/lib/utils'
-import { CantidadConUnidad } from '@/components/ui/cantidad'
 import type { Area, Presentacion } from '@/types'
 import { isCardComplete } from './item-card-utils'
 
@@ -114,12 +113,12 @@ function LoteRow({
     <div className="flex items-center gap-2">
       <span className="text-xs opacity-30 w-4 text-right shrink-0">{index + 1}</span>
       <input
-        className={`input input-sm input-bordered w-28 font-mono ${!lote.codigo_lote ? 'input-warning' : ''}`}
+        className={`input input-sm input-bordered w-28 shrink-0 font-mono ${!lote.codigo_lote ? 'input-warning' : ''}`}
         placeholder="Nº lote"
         value={lote.codigo_lote}
         onChange={e => onChange({ codigo_lote: e.target.value })}
       />
-      <div className="flex items-center gap-1 flex-1 min-w-0">
+      <div className="flex items-center gap-1 w-44 shrink-0">
         {modoMes ? (
           <input
             type="month"
@@ -142,25 +141,23 @@ function LoteRow({
           onClick={() => setModoMes(v => !v)}
         >
           <Calendar className="h-3 w-3" />
-          <span className="text-[9px] font-bold leading-none">{modoMes ? 'M/A' : 'D'}</span>
+          <span className="text-[10px] font-bold leading-none">{modoMes ? 'M/A' : 'D'}</span>
         </button>
       </div>
-      <div className="flex items-center gap-1 shrink-0">
-        <input
-          type="number"
-          min={1}
-          className="input input-sm input-bordered w-16"
-          value={lote.cantidad_presentacion}
-          onChange={e => onChange({ cantidad_presentacion: Number(e.target.value) || 1 })}
-          onKeyDown={e => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              onAddLote?.()
-            }
-          }}
-        />
-        <span className="text-xs opacity-50 w-14 truncate">{unitLabel}</span>
-      </div>
+      <input
+        type="number"
+        min={1}
+        className="input input-sm input-bordered w-16 shrink-0"
+        value={lote.cantidad_presentacion}
+        onChange={e => onChange({ cantidad_presentacion: Number(e.target.value) || 1 })}
+        onKeyDown={e => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            onAddLote?.()
+          }
+        }}
+      />
+      <span className="text-xs opacity-50 flex-1 min-w-0 truncate" title={unitLabel}>{unitLabel}</span>
       {canDelete ? (
         <button className="btn btn-ghost btn-xs btn-circle shrink-0" onClick={onDelete}>
           <Trash2 className="h-3 w-3 text-error" />
@@ -271,7 +268,7 @@ export function ReceptionItemCard({
           <Button
             variant="ghost"
             size="sm"
-            className="opacity-0 group-hover:opacity-100 transition-opacity"
+            className="opacity-60 hover:opacity-100 transition-opacity"
             title="Quitar producto"
             onClick={() => onRemove(d.id)}
           >
@@ -328,20 +325,14 @@ export function ReceptionItemCard({
             </div>
           )}
 
-          {/* Hint cantidad solicitada */}
-          {d.cantidad_solicitada != null && (
-            <p className="text-xs text-info">
-              Pedido: <CantidadConUnidad qty={d.cantidad_solicitada} unidad={d.presentacion_nombre || d.unidad_base_nombre} pluralUnidad={d.presentacion_nombre_plural || d.unidad_base_nombre_plural} />
-            </p>
-          )}
-
           {/* Cabecera de columnas */}
           <div className="flex items-center gap-2 text-xs opacity-40 pb-0.5">
-            <span className="w-4" />
-            <span className="w-28">Lote</span>
-            <span className="flex-1">Vencimiento</span>
-            <span className="w-[88px]">Cantidad</span>
-            <span className="w-6" />
+            <span className="w-4 shrink-0" />
+            <span className="w-28 shrink-0">Lote</span>
+            <span className="w-44 shrink-0">Vencimiento</span>
+            <span className="w-16 shrink-0">Cantidad</span>
+            <span className="flex-1 min-w-0">Unidad</span>
+            <span className="w-6 shrink-0" />
           </div>
 
           {/* Filas de lotes */}
@@ -390,12 +381,12 @@ export function ReceptionItemCard({
             />
             {d.precio_anterior && (
               d.precio_unitario === d.precio_anterior ? (
-                <span className="text-[11px] text-success font-medium flex items-center gap-1.5 bg-success/5 px-2 py-0.5 rounded border border-success/10">
+                <span className="text-xs text-success font-medium flex items-center gap-1.5 bg-success/5 px-2 py-0.5 rounded border border-success/10">
                   <span className="w-1.5 h-1.5 rounded-full bg-success"></span>
                   Precio anterior
                 </span>
               ) : (
-                <span className="text-[11px] text-warning font-medium flex items-center gap-1.5 bg-warning/5 px-2 py-0.5 rounded border border-warning/10" title={`Precio anterior: ${formatPrecioDisplay(d.precio_anterior, monedaSimbolo)}`}>
+                <span className="text-xs text-warning font-medium flex items-center gap-1.5 bg-warning/5 px-2 py-0.5 rounded border border-warning/10" title={`Precio anterior: ${formatPrecioDisplay(d.precio_anterior, monedaSimbolo)}`}>
                   <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse"></span>
                   Modificado (Anterior: {formatPrecioDisplay(d.precio_anterior, monedaSimbolo)})
                 </span>

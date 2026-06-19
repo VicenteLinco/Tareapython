@@ -137,7 +137,7 @@ export function ReconciliacionModal({
                 <span className="opacity-50">Pedido: {formatFilaQty(f.cantidad_base, f)}</span>
                 <span className="font-bold">Llegó: {formatFilaQty(f.recibido, f)}</span>
               </div>
-              <span className="text-[9px] font-black bg-base-100/70 px-1.5 py-0.5 rounded-full shrink-0">
+              <span className="text-[10px] font-black bg-base-100/70 px-1.5 py-0.5 rounded-full shrink-0">
                 {estadoLabel(f.estado)}
               </span>
             </div>
@@ -157,7 +157,7 @@ export function ReconciliacionModal({
               onChange={e => onNotaChange(e.target.value)}
             />
             {tieneFaltantes && (
-              <p className="text-[11px] opacity-60 mt-1">
+              <p className="text-xs opacity-60 mt-1">
                 Si faltan items, la solicitud quedara como recepcion parcial y no se cerrara.
               </p>
             )}

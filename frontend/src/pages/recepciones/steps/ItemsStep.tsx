@@ -19,7 +19,7 @@ interface Props {
 }
 
 export function ItemsStep({ wizard, items, productos, areas, monedaSimbolo }: Props) {
-  const { modoExperto, pasoActual, setPasoActual, proveedorId, decision } = wizard
+  const { proveedorId, decision } = wizard
   const {
     detalles,
     scannerPaused,
@@ -39,7 +39,7 @@ export function ItemsStep({ wizard, items, productos, areas, monedaSimbolo }: Pr
   const itemsCompletos = detalles.filter(isCardComplete).length
 
   return (
-    <div className="flex-1 min-w-0 space-y-4">
+    <div className="space-y-4">
       {/* Búsqueda / scan */}
       <ProductoAutocomplete
         productos={productos ?? []}
@@ -92,23 +92,11 @@ export function ItemsStep({ wizard, items, productos, areas, monedaSimbolo }: Pr
         </div>
       )}
 
-      {/* Botón siguiente paso 2 */}
-      {!modoExperto && pasoActual === 2 && detalles.length > 0 && (
-        <div className="flex items-center gap-3">
-          <button className="btn btn-ghost btn-sm rounded-xl" onClick={() => setPasoActual(1)}>
-            ← Volver
-          </button>
-          <button
-            className="btn btn-primary flex-1 rounded-xl"
-            disabled={itemsCompletos < detalles.length}
-            title={itemsCompletos < detalles.length ? `${detalles.length - itemsCompletos} ítem(s) incompletos` : undefined}
-            onClick={() => setPasoActual(3)}
-          >
-            {itemsCompletos < detalles.length
-              ? `${detalles.length - itemsCompletos} ítem(s) incompleto(s)`
-              : 'Siguiente: Confirmar →'}
-          </button>
-        </div>
+      {/* Aviso de ítems incompletos */}
+      {detalles.length > 0 && itemsCompletos < detalles.length && (
+        <p className="text-xs text-warning text-center">
+          {detalles.length - itemsCompletos} ítem(s) incompleto(s) — completa lote, vencimiento y área para confirmar
+        </p>
       )}
 
       {/* Sección etiquetas */}

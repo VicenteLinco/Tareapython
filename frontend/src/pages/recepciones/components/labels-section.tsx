@@ -1,6 +1,6 @@
 // frontend/src/pages/recepciones/components/labels-section.tsx
 import { useState, type CSSProperties } from 'react'
-import { Printer, ChevronDown, ChevronUp, Settings } from 'lucide-react'
+import { Printer, ChevronDown, ChevronUp, Settings, ScrollText, FileText } from 'lucide-react'
 import { CantidadConUnidad } from '@/components/ui/cantidad'
 import { Button } from '@/components/ui/button'
 import { imprimirEtiquetas, type LoteParaEtiqueta } from '@/lib/label-print'
@@ -102,7 +102,7 @@ export function LabelsSection({ detalles, onToggleEtiqueta, onCantidadEtiqueta, 
         <div className="grid grid-cols-2 gap-2 bg-base-200 p-1 rounded-xl">
           <button
             type="button"
-            className={`btn btn-sm border-none shadow-none rounded-lg text-xs font-bold transition-all ${
+            className={`btn btn-sm border-none shadow-none rounded-lg text-xs font-bold transition-all gap-1.5 ${
               formato === 'rollo'
                 ? 'bg-primary text-primary-content hover:bg-primary/95'
                 : 'bg-transparent text-base-content/60 hover:bg-base-300'
@@ -112,11 +112,12 @@ export function LabelsSection({ detalles, onToggleEtiqueta, onCantidadEtiqueta, 
               setMostrarBordes(true)
             }}
           >
-            📟 Imp. Etiquetas (Rollo)
+            <ScrollText className="h-3.5 w-3.5" />
+            Rollo de etiquetas
           </button>
           <button
             type="button"
-            className={`btn btn-sm border-none shadow-none rounded-lg text-xs font-bold transition-all ${
+            className={`btn btn-sm border-none shadow-none rounded-lg text-xs font-bold transition-all gap-1.5 ${
               formato === 'hoja'
                 ? 'bg-primary text-primary-content hover:bg-primary/95'
                 : 'bg-transparent text-base-content/60 hover:bg-base-300'
@@ -126,7 +127,8 @@ export function LabelsSection({ detalles, onToggleEtiqueta, onCantidadEtiqueta, 
               setMostrarBordes(false) // Por defecto sin bordes para precortadas
             }}
           >
-            📄 Imp. Común (Hojas)
+            <FileText className="h-3.5 w-3.5" />
+            Hoja común
           </button>
         </div>
 
@@ -294,7 +296,7 @@ export function LabelsSection({ detalles, onToggleEtiqueta, onCantidadEtiqueta, 
                 <button
                   type="button"
                   onClick={() => setConfigAvanzada(!configAvanzada)}
-                  className="flex items-center gap-1 text-[11px] font-bold text-primary hover:underline cursor-pointer"
+                  className="flex items-center gap-1 text-xs font-bold text-primary hover:underline cursor-pointer"
                 >
                   <Settings className="h-3 w-3" />
                   {configAvanzada ? 'Ocultar márgenes avanzados' : 'Configurar márgenes avanzados (mm)'}
@@ -352,7 +354,7 @@ export function LabelsSection({ detalles, onToggleEtiqueta, onCantidadEtiqueta, 
         {/* Vista previa visual (Solo en formato Hoja) */}
         {formato === 'hoja' && (
           <div className="border border-base-200 rounded-xl p-3 bg-base-50 flex flex-col items-center shadow-inner">
-            <p className="text-[11px] font-bold mb-2 text-base-content/60 uppercase tracking-wider">
+            <p className="text-xs font-bold mb-2 text-base-content/60 uppercase tracking-wider">
               Vista previa: Primera Hoja ({cols}x{rows})
             </p>
             <div
@@ -425,7 +427,7 @@ export function LabelsSection({ detalles, onToggleEtiqueta, onCantidadEtiqueta, 
           <p className="font-semibold text-base-content/80 mb-1">🏷️ Resumen de etiquetas:</p>
           <div className="max-h-28 overflow-y-auto divide-y divide-base-200/80 pr-1">
             {lotesConfirmados.map(l => (
-              <div key={l.lote_id} className="flex justify-between py-1 text-base-content/75 text-[11px]">
+              <div key={l.lote_id} className="flex justify-between py-1 text-base-content/75 text-xs">
                 <span className="truncate pr-2 font-medium">{l.producto_nombre}</span>
                 <span className="font-mono flex-shrink-0 text-base-content/60">
                   Lote: {l.numero_lote} · <strong className="text-base-content font-bold">{l.cantidad_etiquetas}</strong>

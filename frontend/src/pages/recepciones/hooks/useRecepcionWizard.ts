@@ -2,16 +2,12 @@
 import { useState, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '@/lib/api'
-import { useLocalStorageBoolean } from '@/hooks/useLocalStorage'
 import { useDialogState } from '@/hooks/useDialogState'
 import type { SolicitudResumen } from '@/types'
 
-export type PasoRecepcion = 1 | 2 | 3
 type Decision = 'completa' | 'parcial' | 'rechazada'
 
 export function useRecepcionWizard() {
-  const [pasoActual, setPasoActual] = useState<PasoRecepcion>(1)
-  const [modoExperto, setModoExperto] = useLocalStorageBoolean('rec-modo-experto', true)
 
   // Cabecera
   const [proveedorId, setProveedorIdRaw] = useState<number | null>(null)
@@ -50,8 +46,6 @@ export function useRecepcionWizard() {
   }
 
   return {
-    pasoActual, setPasoActual,
-    modoExperto, setModoExperto,
     proveedorId, setProveedorId, proveedorError, setProveedorError, proveedorRef,
     guiaDespacho, setGuiaDespacho,
     guiaProvisoria, setGuiaProvisoria,

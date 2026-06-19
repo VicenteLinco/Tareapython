@@ -20,7 +20,6 @@ export function ProveedorStep({ wizard, proveedores, onVincularClick }: Props) {
     fechaRecepcion, setFechaRecepcion,
     fechaExpanded, setFechaExpanded,
     solicitudId, setSolicitudId, setSolicitudNumero, solicitudNumero,
-    setPasoActual,
     fotoGuia, setFotoGuia,
   } = wizard
 
@@ -125,11 +124,11 @@ export function ProveedorStep({ wizard, proveedores, onVincularClick }: Props) {
         <div>
           <button
             type="button"
-            className="flex items-center gap-1.5 text-xs opacity-50 hover:opacity-70 transition-opacity mb-1 w-full text-left"
+            className="flex items-center justify-between gap-2 text-xs mb-1 w-full text-left"
             onClick={() => setFechaExpanded(v => !v)}
           >
-            <span>{new Date(fechaRecepcion).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })}</span>
-            <span className="underline underline-offset-2 text-[10px]">{fechaExpanded ? 'Cerrar' : 'Cambiar'}</span>
+            <span className="opacity-70">{new Date(fechaRecepcion).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })}</span>
+            <span className="text-primary font-semibold underline underline-offset-2 shrink-0">{fechaExpanded ? 'Cerrar' : 'Cambiar'}</span>
           </button>
           {fechaExpanded && (
             <input
@@ -172,18 +171,6 @@ export function ProveedorStep({ wizard, proveedores, onVincularClick }: Props) {
           </button>
         )}
       </div>
-
-      {/* Botón siguiente */}
-      <button
-        className="btn btn-primary w-full rounded-xl"
-        disabled={!proveedorId}
-        onClick={() => {
-          if (!proveedorId) { setProveedorError(true); setTimeout(() => setProveedorError(false), 1500); return }
-          setPasoActual(2)
-        }}
-      >
-        Siguiente: Agregar ítems →
-      </button>
     </div>
   )
 }

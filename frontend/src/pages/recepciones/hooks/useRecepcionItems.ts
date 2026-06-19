@@ -9,7 +9,6 @@ import { notify } from '@/lib/notify'
 import { mulDecimal, toNum } from '@/domain/parse'
 import { useDialogState } from '@/hooks/useDialogState'
 import { type DetalleLineUI, type LoteLineUI } from '../components/item-card'
-import { isCardComplete, isLoteComplete } from '../components/item-card-utils'
 import { type LoteParaEtiqueta } from '@/lib/label-print'
 import type { Proveedor, Area } from '@/types'
 
@@ -91,7 +90,6 @@ export interface UseRecepcionItemsParams {
   motivosSeleccionados: string[]
   motivoOtro: string
   nota: string
-  setPasoActual: (p: 1 | 2 | 3) => void
   fotoGuia: string | null
 }
 
@@ -541,14 +539,8 @@ export function useRecepcionItems({
           precio_anterior: newPrice,
         }
       }
-      const updated = { ...d, ...patch, ...extraPatch }
-      const wasComplete = isCardComplete(d)
-      const nowComplete = isCardComplete(updated)
-      const collapsed =
-        !wasComplete && nowComplete ? true :
-        wasComplete && !nowComplete ? false :
-        updated.collapsed
-      return { ...updated, collapsed }
+      // Collapse is controlled manually via the chevron (patch.collapsed); never auto-collapse.
+      return { ...d, ...patch, ...extraPatch }
     }))
   }, [])
 
@@ -556,13 +548,8 @@ export function useRecepcionItems({
     setDetalles(prev => prev.map(d => {
       if (d.id !== detalleId) return d
       const lotes = d.lotes.map(l => l.id === loteId ? { ...l, ...patch } : l)
-      const wasComplete = isCardComplete(d)
-      const nowComplete = !!d.area_destino_id && lotes.length > 0 && lotes.every(isLoteComplete)
-      const collapsed =
-        !wasComplete && nowComplete ? true :
-        wasComplete && !nowComplete ? false :
-        d.collapsed
-      return { ...d, lotes, collapsed }
+      // Collapse is controlled manually via the chevron; never auto-collapse.
+      return { ...d, lotes }
     }))
   }, [])
 
@@ -588,10 +575,7 @@ export function useRecepcionItems({
       if (d.id !== detalleId) return d
       if (d.lotes.length <= 1) return d
       const lotes = d.lotes.filter(l => l.id !== loteId)
-      const wasComplete = isCardComplete(d)
-      const nowComplete = !!d.area_destino_id && lotes.every(isLoteComplete)
-      const collapsed = !wasComplete && nowComplete ? true : d.collapsed
-      return { ...d, lotes, collapsed }
+      return { ...d, lotes }
     }))
   }, [])
 

@@ -233,6 +233,41 @@ pub async fn bulk_assign_gtin(
     Ok(Json(BulkAssignGtinResponse { updated: count }))
 }
 
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct PresentacionConProducto {
+    pub id: i32,
+    pub producto_id: Uuid,
+    pub producto_nombre: String,
+    pub nombre: String,
+    pub nombre_plural: String,
+    pub gtin: Option<String>,
+    pub gs1_habilitado: bool,
+    pub activa: bool,
+}
+
+/// GET /api/v1/presentaciones
+///
+/// Returns all active presentations with their product name, for GTIN management.
+pub async fn listar_todas(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Vec<PresentacionConProducto>>, AppError> {
+    crate::auth::middleware::require_role(&["admin"])(&claims)?;
+
+    let rows: Vec<PresentacionConProducto> = sqlx::query_as(
+        "SELECT p.id, p.producto_id, pr.nombre AS producto_nombre, \
+                p.nombre, p.nombre_plural, p.gtin, p.gs1_habilitado, p.activa \
+         FROM presentaciones p \
+         JOIN productos pr ON pr.id = p.producto_id \
+         WHERE p.deleted_at IS NULL AND pr.deleted_at IS NULL \
+         ORDER BY pr.nombre, p.nombre",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(rows))
+}
+
 /// Rutas anidadas bajo /productos/:producto_id/presentaciones
 pub fn nested_routes() -> Router<AppState> {
     Router::new().route("/", get(listar).post(crear))
@@ -241,6 +276,7 @@ pub fn nested_routes() -> Router<AppState> {
 /// Rutas directas bajo /presentaciones/:id
 pub fn direct_routes() -> Router<AppState> {
     Router::new()
+        .route("/", get(listar_todas))
         .route("/{id}", put(actualizar).delete(eliminar))
         .route("/{id}/assign-gtin", post(assign_gtin))
         .route("/bulk-assign-gtin", post(bulk_assign_gtin))

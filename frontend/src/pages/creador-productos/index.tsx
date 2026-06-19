@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom'
-import { Tag, Layers, MapPin, Truck, LayoutList, Package } from 'lucide-react'
+import { Tag, Layers, MapPin, Truck, LayoutList, Package, Barcode } from 'lucide-react'
 import { useFullWidthPage } from '@/components/layout/page-width'
 import { cn } from '@/lib/utils'
 import CategoriasTab from './categorias-tab'
@@ -8,8 +8,9 @@ import AreasTab from './areas-tab'
 import ProveedoresTab from './proveedores-tab'
 import ProductosTab from './productos-tab'
 import PresentacionesFormatosTab from './presentaciones-formatos-tab'
+import GtinsTab from './gtins-tab'
 
-type TabId = 'productos' | 'categorias' | 'unidades' | 'areas' | 'proveedores' | 'presentaciones'
+type TabId = 'productos' | 'categorias' | 'unidades' | 'areas' | 'proveedores' | 'presentaciones' | 'gtins'
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'productos',      label: 'Productos',      icon: Package   },
@@ -18,6 +19,7 @@ const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'proveedores',    label: 'Proveedores',    icon: Truck     },
   { id: 'areas',          label: 'Áreas',          icon: MapPin    },
   { id: 'presentaciones', label: 'Presentaciones', icon: LayoutList },
+  { id: 'gtins',          label: 'GTINs',          icon: Barcode   },
 ]
 
 export default function CreadorProductosPage() {
@@ -67,6 +69,7 @@ export default function CreadorProductosPage() {
         {tabActivo === 'proveedores'    && <ProveedoresTab />}
         {tabActivo === 'areas'          && <AreasTab />}
         {tabActivo === 'presentaciones' && <PresentacionesFormatosTab />}
+        {tabActivo === 'gtins'          && <GtinsTab />}
       </div>
     </div>
   )

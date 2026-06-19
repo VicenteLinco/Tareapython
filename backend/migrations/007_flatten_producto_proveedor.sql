@@ -104,8 +104,18 @@ DROP TABLE IF EXISTS producto_proveedor_presentacion;
 DROP TABLE IF EXISTS producto_proveedor CASCADE;
 
 -- ─── Step 8: Drop now-redundant columns from productos ───────────────────────
--- codigo_proveedor and codigo_maestro are superseded by sku
+-- codigo_proveedor and codigo_maestro are superseded by sku.
+-- The trigger must be dropped first because it references these columns in its
+-- UPDATE OF clause, which prevents DROP COLUMN from succeeding.
+
+DROP TRIGGER IF EXISTS trg_productos_search_vector ON productos;
 
 ALTER TABLE productos
     DROP COLUMN IF EXISTS codigo_proveedor,
     DROP COLUMN IF EXISTS codigo_maestro;
+
+-- Recreate trigger with updated column list (sku replaces codigo_proveedor/maestro)
+CREATE TRIGGER trg_productos_search_vector
+    BEFORE INSERT OR UPDATE OF nombre, codigo_interno, sku, descripcion
+    ON productos
+    FOR EACH ROW EXECUTE FUNCTION public.productos_search_vector_update();

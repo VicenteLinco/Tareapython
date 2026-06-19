@@ -515,7 +515,7 @@ pub async fn recomendaciones(
                      prov.dias_despacho_tierra,
                      prov.dias_despacho_aereo, 7)::INT                        AS lead_time,
             COALESCE(st.stock_actual, 0)::FLOAT8                              AS stock_actual,
-            COALESCE(p.stock_minimo, 0)::FLOAT8                               AS stock_minimo,
+            COALESCE(plc.stock_minimo, p.stock_minimo, 0)::FLOAT8             AS stock_minimo,
             COALESCE(pev.cantidad_pedida, 0)::FLOAT8                          AS ya_pedido,
             s.serie                                                           AS serie,
             pres.id                                                           AS presentacion_id,
@@ -534,6 +534,7 @@ pub async fn recomendaciones(
         LEFT JOIN pres ON pres.producto_id = p.id
         LEFT JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
         LEFT JOIN pedidos_en_vuelo pev ON pev.producto_id = p.id
+        LEFT JOIN par_level_config plc ON plc.producto_id = p.id AND plc.area_id IS NULL
         WHERE p.activo = true
         "#,
     )
@@ -1079,7 +1080,16 @@ async fn horizonte_sugerido(
     let cfg = load_forecast_config(&state.pool).await?;
 
     // 1. Serie diaria, stock, ya_pedido, lead time del producto
-    let row_opt = sqlx::query!(
+    #[derive(sqlx::FromRow)]
+    struct HorizonteRow {
+        stock_minimo: f64,
+        stock_actual: f64,
+        lead_time: i32,
+        serie: Vec<f64>,
+        ya_pedido: f64,
+    }
+
+    let row_opt = sqlx::query_as::<_, HorizonteRow>(
         r#"
         WITH ventana AS (SELECT NOW() - ($2::int * INTERVAL '1 day') AS desde),
         dias AS (
@@ -1100,29 +1110,30 @@ async fn horizonte_sugerido(
             LEFT JOIN consumo_dia cd ON cd.dia = d.dia
         )
         SELECT
-            COALESCE(p.stock_minimo, 0)::FLOAT8                              AS "stock_minimo!: f64",
+            COALESCE(plc.stock_minimo, p.stock_minimo, 0)::FLOAT8            AS stock_minimo,
             COALESCE((SELECT SUM(s.cantidad)::FLOAT8 FROM stock s
                       JOIN lotes l2 ON l2.id = s.lote_id WHERE l2.producto_id = p.id), 0)
-                                                                              AS "stock_actual!: f64",
+                                                                              AS stock_actual,
             COALESCE(p.lead_time_propio,
                      prov.dias_despacho_tierra,
-                     prov.dias_despacho_aereo, 7)::INT                        AS "lead_time!: i32",
-            (SELECT serie FROM serie)                                         AS "serie!: Vec<f64>",
+                     prov.dias_despacho_aereo, 7)::INT                        AS lead_time,
+            (SELECT serie FROM serie)                                         AS serie,
             COALESCE((
                 SELECT SUM(scd.cantidad_sugerida)::FLOAT8
                 FROM solicitud_compra_detalle scd
                 JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
                 WHERE scd.producto_id = p.id
                   AND sc.estado IN ('guardada', 'parcialmente_enviada', 'enviada', 'parcialmente_recibida')
-            ), 0.0)                                                           AS "ya_pedido!: f64"
+            ), 0.0)                                                           AS ya_pedido
         FROM productos p
         LEFT JOIN proveedores prov ON prov.id = $3
+        LEFT JOIN par_level_config plc ON plc.producto_id = p.id AND plc.area_id IS NULL
         WHERE p.id = $1
         "#,
-        params.producto_id,
-        cfg.ventana_demanda_dias,
-        params.proveedor_id
     )
+    .bind(params.producto_id)
+    .bind(cfg.ventana_demanda_dias)
+    .bind(params.proveedor_id)
     .fetch_optional(&state.pool)
     .await?;
 

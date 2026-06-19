@@ -1244,18 +1244,6 @@ function CreateProductoDialog({
                       </button>
                     </div>
                   </div>
-                  <label
-                    className="flex items-center gap-2 cursor-pointer text-[11px] select-none"
-                    title="Si se habilita, al escanear en recepciones se extraerán automáticamente el Lote y Fecha de Vencimiento desde el código GS1-128."
-                  >
-                    <input
-                      type="checkbox"
-                      className="checkbox checkbox-xs checkbox-primary"
-                      checked={form.pres_gs1_habilitado}
-                      onChange={e => setForm(f => ({ ...f, pres_gs1_habilitado: e.target.checked }))}
-                    />
-                    <span className="opacity-70">GS1 habilitado — extrae lote y vencimiento automáticamente</span>
-                  </label>
                 </div>
               )}
             </div>
@@ -1798,18 +1786,6 @@ function EditProductoDialog({
                         </button>
                       </div>
                     </div>
-                    <label
-                      className="flex items-center gap-2 cursor-pointer text-[11px] select-none"
-                      title="Si se habilita, al escanear en recepciones se extraerán automáticamente el Lote y Fecha de Vencimiento desde el código GS1-128."
-                    >
-                      <input
-                        type="checkbox"
-                        className="checkbox checkbox-xs checkbox-primary"
-                        checked={form.pres_gs1_habilitado}
-                        onChange={e => setForm(f => ({ ...f, pres_gs1_habilitado: e.target.checked }))}
-                      />
-                      <span className="opacity-70">GS1 habilitado — extrae lote y vencimiento automáticamente</span>
-                    </label>
                   </div>
                 )}
               </div>

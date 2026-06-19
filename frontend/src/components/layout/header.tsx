@@ -1,4 +1,4 @@
-import { LogOut, Search } from 'lucide-react'
+import { LogOut, Menu, Search } from 'lucide-react'
 import axios from 'axios'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { useNavigate } from 'react-router-dom'
@@ -8,9 +8,10 @@ import { ProfileModal } from '@/components/auth/ProfileModal'
 
 interface HeaderProps {
   onOpenSearch?: () => void
+  onMenuClick?: () => void
 }
 
-export function Header({ onOpenSearch }: HeaderProps) {
+export function Header({ onOpenSearch, onMenuClick }: HeaderProps) {
   const { usuario, refreshToken, logout } = useAuthStore()
   const navigate = useNavigate()
   const [profileOpen, setProfileOpen] = useState(false)
@@ -28,8 +29,17 @@ export function Header({ onOpenSearch }: HeaderProps) {
   }
 
   return (
-    <header className="glass-header sticky top-0 z-20 flex h-[60px] min-w-0 items-center justify-between border-b border-base-200 bg-base-100/80 pl-14 pr-6 md:px-6">
+    <header className="glass-header sticky top-0 z-20 flex h-[60px] min-w-0 items-center justify-between border-b border-base-200 bg-base-100/80 px-3 sm:px-4 md:px-6">
       <div className="flex items-center gap-3">
+        {onMenuClick && (
+          <button
+            onClick={onMenuClick}
+            className="btn btn-ghost btn-sm btn-square md:hidden"
+            aria-label="Abrir menú"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        )}
         {onOpenSearch && (
           <button
             onClick={onOpenSearch}

@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { Outlet, Navigate } from 'react-router-dom'
-import { Menu } from 'lucide-react'
 import { Sidebar } from './sidebar'
 import { Header } from './header'
 import { Breadcrumb } from './breadcrumb'
@@ -60,18 +59,10 @@ export function AppLayout() {
         'transition-all duration-300 overflow-x-hidden w-full',
         sidebarExpanded ? 'md:pl-56' : 'md:pl-[60px]',
       )}>
-        {/* Hamburger — solo visible en móvil */}
-        <div className="md:hidden fixed top-[14px] left-3 z-30">
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={() => setMobileSidebarOpen(true)}
-            aria-label="Abrir menú"
-            aria-expanded={mobileSidebarOpen}
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-        </div>
-        <Header onOpenSearch={() => setSearchOpen(true)} />
+        <Header
+          onOpenSearch={() => setSearchOpen(true)}
+          onMenuClick={() => setMobileSidebarOpen(true)}
+        />
         <Breadcrumb />
         <MainContent />
       </div>

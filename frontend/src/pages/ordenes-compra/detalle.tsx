@@ -5,7 +5,7 @@ import { ArrowLeft, Send, XCircle, PackageCheck, Image as ImageIcon, X } from 'l
 import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 import type { OrdenCompraDetalle } from '@/types'
-import { formatDate, cn } from '@/lib/utils'
+import { formatDate, cn, APP_LOCALE } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -239,7 +239,7 @@ export default function OrdenCompraDetallePage() {
                   </td>
                   <td className="text-right hidden md:table-cell pr-6 text-xs text-base-content/60">
                     {item.precio_unitario != null
-                      ? new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(item.precio_unitario)
+                      ? new Intl.NumberFormat(APP_LOCALE, { style: 'currency', currency: 'CLP' }).format(item.precio_unitario)
                       : <span className="opacity-30">—</span>
                     }
                   </td>

@@ -13,7 +13,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { LabelsSection } from './components/labels-section'
 import { useCanOperate } from '@/hooks/use-auth-store'
 import api from '@/lib/api'
-import { formatDate, daysUntil, cn, formatCantidad } from '@/lib/utils'
+import { formatDate, daysUntil, cn, formatCantidad, APP_LOCALE } from '@/lib/utils'
 import { CantidadConUnidad } from '@/components/ui/cantidad'
 import { notify } from '@/lib/notify'
 import { toDecimal, toNum } from '@/domain/parse'
@@ -191,7 +191,7 @@ export default function RecepcionDetallePage() {
   </table>
 
   <div class="footer">
-    <span>Generado el ${new Date().toLocaleString('es-CL')}</span>
+    <span>Generado el ${new Date().toLocaleString(APP_LOCALE)}</span>
     <span>${recepcion.numero_documento}</span>
   </div>
 

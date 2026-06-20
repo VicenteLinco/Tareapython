@@ -196,13 +196,13 @@ export default function CategoriasTab() {
 
         {formMode !== 'idle' && isDesktop && (
           <div className="hidden lg:flex flex-col min-w-0 lg:flex-[2] lg:sticky lg:top-24">
-            <div className="rounded-xl border bg-card p-5">
+            <div className="rounded-xl border border-base-300 bg-base-100 p-5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-sm">
                   {formMode === 'crear' ? 'Nueva categoría' : 'Editar categoría'}
                 </h3>
                 <button type="button" onClick={closeForm}
-                  className="text-muted-foreground hover:text-foreground">
+                  className="text-base-content/50 hover:text-base-content">
                   <X className="h-4 w-4" />
                 </button>
               </div>

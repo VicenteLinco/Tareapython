@@ -2,6 +2,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import api from '@/lib/api'
 import { formatCantidad, formatDate, formatDateTime } from '@/lib/utils'
+import { drawPdfLogo, hasValidLogo } from '@/lib/pdf-logo'
 import { toDecimal } from '@/domain/parse'
 import type { ConteoDetalle, ConteoItem, PaginatedSesiones, SesionConteo } from '@/types'
 
@@ -76,15 +77,6 @@ function resumen(items: ConteoItem[]) {
   }
 }
 
-function safeLogo(doc: jsPDF, logoBase64: string | null | undefined, x: number, y: number) {
-  if (!logoBase64?.startsWith('data:image')) return
-  try {
-    doc.addImage(logoBase64, 'AUTO', x, y, 20, 20)
-  } catch {
-    // Logo invalido: se omite para no bloquear el respaldo.
-  }
-}
-
 function drawHeader(
   doc: jsPDF,
   title: string,
@@ -95,15 +87,16 @@ function drawHeader(
   const W = doc.internal.pageSize.getWidth()
   doc.setFillColor(...C.ink)
   doc.rect(0, 0, W, 30, 'F')
-  safeLogo(doc, logoBase64, 12, 5)
+  drawPdfLogo(doc, logoBase64, { x: 12, y: 5, maxW: 20, maxH: 20 })
+  const textX = hasValidLogo(logoBase64) ? 38 : 12
 
   doc.setTextColor(...C.white)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(16)
-  doc.text(title, logoBase64 ? 38 : 12, 13)
+  doc.text(title, textX, 13)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
-  doc.text(subtitle, logoBase64 ? 38 : 12, 21)
+  doc.text(subtitle, textX, 21)
   doc.text(nombreLaboratorio, W - 12, 13, { align: 'right' })
 }
 

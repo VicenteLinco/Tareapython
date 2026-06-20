@@ -1,7 +1,7 @@
 // frontend/src/pages/recepciones/steps/ProveedorStep.tsx
 import { useRef } from 'react'
 import { ShoppingCart, X, Upload, Image as ImageIcon } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, APP_LOCALE } from '@/lib/utils'
 import { ProveedorSelect } from '@/components/ui/proveedor-select'
 import type { Proveedor } from '@/types'
 import type { RecepcionWizardReturn } from '../hooks/useRecepcionWizard'
@@ -127,7 +127,7 @@ export function ProveedorStep({ wizard, proveedores, onVincularClick }: Props) {
             className="flex items-center justify-between gap-2 text-xs mb-1 w-full text-left"
             onClick={() => setFechaExpanded(v => !v)}
           >
-            <span className="opacity-70">{new Date(fechaRecepcion).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })}</span>
+            <span className="opacity-70">{new Date(fechaRecepcion).toLocaleString(APP_LOCALE, { dateStyle: 'short', timeStyle: 'short' })}</span>
             <span className="text-primary font-semibold underline underline-offset-2 shrink-0">{fechaExpanded ? 'Cerrar' : 'Cambiar'}</span>
           </button>
           {fechaExpanded && (

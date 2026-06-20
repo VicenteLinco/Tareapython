@@ -419,10 +419,10 @@ pub async fn registrar_recepcion_tool(
         });
     }
 
-    if args.cantidad.scale() > 2 {
+    if args.cantidad.fract() != Decimal::ZERO {
         return Ok(RegistrarIngresoResult {
             status: "error".to_string(),
-            message: "Error: La cantidad no puede tener más de 2 decimales.".to_string(),
+            message: "Error: La cantidad debe ser un número entero (sin decimales).".to_string(),
         });
     }
     if args.cantidad <= Decimal::ZERO {
@@ -743,10 +743,10 @@ pub async fn registrar_consumo_fefo_tool(
         }));
     }
 
-    if args.cantidad.scale() > 2 {
+    if args.cantidad.fract() != Decimal::ZERO {
         return Ok(serde_json::json!({
             "status": "error",
-            "message": "Error: La cantidad no puede tener más de 2 decimales."
+            "message": "Error: La cantidad debe ser un número entero (sin decimales)."
         }));
     }
     if args.cantidad <= Decimal::ZERO {

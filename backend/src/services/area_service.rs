@@ -1,8 +1,6 @@
 use crate::dto::area::{CreateArea, ProductoAreaConfigInput, ProductoAreaRow, UpdateArea};
 use crate::errors::AppError;
 use crate::models::area::Area;
-use crate::domain::AreaRepository;
-use crate::persistence::SqlxAreaRepository;
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -16,17 +14,50 @@ pub enum EliminarResultado {
     Desactivada,
 }
 
+async fn buscar_por_id(pool: &PgPool, id: i32) -> Result<Option<Area>, AppError> {
+    sqlx::query_as::<_, Area>(
+        r#"SELECT a.id, a.nombre, a.es_bodega, a.activa, a.created_at, a.version, a.conteo_frecuencia_dias,
+                  (SELECT COUNT(DISTINCT s.id)::integer FROM stock s WHERE s.area_id = a.id AND s.cantidad > 0) AS total_items_stock,
+                  a.es_virtual
+           FROM areas a WHERE a.id = $1"#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(Into::into)
+}
+
 pub async fn listar(pool: &PgPool) -> Result<Vec<Area>, AppError> {
-    let repo = SqlxAreaRepository::new(pool.clone());
-    repo.listar().await
+    sqlx::query_as::<_, Area>(
+        r#"SELECT a.id, a.nombre, a.es_bodega, a.activa, a.created_at, a.version, a.conteo_frecuencia_dias,
+                  (SELECT COUNT(DISTINCT s.id)::integer FROM stock s WHERE s.area_id = a.id AND s.cantidad > 0) AS total_items_stock,
+                  a.es_virtual
+           FROM areas a WHERE a.activa = true AND a.es_virtual = false ORDER BY a.nombre"#,
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(Into::into)
 }
 
 pub async fn crear(pool: &PgPool, req: CreateArea, usuario_id: Uuid) -> Result<Area, AppError> {
     req.validate()?;
     let nombre = req.nombre.trim().to_string();
+    let es_bodega = req.es_bodega.unwrap_or(false);
 
-    let repo = SqlxAreaRepository::new(pool.clone());
-    let area = repo.crear(&nombre, req.es_bodega.unwrap_or(false)).await?;
+    let area = sqlx::query_as::<_, Area>(
+        "INSERT INTO areas (nombre, es_bodega) VALUES ($1, $2) \
+         RETURNING id, nombre, es_bodega, activa, created_at, version, conteo_frecuencia_dias, 0::int AS total_items_stock, es_virtual",
+    )
+    .bind(&nombre)
+    .bind(es_bodega)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| match &e {
+        sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
+            AppError::Conflict(format!("El área '{}' ya existe", nombre))
+        }
+        _ => e.into(),
+    })?;
 
     crate::services::audit::registrar(
         pool,
@@ -50,9 +81,7 @@ pub async fn actualizar(
 ) -> Result<Area, AppError> {
     req.validate()?;
 
-    let repo = SqlxAreaRepository::new(pool.clone());
-    let anterior = repo
-        .buscar_por_id(id)
+    let anterior = buscar_por_id(pool, id)
         .await?
         .ok_or(AppError::NotFound("Área no encontrada".into()))?;
 
@@ -63,7 +92,20 @@ pub async fn actualizar(
         .unwrap_or(&anterior.nombre);
     let es_bodega = req.es_bodega.unwrap_or(anterior.es_bodega);
 
-    let area = repo.actualizar(id, nombre, es_bodega, req.version).await?;
+    let area = sqlx::query_as::<_, Area>(
+        "UPDATE areas SET nombre = $1, es_bodega = $2, version = version + 1 \
+         WHERE id = $3 AND version = $4 \
+         RETURNING id, nombre, es_bodega, activa, created_at, version, conteo_frecuencia_dias, 0::int AS total_items_stock, es_virtual",
+    )
+    .bind(nombre)
+    .bind(es_bodega)
+    .bind(id)
+    .bind(req.version)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::Conflict(
+        "El área ha sido modificada por otro usuario".into(),
+    ))?;
 
     crate::services::audit::registrar(
         pool, "areas", &id.to_string(), "UPDATE",
@@ -80,14 +122,26 @@ pub async fn eliminar(
     id: i32,
     usuario_id: Uuid,
 ) -> Result<EliminarResultado, AppError> {
-    let repo = SqlxAreaRepository::new(pool.clone());
-    let tiene_stock = repo.tiene_stock(id).await?;
+    let tiene_stock: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM stock WHERE area_id = $1 AND cantidad > 0")
+            .bind(id)
+            .fetch_one(pool)
+            .await?;
 
-    let resultado = if tiene_stock {
-        repo.soft_delete(id).await?;
+    let resultado = if tiene_stock.0 > 0 {
+        sqlx::query("UPDATE areas SET activa = false, deleted_at = NOW() WHERE id = $1")
+            .bind(id)
+            .execute(pool)
+            .await?;
         EliminarResultado::Desactivada
     } else {
-        repo.hard_delete(id).await?;
+        let result = sqlx::query("DELETE FROM areas WHERE id = $1")
+            .bind(id)
+            .execute(pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound("Área no encontrada".into()));
+        }
         EliminarResultado::Eliminada
     };
 
@@ -114,14 +168,22 @@ pub async fn listar_productos(
     pool: &PgPool,
     area_id: i32,
 ) -> Result<Vec<ProductoAreaRow>, AppError> {
-    let repo = SqlxAreaRepository::new(pool.clone());
-    let exists = repo.buscar_por_id(area_id).await?.is_some();
-
-    if !exists {
+    if buscar_por_id(pool, area_id).await?.is_none() {
         return Err(AppError::NotFound("Área no encontrada".into()));
     }
 
-    repo.obtener_config_producto_area(area_id).await
+    sqlx::query_as::<_, ProductoAreaRow>(
+        r#"SELECT p.id, p.codigo_interno, p.nombre,
+                  pa.stock_maximo, pa.punto_reorden
+           FROM producto_area pa
+           JOIN productos p ON p.id = pa.producto_id
+           WHERE pa.area_id = $1 AND p.activo = true
+           ORDER BY p.nombre"#,
+    )
+    .bind(area_id)
+    .fetch_all(pool)
+    .await
+    .map_err(Into::into)
 }
 
 pub async fn asignar_productos(
@@ -130,20 +192,27 @@ pub async fn asignar_productos(
     productos: Vec<ProductoAreaConfigInput>,
     usuario_id: Uuid,
 ) -> Result<usize, AppError> {
-    let repo = SqlxAreaRepository::new(pool.clone());
-    let exists = repo.buscar_por_id(area_id).await?.is_some();
-    if !exists {
+    if buscar_por_id(pool, area_id).await?.is_none() {
         return Err(AppError::NotFound("Área no encontrada".into()));
     }
 
-    repo.eliminar_configuraciones(area_id).await?;
+    sqlx::query("DELETE FROM producto_area WHERE area_id = $1")
+        .bind(area_id)
+        .execute(pool)
+        .await?;
 
     for producto in &productos {
-        repo.configurar_producto_area(area_id, ProductoAreaConfigInput {
-            producto_id: producto.producto_id,
-            stock_maximo: producto.stock_maximo,
-            punto_reorden: producto.punto_reorden,
-        }).await?;
+        sqlx::query(
+            r#"INSERT INTO producto_area
+               (producto_id, area_id, stock_maximo, punto_reorden)
+               VALUES ($1, $2, $3, $4)"#,
+        )
+        .bind(producto.producto_id)
+        .bind(area_id)
+        .bind(producto.stock_maximo)
+        .bind(producto.punto_reorden)
+        .execute(pool)
+        .await?;
     }
 
     crate::services::audit::registrar(

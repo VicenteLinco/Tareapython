@@ -2,7 +2,8 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { CellHookData } from 'jspdf-autotable'
 import type { StockItem, Area } from '@/types'
-import { daysUntil, formatDate, formatCantidad } from '@/lib/utils'
+import { daysUntil, formatDate, formatCantidad, APP_LOCALE } from '@/lib/utils'
+import { drawPdfLogo } from '@/lib/pdf-logo'
 import api from '@/lib/api'
 
 // ─── Paleta Minimal Pro ────────────────────────────────────────────────────
@@ -80,17 +81,6 @@ function getAlerta(item: StockItem): 'bajo' | 'vencer' | null {
     if (d !== null && d >= 0 && d <= 30) return 'vencer'
   }
   return null
-}
-
-function parseLogoBase64(raw: string): { data: string; type: 'PNG' | 'JPEG' } | null {
-  if (!raw || raw.length < 50) return null
-  try {
-    if (raw.startsWith('data:image/png'))
-      return { data: raw.split(',')[1], type: 'PNG' }
-    if (raw.startsWith('data:image/jpeg') || raw.startsWith('data:image/jpg'))
-      return { data: raw.split(',')[1], type: 'JPEG' }
-    return null
-  } catch { return null }
 }
 
 // ─── fetchGlobalResumenData ───────────────────────────────────────────────
@@ -173,7 +163,7 @@ function drawHeader(
   doc: jsPDF,
   W: number,
   nombreLaboratorio: string,
-  logo: { data: string; type: 'PNG' | 'JPEG' } | null,
+  logo: string,
   badgeTxt: string,
   usuarioNombre: string,
   horaStr: string
@@ -182,16 +172,17 @@ function drawHeader(
   doc.setFillColor(...C.white)
   doc.rect(0, 0, W, HEADER_H, 'F')
 
-  // Círculo del logo (simulado con roundedRect)
+  // Círculo decorativo de fondo; el logo se centra dentro sin deformarse.
   doc.setFillColor(...C.grayBorder)
   doc.setDrawColor(...C.grayBorder)
   doc.roundedRect(LOGO_X, LOGO_Y, LOGO_SIZE, LOGO_SIZE, LOGO_SIZE / 2, LOGO_SIZE / 2, 'F')
 
-  if (logo) {
-    try {
-      doc.addImage(logo.data, logo.type, LOGO_X + 1, LOGO_Y + 1, LOGO_SIZE - 2, LOGO_SIZE - 2)
-    } catch { /* logo inválido, caja vacía */ }
-  }
+  drawPdfLogo(doc, logo, {
+    x: LOGO_X + 4,
+    y: LOGO_Y + 4,
+    maxW: LOGO_SIZE - 8,
+    maxH: LOGO_SIZE - 8,
+  })
 
   // Nombre del lab
   const textX = LOGO_X + LOGO_SIZE + 8
@@ -267,7 +258,7 @@ function drawResumen(
   globalData: GlobalAlertData,
   selectedAreas: Area[],
   nombreLaboratorio: string,
-  logo: { data: string; type: 'PNG' | 'JPEG' } | null,
+  logo: string,
   badgeTxt: string,
   usuarioNombre: string,
   horaStr: string
@@ -450,7 +441,7 @@ function drawResumen(
     C.redBorder, C.red, C.redDark, C.redDark,
     itemsBajo.map(i => ({
       name: i.producto_nombre,
-      val:  `${Math.round(i.stock_total ?? 0)} ${i.unidad}${i.dias_autonomia != null ? ` · ~${i.dias_autonomia}d` : ''}`
+      val:  `${formatCantidad(Math.round(i.stock_total ?? 0), i.unidad, i.unidad_plural)}${i.dias_autonomia != null ? ` · ~${i.dias_autonomia}d` : ''}`
     }))
   )
 
@@ -474,7 +465,7 @@ function drawAreaPage(
   area: Area,
   items: StockItem[],
   nombreLaboratorio: string,
-  logo: { data: string; type: 'PNG' | 'JPEG' } | null,
+  logo: string,
   badgeTxt: string,
   usuarioNombre: string,
   horaStr: string
@@ -712,8 +703,8 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
   const W    = doc.internal.pageSize.getWidth()   // 279.4
   const H    = doc.internal.pageSize.getHeight()  // 215.9
   const now  = new Date()
-  const horaStr  = now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
-  const logo     = parseLogoBase64(logoBase64)
+  const horaStr  = now.toLocaleTimeString(APP_LOCALE, { hour: '2-digit', minute: '2-digit' })
+  const logo     = logoBase64
   const badgeTxt = badgeDate(now)
 
   // ── Página 1: Resumen Ejecutivo (datos globales) ──────────────────────────

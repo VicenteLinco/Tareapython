@@ -414,13 +414,13 @@ export default function ProveedoresTab() {
 
         {formMode !== 'idle' && isDesktop && (
           <div className="hidden lg:flex flex-col min-w-0 lg:flex-[2] lg:sticky lg:top-24">
-            <div className="rounded-xl border bg-card flex flex-col max-h-[calc(100vh-120px)]">
+            <div className="rounded-xl border border-base-300 bg-base-100 flex flex-col max-h-[calc(100vh-120px)]">
               <div className="flex items-center justify-between p-5 pb-0 mb-4 shrink-0">
                 <h3 className="font-semibold text-sm">
                   {formMode === 'crear' ? 'Nuevo Proveedor' : 'Editar Proveedor'}
                 </h3>
                 <button type="button" onClick={closeForm}
-                  className="text-muted-foreground hover:text-foreground">
+                  className="text-base-content/50 hover:text-base-content">
                   <X className="h-4 w-4" />
                 </button>
               </div>

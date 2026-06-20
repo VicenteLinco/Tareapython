@@ -1,16 +1,18 @@
 use crate::dto::categoria::{CreateCategoria, UpdateCategoria};
 use crate::errors::AppError;
 use crate::models::categoria::Categoria;
-use crate::domain::CategoriaRepository;
-use crate::persistence::SqlxCategoriaRepository;
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 use validator::Validate;
 
 pub async fn listar(pool: &PgPool) -> Result<Vec<Categoria>, AppError> {
-    let repo = SqlxCategoriaRepository::new(pool.clone());
-    repo.listar().await
+    sqlx::query_as::<_, Categoria>(
+        "SELECT id, nombre, descripcion, created_at, version FROM categorias WHERE activo = true ORDER BY nombre",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(Into::into)
 }
 
 pub async fn crear(
@@ -21,8 +23,11 @@ pub async fn crear(
     req.validate()?;
     let nombre = req.nombre.trim().to_string();
 
-    let repo = SqlxCategoriaRepository::new(pool.clone());
-    let existente = repo.buscar_por_nombre(&nombre).await?;
+    let existente: Option<(i32, bool)> =
+        sqlx::query_as("SELECT id, activo FROM categorias WHERE nombre = $1 LIMIT 1")
+            .bind(&nombre)
+            .fetch_optional(pool)
+            .await?;
 
     if let Some((_, true)) = existente {
         return Err(AppError::Conflict(format!(
@@ -32,9 +37,29 @@ pub async fn crear(
     }
 
     let categoria = if let Some((id, false)) = existente {
-        repo.reactivar_y_describir(id, req.descripcion.as_deref()).await?
+        sqlx::query_as::<_, Categoria>(
+            "UPDATE categorias SET activo = true, descripcion = $1, version = version + 1 \
+             WHERE id = $2 RETURNING id, nombre, descripcion, created_at, version",
+        )
+        .bind(req.descripcion.as_deref())
+        .bind(id)
+        .fetch_one(pool)
+        .await?
     } else {
-        repo.insertar(&nombre, req.descripcion.as_deref()).await?
+        sqlx::query_as::<_, Categoria>(
+            "INSERT INTO categorias (nombre, descripcion) VALUES ($1, $2) \
+             RETURNING id, nombre, descripcion, created_at, version",
+        )
+        .bind(&nombre)
+        .bind(req.descripcion.as_deref())
+        .fetch_one(pool)
+        .await
+        .map_err(|e| match &e {
+            sqlx::Error::Database(db) if db.is_unique_violation() => {
+                AppError::Conflict(format!("La categoría '{}' ya existe", nombre))
+            }
+            _ => e.into(),
+        })?
     };
 
     crate::services::audit::registrar(
@@ -59,11 +84,13 @@ pub async fn actualizar(
 ) -> Result<Categoria, AppError> {
     req.validate()?;
 
-    let repo = SqlxCategoriaRepository::new(pool.clone());
-    let anterior = repo
-        .buscar_por_id(id)
-        .await?
-        .ok_or(AppError::NotFound("Categoría no encontrada".into()))?;
+    let anterior = sqlx::query_as::<_, Categoria>(
+        "SELECT id, nombre, descripcion, created_at, version FROM categorias WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::NotFound("Categoría no encontrada".into()))?;
 
     let nombre = req
         .nombre
@@ -75,7 +102,20 @@ pub async fn actualizar(
         .as_deref()
         .or(anterior.descripcion.as_deref());
 
-    let categoria = repo.actualizar(id, nombre, descripcion, req.version).await?;
+    let categoria = sqlx::query_as::<_, Categoria>(
+        "UPDATE categorias SET nombre = $1, descripcion = $2, version = version + 1 \
+         WHERE id = $3 AND version = $4 \
+         RETURNING id, nombre, descripcion, created_at, version",
+    )
+    .bind(nombre)
+    .bind(descripcion)
+    .bind(id)
+    .bind(req.version)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::Conflict(
+        "La categoría ha sido modificada por otro usuario".into(),
+    ))?;
 
     crate::services::audit::registrar(
         pool,
@@ -92,10 +132,14 @@ pub async fn actualizar(
 }
 
 pub async fn eliminar(pool: &PgPool, id: i32, usuario_id: Uuid) -> Result<(), AppError> {
-    let repo = SqlxCategoriaRepository::new(pool.clone());
-    let deleted = repo.eliminar(id).await?;
+    let result = sqlx::query(
+        "UPDATE categorias SET activo = false, deleted_at = NOW() WHERE id = $1 AND activo = true",
+    )
+    .bind(id)
+    .execute(pool)
+    .await?;
 
-    if !deleted {
+    if result.rows_affected() == 0 {
         return Err(AppError::NotFound(
             "Categoría no encontrada o ya inactiva".into(),
         ));
@@ -114,4 +158,3 @@ pub async fn eliminar(pool: &PgPool, id: i32, usuario_id: Uuid) -> Result<(), Ap
 
     Ok(())
 }
-

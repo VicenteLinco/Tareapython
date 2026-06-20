@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
 import { ProveedorIcon } from '@/components/ui/proveedor-select'
 import api from '@/lib/api'
-import { formatDate, daysUntil, cn, formatCantidad } from '@/lib/utils'
+import { formatDate, daysUntil, cn, formatCantidad, APP_LOCALE } from '@/lib/utils'
 import { CantidadConUnidad } from '@/components/ui/cantidad'
 import { LOTE_ROW_COLORS, STOCK_ALERT_COLORS } from '@/lib/theme'
 import type { StockItem, Movimiento, PaginatedResponse } from '@/types'
@@ -358,7 +358,7 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
             )}
           </div>
         ) : (
-          <ProductTimeline productoId={item.producto_id} areaId={areaId} unidad={item.unidad} />
+          <ProductTimeline productoId={item.producto_id} areaId={areaId} unidad={item.unidad} unidadPlural={item.unidad_plural ?? undefined} />
         )}
       </div>
 
@@ -378,7 +378,7 @@ export function StockDetail({ item, areaId }: { item: StockItem; areaId: number 
 
 type TipoFiltro = 'todos' | 'entradas' | 'consumos' | 'descartes'
 
-function ProductTimeline({ productoId, areaId, unidad }: { productoId: string; areaId: number | null; unidad: string }) {
+function ProductTimeline({ productoId, areaId, unidad, unidadPlural }: { productoId: string; areaId: number | null; unidad: string; unidadPlural?: string }) {
   const [tipoFiltro, setTipoFiltro] = useState<TipoFiltro>('todos')
 
   const desde = useMemo(() => {
@@ -408,7 +408,7 @@ function ProductTimeline({ productoId, areaId, unidad }: { productoId: string; a
       const lunes = new Date(d)
       lunes.setDate(d.getDate() + diff)
       const key = lunes.toISOString().split('T')[0]
-      const label = lunes.toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })
+      const label = lunes.toLocaleDateString(APP_LOCALE, { day: '2-digit', month: 'short' })
       if (!semanas[key]) semanas[key] = { semana: label, consumo: 0, entradas: 0 }
       if (ev.tipo === 'salida' || ev.tipo === 'descarte') semanas[key].consumo += Math.round(ev.cantidad)
       if (ev.tipo === 'entrada') semanas[key].entradas += Math.round(ev.cantidad)
@@ -445,7 +445,7 @@ function ProductTimeline({ productoId, areaId, unidad }: { productoId: string; a
               <YAxis tick={{ fontSize: 8, opacity: 0.4 }} tickLine={false} axisLine={false} />
               <RechartsTooltip
                 contentStyle={{ fontSize: 10, borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                formatter={(val) => [`${val} ${unidad}`, 'Consumo']}
+                formatter={(val) => [formatCantidad(Number(val), unidad, unidadPlural), 'Consumo']}
               />
               <Bar dataKey="consumo" radius={[3, 3, 0, 0]}>
                 {chartData.map((_, i) => (

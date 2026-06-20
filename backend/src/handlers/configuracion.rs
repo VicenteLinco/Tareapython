@@ -12,6 +12,7 @@ use crate::errors::AppError;
 struct ConfiguracionResponse {
     nombre_laboratorio: String,
     logo_base64: String,
+    login_imagen_base64: String,
     pin_kiosko: String,
     conteo_ciego: bool,
     dias_autonomia_objetivo: i32,
@@ -36,6 +37,7 @@ struct ConfiguracionResponse {
 struct UpdateConfiguracion {
     nombre_laboratorio: Option<String>,
     logo_base64: Option<String>,
+    login_imagen_base64: Option<String>,
     pin_kiosko: Option<String>,
     conteo_ciego: Option<bool>,
     dias_autonomia_objetivo: Option<i32>,
@@ -65,7 +67,7 @@ struct VerificarPinInput {
 async fn obtener(State(state): State<AppState>) -> Result<Json<ConfiguracionResponse>, AppError> {
     let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT clave, valor_texto FROM configuracion WHERE clave IN (
-            'nombre_laboratorio','logo_base64','pin_kiosko','conteo_ciego',
+            'nombre_laboratorio','logo_base64','login_imagen_base64','pin_kiosko','conteo_ciego',
             'dias_autonomia_objetivo','lead_time_default',
             'moneda_codigo','moneda_simbolo','conteo_periodo_dias',
             'ventana_consumo_dias','periodo_revision_dias','factor_historial_corto',
@@ -78,6 +80,7 @@ async fn obtener(State(state): State<AppState>) -> Result<Json<ConfiguracionResp
 
     let mut nombre_laboratorio = "Laboratorio Clínico".to_string();
     let mut logo_base64 = String::new();
+    let mut login_imagen_base64 = String::new();
     let mut pin_kiosko = String::new();
     let mut conteo_ciego = false;
     let mut dias_autonomia_objetivo = 15;
@@ -101,6 +104,7 @@ async fn obtener(State(state): State<AppState>) -> Result<Json<ConfiguracionResp
         match clave.as_str() {
             "nombre_laboratorio" => nombre_laboratorio = valor,
             "logo_base64" => logo_base64 = valor,
+            "login_imagen_base64" => login_imagen_base64 = valor,
             "pin_kiosko" => pin_kiosko = valor,
             "conteo_ciego" => conteo_ciego = valor == "true",
             "dias_autonomia_objetivo" => dias_autonomia_objetivo = valor.parse().unwrap_or(15),
@@ -140,6 +144,7 @@ async fn obtener(State(state): State<AppState>) -> Result<Json<ConfiguracionResp
     Ok(Json(ConfiguracionResponse {
         nombre_laboratorio,
         logo_base64,
+        login_imagen_base64,
         pin_kiosko,
         conteo_ciego,
         dias_autonomia_objetivo,
@@ -220,6 +225,30 @@ async fn actualizar(
                 } else {
                     "logo_eliminado".to_string()
                 },
+            ));
+        }
+    }
+
+    if let Some(login_img) = &body.login_imagen_base64 {
+        let ant: Option<String> = sqlx::query_scalar(
+            "SELECT valor_texto FROM configuracion WHERE clave = 'login_imagen_base64'",
+        )
+        .fetch_optional(&state.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO configuracion (clave, valor_texto) VALUES ('login_imagen_base64', $1)
+             ON CONFLICT (clave) DO UPDATE SET valor_texto = EXCLUDED.valor_texto",
+        )
+        .bind(login_img)
+        .execute(&state.pool)
+        .await?;
+        let tenia_antes = ant.as_deref().map(|v| !v.is_empty()).unwrap_or(false);
+        let tiene_ahora = !login_img.is_empty();
+        if tenia_antes != tiene_ahora {
+            log_changes.push((
+                "login_imagen_base64",
+                if tenia_antes { "imagen_presente".to_string() } else { "sin_imagen".to_string() },
+                if tiene_ahora { "imagen_actualizada".to_string() } else { "imagen_eliminada".to_string() },
             ));
         }
     }
@@ -506,8 +535,48 @@ async fn verificar_pin(
     Ok(Json(serde_json::json!({ "valido": valido })))
 }
 
+// What GET /branding returns (public, sin auth)
+#[derive(Debug, Serialize)]
+struct BrandingResponse {
+    nombre_laboratorio: String,
+    login_imagen_base64: String,
+}
+
+/// GET /api/v1/branding — Datos públicos para personalizar la pantalla de login.
+/// Solo expone el nombre del laboratorio y la imagen del login; nunca secretos.
+async fn obtener_branding(
+    State(state): State<AppState>,
+) -> Result<Json<BrandingResponse>, AppError> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT clave, valor_texto FROM configuracion
+         WHERE clave IN ('nombre_laboratorio','login_imagen_base64')",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let mut nombre_laboratorio = "Laboratorio Clínico".to_string();
+    let mut login_imagen_base64 = String::new();
+    for (clave, valor) in rows {
+        match clave.as_str() {
+            "nombre_laboratorio" => nombre_laboratorio = valor,
+            "login_imagen_base64" => login_imagen_base64 = valor,
+            _ => {}
+        }
+    }
+
+    Ok(Json(BrandingResponse {
+        nombre_laboratorio,
+        login_imagen_base64,
+    }))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(obtener).put(actualizar))
         .route("/verificar-pin", axum::routing::post(verificar_pin))
+}
+
+/// Rutas públicas (sin auth) relacionadas a configuración.
+pub fn public_routes() -> Router<AppState> {
+    Router::new().route("/branding", get(obtener_branding))
 }

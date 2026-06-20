@@ -3,6 +3,12 @@ import { twMerge } from 'tailwind-merge'
 import { toDecimal, toNum, type DecimalInput } from '@/domain/parse'
 
 /**
+ * Locale único de la aplicación para formateo de fecha, hora y número.
+ * Punto único de verdad: cambiar este valor reconfigura todo el sistema.
+ */
+export const APP_LOCALE = 'es-CL'
+
+/**
  * Convierte una ruta de imagen de la DB en una URL completa para el frontend.
  * Soporta imágenes legacy (base64) y nuevas (rutas relativas al bucket de uploads).
  */
@@ -56,7 +62,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatDate(date: string | Date): string {
-  return new Intl.DateTimeFormat('es-CL', {
+  return new Intl.DateTimeFormat(APP_LOCALE, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -64,7 +70,7 @@ export function formatDate(date: string | Date): string {
 }
 
 export function formatDateTime(date: string | Date): string {
-  return new Intl.DateTimeFormat('es-CL', {
+  return new Intl.DateTimeFormat(APP_LOCALE, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -117,7 +123,7 @@ export function formatCantidad(qty: DecimalInput, singular: string, plural?: str
 export function formatPrecio(
   value: DecimalInput,
   currency = 'CLP',
-  locale = 'es-CL',
+  locale = APP_LOCALE,
 ): string {
   return new Intl.NumberFormat(locale, {
     style: 'currency',

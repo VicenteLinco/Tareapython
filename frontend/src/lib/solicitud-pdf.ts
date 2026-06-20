@@ -1,7 +1,8 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { CellHookData } from 'jspdf-autotable'
-import { formatDate } from '@/lib/utils'
+import { formatDate, APP_LOCALE } from '@/lib/utils'
+import { drawPdfLogo, hasValidLogo } from '@/lib/pdf-logo'
 
 interface SolicitudPdfOptions {
   numero_documento: string
@@ -70,14 +71,8 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
   doc.setFillColor(...C.primary)
   doc.rect(0, 0, W, 35, 'F')
 
-  const hasLogo = !!(options.logoBase64 && options.logoBase64.startsWith('data:image'))
-  const textX = hasLogo ? 40 : 15
-
-  if (hasLogo) {
-    try {
-      doc.addImage(options.logoBase64!, 'AUTO', 10, 6, 22, 22)
-    } catch { /* ignore */ }
-  }
+  const textX = hasValidLogo(options.logoBase64) ? 40 : 15
+  drawPdfLogo(doc, options.logoBase64, { x: 10, y: 6, maxW: 22, maxH: 22 })
 
   doc.setTextColor(...C.white)
   doc.setFont('helvetica', 'bold')
@@ -159,8 +154,8 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
   // Formateador que preserva decimales cuando el monto < 1 (cantidades pequeñas de IVA, etc.)
   const fmtMonto = (n: number): string => {
     if (n === 0) return `${sym}0`
-    if (Number.isInteger(n)) return `${sym}${n.toLocaleString('es-CL')}`
-    return `${sym}${n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    if (Number.isInteger(n)) return `${sym}${n.toLocaleString(APP_LOCALE)}`
+    return `${sym}${n.toLocaleString(APP_LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
 
   const tableStartY = y
@@ -288,7 +283,7 @@ export async function exportarSolicitudPDF(options: SolicitudPdfOptions): Promis
       doc.setFontSize(7.5)
       doc.setFont('helvetica', 'bold')
       doc.setTextColor(C.textMain[0], C.textMain[1], C.textMain[2])
-      const subtotalText = `Subtotal ${grupo.proveedor_nombre}: ${sym}${grupo.subtotal_neto.toLocaleString('es-CL', { minimumFractionDigits: 0 })}`
+      const subtotalText = `Subtotal ${grupo.proveedor_nombre}: ${sym}${grupo.subtotal_neto.toLocaleString(APP_LOCALE, { minimumFractionDigits: 0 })}`
       doc.text(subtotalText, doc.internal.pageSize.width - 14, currentY + 4, { align: 'right' })
       currentY += 10
     }

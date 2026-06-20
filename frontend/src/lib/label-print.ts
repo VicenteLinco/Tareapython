@@ -1,5 +1,6 @@
 // frontend/src/lib/label-print.ts
 import QRCode from 'qrcode'
+import { APP_LOCALE } from '@/lib/utils'
 
 export interface LoteParaEtiqueta {
   lote_id: string       // codificado en el QR: el consumo lo resuelve por clave primaria (sin ambigüedad)
@@ -126,7 +127,7 @@ export async function imprimirEtiquetas(
     })
 
     const fechaCorta = lote.fecha_vencimiento
-      ? new Date(lote.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-CL', {
+      ? new Date(lote.fecha_vencimiento + 'T00:00:00').toLocaleDateString(APP_LOCALE, {
           day: '2-digit', month: '2-digit', year: '2-digit'
         })
       : '—'

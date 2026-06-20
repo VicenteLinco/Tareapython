@@ -18,7 +18,7 @@ import { DataTable } from '@/components/ui/data-table'
 import { Pagination } from '@/components/ui/pagination'
 import api from '@/lib/api'
 import type { PaginatedResponse, Movimiento, Area } from '@/types'
-import { formatDateTime, formatCantidad } from '@/lib/utils'
+import { formatDateTime, formatCantidad, APP_LOCALE } from '@/lib/utils'
 import { useAreaStore } from '@/hooks/use-area-store'
 import { useFullWidthPage } from '@/components/layout/page-width'
 
@@ -78,7 +78,7 @@ const tipoConfig: Record<string, { label: string; variant: 'success' | 'destruct
 
 const chartColors = ['#4f46e5', '#0891b2', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0f766e', '#db2777']
 
-const numberFormatter = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 2 })
+const numberFormatter = new Intl.NumberFormat(APP_LOCALE, { maximumFractionDigits: 2 })
 
 function pad2(value: number) {
   return String(value).padStart(2, '0')
@@ -184,7 +184,7 @@ export default function MovimientosPage() {
         desde: formatDateISO(start),
         hasta: formatDateISO(end),
         granularidad: 'dia' as Granularidad,
-        titulo: new Intl.DateTimeFormat('es-CL', { month: 'long', year: 'numeric' }).format(start),
+        titulo: new Intl.DateTimeFormat(APP_LOCALE, { month: 'long', year: 'numeric' }).format(start),
       }
     }
     if (periodoAnalisis === 'trimestre') {
@@ -334,7 +334,7 @@ export default function MovimientosPage() {
       while (cursor <= end) {
         const label = monthLabel(cursor)
         byPeriod.set(label, {
-          periodo: new Intl.DateTimeFormat('es-CL', { month: 'short' }).format(cursor),
+          periodo: new Intl.DateTimeFormat(APP_LOCALE, { month: 'short' }).format(cursor),
           fecha: label,
           ...Object.fromEntries(effectiveKeys.map((key) => [key, 0])),
         })

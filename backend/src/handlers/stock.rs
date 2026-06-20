@@ -935,7 +935,7 @@ async fn alertas(
                    COALESCE(ss.inicializado, false) AS inicializado,
                    COALESCE(pp.total_en_camino, 0) AS total_en_camino,
                    ss.proxima_fecha_venc,
-                   COALESCE(pv.cantidad_por_vencer, 0) AS cantidad_por_vencer,
+                   COALESCE(pvenc.cantidad_por_vencer, 0) AS cantidad_por_vencer,
                    ms.ultimo_movimiento,
                    CASE
                        WHEN ms.dias_vida_sistema < 30 AND ms.dias_con_consumo >= 3 THEN
@@ -954,7 +954,7 @@ async fn alertas(
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
                LEFT JOIN proveedores pv ON pv.id = p.proveedor_id
                LEFT JOIN stock_stats ss ON ss.producto_id = p.id
-               LEFT JOIN prox_venc pv ON pv.producto_id = p.id
+               LEFT JOIN prox_venc pvenc ON pvenc.producto_id = p.id
                LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
                LEFT JOIN pedidos_pendientes pp ON pp.producto_id = p.id
                WHERE p.activo = true

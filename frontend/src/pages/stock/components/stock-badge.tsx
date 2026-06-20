@@ -3,6 +3,9 @@ import { Badge } from '@/components/ui/badge'
 import type { StockItem, EstadoAlerta } from '@/types'
 import { cn, daysUntil } from '@/lib/utils'
 
+// Singular/plural de "dia" para etiquetas de días (no es una unidad del backend).
+const diasLabel = (n: number) => `${n} ${n === 1 ? 'dia' : 'dias'}`
+
 // Fallback de estado cuando el backend no lo envía (no debería ocurrir): se deriva
 // sin mínimos manuales, sólo por vencimiento y stock.
 function deriveEstado(item: StockItem): EstadoAlerta {
@@ -42,7 +45,7 @@ export function StockBadge({ item }: { item: StockItem }) {
       <Badge variant="destructive" className="gap-1 text-[10px] font-bold uppercase px-2 animate-pulse">
         <AlertTriangle className="h-3 w-3" /> Critico
       </Badge>
-      <span className="text-[9px] font-bold text-error opacity-70 uppercase tracking-tighter">Quedan ~{Math.round(dias ?? 0)} dias</span>
+      <span className="text-[9px] font-bold text-error opacity-70 uppercase tracking-tighter">Quedan ~{diasLabel(Math.round(dias ?? 0))}</span>
     </div>
   )
 
@@ -51,7 +54,7 @@ export function StockBadge({ item }: { item: StockItem }) {
       <Badge variant="warning" className="gap-1 text-[10px] font-bold uppercase px-2">
         <Clock className="h-3 w-3" /> Reponer
       </Badge>
-      <span className="text-[9px] font-bold text-warning opacity-70 uppercase tracking-tighter">Quedan ~{Math.round(dias ?? 0)} dias</span>
+      <span className="text-[9px] font-bold text-warning opacity-70 uppercase tracking-tighter">Quedan ~{diasLabel(Math.round(dias ?? 0))}</span>
     </div>
   )
 
@@ -72,7 +75,7 @@ export function StockBadge({ item }: { item: StockItem }) {
         </Badge>
         <span className="text-[9px] font-bold text-warning/80 uppercase">
           {pct !== null && `~${pct}% `}
-          {days !== null ? `vence en ${days} dias` : 'vencimiento cercano'}
+          {days !== null ? `vence en ${diasLabel(days)}` : 'vencimiento cercano'}
         </span>
       </div>
     )
@@ -111,7 +114,7 @@ export function StockBadge({ item }: { item: StockItem }) {
         OK
       </Badge>
       <span className="text-[9px] font-bold opacity-40 uppercase tracking-tighter">
-        {dias !== null ? `~${Math.round(dias)} dias` : 'Sin consumo reciente'}
+        {dias !== null ? `~${diasLabel(Math.round(dias))}` : 'Sin consumo reciente'}
       </span>
     </div>
   )

@@ -353,7 +353,8 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
               onClick={() =>
                 exportarDescartePDF(
                   successSession,
-                  config?.nombre_laboratorio ?? 'Laboratorio Clínico'
+                  config?.nombre_laboratorio ?? 'Laboratorio Clínico',
+                  config?.logo_base64 ?? null
                 )
               }
             >

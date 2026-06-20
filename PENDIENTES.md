@@ -9,10 +9,10 @@ La prioridad es una sugerencia para ordenar el trabajo, no un compromiso.
 
 | # | Pendiente | Área | Prioridad |
 |---|-----------|------|-----------|
-| 1 | Herramienta de etiquetas — rediseño | Etiquetas | 🟡 Media |
-| 2 | Alertas de vencimiento — mostrar % del total | Stock / Alertas | 🟡 Media |
-| 3 | Configuración — personalizar login (nombre + imagen) | Configuración | 🟢 Baja |
-| 4 | PDFs exportables — formato correcto del logo | Exportación PDF | 🟢 Baja |
+| 1 | ✅ Herramienta de etiquetas — rediseño | Etiquetas | 🟡 Media |
+| 2 | ✅ Alertas de vencimiento — mostrar % del total | Stock / Alertas | 🟡 Media |
+| 3 | ✅ Configuración — personalizar login (nombre + imagen) | Configuración | 🟢 Baja |
+| 4 | ✅ PDFs exportables — formato correcto del logo | Exportación PDF | 🟢 Baja |
 
 ---
 
@@ -28,9 +28,13 @@ La prioridad es una sugerencia para ordenar el trabajo, no un compromiso.
 - Buscador coherente con cómo el usuario realmente busca un producto/lote.
 
 **Criterios de aceptación**
-- [ ] Definir el caso de uso real de la herramienta (qué se etiqueta y desde dónde).
-- [ ] Buscador alineado a la regla de buscadores con dropdown del proyecto.
-- [ ] Generar/imprimir etiquetas sin error.
+- [x] Definir el caso de uso real de la herramienta (qué se etiqueta y desde dónde).
+  → **Reimprimir etiqueta de un lote en stock** (etiqueta perdida/dañada). QR = lote_id.
+- [x] Buscador alineado a la regla de buscadores con dropdown del proyecto.
+  → Buscador por PRODUCTO con dropdown navegable por teclado (↑↓ Enter Esc, click-fuera, scroll).
+- [x] Generar/imprimir etiquetas sin error.
+  → Reusa `lib/label-print.ts` vía `LabelsSection` (rollo/hoja, cantidad por lote). Se eliminó el
+    `PrintDialog`/`canvas` roto que imprimía en blanco y los 6 componentes del diseño viejo.
 
 > La impresión de etiquetas en recepción ya quedó resuelta (el QR ahora codifica el `lote_id` y la cantidad de etiquetas es editable con preset = cantidad recibida). Acá queda el rediseño de la herramienta dedicada de etiquetas.
 
@@ -48,9 +52,11 @@ La prioridad es una sugerencia para ordenar el trabajo, no un compromiso.
 - Ejemplo: "1% del total vence en X días".
 
 **Criterios de aceptación**
-- [ ] La alerta indica el porcentaje del total que está por vencer.
-- [ ] Se muestra la ventana de tiempo asociada (en X días).
-- [ ] Decidir si el porcentaje afecta también el umbral/severidad de la alerta.
+- [x] La alerta indica el porcentaje del total que está por vencer.
+- [x] Se muestra la ventana de tiempo asociada (en X días).
+- [x] Decidir si el porcentaje afecta también el umbral/severidad de la alerta.
+  → Decisión: **informa + reordena**. El % NO suprime ni cambia el umbral (nada se oculta);
+    dentro de los buckets de vencimiento las alertas se ordenan por % desc (lo que más vence, primero).
 
 ---
 
@@ -66,9 +72,16 @@ La prioridad es una sugerencia para ordenar el trabajo, no un compromiso.
 - También permite cambiar la imagen del login, para personalizar a futuro.
 
 **Criterios de aceptación**
-- [ ] El nombre del laboratorio es editable desde Configuración y se refleja en el login.
-- [ ] La imagen del login es configurable desde Configuración.
-- [ ] Los valores persisten y se aplican sin reiniciar.
+- [x] El nombre del laboratorio es editable desde Configuración y se refleja en el login.
+  → El login lee `GET /api/v1/branding` (endpoint **público**, sin auth) y usa `nombre_laboratorio`.
+- [x] La imagen del login es configurable desde Configuración.
+  → Nueva clave `login_imagen_base64` (separada del logo de PDFs). Uploader dedicado en Configuración;
+    se muestra como fondo del panel de login (fallback a `fondo-login.gif` si está vacía).
+- [x] Los valores persisten y se aplican sin reiniciar.
+  → Persisten en la tabla `configuracion`; el login los toma en cada carga vía el endpoint público.
+
+> El endpoint `/configuracion` exige auth y devuelve secretos (API keys IA/WhatsApp), por eso se agregó
+> `/branding` público que expone **solo** nombre + imagen del login.
 
 ---
 
@@ -83,8 +96,12 @@ La prioridad es una sugerencia para ordenar el trabajo, no un compromiso.
 - El logo tiene un formato/posición definida y consistente entre documentos.
 
 **Criterios de aceptación**
-- [ ] Inventariar qué PDF exportables incluyen logo.
-- [ ] Definir formato y posición estándar del logo.
-- [ ] El logo se ve bien y consistente en todos los PDF.
+- [x] Inventariar qué PDF exportables incluyen logo.
+  → Stock, Conteo y Solicitud ya lo mostraban (deformado); Descarte no lo recibía. Ahora los 4 lo usan.
+- [x] Definir formato y posición estándar del logo.
+  → Helper único `lib/pdf-logo.ts` (`drawPdfLogo`): preserva aspect ratio, centra el logo en una caja
+    fija y detecta el formato con `getImageProperties`. Causa raíz del "mal puesto": todos estiraban
+    el logo a un cuadrado.
+- [x] El logo se ve bien y consistente en todos los PDF.
 
-> Relacionado con el pendiente #3 (la imagen/logo configurable podría alimentar estos PDF).
+> Relacionado con el pendiente #3 (la imagen/logo configurable alimenta estos PDF).

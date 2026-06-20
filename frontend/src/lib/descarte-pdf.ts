@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { formatDate, formatCantidad } from '@/lib/utils'
+import { formatDate, formatCantidad, APP_LOCALE } from '@/lib/utils'
+import { drawPdfLogo, hasValidLogo } from '@/lib/pdf-logo'
 import type { DescarteSession, DescarteSessionItem } from '@/types'
 
 interface JsPdfWithAutoTable extends jsPDF {
@@ -22,7 +23,8 @@ function motivoLabel(tipo: DescarteSessionItem['tipo']): string {
 
 export function exportarDescartePDF(
   session: DescarteSession,
-  nombreLaboratorio = 'Laboratorio Clínico'
+  nombreLaboratorio = 'Laboratorio Clínico',
+  logoBase64?: string | null
 ): void {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' }) as JsPdfWithAutoTable
   const W = doc.internal.pageSize.getWidth()
@@ -30,13 +32,15 @@ export function exportarDescartePDF(
   // Cabecera
   doc.setFillColor(...C.error)
   doc.rect(0, 0, W, 35, 'F')
+  drawPdfLogo(doc, logoBase64, { x: 12, y: 6, maxW: 22, maxH: 22 })
+  const textX = hasValidLogo(logoBase64) ? 40 : 15
   doc.setTextColor(...C.white)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(20)
-  doc.text('ACTA DE DESCARTE', 15, 17)
+  doc.text('ACTA DE DESCARTE', textX, 17)
   doc.setFontSize(9)
   doc.setFont('helvetica', 'normal')
-  doc.text(nombreLaboratorio.toUpperCase(), 15, 25)
+  doc.text(nombreLaboratorio.toUpperCase(), textX, 25)
 
   const shortId = session.grupo_movimiento.slice(-8).toUpperCase()
   doc.setFont('helvetica', 'bold')
@@ -98,7 +102,7 @@ export function exportarDescartePDF(
   doc.setFontSize(9)
   doc.setTextColor(...C.textLight)
   doc.text('Firma responsable: ___________________________', 15, finalY)
-  doc.text(`Generado: ${new Date().toLocaleString('es-CL')}`, W - 15, finalY, { align: 'right' })
+  doc.text(`Generado: ${new Date().toLocaleString(APP_LOCALE)}`, W - 15, finalY, { align: 'right' })
 
   doc.save(`descarte-${session.fecha.slice(0, 10)}-${shortId}.pdf`)
 }
@@ -107,20 +111,23 @@ export function exportarDescartesRangoPDF(
   sessions: DescarteSession[],
   desde: string | null,
   hasta: string | null,
-  nombreLaboratorio = 'Laboratorio Clínico'
+  nombreLaboratorio = 'Laboratorio Clínico',
+  logoBase64?: string | null
 ): void {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' }) as JsPdfWithAutoTable
   const W = doc.internal.pageSize.getWidth()
 
   doc.setFillColor(...C.error)
   doc.rect(0, 0, W, 30, 'F')
+  drawPdfLogo(doc, logoBase64, { x: 12, y: 5, maxW: 20, maxH: 20 })
+  const textX = hasValidLogo(logoBase64) ? 38 : 15
   doc.setTextColor(...C.white)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(18)
-  doc.text('HISTORIAL DE DESCARTES', 15, 14)
+  doc.text('HISTORIAL DE DESCARTES', textX, 14)
   doc.setFontSize(9)
   doc.setFont('helvetica', 'normal')
-  doc.text(nombreLaboratorio.toUpperCase(), 15, 22)
+  doc.text(nombreLaboratorio.toUpperCase(), textX, 22)
 
   const rango =
     desde || hasta
@@ -159,7 +166,7 @@ export function exportarDescartesRangoPDF(
   doc.setFontSize(8)
   doc.setTextColor(...C.textLight)
   doc.text(`Total operaciones: ${sessions.length} · Total ítems: ${allRows.length}`, 15, finalY)
-  doc.text(`Generado: ${new Date().toLocaleString('es-CL')}`, W - 15, finalY, { align: 'right' })
+  doc.text(`Generado: ${new Date().toLocaleString(APP_LOCALE)}`, W - 15, finalY, { align: 'right' })
 
   const suffix = desde ? desde.slice(0, 7) : 'todos'
   doc.save(`descartes-${suffix}.pdf`)

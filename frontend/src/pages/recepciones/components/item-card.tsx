@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Trash2, ChevronDown, ChevronUp, Plus, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ProductoImage } from '@/components/ui/producto-image'
-import { formatCantidad } from '@/lib/utils'
+import { formatCantidad, APP_LOCALE } from '@/lib/utils'
 import type { Area, Presentacion } from '@/types'
 import { isCardComplete } from './item-card-utils'
 
@@ -57,7 +57,7 @@ interface Props {
 function formatPrecioDisplay(raw: string, simbolo: string): string {
   const digits = raw.replace(/\D/g, '')
   if (!digits) return ''
-  return `${simbolo}${Number(digits).toLocaleString('es-CL')}`
+  return `${simbolo}${Number(digits).toLocaleString(APP_LOCALE)}`
 }
 
 // ─── Sub-componente: fila de lote ─────────────────────────────────────────────

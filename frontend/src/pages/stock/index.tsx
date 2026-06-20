@@ -157,7 +157,7 @@ export default function StockPage() {
         }
         primaryFilter={
           <select
-            className="select select-sm h-10 w-full bg-base-200/50 border-none rounded-xl text-xs font-medium"
+            className="select select-sm h-10 w-full bg-base-100 border border-base-300 rounded-xl text-xs font-medium"
             value={areaId ?? ''}
             onChange={(e) => setAreaId(e.target.value ? Number(e.target.value) : null)}
           >

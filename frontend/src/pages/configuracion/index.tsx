@@ -8,6 +8,7 @@ import { PageLoading } from '@/components/ui/page-state'
 interface Configuracion {
   nombre_laboratorio: string
   logo_base64: string
+  login_imagen_base64: string
   conteo_ciego: boolean
   dias_autonomia_objetivo: number
   lead_time_default: number
@@ -42,6 +43,7 @@ function Divider() {
 export default function ConfiguracionPage() {
   const queryClient = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
+  const loginImgRef = useRef<HTMLInputElement>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['configuracion'],
@@ -51,6 +53,8 @@ export default function ConfiguracionPage() {
   const [nombre, setNombre] = useState('')
   const [logo, setLogo] = useState('')
   const [preview, setPreview] = useState('')
+  const [loginImagen, setLoginImagen] = useState('')
+  const [loginPreview, setLoginPreview] = useState('')
   const [conteoCiego, setConteoCiego] = useState(false)
   const [diasAutonomia, setDiasAutonomia] = useState(15)
   const [leadTime, setLeadTime] = useState(3)
@@ -74,6 +78,8 @@ export default function ConfiguracionPage() {
     setNombre(data.nombre_laboratorio)
     setLogo(data.logo_base64)
     setPreview(data.logo_base64)
+    setLoginImagen(data.login_imagen_base64 || '')
+    setLoginPreview(data.login_imagen_base64 || '')
     setConteoCiego(!!data.conteo_ciego)
     setDiasAutonomia(data.dias_autonomia_objetivo || 15)
     setLeadTime(data.lead_time_default || 3)
@@ -97,6 +103,7 @@ export default function ConfiguracionPage() {
     mutationFn: (payload: {
       nombre_laboratorio: string
       logo_base64: string
+      login_imagen_base64: string
       conteo_ciego: boolean
       dias_autonomia_objetivo: number
       lead_time_default: number
@@ -144,6 +151,28 @@ export default function ConfiguracionPage() {
     if (fileRef.current) fileRef.current.value = ''
   }
 
+  function handleLoginImg(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      notify.error('La imagen de login no puede superar 2 MB')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const b64 = ev.target?.result as string
+      setLoginImagen(b64)
+      setLoginPreview(b64)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  function handleRemoveLoginImg() {
+    setLoginImagen('')
+    setLoginPreview('')
+    if (loginImgRef.current) loginImgRef.current.value = ''
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!nombre.trim()) {
@@ -153,6 +182,7 @@ export default function ConfiguracionPage() {
     mutation.mutate({
       nombre_laboratorio: nombre.trim(),
       logo_base64: logo,
+      login_imagen_base64: loginImagen,
       conteo_ciego: conteoCiego,
       dias_autonomia_objetivo: diasAutonomia,
       lead_time_default: leadTime,
@@ -244,6 +274,46 @@ export default function ConfiguracionPage() {
               accept="image/png,image/jpeg"
               className="hidden"
               onChange={handleFile}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Imagen de login</label>
+            <p className="text-xs text-base-content/50">
+              PNG o JPG, máx. 2 MB. Se muestra como fondo de la pantalla de inicio de sesión.
+            </p>
+
+            {loginPreview ? (
+              <div className="relative inline-block mt-1">
+                <img
+                  src={loginPreview}
+                  alt="Imagen de login"
+                  className="h-28 w-auto rounded-lg border border-base-300 object-cover bg-base-200"
+                />
+                <button
+                  type="button"
+                  onClick={handleRemoveLoginImg}
+                  className="btn btn-circle btn-xs btn-error absolute -top-2 -right-2"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
+              <div
+                onClick={() => loginImgRef.current?.click()}
+                className="flex items-center gap-3 h-16 px-4 border border-dashed border-base-300 rounded-lg cursor-pointer hover:border-primary hover:bg-base-200/50 transition-colors mt-1"
+              >
+                <Upload className="h-4 w-4 opacity-40" />
+                <span className="text-sm text-base-content/40">Haz clic para subir una imagen</span>
+              </div>
+            )}
+
+            <input
+              ref={loginImgRef}
+              type="file"
+              accept="image/png,image/jpeg"
+              className="hidden"
+              onChange={handleLoginImg}
             />
           </div>
         </div>

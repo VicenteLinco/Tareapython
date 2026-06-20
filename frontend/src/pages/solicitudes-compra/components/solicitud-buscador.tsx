@@ -4,6 +4,7 @@ import { Search, X } from 'lucide-react'
 import api from '@/lib/api'
 import type { Producto, PaginatedResponse } from '@/types'
 import { ProductoImage } from '@/components/ui/producto-image'
+import { APP_LOCALE } from '@/lib/utils'
 
 interface Props {
   proveedorId: number | null
@@ -16,7 +17,7 @@ function fmt(v: string | number | null, monedaCodigo = 'CLP') {
   if (v === null || v === undefined) return null
   const n = typeof v === 'string' ? parseFloat(v) : v
   if (isNaN(n)) return null
-  return new Intl.NumberFormat('es-CL', { style: 'currency', currency: monedaCodigo }).format(n)
+  return new Intl.NumberFormat(APP_LOCALE, { style: 'currency', currency: monedaCodigo }).format(n)
 }
 
 export function SolicitudBuscador({ proveedorId, monedaCodigo = 'CLP', excluidos, onAdd }: Props) {

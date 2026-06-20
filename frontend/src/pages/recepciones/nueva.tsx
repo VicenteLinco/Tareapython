@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useRef, useEffect } from 'react'
 import { ArrowLeft, Check } from 'lucide-react'
 import api from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, APP_LOCALE } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { notify } from '@/lib/notify'
@@ -246,7 +246,7 @@ export default function NuevaRecepcionPage() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 pb-2 text-xs text-base-content/60">
           <span><span className="opacity-50">Proveedor:</span> <strong className="text-base-content">{proveedorNombre ?? '—'}</strong></span>
           <span><span className="opacity-50">Guía:</span> <strong className="text-base-content">{guiaResumen}</strong></span>
-          <span>{new Date(fechaRecepcion).toLocaleDateString('es-CL', { dateStyle: 'short' })}</span>
+          <span>{new Date(fechaRecepcion).toLocaleDateString(APP_LOCALE, { dateStyle: 'short' })}</span>
           {detalles.length > 0 && (
             <span className={cn('font-semibold ml-auto', itemsCompletos === detalles.length ? 'text-success' : 'text-warning')}>
               {itemsCompletos}/{detalles.length} ítems listos

@@ -81,6 +81,16 @@ frontend/
 - **Roles fijos**: `admin`, `tecnologo`, `consulta`. No hay RBAC configurable.
 - **Numeración de documentos**: formato `MOV-000001`, `REC-000001` (sin año, secuencias globales).
 
+#### Convención handler / service (acceso a datos)
+
+Regla de capas para el backend. El objetivo es coherencia: el mismo tipo de operación se resuelve siempre del mismo modo.
+
+- **Handler** (`handlers/`): solo HTTP. Parseo del request, extracción de `claims`, validación de entrada, mapeo a respuesta/`AppError` y orquestación. **No** debe contener reglas de negocio ni decisiones de datos complejas.
+- **Service** (`services/`): acceso a datos (SQL con `sqlx`) + reglas de negocio. Es la fachada sobre el subsistema SQL. Aquí viven las queries, el optimistic locking, el FEFO, el audit log, etc.
+- **Referencia viva del patrón**: `services/area_service.rs` y `services/categoria_service.rs` (handler delgado → service con SQL directo contra `&PgPool`). Seguir ese estilo al crear módulos nuevos.
+- **No usar el patrón Repository / traits de puerto**: para esta escala (1 laboratorio, sin múltiples backends ni mocks) es over-engineering. Las queries van directo en el service.
+- **Deuda conocida**: handlers grandes con SQL crudo embebido (`solicitudes_compra`, `configuracion`, `productos`, `stock`) **no** cumplen aún esta convención. Migrarlos de forma incremental (boy-scout rule) y **con tests** antes de mover queries masivamente; no hacer big-bang.
+
 ### Frontend
 
 - **Estado global**: Zustand (`use-auth-store.ts`). React Query para datos del servidor.

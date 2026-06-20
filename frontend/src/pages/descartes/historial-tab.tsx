@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import api from '@/lib/api'
 import type { Area, DescarteSession } from '@/types'
-import { formatCantidad, formatDate } from '@/lib/utils'
+import { formatCantidad, formatDate, APP_LOCALE } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useDescartesHistorial } from './use-descartes-historial'
@@ -37,6 +37,7 @@ export function HistorialTab() {
   })
 
   const nombreLab = config?.nombre_laboratorio ?? 'Laboratorio Clínico'
+  const logoLab = config?.logo_base64 ?? null
 
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
@@ -49,7 +50,7 @@ export function HistorialTab() {
 
   const handleExportarRango = () => {
     if (!data?.data?.length) return
-    exportarDescartesRangoPDF(data.data, desde || null, hasta || null, nombreLab)
+    exportarDescartesRangoPDF(data.data, desde || null, hasta || null, nombreLab, logoLab)
   }
 
   const sessions = data?.data ?? []
@@ -138,7 +139,7 @@ export function HistorialTab() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-sm">{formatDate(session.fecha)}</span>
                       <span className="text-xs opacity-50">
-                        {new Date(session.fecha).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(session.fecha).toLocaleTimeString(APP_LOCALE, { hour: '2-digit', minute: '2-digit' })}
                       </span>
                       <span className="text-xs opacity-50">·</span>
                       <span className="text-xs opacity-60">{session.usuario_nombre}</span>
@@ -160,7 +161,7 @@ export function HistorialTab() {
                       title="Descargar PDF de esta sesión"
                       onClick={(e) => {
                         e.stopPropagation()
-                        exportarDescartePDF(session, nombreLab)
+                        exportarDescartePDF(session, nombreLab, logoLab)
                       }}
                     >
                       <Download className="w-3.5 h-3.5" />

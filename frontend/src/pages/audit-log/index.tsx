@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react'
 import api from '@/lib/api'
+import { APP_LOCALE } from '@/lib/utils'
 import type { PaginatedResponse } from '@/types'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/pagination'
@@ -109,7 +110,7 @@ function groupByDay(logs: AuditLogItem[]): { label: string; items: AuditLogItem[
     } else if (d.getTime() === yesterday.getTime()) {
       label = 'Ayer'
     } else {
-      label = new Intl.DateTimeFormat('es-CL', {
+      label = new Intl.DateTimeFormat(APP_LOCALE, {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
@@ -417,7 +418,7 @@ export default function AuditLogPage() {
                               {log.usuario_nombre}
                             </span>
                             <span className="text-[11px] font-mono text-base-content/30">
-                              {new Date(log.created_at).toLocaleTimeString('es-CL', {
+                              {new Date(log.created_at).toLocaleTimeString(APP_LOCALE, {
                                 hour: '2-digit',
                                 minute: '2-digit',
                               })}

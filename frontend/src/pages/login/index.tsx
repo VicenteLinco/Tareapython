@@ -7,11 +7,17 @@ import api from '@/lib/api'
 import type { LoginResponse, MeResponse, Usuario } from '@/types'
 import { clearDeviceMode } from '@/lib/device-mode'
 
+interface Branding {
+  nombre_laboratorio: string
+  login_imagen_base64: string
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [branding, setBranding] = useState<Branding | null>(null)
   const { login, logout, accessToken } = useAuthStore()
   const navigate = useNavigate()
 
@@ -23,6 +29,28 @@ export default function LoginPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Solo al montar
+
+  // Branding público (sin auth): nombre del laboratorio + imagen del login.
+  // fetch directo para evitar el interceptor de auth del cliente Axios.
+  useEffect(() => {
+    let activo = true
+    fetch('/api/v1/branding')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: Branding | null) => {
+        if (activo && data) setBranding(data)
+      })
+      .catch(() => {
+        /* sin branding: se usan los valores por defecto */
+      })
+    return () => {
+      activo = false
+    }
+  }, [])
+
+  const nombreLab = branding?.nombre_laboratorio?.trim() || 'Labstock Mini'
+  const loginImagen = branding?.login_imagen_base64?.startsWith('data:image')
+    ? branding.login_imagen_base64
+    : null
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -62,16 +90,17 @@ export default function LoginPage() {
     <div className="min-h-screen flex">
       {/* Left panel - branding */}
       <div className="hidden lg:flex lg:w-1/2 items-center justify-center relative overflow-hidden">
-        <img src={fondoLogin} alt="" className="absolute inset-0 w-full h-full object-cover" />
+        <img
+          src={loginImagen ?? fondoLogin}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+        />
         <div className="absolute inset-0 bg-black/50" />
         <div className="relative z-10 text-center text-white px-12">
           <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm mb-6">
             <FlaskConical className="h-8 w-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold mb-3">Labstock Mini </h1>
-          <p className="text-sm text-white/70 max-w-xs mx-auto leading-relaxed">
-            
-          </p>
+          <h1 className="text-3xl font-bold mb-3">{nombreLab}</h1>
         </div>
       </div>
 
@@ -82,7 +111,7 @@ export default function LoginPage() {
             <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-xl bg-primary mb-4">
               <FlaskConical className="h-6 w-6 text-primary-content" />
             </div>
-            <h1 className="text-xl font-bold">Lab Inventario</h1>
+            <h1 className="text-xl font-bold">{nombreLab}</h1>
           </div>
 
           <div className="mb-8">

@@ -96,6 +96,8 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
         .merge(handlers::health::routes())
         .nest("/api/v1/auth", handlers::auth_handler::public_routes())
         .nest("/api/v1/auth", auth_protected)
+        // Branding público para la pantalla de login (sin auth)
+        .nest("/api/v1", handlers::configuracion::public_routes())
         .nest_service(
             "/api/v1/uploads/productos",
             ServeDir::new("uploads/productos"),

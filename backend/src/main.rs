@@ -16,7 +16,6 @@ mod errors;
 mod handlers;
 mod middleware;
 mod models;
-mod persistence;
 mod routes;
 mod services;
 

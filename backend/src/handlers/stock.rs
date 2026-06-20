@@ -225,16 +225,34 @@ async fn listar(
                WHERE p.activo = true
                GROUP BY p.id
            ),
-           stock_stats AS (
+           stock_lotes AS (
                SELECT
                    l.producto_id,
-                   SUM(s.cantidad) AS total,
-                   MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0) AS proxima_fecha_venc,
-                   COUNT(DISTINCT l.id) FILTER (WHERE s.cantidad > 0) AS lotes_con_stock
+                   l.id AS lote_id,
+                   l.fecha_vencimiento,
+                   s.cantidad,
+                   MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0)
+                       OVER (PARTITION BY l.producto_id) AS prox_fecha
                FROM stock s
                JOIN lotes l ON l.id = s.lote_id
                WHERE 1=1 {}
-               GROUP BY l.producto_id
+           ),
+           stock_stats AS (
+               SELECT
+                   producto_id,
+                   SUM(cantidad) AS total,
+                   MIN(fecha_vencimiento) FILTER (WHERE cantidad > 0) AS proxima_fecha_venc,
+                   -- Stock del/los lote(s) que vencen en la fecha MÁS próxima (no toda la
+                   -- ventana de 90 días). El porcentaje informado corresponde al vencimiento
+                   -- más inmediato, que es lo que el badge alerta junto a "vence en X días".
+                   COALESCE(SUM(cantidad) FILTER (
+                       WHERE cantidad > 0
+                         AND fecha_vencimiento IS NOT NULL
+                         AND fecha_vencimiento = prox_fecha
+                   ), 0) AS cantidad_por_vencer,
+                   COUNT(DISTINCT lote_id) FILTER (WHERE cantidad > 0) AS lotes_con_stock
+               FROM stock_lotes
+               GROUP BY producto_id
            ),
            movimiento_stats AS (
                SELECT
@@ -269,6 +287,9 @@ async fn listar(
                    um.nombre_plural as unidad_plural,
                    COALESCE(ss.total, 0) as stock_total,
                    COALESCE(ss.lotes_con_stock, 0) as lotes_count,
+                   CASE WHEN COALESCE(ss.total, 0) > 0
+                        THEN ROUND(COALESCE(ss.cantidad_por_vencer, 0) / ss.total * 100)::int
+                        ELSE NULL END AS pct_por_vencer,
                    {} AS inicializado,
                    p.lead_time_propio,
                    COALESCE(p.lead_time_propio, pv2.dias_despacho_tierra, pv2.dias_despacho_aereo, 7) AS lead_time_efectivo,
@@ -484,6 +505,10 @@ struct StockItemRow {
     unidad_plural: Option<String>,
     stock_total: Option<Decimal>,
     lotes_count: i64,
+    // % del stock total en el/los lote(s) que vencen en la fecha más próxima.
+    // Permite distinguir un vencimiento marginal de uno real sin ocultar nada.
+    #[sqlx(default)]
+    pct_por_vencer: Option<i32>,
     #[serde(skip)]
     #[allow(dead_code)]
     inicializado: bool,
@@ -747,6 +772,12 @@ struct AlertaRow {
     unidad: String,
     unidad_plural: String,
     proxima_fecha_venc: Option<NaiveDate>,
+    // Días hasta el lote que vence antes (puede ser el más próximo de varios).
+    #[sqlx(default)]
+    dias_para_vencer: Option<i32>,
+    // % del stock total en el/los lote(s) que vencen en la fecha más próxima.
+    #[sqlx(default)]
+    pct_por_vencer: Option<i32>,
     tipo_alerta: Option<String>,
     dias_inactivo: Option<i32>,
     consumo_diario_30d: Option<Decimal>,
@@ -852,6 +883,25 @@ async fn alertas(
                WHERE p.activo = true
                GROUP BY p.id
            ),
+           prox_venc AS (
+               -- Stock del/los lote(s) que vencen en la fecha MÁS próxima (no toda la
+               -- ventana de 90 días), para informar el % del vencimiento más inmediato.
+               SELECT producto_id,
+                      COALESCE(SUM(cantidad) FILTER (
+                          WHERE cantidad > 0
+                            AND fecha_vencimiento IS NOT NULL
+                            AND fecha_vencimiento = prox_fecha
+                      ), 0) AS cantidad_por_vencer
+               FROM (
+                   SELECT l.producto_id, l.fecha_vencimiento, s.cantidad,
+                          MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0)
+                              OVER (PARTITION BY l.producto_id) AS prox_fecha
+                   FROM stock s
+                   JOIN lotes l ON l.id = s.lote_id
+                   WHERE 1=1 {2}
+               ) t
+               GROUP BY producto_id
+           ),
            movimiento_stats AS (
                SELECT
                    p.id as producto_id,
@@ -885,6 +935,7 @@ async fn alertas(
                    COALESCE(ss.inicializado, false) AS inicializado,
                    COALESCE(pp.total_en_camino, 0) AS total_en_camino,
                    ss.proxima_fecha_venc,
+                   COALESCE(pv.cantidad_por_vencer, 0) AS cantidad_por_vencer,
                    ms.ultimo_movimiento,
                    CASE
                        WHEN ms.dias_vida_sistema < 30 AND ms.dias_con_consumo >= 3 THEN
@@ -903,6 +954,7 @@ async fn alertas(
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
                LEFT JOIN proveedores pv ON pv.id = p.proveedor_id
                LEFT JOIN stock_stats ss ON ss.producto_id = p.id
+               LEFT JOIN prox_venc pv ON pv.producto_id = p.id
                LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
                LEFT JOIN pedidos_pendientes pp ON pp.producto_id = p.id
                WHERE p.activo = true
@@ -930,6 +982,12 @@ async fn alertas(
                    unidad,
                    unidad_plural,
                    proxima_fecha_venc,
+                   CASE WHEN proxima_fecha_venc IS NOT NULL
+                        THEN (proxima_fecha_venc - CURRENT_DATE)::int
+                        ELSE NULL END AS dias_para_vencer,
+                   CASE WHEN total > 0
+                        THEN ROUND(cantidad_por_vencer / total * 100)::int
+                        ELSE NULL END AS pct_por_vencer,
                    total_en_camino,
                    (total_en_camino > 0) AS tiene_pedido_pendiente,
                    proveedor_id,
@@ -971,6 +1029,9 @@ async fn alertas(
                     WHEN tipo_alerta = 'reponer' THEN 4
                     WHEN tipo_alerta = 'por_vencer' THEN 5
                     ELSE 6 END,
+               -- Dentro de los buckets de vencimiento, lo que más vence va primero.
+               CASE WHEN tipo_alerta IN ('riesgo_venc', 'por_vencer')
+                    THEN COALESCE(pct_por_vencer, 0) ELSE 0 END DESC,
                proxima_fecha_venc ASC NULLS LAST,
                nombre ASC
            LIMIT $1 OFFSET $2"#,

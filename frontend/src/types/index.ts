@@ -73,6 +73,8 @@ export interface StockItem {
   proveedor_nombre: string | null
   proveedor_icono: string | null
   estado_alerta?: EstadoAlerta
+  // % del stock total en el/los lote(s) que vencen en la fecha más próxima.
+  pct_por_vencer?: number | null
   imagen_url?: string | null
   area_id?: number
   area_nombre?: string
@@ -96,6 +98,9 @@ export interface Alerta {
   producto_id: string
   nombre: string
   proxima_fecha_venc: string | null
+  // Días hasta el lote que vence antes y % del total en el/los lote(s) de esa fecha.
+  dias_para_vencer?: number | null
+  pct_por_vencer?: number | null
   total: number | null
   unidad: string | null
   unidad_plural: string | null

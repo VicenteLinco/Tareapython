@@ -55,24 +55,28 @@ export function StockBadge({ item }: { item: StockItem }) {
     </div>
   )
 
-  if (estado === 'riesgo_venc' || estado === 'por_vencer') return (
-    <div className="flex flex-col items-end gap-1">
-      <Badge
-        variant="warning"
-        className={cn(
-          'gap-1 text-[10px] font-bold uppercase px-2',
-          estado === 'riesgo_venc'
-            ? 'animate-pulse'
-            : 'border-warning/30 bg-warning/10 text-warning',
-        )}
-      >
-        <Clock className="h-3 w-3" /> {estado === 'riesgo_venc' ? 'Riesgo' : 'Por vencer'}
-      </Badge>
-      <span className="text-[9px] font-bold text-warning/80 uppercase">
-        {days !== null ? `Vence en ${days} dias` : 'Vencimiento cercano'}
-      </span>
-    </div>
-  )
+  if (estado === 'riesgo_venc' || estado === 'por_vencer') {
+    const pct = item.pct_por_vencer ?? null
+    return (
+      <div className="flex flex-col items-end gap-1">
+        <Badge
+          variant="warning"
+          className={cn(
+            'gap-1 text-[10px] font-bold uppercase px-2',
+            estado === 'riesgo_venc'
+              ? 'animate-pulse'
+              : 'border-warning/30 bg-warning/10 text-warning',
+          )}
+        >
+          <Clock className="h-3 w-3" /> {estado === 'riesgo_venc' ? 'Riesgo' : 'Por vencer'}
+        </Badge>
+        <span className="text-[9px] font-bold text-warning/80 uppercase">
+          {pct !== null && `~${pct}% `}
+          {days !== null ? `vence en ${days} dias` : 'vencimiento cercano'}
+        </span>
+      </div>
+    )
+  }
 
   if (estado === 'sin_datos') return (
     <div className="flex flex-col items-end gap-1">

@@ -239,16 +239,21 @@ export default function DashboardPage() {
               </div>
 
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {alertasMostradas.slice(0, 4).map((a, i) => (
-                  <button
-                    type="button"
-                    key={`${a.nombre}-${i}`}
-                    onClick={() => navigate(stockPath({ alertas: 'true' }))}
-                    className="max-w-full truncate rounded-full border border-base-300 bg-base-200/50 px-2.5 py-1 text-xs font-medium text-base-content/75 transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
-                  >
-                    {a.nombre}
-                  </button>
-                ))}
+                {alertasMostradas.slice(0, 4).map((a, i) => {
+                  const esVenc = a.tipo_alerta === 'riesgo_venc' || a.tipo_alerta === 'por_vencer'
+                  const pct = esVenc ? a.pct_por_vencer ?? null : null
+                  return (
+                    <button
+                      type="button"
+                      key={`${a.nombre}-${i}`}
+                      onClick={() => navigate(stockPath({ alertas: 'true' }))}
+                      className="max-w-full truncate rounded-full border border-base-300 bg-base-200/50 px-2.5 py-1 text-xs font-medium text-base-content/75 transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
+                    >
+                      {a.nombre}
+                      {pct !== null && <span className="ml-1 text-base-content/50">· ~{pct}% vence</span>}
+                    </button>
+                  )
+                })}
                 {alertasMostradas.length > 4 && (
                   <button
                     type="button"

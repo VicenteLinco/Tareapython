@@ -84,9 +84,10 @@ El pendiente de abajo es una **inconsistencia**, no un acierto.
 **Criterios de aceptación**
 - [x] Documentar la convención handler/service en `CLAUDE.md`. → hecho (sección "Convención handler / service").
 - [~] Identificar los handlers que concentran lógica de datos y mover las queries a su service.
-      → **En progreso.** `productos.rs`: bloque **listado** migrado a `producto_service::listar` con
-        tests de caracterización (suite 9/9 verde). Quedan en `productos.rs`: bloque **imagen**
-        (`UPDATE imagen_url`, ~`:531-608`) y **CRUD de códigos de barras** (~`:621-744`).
+      → **En progreso.** `productos.rs` **100% migrado** (sin SQL crudo): listado, códigos de barras
+        e imagen ahora viven en `producto_service`. Es el molde de referencia completo del patrón.
+        Tests de caracterización: `productos_test` 9/9 + `productos_codigos_test` 9/9 +
+        `productos_imagen_test` 5/5 (23 verde). **Próximo handler**: `solicitudes_compra` (~66 queries).
 - [ ] Priorizar los más grandes (`solicitudes_compra` 66 queries, `configuracion` 64) por superficie de impacto.
 - [x] Migrar **con tests** (el harness ya está desbloqueado vía `common::seed_base_data`), incremental, no big-bang.
       → patrón establecido: tests de caracterización primero, luego mover el SQL.

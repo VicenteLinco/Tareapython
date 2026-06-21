@@ -1,4 +1,5 @@
 use rust_decimal::Decimal;
+use serde::Serialize;
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -151,6 +152,13 @@ pub struct ProductoRow {
     pub pres_nombre: Option<String>,
     pub pres_nombre_plural: Option<String>,
     pub pres_factor: Option<Decimal>,
+}
+
+/// A secondary barcode alias attached to a product (`producto_codigos_barras`).
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct CodigoBarras {
+    pub id: i32,
+    pub codigo: String,
 }
 
 impl ProductoService {
@@ -1011,5 +1019,141 @@ impl ProductoService {
         let rows = data_query.fetch_all(pool).await?;
 
         Ok((rows, total))
+    }
+
+    // === Códigos de barras secundarios (alias) ===
+
+    /// Lists the active secondary barcodes of a product, ordered by id.
+    pub async fn listar_codigos(
+        pool: &PgPool,
+        producto_id: Uuid,
+    ) -> Result<Vec<CodigoBarras>, AppError> {
+        let rows = sqlx::query_as::<_, CodigoBarras>(
+            "SELECT id, codigo FROM producto_codigos_barras WHERE producto_id = $1 AND activo = TRUE ORDER BY id",
+        )
+        .bind(producto_id)
+        .fetch_all(pool)
+        .await?;
+
+        Ok(rows)
+    }
+
+    /// Registers a secondary barcode for a product. Trims the code, validates the
+    /// product exists, rejects clashing with another product's primary barcode, and
+    /// maps the unique-index violation to a friendly validation error.
+    pub async fn agregar_codigo(
+        pool: &PgPool,
+        producto_id: Uuid,
+        codigo_raw: &str,
+    ) -> Result<CodigoBarras, AppError> {
+        let codigo = codigo_raw.trim().to_string();
+        if codigo.is_empty() {
+            return Err(AppError::Validation("El código no puede estar vacío".into()));
+        }
+
+        let product_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1 AND activo = TRUE)",
+        )
+        .bind(producto_id)
+        .fetch_one(pool)
+        .await?;
+        if !product_exists {
+            return Err(AppError::NotFound("Producto no encontrado".into()));
+        }
+
+        let primary_conflict: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM presentaciones WHERE codigo_barras = $1 AND activa = TRUE AND producto_id != $2)",
+        )
+        .bind(&codigo)
+        .bind(producto_id)
+        .fetch_one(pool)
+        .await?;
+        if primary_conflict {
+            return Err(AppError::Validation(
+                "Este código ya es el barcode primario de otro producto".into(),
+            ));
+        }
+
+        let result = sqlx::query_as::<_, CodigoBarras>(
+            "INSERT INTO producto_codigos_barras(producto_id, codigo) VALUES($1, $2) RETURNING id, codigo",
+        )
+        .bind(producto_id)
+        .bind(&codigo)
+        .fetch_one(pool)
+        .await;
+
+        match result {
+            Ok(row) => Ok(row),
+            Err(sqlx::Error::Database(e))
+                if e.constraint() == Some("producto_codigos_barras_codigo_uidx") =>
+            {
+                Err(AppError::Validation(
+                    "Este código ya está registrado para otro producto".into(),
+                ))
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Soft-deletes a secondary barcode (sets `activo = FALSE`) scoped to its product.
+    pub async fn eliminar_codigo(
+        pool: &PgPool,
+        producto_id: Uuid,
+        codigo_id: i32,
+    ) -> Result<(), AppError> {
+        let result = sqlx::query(
+            "UPDATE producto_codigos_barras SET activo = FALSE WHERE id = $1 AND producto_id = $2",
+        )
+        .bind(codigo_id)
+        .bind(producto_id)
+        .execute(pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound("Código no encontrado".into()));
+        }
+
+        Ok(())
+    }
+
+    // === Imagen del producto ===
+
+    /// Returns the product's existence and current image path in a single query.
+    /// `Ok(None)` => the product does not exist.
+    /// `Ok(Some(None))` => the product exists without an image.
+    /// `Ok(Some(Some(path)))` => the product exists with an image at `path`.
+    pub async fn imagen_actual(
+        pool: &PgPool,
+        id: Uuid,
+    ) -> Result<Option<Option<String>>, AppError> {
+        let row = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT imagen_url FROM productos WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+
+        Ok(row)
+    }
+
+    /// Sets the product's image path.
+    pub async fn set_imagen(pool: &PgPool, id: Uuid, path: &str) -> Result<(), AppError> {
+        sqlx::query("UPDATE productos SET imagen_url = $1 WHERE id = $2")
+            .bind(path)
+            .bind(id)
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Clears the product's image path (sets it to NULL).
+    pub async fn limpiar_imagen(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+        sqlx::query("UPDATE productos SET imagen_url = NULL WHERE id = $1")
+            .bind(id)
+            .execute(pool)
+            .await?;
+
+        Ok(())
     }
 }

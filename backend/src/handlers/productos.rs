@@ -149,13 +149,9 @@ struct AsignarCodigoRequest {
     producto_id: Uuid,
 }
 
-#[derive(sqlx::FromRow, Serialize)]
-struct CodigoBarrasRow {
-    id: i32,
-    codigo: String,
-}
-
-use crate::services::producto_service::{ListarProductosParams, ProductoRow, ProductoService};
+use crate::services::producto_service::{
+    CodigoBarras, ListarProductosParams, ProductoRow, ProductoService,
+};
 
 // === Handlers ===
 
@@ -237,17 +233,8 @@ async fn obtener(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let mut detalle = ProductoService::obtener_detalle(&state.pool, id).await?;
 
-    let codigos_barras = sqlx::query_as::<_, CodigoBarrasRow>(
-        "SELECT id, codigo FROM producto_codigos_barras WHERE producto_id = $1 AND activo = TRUE ORDER BY id",
-    )
-    .bind(id)
-    .fetch_all(&state.pool)
-    .await?;
-
-    detalle["codigos_barras"] = json!(codigos_barras
-        .into_iter()
-        .map(|c| json!({ "id": c.id, "codigo": c.codigo }))
-        .collect::<Vec<_>>());
+    let codigos_barras = ProductoService::listar_codigos(&state.pool, id).await?;
+    detalle["codigos_barras"] = json!(codigos_barras);
 
     Ok(Json(detalle))
 }
@@ -408,23 +395,10 @@ async fn subir_imagen(
 ) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
-    let imagen_actual: Option<String> =
-        sqlx::query_scalar("SELECT imagen_url FROM productos WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&state.pool)
-            .await?
-            .flatten();
-
-    if imagen_actual.is_none() {
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1)")
-                .bind(id)
-                .fetch_one(&state.pool)
-                .await?;
-        if !exists {
-            return Err(AppError::NotFound("Producto no encontrado".into()));
-        }
-    }
+    let imagen_actual = match ProductoService::imagen_actual(&state.pool, id).await? {
+        None => return Err(AppError::NotFound("Producto no encontrado".into())),
+        Some(url) => url,
+    };
 
     if let Some(ref path) = imagen_actual {
         crate::services::storage::delete_image(path).await?;
@@ -459,11 +433,7 @@ async fn subir_imagen(
 
     let path = path.ok_or_else(|| AppError::Validation("Archivo requerido".into()))?;
 
-    sqlx::query("UPDATE productos SET imagen_url = $1 WHERE id = $2")
-        .bind(&path)
-        .bind(id)
-        .execute(&state.pool)
-        .await?;
+    ProductoService::set_imagen(&state.pool, id, &path).await?;
 
     Ok(Json(json!({
         "imagen_url": format!("/api/v1/uploads/{}", path)
@@ -477,19 +447,13 @@ async fn quitar_imagen(
 ) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
-    let imagen_actual: Option<String> =
-        sqlx::query_scalar("SELECT imagen_url FROM productos WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&state.pool)
-            .await?
-            .flatten();
+    let imagen_actual = ProductoService::imagen_actual(&state.pool, id)
+        .await?
+        .flatten();
 
     if let Some(ref path) = imagen_actual {
         crate::services::storage::delete_image(path).await?;
-        sqlx::query("UPDATE productos SET imagen_url = NULL WHERE id = $1")
-            .bind(id)
-            .execute(&state.pool)
-            .await?;
+        ProductoService::limpiar_imagen(&state.pool, id).await?;
     }
 
     Ok(Json(json!({ "ok": true })))
@@ -498,14 +462,8 @@ async fn quitar_imagen(
 async fn listar_codigos(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<Vec<CodigoBarrasRow>>, AppError> {
-    let rows = sqlx::query_as::<_, CodigoBarrasRow>(
-        "SELECT id, codigo FROM producto_codigos_barras WHERE producto_id = $1 AND activo = TRUE ORDER BY id",
-    )
-    .bind(id)
-    .fetch_all(&state.pool)
-    .await?;
-
+) -> Result<Json<Vec<CodigoBarras>>, AppError> {
+    let rows = ProductoService::listar_codigos(&state.pool, id).await?;
     Ok(Json(rows))
 }
 
@@ -514,55 +472,11 @@ async fn agregar_codigo(
     Extension(claims): Extension<Claims>,
     Path(id): Path<Uuid>,
     Json(req): Json<AgregarCodigoRequest>,
-) -> Result<(axum::http::StatusCode, Json<CodigoBarrasRow>), AppError> {
+) -> Result<(axum::http::StatusCode, Json<CodigoBarras>), AppError> {
     crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
 
-    let codigo = req.codigo.trim().to_string();
-    if codigo.is_empty() {
-        return Err(AppError::Validation("El código no puede estar vacío".into()));
-    }
-
-    let product_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1 AND activo = TRUE)")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
-    if !product_exists {
-        return Err(AppError::NotFound("Producto no encontrado".into()));
-    }
-
-    let primary_conflict: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM presentaciones WHERE codigo_barras = $1 AND activa = TRUE AND producto_id != $2)",
-    )
-    .bind(&codigo)
-    .bind(id)
-    .fetch_one(&state.pool)
-    .await?;
-    if primary_conflict {
-        return Err(AppError::Validation(
-            "Este código ya es el barcode primario de otro producto".into(),
-        ));
-    }
-
-    let result = sqlx::query_as::<_, CodigoBarrasRow>(
-        "INSERT INTO producto_codigos_barras(producto_id, codigo) VALUES($1, $2) RETURNING id, codigo",
-    )
-    .bind(id)
-    .bind(&codigo)
-    .fetch_one(&state.pool)
-    .await;
-
-    match result {
-        Ok(row) => Ok((axum::http::StatusCode::CREATED, Json(row))),
-        Err(sqlx::Error::Database(e))
-            if e.constraint() == Some("producto_codigos_barras_codigo_uidx") =>
-        {
-            Err(AppError::Validation(
-                "Este código ya está registrado para otro producto".into(),
-            ))
-        }
-        Err(e) => Err(e.into()),
-    }
+    let row = ProductoService::agregar_codigo(&state.pool, id, &req.codigo).await?;
+    Ok((axum::http::StatusCode::CREATED, Json(row)))
 }
 
 async fn eliminar_codigo(
@@ -572,18 +486,7 @@ async fn eliminar_codigo(
 ) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
 
-    let result = sqlx::query(
-        "UPDATE producto_codigos_barras SET activo = FALSE WHERE id = $1 AND producto_id = $2",
-    )
-    .bind(codigo_id)
-    .bind(id)
-    .execute(&state.pool)
-    .await?;
-
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Código no encontrado".into()));
-    }
-
+    ProductoService::eliminar_codigo(&state.pool, id, codigo_id).await?;
     Ok(Json(json!({})))
 }
 
@@ -594,57 +497,12 @@ async fn asignar_codigo(
 ) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
 
-    let codigo = req.codigo.trim().to_string();
-    if codigo.is_empty() {
-        return Err(AppError::Validation("El código no puede estar vacío".into()));
-    }
-
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1 AND activo = TRUE)")
-            .bind(req.producto_id)
-            .fetch_one(&state.pool)
-            .await?;
-
-    if !exists {
-        return Err(AppError::NotFound("Producto no encontrado".into()));
-    }
-
-    let primary_conflict: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM presentaciones WHERE codigo_barras = $1 AND activa = TRUE AND producto_id != $2)",
-    )
-    .bind(&codigo)
-    .bind(req.producto_id)
-    .fetch_one(&state.pool)
-    .await?;
-    if primary_conflict {
-        return Err(AppError::Validation(
-            "Este código ya es el barcode primario de otro producto".into(),
-        ));
-    }
-
-    let result = sqlx::query_as::<_, CodigoBarrasRow>(
-        "INSERT INTO producto_codigos_barras(producto_id, codigo) VALUES($1, $2) RETURNING id, codigo",
-    )
-    .bind(req.producto_id)
-    .bind(&codigo)
-    .fetch_one(&state.pool)
-    .await;
-
-    match result {
-        Ok(row) => Ok(Json(json!({
-            "id": row.id,
-            "codigo": row.codigo,
-            "producto_id": req.producto_id,
-        }))),
-        Err(sqlx::Error::Database(e))
-            if e.constraint() == Some("producto_codigos_barras_codigo_uidx") =>
-        {
-            Err(AppError::Validation(
-                "Este código ya está registrado para otro producto".into(),
-            ))
-        }
-        Err(e) => Err(e.into()),
-    }
+    let row = ProductoService::agregar_codigo(&state.pool, req.producto_id, &req.codigo).await?;
+    Ok(Json(json!({
+        "id": row.id,
+        "codigo": row.codigo,
+        "producto_id": req.producto_id,
+    })))
 }
 
 pub fn routes() -> Router<AppState> {

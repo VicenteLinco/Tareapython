@@ -85,10 +85,18 @@ export default function ConteoPage() {
             <p className="text-sm opacity-50">Sesiones de conteo físico</p>
           </div>
         </div>
-        <KeyboardLegend shortcuts={[
-          { keys: ['n'], description: 'Nueva sesión de conteo' },
-          { keys: ['Esc'], description: 'Cerrar modal / limpiar filtro de área' },
-        ]} />
+        <div className="flex items-center gap-2 shrink-0">
+          <KeyboardLegend shortcuts={[
+            { keys: ['n'], description: 'Nueva sesión de conteo' },
+            { keys: ['Esc'], description: 'Cerrar modal / limpiar filtro de área' },
+          ]} />
+          <button
+            onClick={() => setShowModal(true)}
+            className="btn btn-primary btn-sm gap-2 shrink-0"
+          >
+            <Plus className="h-4 w-4" /> Nueva sesión
+          </button>
+        </div>
       </div>
 
       {/* Áreas pendientes */}
@@ -223,15 +231,6 @@ export default function ConteoPage() {
           </button>
         </div>
       )}
-
-      {/* FAB */}
-      <button
-        onClick={() => setShowModal(true)}
-        className="fixed bottom-6 right-6 btn btn-primary btn-circle shadow-lg h-14 w-14"
-        title="Nueva sesión de conteo"
-      >
-        <Plus className="h-6 w-6" />
-      </button>
 
       {/* Modal nueva sesión */}
       {showModal && (

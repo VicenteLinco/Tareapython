@@ -261,11 +261,25 @@ La prioridad es una sugerencia de orden, no un compromiso.
 - Lectura de QR/HID ya existe en el proyecto: `frontend/src/pages/modo-qr/`, `kiosk/`,
   `html5-qrcode` — reaprovechar.
 
+**Decisión (2026-06-20)**
+- **Hallazgo:** gran parte ya existía. El botón era un FAB flotante abajo-derecha con solo
+  `+` (`index.tsx:227`); los colores por estado ya vivían en `LoteRow` (`detalle.tsx:501`).
+- **Botón:** se elimina el FAB; botón prominente con texto "Nueva sesión" en el header
+  (`index.tsx`, junto a `KeyboardLegend`).
+- **Colores (opción elegida):** pendiente (sin contar) = **amarillo**; contado con ajuste
+  negativo (`diferencia < 0`) = **rojo**; contado OK/positivo = **verde**; "no encontrado"
+  = **gris** (antes amarillo — se reasignó para liberar el amarillo a "pendiente").
+- **Alcance:** los colores aplican a la **lista desktop** (`LoteRow`). La vista móvil es
+  un ítem a la vez (wizard), no lista, así que conserva su estilo secuencial actual.
+- **Escaneo (B):** net-new, queda como ronda de diseño aparte (no existe en el detalle;
+  reaprovechar `modo-qr/` + `html5-qrcode`).
+
 **Criterios de aceptación**
-- [ ] Botón de nueva sesión: prominente, arriba, con texto (no flotante inferior).
+- [x] Botón de nueva sesión: prominente, arriba, con texto (no flotante inferior).
 - [ ] Modo escaneo opcional en el detalle de conteo, sin reemplazar la entrada manual.
-- [ ] Estados por ítem con color: listo, ajuste negativo, pendiente (amarillo).
-- [ ] Definir qué cuenta como "ajuste negativo" (conteo < stock esperado) para el color.
+- [x] Estados por ítem con color: listo (verde), ajuste negativo (rojo), pendiente (amarillo),
+      no encontrado (gris) — en la lista desktop (`LoteRow`).
+- [x] Definir qué cuenta como "ajuste negativo" → `diferencia = contada - stock_sistema < 0`.
 
 ---
 

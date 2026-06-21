@@ -452,6 +452,7 @@ function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange
   const diferencia = contado && item.cantidad_contada !== null
     ? Number(item.cantidad_contada) - Number(item.stock_sistema)
     : null
+  const ajusteNegativo = diferencia !== null && diferencia < -0.0001
 
   // Estado local para los inputs
   const [presCounts, setPresCounts] = useState<Record<number, string>>({})
@@ -500,8 +501,10 @@ function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange
   return (
     <div className={cn(
       'px-3 py-3 transition-all duration-200 border-l-4',
-      esNoContado ? 'bg-warning/5 border-warning opacity-60' : 
-      contado ? 'bg-success/5 border-success' : 'bg-base-100 border-transparent'
+      esNoContado ? 'bg-base-200/40 border-base-300 opacity-60' :
+      ajusteNegativo ? 'bg-error/5 border-error' :
+      contado ? 'bg-success/5 border-success' :
+      'bg-warning/5 border-warning'
     )}>
       {/* Fila 1: Info Lote y Stock Sistema */}
       <div className="flex items-center justify-between gap-2 mb-2">

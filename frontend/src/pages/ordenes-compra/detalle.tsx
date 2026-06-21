@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Send, XCircle, PackageCheck, Image as ImageIcon, X } from 'lucide-react'
+import { ArrowLeft, Send, XCircle, PackageCheck, Image as ImageIcon, X, Download } from 'lucide-react'
 import { notify } from '@/lib/notify'
 import api from '@/lib/api'
+import { downloadUpload } from '@/lib/uploads'
 import type { OrdenCompraDetalle } from '@/types'
 import { formatDate, cn, APP_LOCALE } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -312,15 +313,26 @@ export default function OrdenCompraDetallePage() {
           <div className="relative max-h-[90vh] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
             <div className="absolute -top-12 left-0 right-0 flex items-center justify-between text-white px-2">
               <span className="font-semibold text-sm">Guía: {selectedFotoTitle}</span>
-              <button
-                className="btn btn-circle btn-sm btn-error"
-                onClick={() => {
-                  setSelectedFotoPath(null)
-                  setSelectedFotoTitle(null)
-                }}
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  className="btn btn-sm btn-primary gap-1.5 font-bold"
+                  onClick={() =>
+                    downloadUpload(selectedFotoPath, `guia-${selectedFotoTitle ?? 'despacho'}.jpg`)
+                  }
+                >
+                  <Download className="h-4 w-4" />
+                  Descargar
+                </button>
+                <button
+                  className="btn btn-circle btn-sm btn-error"
+                  onClick={() => {
+                    setSelectedFotoPath(null)
+                    setSelectedFotoTitle(null)
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
             <AuthenticatedUploadImage
               path={selectedFotoPath}

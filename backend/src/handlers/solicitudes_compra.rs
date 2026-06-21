@@ -52,6 +52,7 @@ struct HorizonteResponse {
     tipo_estimacion_demanda: String,
     stock_actual: f64,
     stock_minimo: f64,
+    precio_ultimo: Option<f64>,
     factores: HorizonteFactores,
 }
 
@@ -1080,6 +1081,7 @@ async fn horizonte_sugerido(
         lead_time: i32,
         serie: Vec<f64>,
         ya_pedido: f64,
+        precio_ultimo: Option<f64>,
     }
 
     let row_opt = sqlx::query_as::<_, HorizonteRow>(
@@ -1101,6 +1103,21 @@ async fn horizonte_sugerido(
             SELECT array_agg(COALESCE(cd.cantidad, 0) ORDER BY d.dia)::FLOAT8[] AS serie
             FROM dias d
             LEFT JOIN consumo_dia cd ON cd.dia = d.dia
+        ),
+        ultimo_precio AS (
+            SELECT DISTINCT ON (rd.producto_id)
+                rd.producto_id,
+                CASE
+                    WHEN rd.factor_conversion_usado IS NOT NULL AND rd.factor_conversion_usado > 0
+                    THEN rd.precio_unitario / rd.factor_conversion_usado
+                    ELSE rd.precio_unitario
+                END AS precio_unitario
+            FROM recepcion_detalle rd
+            JOIN recepciones r ON r.id = rd.recepcion_id
+            WHERE rd.precio_unitario IS NOT NULL
+              AND r.estado IN ('completa', 'parcial')
+              AND rd.producto_id = $1
+            ORDER BY rd.producto_id, r.fecha_recepcion DESC
         )
         SELECT
             COALESCE(plc.stock_minimo, 0)::FLOAT8                            AS stock_minimo,
@@ -1117,10 +1134,12 @@ async fn horizonte_sugerido(
                 JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
                 WHERE scd.producto_id = p.id
                   AND sc.estado IN ('guardada', 'parcialmente_enviada', 'enviada', 'parcialmente_recibida')
-            ), 0.0)                                                           AS ya_pedido
+            ), 0.0)                                                           AS ya_pedido,
+            COALESCE(up.precio_unitario, p.precio_unidad)::FLOAT8             AS precio_ultimo
         FROM productos p
         LEFT JOIN proveedores prov ON prov.id = $3
         LEFT JOIN par_level_config plc ON plc.producto_id = p.id AND plc.area_id IS NULL
+        LEFT JOIN ultimo_precio up ON up.producto_id = p.id
         WHERE p.id = $1
         "#,
     )
@@ -1198,6 +1217,7 @@ async fn horizonte_sugerido(
         tipo_estimacion_demanda: tipo_estimacion_demanda.to_string(),
         stock_actual: row.stock_actual,
         stock_minimo: row.stock_minimo,
+        precio_ultimo: row.precio_ultimo,
         factores: HorizonteFactores {
             ciclo_historico_dias: None,
             n_pedidos_historico: 0,

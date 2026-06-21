@@ -34,6 +34,7 @@ interface PedidoPanelProps {
   popoverOpenId: string | null
   monedaCodigo: string
   onUpdateQty: (pid: string, val: number) => void
+  onUpdatePrecio: (pid: string, precioUnitarioBase: number) => void
   onRemove: (pid: string) => void
   onGlobalHorizonteChange: (dias: number) => void
   onHorizonteChip: (pid: string, dias: number) => void
@@ -47,8 +48,8 @@ function PedidoItem({
   item,
   horizonteGlobal,
   popoverOpenId,
-  fmt,
   onUpdateQty,
+  onUpdatePrecio,
   onRemove,
   onHorizonteChip,
   onResetHorizonteToGlobal,
@@ -57,8 +58,8 @@ function PedidoItem({
   item: SolicitudItem
   horizonteGlobal: number
   popoverOpenId: string | null
-  fmt: (v: number | string | null) => string
   onUpdateQty: (pid: string, val: number) => void
+  onUpdatePrecio: (pid: string, precioUnitarioBase: number) => void
   onRemove: (pid: string) => void
   onHorizonteChip: (pid: string, dias: number) => void
   onResetHorizonteToGlobal: (pid: string) => void
@@ -162,25 +163,29 @@ function PedidoItem({
         {unidadLabel(item, item.cantidad)}
       </span>
 
-      <div className="text-right w-24 shrink-0">
-        {hasPres ? (
-          <>
-            <p className="text-[10px] font-bold font-mono truncate">
-              {item.precio_unitario > 0
-                ? `${fmt(item.precio_unitario * item.factor_conversion!)} / ${item.presentacion_nombre ?? 'pres.'}`
-                : <span className="opacity-30">—</span>
-              }
-            </p>
-            <p className="text-[9px] opacity-35 truncate">
-              <CantidadConUnidad qty={item.cantidad * item.factor_conversion!} unidad={item.unidad_base} pluralUnidad={item.unidad_base_plural ?? undefined} />
-            </p>
-          </>
-        ) : (
-          <p className="text-[10px] font-bold font-mono truncate">
-            {item.precio_unitario > 0
-              ? `${fmt(item.precio_unitario)} / ${item.unidad_base}`
-              : <span className="opacity-30">—</span>
-            }
+      <div className="text-right w-28 shrink-0">
+        {(() => {
+          const factor = item.factor_conversion ?? 1
+          const unidadPrecio = hasPres ? (item.presentacion_nombre ?? 'pres.') : item.unidad_base
+          return (
+            <div className="flex items-center justify-end gap-1">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={item.precio_unitario > 0 ? item.precio_unitario * factor : ''}
+                placeholder="0"
+                title={`Precio por ${unidadPrecio}`}
+                onChange={e => onUpdatePrecio(item.producto_id, (parseFloat(e.target.value) || 0) / factor)}
+                className="w-16 text-right text-[10px] font-bold font-mono bg-base-100 border border-base-300 rounded px-1 py-0.5 focus:outline-none focus:border-primary no-spinners"
+              />
+              <span className="text-[9px] opacity-50 truncate max-w-[3rem]">/ {unidadPrecio}</span>
+            </div>
+          )
+        })()}
+        {hasPres && (
+          <p className="text-[9px] opacity-35 truncate">
+            <CantidadConUnidad qty={item.cantidad * item.factor_conversion!} unidad={item.unidad_base} pluralUnidad={item.unidad_base_plural ?? undefined} />
           </p>
         )}
       </div>
@@ -207,6 +212,7 @@ export function PedidoPanel({
   popoverOpenId,
   monedaCodigo,
   onUpdateQty,
+  onUpdatePrecio,
   onRemove,
   onGlobalHorizonteChange,
   onHorizonteChip,
@@ -290,8 +296,8 @@ export function PedidoPanel({
                 item={item}
                 horizonteGlobal={horizonteGlobal}
                 popoverOpenId={popoverOpenId}
-                fmt={fmt}
                 onUpdateQty={onUpdateQty}
+                onUpdatePrecio={onUpdatePrecio}
                 onRemove={onRemove}
                 onHorizonteChip={onHorizonteChip}
                 onResetHorizonteToGlobal={onResetHorizonteToGlobal}
@@ -315,8 +321,8 @@ export function PedidoPanel({
                       item={item}
                       horizonteGlobal={horizonteGlobal}
                       popoverOpenId={popoverOpenId}
-                      fmt={fmt}
                       onUpdateQty={onUpdateQty}
+                onUpdatePrecio={onUpdatePrecio}
                       onRemove={onRemove}
                       onHorizonteChip={onHorizonteChip}
                       onResetHorizonteToGlobal={onResetHorizonteToGlobal}

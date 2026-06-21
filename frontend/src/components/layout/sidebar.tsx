@@ -72,7 +72,7 @@ const navGroups = [
 
 const adminItems = [
   { to: '/creador-productos', icon: Settings, label: 'Creador de Productos' },
-  { to: '/ordenes-compra', icon: ShoppingBag, label: 'Órdenes de Compra' },
+  { to: '/ordenes-compra', icon: ShoppingBag, label: 'Guías de Despacho Respaldadas' },
   { to: '/reportes', icon: BarChart3, label: 'Reportes' },
   { to: '/configuracion', icon: SlidersHorizontal, label: 'Configuración' },
   { to: '/usuarios', icon: Users, label: 'Usuarios' },

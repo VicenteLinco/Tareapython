@@ -404,6 +404,12 @@ export function useSolicitudState() {
     }
     const px = p as ProductoExt
     const proveedorId = px.proveedor?.id ?? selectedProveedor?.id ?? null
+    if (proveedorId == null) {
+      notify.warning(
+        'Producto sin proveedor',
+        `"${p.nombre}" no tiene proveedor asignado. Asignáselo en el catálogo antes de guardar la solicitud.`,
+      )
+    }
     const horizData = await fetchHorizonte(p.id, proveedorId)
     const factorConvSearch = px.pres_factor ? toNum(px.pres_factor) : null
     const cantidad = calcularCantidad(
@@ -425,7 +431,9 @@ export function useSolicitudState() {
       unidad_base: px.unidad_base?.nombre ?? 'u',
       unidad_base_plural: px.unidad_base?.nombre_plural ?? 'u',
       cantidad,
-      precio_unitario: p.precio_unidad ? toNum(p.precio_unidad) : 0,
+      precio_unitario: horizData.precio_ultimo != null
+        ? horizData.precio_ultimo
+        : (p.precio_unidad ? toNum(p.precio_unidad) : 0),
       imagen_url: px.imagen_url ?? null,
       consumo_diario: horizData.consumo_diario,
       stock_actual: horizData.stock_actual,
@@ -440,6 +448,10 @@ export function useSolicitudState() {
 
   const handleUpdateQty = (pid: string, val: number) =>
     setItems(prev => prev.map(i => i.producto_id === pid ? { ...i, cantidad: Math.max(1, val) } : i))
+
+  // Recibe el precio por unidad base (el componente convierte desde la presentación).
+  const handleUpdatePrecio = (pid: string, precioUnitarioBase: number) =>
+    setItems(prev => prev.map(i => i.producto_id === pid ? { ...i, precio_unitario: Math.max(0, precioUnitarioBase) } : i))
 
   const handleRemove = (pid: string) =>
     setItems(prev => prev.filter(i => i.producto_id !== pid))
@@ -604,7 +616,7 @@ export function useSolicitudState() {
     // Items
     items,
     handleAddFromRec, handleAddFromRecConCantidad, handleAddFromSearch,
-    handleUpdateQty, handleRemove,
+    handleUpdateQty, handleUpdatePrecio, handleRemove,
     // Horizonte
     horizonteGlobal, handleGlobalHorizonteChange, handleHorizonteChip, handleResetHorizonteToGlobal,
     // Borrador / guardar

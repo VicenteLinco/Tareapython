@@ -84,7 +84,7 @@ export default function OrdenesCompraPage() {
         </div>
         <h1 className="t-h1 flex items-center gap-2">
           <ShoppingBag className="w-6 h-6 text-primary" />
-          Módulo de Adquisiciones
+          Guías de Despacho Respaldadas
         </h1>
       </div>
 
@@ -95,7 +95,7 @@ export default function OrdenesCompraPage() {
           className={cn('tab rounded-xl font-medium text-xs px-5', tabActivo === 'ordenes' ? 'tab-active' : '')}
           onClick={() => setTabActivo('ordenes')}
         >
-          Órdenes de Compra
+          Solicitudes de Compra Respaldadas
         </button>
         <button
           role="tab"

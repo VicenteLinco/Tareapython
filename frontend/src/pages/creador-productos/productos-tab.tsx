@@ -1132,18 +1132,19 @@ function CreateProductoDialog({
               </div>
               <div className="form-control">
                 <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Precio por unidad</span>
-                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                  <span className="label-text text-sm font-medium">Precio</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">se gestiona en compras</span>
                 </label>
-                <input
-                  type="number"
-                  className="input input-bordered input-sm h-9 bg-base-100 w-44"
-                  value={form.precio_unidad}
-                  onChange={(e) => setForm((f) => ({ ...f, precio_unidad: e.target.value }))}
-                  placeholder="0.00"
-                  min="0"
-                  step="0.01"
-                />
+                {form.precio_unidad ? (
+                  <div className="text-sm text-base-content/70">
+                    Último precio conocido:{' '}
+                    <span className="font-mono font-semibold text-base-content">{form.precio_unidad}</span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-base-content/50">
+                    El precio se define al crear la solicitud o la recepción.
+                  </p>
+                )}
               </div>
             </div>
 

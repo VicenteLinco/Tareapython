@@ -84,6 +84,7 @@ export async function fetchHorizonte(productoId: string, proveedorId: number | n
       tipo_estimacion_demanda: 'sin_proveedor' as const,
       stock_actual: 0,
       stock_minimo: 0,
+      precio_ultimo: null as number | null,
     }
   }
   const res = await api.get<{
@@ -95,6 +96,7 @@ export async function fetchHorizonte(productoId: string, proveedorId: number | n
     tipo_estimacion_demanda: 'forecast' | 'historial_corto' | 'sin_historial' | 'sin_proveedor'
     stock_actual: number
     stock_minimo: number
+    precio_ultimo: number | null
   }>('/solicitudes-compra/horizonte', {
     params: { producto_id: productoId, proveedor_id: proveedorId },
   })

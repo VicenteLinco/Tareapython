@@ -136,35 +136,6 @@ struct UpdateProducto {
     version: i32,
 }
 
-// === Row types for queries ===
-
-#[derive(Debug, sqlx::FromRow)]
-struct ProductoRow {
-    id: Uuid,
-    codigo_interno: String,
-    nombre: String,
-    sku: Option<String>,
-    precio_unidad: Option<Decimal>,
-    lead_time_propio: Option<i32>,
-    activo: bool,
-    estado_stock: String,
-    cat_id: Option<i32>,
-    cat_nombre: Option<String>,
-    um_id: i32,
-    um_nombre: String,
-    um_nombre_plural: String,
-    prov_id: Option<i32>,
-    prov_nombre: Option<String>,
-    prov_icono: Option<String>,
-    area_id: Option<i32>,
-    area_nombre: Option<String>,
-    imagen_url: Option<String>,
-    pres_id: Option<i32>,
-    pres_nombre: Option<String>,
-    pres_nombre_plural: Option<String>,
-    pres_factor: Option<Decimal>,
-}
-
 // === Barcode alias structs ===
 
 #[derive(Deserialize)]
@@ -184,7 +155,7 @@ struct CodigoBarrasRow {
     codigo: String,
 }
 
-use crate::services::producto_service::ProductoService;
+use crate::services::producto_service::{ListarProductosParams, ProductoRow, ProductoService};
 
 // === Handlers ===
 
@@ -192,121 +163,31 @@ async fn listar(
     State(state): State<AppState>,
     Query(params): Query<ProductoQuery>,
 ) -> Result<Json<PaginatedResponse<ProductoListItem>>, AppError> {
-    let activo = params.activo.unwrap_or(true);
     let pagination = PaginationParams {
         page: params.page,
         per_page: params.per_page,
     };
     let limit = pagination.per_page();
-    let offset = pagination.offset();
 
-    let mut conditions = vec!["p.activo = $1".to_string()];
-    let mut param_idx = 2;
-
-    if params.q.is_some() {
-        conditions.push(format!(
-            "(p.search_vector @@ plainto_tsquery('simple', ${0}) OR p.nombre ILIKE '%' || ${0} || '%' OR p.codigo_interno ILIKE '%' || ${0} || '%' OR p.sku ILIKE '%' || ${0} || '%')",
-            param_idx
-        ));
-        param_idx += 1;
-    }
-    if params.categoria_id.is_some() {
-        conditions.push(format!("p.categoria_id = ${}", param_idx));
-        param_idx += 1;
-    }
-    if params.area_id.is_some() {
-        conditions.push(format!(
-            "EXISTS (SELECT 1 FROM producto_area pa WHERE pa.producto_id = p.id AND pa.area_id = ${})",
-            param_idx
-        ));
-        param_idx += 1;
-    }
-    if params.proveedor_id.is_some() {
-        conditions.push(format!("p.proveedor_id = ${}", param_idx));
-        param_idx += 1;
-    }
-
-    let where_clause = conditions.join(" AND ");
-    let sort_col = match params.sort_by.as_deref() {
-        Some("codigo") => "p.codigo_interno",
-        Some("categoria") => "c.nombre",
-        Some("proveedor") => "pr.nombre",
-        Some("estado") => "p.activo",
-        _ => "p.nombre",
-    };
-    let sort_dir = match params.sort_dir.as_deref() {
-        Some("desc") => "DESC",
-        _ => "ASC",
-    };
-
-    let count_sql = format!(
-        "SELECT COUNT(*) FROM productos p WHERE {}",
-        where_clause
-    );
-    let data_sql = format!(
-        r#"SELECT p.id, p.codigo_interno, p.nombre, p.sku,
-                  p.precio_unidad, p.lead_time_propio, p.activo,
-                  CASE
-                      WHEN NOT p.activo THEN 'inactivo'
-                      WHEN COALESCE((SELECT SUM(s.cantidad) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = p.id), 0) <= 0
-                           AND NOT EXISTS (SELECT 1 FROM movimientos m JOIN lotes lm ON lm.id = m.lote_id WHERE lm.producto_id = p.id)
-                          THEN 'pendiente_inicializar'
-                      WHEN COALESCE((SELECT SUM(s.cantidad) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = p.id), 0) <= 0
-                          THEN 'sin_stock'
-                      ELSE 'activo'
-                  END AS estado_stock,
-                  p.imagen_url AS imagen_url,
-                  c.id as cat_id, c.nombre as cat_nombre,
-                  um.id as um_id, um.nombre as um_nombre, um.nombre_plural as um_nombre_plural,
-                  pr.id as prov_id, pr.nombre as prov_nombre, pr.icono as prov_icono,
-                  (SELECT a.id FROM areas a JOIN producto_area pa ON pa.area_id = a.id WHERE pa.producto_id = p.id ORDER BY a.nombre LIMIT 1) as area_id,
-                  (SELECT a.nombre FROM areas a JOIN producto_area pa ON pa.area_id = a.id WHERE pa.producto_id = p.id ORDER BY a.nombre LIMIT 1) as area_nombre,
-                  (SELECT id FROM presentaciones WHERE producto_id = p.id AND activa = true ORDER BY factor_conversion DESC LIMIT 1) as pres_id,
-                  p.pres_nombre,
-                  p.pres_nombre_plural,
-                  p.pres_factor
-           FROM productos p
-           LEFT JOIN proveedores pr ON pr.id = p.proveedor_id
-           LEFT JOIN categorias c ON c.id = p.categoria_id
-           JOIN unidades_basicas um ON um.id = p.unidad_base_id
-           WHERE {}
-           ORDER BY {} {} NULLS LAST, p.nombre ASC
-           LIMIT ${} OFFSET ${}"#,
-        where_clause,
-        sort_col,
-        sort_dir,
-        param_idx,
-        param_idx + 1
-    );
-
-    let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql).bind(activo);
-    let mut data_query = sqlx::query_as::<_, ProductoRow>(&data_sql).bind(activo);
-
-    if let Some(q) = &params.q {
-        count_query = count_query.bind(q.clone());
-        data_query = data_query.bind(q.clone());
-    }
-    if let Some(cat_id) = params.categoria_id {
-        count_query = count_query.bind(cat_id);
-        data_query = data_query.bind(cat_id);
-    }
-    if let Some(area_id) = params.area_id {
-        count_query = count_query.bind(area_id);
-        data_query = data_query.bind(area_id);
-    }
-    if let Some(prov_id) = params.proveedor_id {
-        count_query = count_query.bind(prov_id);
-        data_query = data_query.bind(prov_id);
-    }
-
-    data_query = data_query.bind(limit).bind(offset);
-
-    let total = count_query.fetch_one(&state.pool).await?;
-    let rows = data_query.fetch_all(&state.pool).await?;
+    let (rows, total) = ProductoService::listar(
+        &state.pool,
+        ListarProductosParams {
+            q: params.q,
+            categoria_id: params.categoria_id,
+            area_id: params.area_id,
+            proveedor_id: params.proveedor_id,
+            activo: params.activo.unwrap_or(true),
+            sort_by: params.sort_by,
+            sort_dir: params.sort_dir,
+            limit,
+            offset: pagination.offset(),
+        },
+    )
+    .await?;
 
     let data: Vec<ProductoListItem> = rows
         .into_iter()
-        .map(|r| ProductoListItem {
+        .map(|r: ProductoRow| ProductoListItem {
             id: r.id,
             codigo_interno: r.codigo_interno,
             nombre: r.nombre,

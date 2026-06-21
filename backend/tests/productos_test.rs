@@ -266,3 +266,59 @@ async fn crear_presentaciones_con_sku_duplicado(pool: PgPool) {
     // El error de clave única se mapea como AppError::Database/Internal, que retorna un status de error.
     assert!(status2.is_client_error() || status2.is_server_error());
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn listar_filtra_por_categoria(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+
+    // Producto en categoría 1 y otro en categoría 2 (ambos del seed base).
+    sqlx::query(
+        "INSERT INTO productos (codigo_interno, nombre, unidad_base_id, categoria_id) VALUES ('PRD-C0001', 'Reactivo Cat Uno', 1, 1)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO productos (codigo_interno, nombre, unidad_base_id, categoria_id) VALUES ('PRD-C0002', 'Reactivo Cat Dos', 1, 2)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let app = common::test_app(pool);
+
+    let (status, json) =
+        common::get_json(&app, "/api/v1/productos?categoria_id=1", &token).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["total"], 1);
+    assert_eq!(json["data"][0]["nombre"], "Reactivo Cat Uno");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn listar_ordena_por_codigo_desc(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+
+    for i in 1..=3 {
+        sqlx::query(
+            "INSERT INTO productos (codigo_interno, nombre, unidad_base_id) VALUES ($1, $2, 1)",
+        )
+        .bind(format!("PRD-S{:04}", i))
+        .bind(format!("Sortable {}", i))
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let app = common::test_app(pool);
+
+    let (status, json) = common::get_json(
+        &app,
+        "/api/v1/productos?sort_by=codigo&sort_dir=desc",
+        &token,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["data"][0]["codigo_interno"], "PRD-S0003");
+}

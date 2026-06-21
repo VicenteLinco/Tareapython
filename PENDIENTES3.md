@@ -271,12 +271,20 @@ La prioridad es una sugerencia de orden, no un compromiso.
   = **gris** (antes amarillo — se reasignó para liberar el amarillo a "pendiente").
 - **Alcance:** los colores aplican a la **lista desktop** (`LoteRow`). La vista móvil es
   un ítem a la vez (wizard), no lista, así que conserva su estilo secuencial actual.
-- **Escaneo (B):** net-new, queda como ronda de diseño aparte (no existe en el detalle;
-  reaprovechar `modo-qr/` + `html5-qrcode`).
+- **Escaneo (B) — decidido e implementado:** híbrido por viewport (`device-mode.ts` es un
+  stub inútil; se usa el `isMobile = innerWidth < 768` que ya vivía en `detalle.tsx`, que
+  además coincide con qué vista se muestra). **Desktop/lista → lector HID** (input enfocado);
+  **móvil/card → cámara** (`QrScanner` reutilizado). Comportamiento: el escaneo **salta y
+  enfoca** (no suma +1). Match 100% client-side (`scan-utils.ts`): 1º por `numero_lote`, 2º
+  por `codigo_barras`/`gtin` de presentación → producto. `ConteoItem` no trae código de
+  barras, pero el array `presentaciones` de la sesión sí.
 
 **Criterios de aceptación**
 - [x] Botón de nueva sesión: prominente, arriba, con texto (no flotante inferior).
-- [ ] Modo escaneo opcional en el detalle de conteo, sin reemplazar la entrada manual.
+- [x] Modo escaneo opcional, sin reemplazar la entrada manual → toggle "Escanear" en el
+      detalle. Desktop: input HID (Enter en la cantidad devuelve el foco al escáner). Móvil:
+      overlay de cámara que salta a la card del ítem escaneado. Lo no matcheado avisa con
+      `notify.warning` y no bloquea.
 - [x] Estados por ítem con color: listo (verde), ajuste negativo (rojo), pendiente (amarillo),
       no encontrado (gris) — en la lista desktop (`LoteRow`).
 - [x] Definir qué cuenta como "ajuste negativo" → `diferencia = contada - stock_sistema < 0`.

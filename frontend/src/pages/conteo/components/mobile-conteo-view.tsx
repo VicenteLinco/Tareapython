@@ -1,10 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, AlertTriangle, CheckCircle2, SkipForward } from 'lucide-react'
-import type { ConteoItem } from '@/types'
+import { ChevronLeft, ChevronRight, AlertTriangle, CheckCircle2, SkipForward, ScanLine, X } from 'lucide-react'
+import type { ConteoItem, Presentacion } from '@/types'
 import { cn, formatCantidad } from '@/lib/utils'
+import { QrScanner } from '@/components/shared/qr-scanner'
+import { resolverScanConteo } from '../scan-utils'
+import { notify } from '@/lib/notify'
 
 export interface MobileConteoViewProps {
   items: ConteoItem[]
+  presentaciones: Presentacion[]
   stats: { contados: number; total: number }
   editable: boolean
   isSaving: boolean
@@ -25,6 +29,7 @@ function esDifGrande(item: ConteoItem): boolean {
 
 export function MobileConteoView({
   items,
+  presentaciones,
   stats,
   editable,
   isSaving,
@@ -34,7 +39,19 @@ export function MobileConteoView({
   const [currentIdx, setCurrentIdx] = useState(0)
   const [localValor, setLocalValor] = useState('')
   const [saveCounter, setSaveCounter] = useState(0)
+  const [scanMode, setScanMode] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const handleScan = (code: string) => {
+    const target = resolverScanConteo(code, items, presentaciones)
+    if (!target) {
+      notify.warning(`El código "${code.trim()}" no corresponde a ningún lote de esta área`)
+      return
+    }
+    const idx = items.findIndex((i) => i.id === target.id)
+    if (idx >= 0) setCurrentIdx(idx)
+    setScanMode(false)
+  }
 
   const safeIdx = Math.min(currentIdx, Math.max(0, items.length - 1))
   const item = items[safeIdx] ?? null
@@ -135,6 +152,18 @@ export function MobileConteoView({
           />
         </div>
       </div>
+
+      {/* Botón escanear (cámara) */}
+      {editable && (
+        <div className="px-4 pt-1">
+          <button
+            onClick={() => setScanMode(true)}
+            className="btn btn-outline btn-primary btn-sm w-full gap-2"
+          >
+            <ScanLine className="h-4 w-4" /> Escanear lote con la cámara
+          </button>
+        </div>
+      )}
 
       {/* Navegación superior */}
       <div className="flex items-center justify-between px-4 py-1">
@@ -264,6 +293,24 @@ export function MobileConteoView({
           </div>
         )}
       </div>
+
+      {/* Overlay de escaneo por cámara */}
+      {scanMode && (
+        <div className="fixed inset-0 z-40 bg-base-300/95 backdrop-blur flex flex-col p-4">
+          <div className="flex items-center justify-between mb-4">
+            <span className="font-bold flex items-center gap-2 text-sm">
+              <ScanLine className="h-4 w-4 text-primary" /> Escaneá un lote
+            </span>
+            <button onClick={() => setScanMode(false)} className="btn btn-ghost btn-sm btn-circle">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <QrScanner active={scanMode} onScan={handleScan} />
+          <p className="text-center text-xs opacity-50 mt-4">
+            Apuntá al código del lote o del producto. Se saltará a ese ítem para que cargues la cantidad.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

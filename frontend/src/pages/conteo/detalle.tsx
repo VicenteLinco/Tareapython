@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, PackageOpen, MoreHorizontal, FileText, Files, CheckCircle2, TrendingDown, TrendingUp, Minus } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, PackageOpen, MoreHorizontal, FileText, Files, CheckCircle2, TrendingDown, TrendingUp, Minus, ScanLine, Keyboard } from 'lucide-react'
 import { ProductoImage } from '@/components/ui/producto-image'
 import { EmptyState, InlineError, PageLoading } from '@/components/ui/page-state'
 import { useAuthStore } from '@/hooks/use-auth-store'
@@ -12,6 +12,7 @@ import { cn, formatDate, formatCantidad, formatStockHumano } from '@/lib/utils'
 import { exportarConteoGlobalDiaPDF, exportarConteoSesionPDF } from '@/lib/conteo-pdf'
 import { notify } from '@/lib/notify'
 import { MobileConteoView } from './components/mobile-conteo-view'
+import { resolverScanConteo } from './scan-utils'
 
 interface Configuracion {
   nombre_laboratorio: string
@@ -74,6 +75,33 @@ export default function ConteoDetallePage() {
   const [showConfirmar, setShowConfirmar] = useState(false)
   const [colapsados, setColapsados] = useState<Record<string, boolean>>({})
   const [pdfLoading, setPdfLoading] = useState<'area' | 'global' | null>(null)
+  const [scanMode, setScanMode] = useState(false)
+  const [scanFocusId, setScanFocusId] = useState<string | null>(null)
+  const scanInputRef = useRef<HTMLInputElement>(null)
+
+  const focusScannerSoon = useCallback(() => {
+    setTimeout(() => scanInputRef.current?.focus(), 60)
+  }, [])
+
+  const handleScan = useCallback((code: string) => {
+    const item = resolverScanConteo(code, items, presentaciones)
+    if (!item) {
+      notify.warning(`El código "${code.trim()}" no corresponde a ningún lote de esta área`)
+      focusScannerSoon()
+      return
+    }
+    // Expandir el grupo del producto, saltar al lote y enfocar su cantidad
+    setColapsados((prev) => ({ ...prev, [item.producto_id]: false }))
+    setScanFocusId(item.id)
+    setTimeout(() => {
+      const row = document.getElementById(`conteo-row-${item.id}`)
+      row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const input = row?.querySelector('input') as HTMLInputElement | null
+      input?.focus()
+      input?.select()
+    }, 80)
+    setTimeout(() => setScanFocusId((cur) => (cur === item.id ? null : cur)), 2500)
+  }, [items, presentaciones, focusScannerSoon])
 
   // Detección de mobile
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
@@ -187,6 +215,7 @@ export default function ConteoDetallePage() {
         {/* Vista móvil */}
         <MobileConteoView
           items={items}
+          presentaciones={presentaciones}
           stats={stats}
           editable={editable}
           isSaving={isSaving}
@@ -257,6 +286,15 @@ export default function ConteoDetallePage() {
             <p className="font-semibold truncate">{sesion.area_nombre}</p>
             <p className="text-xs opacity-50">Conteo · {formatDate(sesion.created_at)}</p>
           </div>
+          {editable && (
+            <button
+              className={cn('btn btn-sm gap-1.5 shrink-0', scanMode ? 'btn-primary' : 'btn-ghost border border-base-300')}
+              onClick={() => { setScanMode((v) => !v); focusScannerSoon() }}
+              title="Escanear lotes con lector de código de barras"
+            >
+              <ScanLine className="h-4 w-4" /> <span className="hidden sm:inline">Escanear</span>
+            </button>
+          )}
           {sesion.estado === 'confirmado' && (
             <div className="flex items-center gap-1.5">
               <button
@@ -302,6 +340,31 @@ export default function ConteoDetallePage() {
             />
           </div>
         </div>
+
+        {/* Barra de escaneo (lector de código de barras / HID en escritorio) */}
+        {scanMode && editable && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              const code = scanInputRef.current?.value ?? ''
+              if (code.trim()) handleScan(code)
+              if (scanInputRef.current) scanInputRef.current.value = ''
+            }}
+            className="px-4 pb-3"
+          >
+            <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-xl px-3 py-2">
+              <Keyboard className="h-4 w-4 text-primary shrink-0" />
+              <input
+                ref={scanInputRef}
+                autoFocus
+                autoComplete="off"
+                className="input input-xs flex-1 bg-transparent border-0 focus:outline-none font-mono"
+                placeholder="Escaneá un lote con la pistola…"
+              />
+              <span className="text-[10px] opacity-50 hidden sm:inline shrink-0">Enter en la cantidad vuelve al escáner</span>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* Lista de ítems */}
@@ -340,6 +403,9 @@ export default function ConteoDetallePage() {
                     presentaciones={presentaciones.filter(p => p.producto_id === item.producto_id)}
                     onCantidadChange={(v: string) => actions.updateItem(item, v)}
                     onNoContado={() => actions.toggleNoContado(item)}
+                    rowId={`conteo-row-${item.id}`}
+                    highlight={scanFocusId === item.id}
+                    onQtyEnter={scanMode ? focusScannerSoon : undefined}
                   />
                 ))}
               </div>
@@ -444,9 +510,18 @@ interface LoteRowProps {
   presentaciones: Presentacion[]
   onCantidadChange: (cantidad: string) => void
   onNoContado: () => void
+  rowId: string
+  highlight?: boolean
+  onQtyEnter?: () => void
 }
 
-function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange, onNoContado }: LoteRowProps) {
+function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange, onNoContado, rowId, highlight, onQtyEnter }: LoteRowProps) {
+  const handleQtyKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      onQtyEnter?.()
+    }
+  }
   const esNoContado = item.estado_item === 'no_contado'
   const contado = item.estado_item === 'contado'
   const diferencia = contado && item.cantidad_contada !== null
@@ -499,8 +574,9 @@ function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange
     : formatCantidad(Number(item.stock_sistema), item.unidad_base_nombre, item.unidad_base_nombre_plural)
 
   return (
-    <div className={cn(
+    <div id={rowId} className={cn(
       'px-3 py-3 transition-all duration-200 border-l-4',
+      highlight && 'ring-2 ring-primary ring-inset',
       esNoContado ? 'bg-base-200/40 border-base-300 opacity-60' :
       ajusteNegativo ? 'bg-error/5 border-error' :
       contado ? 'bg-success/5 border-success' :
@@ -541,6 +617,7 @@ function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange
                     className="input input-xs input-bordered w-14 text-center font-bold h-8 rounded-lg"
                     placeholder="0" value={presCounts[p.id] || ''}
                     onChange={(e) => handlePresChange(p.id, e.target.value)}
+                    onKeyDown={handleQtyKeyDown}
                   />
                   <span className="text-[10px] font-bold opacity-40 uppercase truncate max-w-[40px]">{p.nombre_plural || p.nombre}</span>
                 </div>
@@ -551,6 +628,7 @@ function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange
                   className="input input-xs input-bordered w-14 text-center font-bold h-8 rounded-lg"
                   placeholder="0" value={unidadesSueltas}
                   onChange={(e) => handleSueltasChange(e.target.value)}
+                  onKeyDown={handleQtyKeyDown}
                 />
                 <span className="text-[10px] font-bold opacity-40 uppercase">{item.unidad_base_nombre_plural}</span>
               </div>
@@ -562,6 +640,7 @@ function LoteRow({ item, editable, conteoCiego, presentaciones, onCantidadChange
                 className="input input-sm input-bordered w-28 text-center font-bold rounded-xl h-9"
                 placeholder="0" value={item.cantidad_contada ?? ''}
                 onChange={(e) => onCantidadChange(e.target.value)}
+                onKeyDown={handleQtyKeyDown}
               />
               <span className="text-[10px] font-bold opacity-40 uppercase ml-2">{item.unidad_base_nombre_plural}</span>
             </div>

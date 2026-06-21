@@ -172,16 +172,13 @@ function drawHeader(
   doc.setFillColor(...C.white)
   doc.rect(0, 0, W, HEADER_H, 'F')
 
-  // Círculo decorativo de fondo; el logo se centra dentro sin deformarse.
-  doc.setFillColor(...C.grayBorder)
-  doc.setDrawColor(...C.grayBorder)
-  doc.roundedRect(LOGO_X, LOGO_Y, LOGO_SIZE, LOGO_SIZE, LOGO_SIZE / 2, LOGO_SIZE / 2, 'F')
-
+  // El logo se dibuja directo sobre el header blanco, sin fondo decorativo: así
+  // respeta su transparencia y su forma (redondo o cuadrado) sin recuadro feo.
   drawPdfLogo(doc, logo, {
-    x: LOGO_X + 4,
-    y: LOGO_Y + 4,
-    maxW: LOGO_SIZE - 8,
-    maxH: LOGO_SIZE - 8,
+    x: LOGO_X,
+    y: LOGO_Y,
+    maxW: LOGO_SIZE,
+    maxH: LOGO_SIZE,
   })
 
   // Nombre del lab

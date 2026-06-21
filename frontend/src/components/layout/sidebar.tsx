@@ -20,7 +20,6 @@ import {
   SlidersHorizontal,
   Users,
   FileText,
-  Rocket,
   ChevronLeft,
   ChevronRight,
   FlaskConical,
@@ -33,7 +32,15 @@ import {
 } from 'lucide-react'
 import { useAuthStore, useCanOperate } from '@/hooks/use-auth-store'
 
-const navGroups = [
+type NavItem = {
+  to: string
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  operativo?: boolean
+  adminOnly?: boolean
+}
+
+const navGroups: { label: string | null; items: NavItem[] }[] = [
   {
     label: null,
     items: [
@@ -41,44 +48,45 @@ const navGroups = [
     ],
   },
   {
-    label: 'Consulta',
+    label: 'Principal',
     items: [
-      { to: '/stock', icon: Package, label: 'Inventario' },
-      { to: '/movimientos', icon: History, label: 'Movimientos' },
+      { to: '/consumos', icon: ClipboardList, label: 'Consumos', operativo: true },
+      { to: '/recepciones', icon: ArrowDownToLine, label: 'Recepciones' },
+      { to: '/creador-productos', icon: Settings, label: 'Creador de Productos', adminOnly: true },
     ],
   },
   {
-    label: 'Operaciones',
+    label: 'Inventario',
     items: [
-      { to: '/consumos', icon: ClipboardList, label: 'Consumos', operativo: true },
-      { to: '/descartes', icon: Trash2, label: 'Descartes', operativo: true },
+      { to: '/stock', icon: Package, label: 'Inventario' },
+      { to: '/movimientos', icon: History, label: 'Movimientos' },
       { to: '/conteo', icon: ClipboardCheck, label: 'Conteo', operativo: true },
+      { to: '/descartes', icon: Trash2, label: 'Descartes', operativo: true },
+      { to: '/reportes', icon: BarChart3, label: 'Reportes', adminOnly: true },
     ],
   },
   {
     label: 'Compras',
     items: [
-      { to: '/recepciones', icon: ArrowDownToLine, label: 'Recepciones' },
       { to: '/solicitudes-compra', icon: ShoppingCart, label: 'Solicitudes' },
+      { to: '/ordenes-compra', icon: ShoppingBag, label: 'Guías de Despacho Respaldadas', adminOnly: true },
     ],
   },
   {
     label: 'Herramientas',
     items: [
       { to: '/etiquetas', icon: Tag, label: 'Etiquetas' },
+      { to: '/whatsapp-simulator', icon: MessageCircle, label: 'Simulador WhatsApp', adminOnly: true },
     ],
   },
-]
-
-const adminItems = [
-  { to: '/creador-productos', icon: Settings, label: 'Creador de Productos' },
-  { to: '/ordenes-compra', icon: ShoppingBag, label: 'Guías de Despacho Respaldadas' },
-  { to: '/reportes', icon: BarChart3, label: 'Reportes' },
-  { to: '/configuracion', icon: SlidersHorizontal, label: 'Configuración' },
-  { to: '/usuarios', icon: Users, label: 'Usuarios' },
-  { to: '/whatsapp-simulator', icon: MessageCircle, label: 'Simulador WhatsApp' },
-  { to: '/audit-log', icon: FileText, label: 'Audit Log' },
-  { to: '/setup', icon: Rocket, label: 'Setup' },
+  {
+    label: 'Sistema',
+    items: [
+      { to: '/usuarios', icon: Users, label: 'Usuarios', adminOnly: true },
+      { to: '/configuracion', icon: SlidersHorizontal, label: 'Configuración', adminOnly: true },
+      { to: '/audit-log', icon: FileText, label: 'Audit Log', adminOnly: true },
+    ],
+  },
 ]
 
 interface SidebarProps {
@@ -147,9 +155,9 @@ export function Sidebar({ expanded, onExpandedChange, mobileOpen, onMobileClose 
         "flex-1 min-h-0 px-2 py-[clamp(0.25rem,1vh,0.5rem)] overflow-y-auto overflow-x-hidden transition-all duration-300"
       )}>
         {navGroups.map((group, i) => {
-          // consulta (solo lectura) no ve las páginas de mutación de stock.
+          // consulta (solo lectura) no ve mutaciones de stock; no-admin no ve ítems adminOnly.
           const items = group.items.filter(
-            (item) => canOperate || !('operativo' in item && item.operativo)
+            (item) => (canOperate || !item.operativo) && (isAdmin || !item.adminOnly)
           )
           if (items.length === 0) return null
           return (
@@ -171,23 +179,6 @@ export function Sidebar({ expanded, onExpandedChange, mobileOpen, onMobileClose 
             </div>
           )
         })}
-
-        {isAdmin && (
-          <>
-            <div className="mx-2 my-[clamp(0.375rem,1.4vh,0.75rem)] h-px bg-base-200" />
-            <p className={cn(
-              'px-3 mb-[clamp(0.125rem,0.5vh,0.25rem)] text-[10px] font-semibold uppercase tracking-widest opacity-40 transition-all duration-300',
-              effectiveExpanded ? 'opacity-40' : 'opacity-0'
-            )}>
-              Admin
-            </p>
-            <div className="space-y-0.5">
-              {adminItems.map((item) => (
-                <SidebarLink key={item.to} {...item} expanded={effectiveExpanded} />
-              ))}
-            </div>
-          </>
-        )}
       </nav>
 
       {/* Bottom actions */}

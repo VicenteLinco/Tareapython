@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Upload, Save, X, Building2, Brain } from 'lucide-react'
+import { Upload, Save, X, Building2, Brain, Rocket, ChevronRight } from 'lucide-react'
 import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 import { PageLoading } from '@/components/ui/page-state'
@@ -41,6 +42,7 @@ function Divider() {
 }
 
 export default function ConfiguracionPage() {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
   const loginImgRef = useRef<HTMLInputElement>(null)
@@ -655,6 +657,28 @@ export default function ConfiguracionPage() {
           Guardar cambios
         </button>
       </form>
+
+      <Divider />
+
+      {/* ── CARGA INICIAL ── */}
+      <SectionTitle>Carga inicial</SectionTitle>
+
+      <button
+        type="button"
+        onClick={() => navigate('/setup')}
+        className="flex w-full items-center gap-4 rounded-xl border border-base-200 bg-base-100 p-4 text-left transition-colors hover:border-base-300 hover:bg-base-200/40"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Rocket className="h-5 w-5" />
+        </span>
+        <span className="grow">
+          <span className="block text-sm font-medium">Carga inicial de productos</span>
+          <span className="block text-xs text-base-content/50">
+            Importá productos y stock en lote para arrancar el inventario.
+          </span>
+        </span>
+        <ChevronRight className="h-4 w-4 shrink-0 text-base-content/30" />
+      </button>
     </div>
   )
 }

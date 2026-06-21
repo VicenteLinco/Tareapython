@@ -112,15 +112,14 @@ La prioridad es una sugerencia de orden, no un compromiso.
       Falta verificar/agregar el mismo input en el form de **recepción** (el DTO ya acepta
       `precio_unitario`).
 - [x] ~~La recepción actualiza el precio al confirmar~~ → innecesario (la subquery ya lo deriva).
-- [ ] Productos sin historial de recepción arrancan con precio vacío (se carga a mano la 1ª vez).
+- [x] Productos sin historial de recepción arrancan con precio vacío (se carga a mano la 1ª vez)
+      → comportamiento ya vigente: `precio_ultimo` cae a `productos.precio_unidad` (vacío) si nunca se recibió.
 
-**Test (Strict TDD) — bloqueado por deuda del harness**
-- Test escrito (`solicitudes_test.rs::horizonte_devuelve_ultimo_precio_de_recepcion`) pero
-  `#[ignore]`: el harness de `#[sqlx::test]` solo aplica migraciones, no siembra datos base
-  (unidades/áreas), así que `POST /productos` da 422. Arreglados de paso 2 bugs preexistentes
-  del harness (`common/mod.rs`: `test_config` sin campos nuevos; `ensure_test_admin` con
-  `ON CONFLICT (email)` incompatible con el unique parcial del soft-delete). Falta el seed de
-  datos base para desbloquear toda la suite — decisión pendiente con el usuario.
+**Test (Strict TDD) — DESBLOQUEADO ✅**
+- `solicitudes_test.rs::horizonte_devuelve_ultimo_precio_de_recepcion` ya **pasa** (1 passed,
+  0 ignored). El harness ahora siembra datos base vía `common::seed_base_data` (commit `ddcc5a2`),
+  así que `unidad_base_id=1`/`area_id=1` existen y `POST /productos` deja de dar 422. La suite
+  de integración quedó habilitada.
 
 ---
 
@@ -305,10 +304,31 @@ La prioridad es una sugerencia de orden, no un compromiso.
 **Evidencia**
 - `frontend/src/components/layout/sidebar.tsx` — definición de los ítems del menú.
 
-**Criterios de aceptación**
-- [ ] Definir la agrupación (qué entra en qué grupo y la jerarquía).
-- [ ] Implementar grupos/colapsables en el sidebar respetando roles (admin/tecnologo/consulta).
-- [ ] Revisión: el menú queda más corto y navegable sin perder accesos.
+**Decisión (2026-06-20)**
+- **Agrupación elegida por el usuario:** los 3 ítems más usados (Consumos, Recepciones, Creador de
+  Productos) van juntos y primeros en un grupo **PRINCIPAL**, sin importar el dominio. El resto lo
+  ubiqué por dominio.
+- **Setup sale del sidebar** y pasa a vivir DENTRO de Configuración como un acceso ("Carga inicial
+  de productos") que navega a `/setup`. Razón: Setup es un wizard con pasos propios (542 líneas,
+  `bienvenida→productos→stock→resumen`); embeberlo como pestaña dentro del scroll de ajustes mezclaba
+  dos modelos de navegación. La página `/setup` queda intacta.
+- **Modelo de ítems unificado:** cada `NavItem` lleva flags opcionales `operativo` (oculto a consulta)
+  y `adminOnly` (oculto a no-admin). Se eliminó el bloque "Admin" separado; los ítems admin ahora se
+  filtran por flag dentro de su grupo de dominio.
 
-> Es un pendiente de diseño: antes de implementar conviene presentar 2–3 propuestas de
-> agrupación y elegir una (regla de "design questions before code").
+**Mapa final**
+```
+Dashboard
+PRINCIPAL     Consumos · Recepciones · Creador de Productos
+INVENTARIO    Inventario · Movimientos · Conteo · Descartes · Reportes
+COMPRAS       Solicitudes · Guías de Despacho Respaldadas
+HERRAMIENTAS  Etiquetas · Simulador WhatsApp
+SISTEMA       Usuarios · Configuración · Audit Log
+```
+
+**Criterios de aceptación**
+- [x] Definir la agrupación (qué entra en qué grupo y la jerarquía) → mapa final arriba.
+- [x] Implementar grupos en el sidebar respetando roles → filtro `operativo`/`adminOnly` por ítem
+      (`sidebar.tsx`). Typecheck verde.
+- [x] El menú queda más corto y navegable → Setup movido a Configuración (`configuracion/index.tsx`,
+      sección "Carga inicial"); bloque Admin plano de 8 ítems disuelto en grupos de dominio.

@@ -625,15 +625,22 @@ impl SolicitudService {
             .execute(&mut *tx)
             .await?;
 
-        // Insertar envios solo para proveedores que no los tengan ya
-        // ON CONFLICT DO NOTHING preserva los envios granulares ya registrados
+        // Marca como enviados todos los proveedores de la solicitud: inserta los que
+        // falten y promueve a 'enviado' los que seguían en 'pendiente'. El WHERE del
+        // DO UPDATE preserva los envíos granulares ya registrados (estado 'enviado' con
+        // su método/fecha propios): no se pisan.
         sqlx::query(
             "INSERT INTO solicitud_envios (solicitud_id, proveedor_id, estado, metodo_envio, fecha_envio, usuario_envio_id)
              SELECT DISTINCT $1, p.proveedor_id, 'enviado', COALESCE($2, 'otro'), NOW(), $3
              FROM solicitud_compra_detalle d
              JOIN productos p ON p.id = d.producto_id
              WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
-             ON CONFLICT (solicitud_id, proveedor_id) DO NOTHING",
+             ON CONFLICT (solicitud_id, proveedor_id) DO UPDATE
+             SET estado = 'enviado',
+                 metodo_envio = EXCLUDED.metodo_envio,
+                 fecha_envio = EXCLUDED.fecha_envio,
+                 usuario_envio_id = EXCLUDED.usuario_envio_id
+             WHERE solicitud_envios.estado = 'pendiente'",
         )
         .bind(id)
         .bind(metodo_envio)

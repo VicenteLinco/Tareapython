@@ -317,14 +317,10 @@ async fn flujo_envios_por_proveedor(pool: PgPool) {
     assert_eq!(det["estado"], "guardada", "sin envíos => vuelve a guardada");
 }
 
-// Caracterización del endpoint `enviar` (POST /{id}/enviar): hoy responde 200 pero NO
-// actualiza los envíos que `guardar` ya dejó en 'pendiente' (el INSERT usa
-// ON CONFLICT DO NOTHING), así que la solicitud permanece en 'guardada'.
-// Esto fija el COMPORTAMIENTO ACTUAL (bug latente registrado aparte): el refactor del
-// service no debe alterarlo. Si en el futuro se corrige el bug, este test debe cambiarse
-// conscientemente.
+// El endpoint `enviar` (POST /{id}/enviar) marca como enviados los envíos que `guardar`
+// dejó en 'pendiente' y la solicitud pasa a 'enviada'.
 #[sqlx::test(migrations = "./migrations")]
-async fn enviar_no_actualiza_envios_pendientes_preexistentes(pool: PgPool) {
+async fn enviar_marca_envios_pendientes(pool: PgPool) {
     let admin_token = common::admin_access_token(&pool).await;
     let app = common::test_app(pool.clone());
     let prod_id = setup_producto(&pool, &admin_token, &app).await;
@@ -363,9 +359,109 @@ async fn enviar_no_actualiza_envios_pendientes_preexistentes(pool: PgPool) {
         &admin_token,
     )
     .await;
-    // Comportamiento actual: los envíos pendientes preexistentes NO se marcan enviados.
-    assert_eq!(det["estado"], "guardada");
-    assert_eq!(det["envios"][0]["estado"], "pendiente");
+    assert_eq!(det["estado"], "enviada");
+    assert_eq!(det["envios"][0]["estado"], "enviado");
+    assert_eq!(det["envios"][0]["metodo_envio"], "email");
+}
+
+// `enviar` no debe pisar los envíos ya registrados granularmente (con su método/fecha
+// propios): solo marca como enviados los que seguían en 'pendiente'.
+#[sqlx::test(migrations = "./migrations")]
+async fn enviar_preserva_envios_granulares_ya_registrados(pool: PgPool) {
+    let admin_token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let prod_a = setup_producto(&pool, &admin_token, &app).await;
+    let prod_b = setup_producto(&pool, &admin_token, &app).await;
+
+    let prov_a: Option<i32> =
+        sqlx::query_scalar("SELECT proveedor_id FROM productos WHERE id = $1")
+            .bind(prod_a)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let prov_a = prov_a.unwrap();
+
+    let (_, res) = common::post_json(
+        &app,
+        "/api/v1/solicitudes-compra",
+        &admin_token,
+        serde_json::json!({
+            "items": [
+                { "producto_id": prod_a, "cantidad_sugerida": 10, "unidad_basica_id": 1 },
+                { "producto_id": prod_b, "cantidad_sugerida": 5, "unidad_basica_id": 1 }
+            ]
+        }),
+    )
+    .await;
+    let solicitud_id = res["id"].as_str().unwrap().to_string();
+
+    common::post_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}/guardar", solicitud_id),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+
+    // Registrar envío granular del proveedor A por whatsapp.
+    let (_, det) = common::get_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}", solicitud_id),
+        &admin_token,
+    )
+    .await;
+    let version_a = det["envios"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["proveedor_id"].as_i64() == Some(prov_a as i64))
+        .unwrap()["version"]
+        .as_i64()
+        .unwrap();
+
+    let (status, _) = common::post_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}/envios", solicitud_id),
+        &admin_token,
+        serde_json::json!({
+            "proveedor_id": prov_a,
+            "metodo_envio": "whatsapp",
+            "version": version_a
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Enviar masivo con email: B (pendiente) pasa a enviado/email; A se preserva en whatsapp.
+    let (status, _) = common::post_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}/enviar", solicitud_id),
+        &admin_token,
+        serde_json::json!({ "metodo_envio": "email" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (_, det) = common::get_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}", solicitud_id),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(det["estado"], "enviada");
+    let envios = det["envios"].as_array().unwrap();
+    let envio_a = envios
+        .iter()
+        .find(|e| e["proveedor_id"].as_i64() == Some(prov_a as i64))
+        .unwrap();
+    let envio_b = envios
+        .iter()
+        .find(|e| e["proveedor_id"].as_i64() != Some(prov_a as i64))
+        .unwrap();
+    assert_eq!(envio_a["estado"], "enviado");
+    assert_eq!(envio_a["metodo_envio"], "whatsapp", "el envío granular previo se preserva");
+    assert_eq!(envio_b["estado"], "enviado");
+    assert_eq!(envio_b["metodo_envio"], "email", "el pendiente se marca con el método del envío masivo");
 }
 
 // Caracterización de completar: exige una recepción `completa` vinculada; sin ella, 422.

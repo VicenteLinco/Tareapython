@@ -69,7 +69,7 @@ const navGroups: { label: string | null; items: NavItem[] }[] = [
     label: 'Compras',
     items: [
       { to: '/solicitudes-compra', icon: ShoppingCart, label: 'Solicitudes' },
-      { to: '/ordenes-compra', icon: ShoppingBag, label: 'Guías de Despacho Respaldadas', adminOnly: true },
+      { to: '/ordenes-compra', icon: ShoppingBag, label: 'Guías de Despacho', adminOnly: true },
     ],
   },
   {

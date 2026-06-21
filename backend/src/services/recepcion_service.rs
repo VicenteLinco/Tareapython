@@ -35,9 +35,11 @@ async fn reconciliar_solicitud_recepcion(
         r#"SELECT
                d.producto_id,
                SUM(d.cantidad_sugerida) AS cantidad,
-               MIN(d.unidad) AS unidad
+               MIN(COALESCE(ub.nombre, pr.nombre)) AS unidad
            FROM solicitud_compra_detalle d
            JOIN productos p ON p.id = d.producto_id
+           LEFT JOIN unidades_basicas ub ON ub.id = d.unidad_basica_id
+           LEFT JOIN presentaciones pr ON pr.id = d.presentacion_id
            WHERE d.solicitud_id = $1
              AND p.proveedor_id = $2
            GROUP BY d.producto_id"#,

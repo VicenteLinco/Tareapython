@@ -31,6 +31,7 @@ pub fn test_config() -> AppConfig {
     AppConfig {
         database_url: String::new(), // no se usa, el pool viene de sqlx::test
         jwt_secret: "test-secret-key-for-testing-only-32-chars-long".to_string(),
+        jwt_refresh_secret: "test-refresh-secret-for-testing-only-32-chars-long".to_string(),
         jwt_access_expiration: 900,
         jwt_refresh_expiration: 86400,
         port: 0,
@@ -42,6 +43,10 @@ pub fn test_config() -> AppConfig {
         allow_bootstrap_admin: false,
         setup_admin_email: None,
         setup_admin_password: None,
+        twilio_auth_token: String::new(),
+        whatsapp_webhook_secret: String::new(),
+        whatsapp_api_url: String::new(),
+        whatsapp_api_key: String::new(),
     }
 }
 
@@ -68,21 +73,121 @@ pub fn test_app(pool: PgPool) -> Router {
         .with_state(state)
 }
 
+/// Siembra el catálogo base que las migraciones no crean pero los tests asumen
+/// existente: 6 unidades básicas, 12 áreas y 10 categorías. `#[sqlx::test]` solo
+/// aplica migraciones sobre una DB efímera; el seed de catálogos vivía en un
+/// `002_seed_data.sql` que el squash a `001_initial_schema.sql` eliminó. Sin esto,
+/// `unidad_base_id: 1` / `area_id: 1` no existen (422 / FK violation) y los tests
+/// que cuentan "del seed" (12 áreas, ≥8 categorías, ≥6 unidades) fallan.
+///
+/// Réplica del seed histórico, adaptada al schema actual (`unidades_basicas` con
+/// `nombre_plural` + `categoria`). `id` explícito para que los tests puedan
+/// referenciar `id = 1`. Idempotente vía `ON CONFLICT (id) DO NOTHING`.
+///
+/// Tras insertar con `id` explícito hay que avanzar cada secuencia con `setval`:
+/// si no, `nextval` sigue devolviendo 1 y la primera fila creada vía API colisiona
+/// en PK con la sembrada.
+pub async fn seed_base_data(pool: &PgPool) {
+    sqlx::query(
+        "INSERT INTO unidades_basicas (id, nombre, nombre_plural, categoria) VALUES \
+            (1, 'unidad', 'unidades', 'count'), \
+            (2, 'mililitro', 'mililitros', 'volume'), \
+            (3, 'gramo', 'gramos', 'weight'), \
+            (4, 'prueba', 'pruebas', 'count'), \
+            (5, 'litro', 'litros', 'volume'), \
+            (6, 'kilogramo', 'kilogramos', 'weight') \
+         ON CONFLICT (id) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .expect("Should seed base unidades_basicas");
+
+    sqlx::query(
+        "INSERT INTO areas (id, nombre, es_bodega) VALUES \
+            (1, 'Microbiología', false), \
+            (2, 'PCR', false), \
+            (3, 'Orinas', false), \
+            (4, 'Recepción', false), \
+            (5, 'Laboratorio Central', false), \
+            (6, 'Bodega Insumos', true), \
+            (7, 'Bodega Reactivos', true), \
+            (8, 'Serología', false), \
+            (9, 'Unidad de Medicina Transfusional', false), \
+            (10, 'Donantes', false), \
+            (11, 'Sala Entrevista Donantes', false), \
+            (12, 'Sala de Toma de Muestras', false) \
+         ON CONFLICT (id) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .expect("Should seed base areas");
+
+    sqlx::query(
+        "INSERT INTO categorias (id, nombre, descripcion) VALUES \
+            (1, 'Reactivo', 'Compuestos químicos para reacciones diagnósticas'), \
+            (2, 'Consumible', 'Material de uso único: tubos, puntas, placas, lancetas'), \
+            (3, 'Calibrador', 'Materiales de calibración de equipos analíticos'), \
+            (4, 'Control', 'Sueros y materiales de control de calidad interno'), \
+            (5, 'Kit diagnóstico', 'Kits completos para pruebas específicas'), \
+            (6, 'Medio de cultivo', 'Medios sólidos y líquidos para microbiología'), \
+            (7, 'Material de extracción', 'Tubos vacutainer, agujas, torniquetes'), \
+            (8, 'Solución / Buffer', 'Diluyentes, soluciones de lavado y fijadores'), \
+            (9, 'EPP', 'Equipos de protección personal: guantes, mascarillas, lentes'), \
+            (10, 'Papelería', 'Etiquetas, formularios y material administrativo') \
+         ON CONFLICT (id) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .expect("Should seed base categorias");
+
+    // Avanza las secuencias para que el próximo nextval sea MAX(id)+1.
+    for tabla in ["unidades_basicas", "areas", "categorias"] {
+        sqlx::query(&format!(
+            "SELECT setval(pg_get_serial_sequence('{tabla}', 'id'), \
+                           GREATEST((SELECT MAX(id) FROM {tabla}), 1))"
+        ))
+        .execute(pool)
+        .await
+        .unwrap_or_else(|e| panic!("Should bump {tabla} sequence: {e}"));
+    }
+}
+
 /// Crea el admin de prueba y lo asigna a todas las areas.
 pub async fn ensure_test_admin(pool: &PgPool) -> uuid::Uuid {
+    seed_base_data(pool).await;
     let password_hash = hash_test_password(TEST_ADMIN_PASSWORD);
-    let admin_id: uuid::Uuid = sqlx::query_scalar(
-        "INSERT INTO usuarios (nombre, email, password_hash, rol, activo) \
-         VALUES ('Admin Fixture', $1, $2, 'admin', true) \
-         ON CONFLICT (email) DO UPDATE \
-         SET password_hash = EXCLUDED.password_hash, rol = 'admin', activo = true, updated_at = NOW() \
-         RETURNING id",
-    )
-    .bind(TEST_ADMIN_EMAIL)
-    .bind(password_hash)
-    .fetch_one(pool)
-    .await
-    .expect("Should create test admin");
+    // Upsert en dos pasos: el unique de `email` es parcial (WHERE deleted_at IS NULL por el
+    // soft-delete de migration 025), así que ON CONFLICT (email) no matchea ningún índice.
+    let existing: Option<uuid::Uuid> =
+        sqlx::query_scalar("SELECT id FROM usuarios WHERE email = $1")
+            .bind(TEST_ADMIN_EMAIL)
+            .fetch_optional(pool)
+            .await
+            .expect("Should query test admin");
+
+    let admin_id: uuid::Uuid = if let Some(id) = existing {
+        sqlx::query(
+            "UPDATE usuarios SET password_hash = $2, rol = 'admin', activo = true, updated_at = NOW() \
+             WHERE id = $1",
+        )
+        .bind(id)
+        .bind(&password_hash)
+        .execute(pool)
+        .await
+        .expect("Should update test admin");
+        id
+    } else {
+        sqlx::query_scalar(
+            "INSERT INTO usuarios (nombre, email, password_hash, rol, activo) \
+             VALUES ('Admin Fixture', $1, $2, 'admin', true) \
+             RETURNING id",
+        )
+        .bind(TEST_ADMIN_EMAIL)
+        .bind(&password_hash)
+        .fetch_one(pool)
+        .await
+        .expect("Should create test admin")
+    };
 
     sqlx::query(
         "INSERT INTO usuario_area (usuario_id, area_id) \
@@ -119,6 +224,7 @@ pub async fn admin_access_token(pool: &PgPool) -> String {
 
 /// Crea un usuario tecnólogo de prueba y retorna su access token
 pub async fn create_tecnologo_token(pool: &PgPool, area_ids: &[i32]) -> String {
+    seed_base_data(pool).await;
     let config = test_config();
     let password_hash = hash_test_password("TestTecnologoFixture123!");
 

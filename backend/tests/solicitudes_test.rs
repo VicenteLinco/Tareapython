@@ -228,20 +228,30 @@ async fn solicitud_vacia_creada_correctamente(pool: PgPool) {
     assert_eq!(res_get["items"].as_array().unwrap().len(), 0);
 }
 
+// Confianza baja (pocos días con consumo) ya NO significa "no sugerir": el forecast fue
+// rediseñado para estimar demanda por días de cobertura (dampeada por factor_historial_corto)
+// en lugar de depender de un mínimo manual. Fuente de verdad del servicio:
+// forecast.rs::forecast_baja_confianza_estima_por_dias_cobertura (mismo escenario, exige > 0).
 #[sqlx::test(migrations = "./migrations")]
-async fn recomendaciones_baja_confianza_no_extrapola(pool: PgPool) {
+async fn recomendaciones_baja_confianza_estima_por_cobertura(pool: PgPool) {
     let admin_token = common::admin_access_token(&pool).await;
     let app = common::test_app(pool.clone());
 
-    // 1. Crear producto con stock_minimo y lead_time_propio
+    // 1. Crear producto con stock_minimo y lead_time.
     let prod_id = setup_producto(&pool, &admin_token, &app).await;
-    sqlx::query("UPDATE productos SET stock_minimo = 50 WHERE id = $1")
-        .bind(prod_id)
-        .execute(&pool)
-        .await
-        .unwrap();
 
-    sqlx::query("UPDATE producto_proveedor SET lead_time_dias = 10 WHERE producto_id = $1")
+    // stock_minimo vive en par_level_config (par level global → area_id IS NULL),
+    // no en productos. El endpoint lo lee con LEFT JOIN ... AND plc.area_id IS NULL.
+    sqlx::query(
+        "INSERT INTO par_level_config (producto_id, area_id, stock_minimo) VALUES ($1, NULL, 50)",
+    )
+    .bind(prod_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // lead_time se deriva de COALESCE(productos.lead_time_propio, prov.dias_despacho_aereo, 7).
+    sqlx::query("UPDATE productos SET lead_time_propio = 10 WHERE id = $1")
         .bind(prod_id)
         .execute(&pool)
         .await
@@ -323,24 +333,26 @@ async fn recomendaciones_baja_confianza_no_extrapola(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    // 8. El producto con sólo 3 días de consumo (confianza baja) y stock 169 > mínimo 50
-    //    NO debe aparecer en recomendaciones, o si aparece, debe tener cantidad < 100
+    // 8. El producto con sólo 3 días de consumo reporta confianza "baja" pero AÚN ASÍ
+    //    estima por días de cobertura: la sugerencia es positiva (no se queda en 0 ni
+    //    depende de un mínimo manual). No se valida un techo arbitrario: el monto sale
+    //    del modelo de cobertura, validado a nivel unitario en forecast.rs.
     let items = body["data"].as_array().expect("data debe ser array");
     let nuestro = items
         .iter()
         .find(|i| i["producto_id"].as_str() == Some(&prod_id.to_string()));
 
     if let Some(item) = nuestro {
-        let cant = item["cantidad_sugerida_base"].as_f64().unwrap_or(-1.0);
-        assert!(
-            cant < 100.0,
-            "con confianza baja y stock suficiente, la sugerencia debe ser baja, fue {}",
-            cant
-        );
         assert_eq!(
             item["confianza"].as_str(),
             Some("baja"),
             "debe reportar confianza baja"
+        );
+        let cant = item["cantidad_sugerida_base"].as_f64().unwrap_or(-1.0);
+        assert!(
+            cant > 0.0,
+            "con confianza baja debe estimar por cobertura una sugerencia positiva, fue {}",
+            cant
         );
     }
     // Si no aparece en la lista, también es correcto (sin urgencia)
@@ -390,4 +402,89 @@ async fn validar_exclusividad_unidad_solicitud(pool: PgPool) {
     )
     .await;
     assert!(status2.is_client_error() || status2.is_server_error());
+}
+
+// Verifica que el endpoint `horizonte` expone `precio_ultimo` derivado de la última recepción
+// (subquery COALESCE(recepcion_detalle.precio_unitario, productos.precio_unidad)). El harness
+// siembra datos base vía common::seed_base_data, así que unidad_base_id=1 y area_id=1 existen.
+#[sqlx::test(migrations = "./migrations")]
+async fn horizonte_devuelve_ultimo_precio_de_recepcion(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    // Proveedor + producto (presentación factor 1).
+    let (_, prov) = common::post_json(
+        &app,
+        "/api/v1/proveedores",
+        &token,
+        serde_json::json!({ "nombre": format!("Prov {}", Uuid::new_v4()) }),
+    )
+    .await;
+    let proveedor_id = prov["id"].as_i64().unwrap() as i32;
+
+    let (_, prod) = common::post_json(
+        &app,
+        "/api/v1/productos",
+        &token,
+        serde_json::json!({
+            "nombre": format!("Prod {}", Uuid::new_v4()),
+            "unidad_base_id": 1,
+            "proveedor_id": proveedor_id,
+            "stock_minimo": 10,
+            "presentaciones": [
+                { "nombre": "Unidad", "nombre_plural": "Unidades", "factor_conversion": 1 }
+            ]
+        }),
+    )
+    .await;
+    let producto_id: Uuid = prod["id"].as_str().unwrap().parse().unwrap();
+
+    let presentacion_id: i32 =
+        sqlx::query_scalar("SELECT id FROM presentaciones WHERE producto_id = $1 LIMIT 1")
+            .bind(producto_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    // Recepción completa con precio_unitario conocido.
+    let idem = Uuid::new_v4().to_string();
+    let (rstatus, _) = common::post_json_idempotent(
+        &app,
+        "/api/v1/recepciones",
+        &token,
+        serde_json::json!({
+            "proveedor_id": proveedor_id,
+            "estado": "completa",
+            "fecha_recepcion": "2026-03-15T10:00:00Z",
+            "detalle": [{
+                "producto_id": producto_id,
+                "numero_lote": format!("L-{}", &Uuid::new_v4().to_string()[..8]),
+                "fecha_vencimiento": "2028-06-30",
+                "presentacion_id": presentacion_id,
+                "cantidad_presentaciones": 10.0,
+                "area_destino_id": 1,
+                "precio_unitario": 1500.0
+            }]
+        }),
+        &idem,
+    )
+    .await;
+    assert!(rstatus.is_success(), "la recepción debería crearse, fue {rstatus}");
+
+    // El horizonte debe exponer el último precio de recepción.
+    let (status, json) = common::get_json(
+        &app,
+        &format!(
+            "/api/v1/solicitudes-compra/horizonte?producto_id={producto_id}&proveedor_id={proveedor_id}"
+        ),
+        &token,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json["precio_ultimo"].as_f64().unwrap(),
+        1500.0,
+        "precio_ultimo debería reflejar el precio de la última recepción"
+    );
 }

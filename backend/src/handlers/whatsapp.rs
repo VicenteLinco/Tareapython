@@ -553,12 +553,13 @@ mod tests {
         assert_eq!(qty_fail.status, "error");
         assert!(qty_fail.message.contains("mayor a cero"));
 
-        // 4. Decimal scale > 2
+        // 4. Cantidad con decimales: la regla se endureció a entero estricto
+        //    (whatsapp_service rechaza cualquier fracción, no solo scale > 2).
         let mut invalid_scale_args = registrar_args.clone();
         invalid_scale_args.cantidad = rust_decimal::Decimal::new(10123, 3); // 10.123
         let scale_fail = execute_registrar_ingreso(&pool, &admin_user, invalid_scale_args).await.unwrap();
         assert_eq!(scale_fail.status, "error");
-        assert!(scale_fail.message.contains("2 decimales"));
+        assert!(scale_fail.message.contains("entero"));
 
         // 5. Expiry date past date
         let mut past_expiry_args = registrar_args.clone();
@@ -649,7 +650,7 @@ mod tests {
             .await
             .unwrap();
         if !area_exists {
-            sqlx::query("INSERT INTO areas (id, nombre, descripcion) VALUES (1, 'Area Central', 'Central')")
+            sqlx::query("INSERT INTO areas (id, nombre) VALUES (1, 'Area Central')")
                 .execute(&pool)
                 .await
                 .unwrap();
@@ -785,7 +786,7 @@ mod tests {
             .await
             .unwrap();
         if !area_exists {
-            sqlx::query("INSERT INTO areas (id, nombre, descripcion) VALUES (1, 'Area Central', 'Central')")
+            sqlx::query("INSERT INTO areas (id, nombre) VALUES (1, 'Area Central')")
                 .execute(&pool)
                 .await
                 .unwrap();
@@ -878,7 +879,7 @@ mod tests {
             .await
             .unwrap();
         if !area_exists1 {
-            sqlx::query("INSERT INTO areas (id, nombre, descripcion) VALUES (1, 'Area Central', 'Central')")
+            sqlx::query("INSERT INTO areas (id, nombre) VALUES (1, 'Area Central')")
                 .execute(&pool)
                 .await
                 .unwrap();
@@ -888,7 +889,7 @@ mod tests {
             .await
             .unwrap();
         if !area_exists2 {
-            sqlx::query("INSERT INTO areas (id, nombre, descripcion) VALUES (2, 'Urgencias', 'Urgencias')")
+            sqlx::query("INSERT INTO areas (id, nombre) VALUES (2, 'Urgencias')")
                 .execute(&pool)
                 .await
                 .unwrap();
@@ -970,7 +971,7 @@ mod tests {
             .await
             .unwrap();
         if !area_exists1 {
-            sqlx::query("INSERT INTO areas (id, nombre, descripcion) VALUES (1, 'Area Central', 'Central')")
+            sqlx::query("INSERT INTO areas (id, nombre) VALUES (1, 'Area Central')")
                 .execute(&pool)
                 .await
                 .unwrap();
@@ -980,7 +981,7 @@ mod tests {
             .await
             .unwrap();
         if !area_exists2 {
-            sqlx::query("INSERT INTO areas (id, nombre, descripcion) VALUES (2, 'Urgencias', 'Urgencias')")
+            sqlx::query("INSERT INTO areas (id, nombre) VALUES (2, 'Urgencias')")
                 .execute(&pool)
                 .await
                 .unwrap();

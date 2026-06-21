@@ -533,7 +533,33 @@ async fn filtro_normal_excluye_alarmas_operativas(pool: PgPool) {
     let token = common::admin_access_token(&pool).await;
     let app = common::test_app(pool.clone());
 
-    let (_, normal_id) = setup_stock(&pool, &token, &app, 1, 150.0).await;
+    let (normal_uuid, normal_id) = setup_stock(&pool, &token, &app, 1, 150.0).await;
+    // El estado "normal" requiere historial de consumo (fn_estado_stock usa cobertura,
+    // no un mínimo manual): sin consumo el producto queda en "sin_datos". Sembramos 3
+    // días de consumo bajo en la última semana → cobertura amplia (≈stock/0.3 días) → normal.
+    {
+        let lote_id: Uuid =
+            sqlx::query_scalar("SELECT id FROM lotes WHERE producto_id = $1 LIMIT 1")
+                .bind(normal_uuid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let admin_uid = common::get_admin_id(&pool).await;
+        for dias in [5_i32, 3, 1] {
+            // El trigger BEFORE INSERT recalcula cantidad_resultante y ajusta `stock`.
+            sqlx::query(
+                "INSERT INTO movimientos (lote_id, area_id, tipo, cantidad, cantidad_resultante, usuario_id, created_at) \
+                 VALUES ($1, 1, 'CONSUMO', 1, 0, $2, NOW() - make_interval(days => $3))",
+            )
+            .bind(lote_id)
+            .bind(admin_uid)
+            .bind(dias)
+            .execute(&pool)
+            .await
+            .expect("debe registrar consumo histórico");
+        }
+    }
+
     let (_, bajo_id) = setup_stock(&pool, &token, &app, 1, 50.0).await;
     let (vencido_uuid, vencido_id) = setup_stock(&pool, &token, &app, 1, 150.0).await;
     sqlx::query(
@@ -585,12 +611,10 @@ async fn filtro_sin_stock_incluye_agotados_sin_minimo(pool: PgPool) {
     let token = common::admin_access_token(&pool).await;
     let app = common::test_app(pool.clone());
 
-    let (producto_uuid, producto_id) = setup_stock(&pool, &token, &app, 1, 100.0).await;
-    sqlx::query("UPDATE productos SET stock_minimo = 0 WHERE id = $1")
-        .bind(producto_uuid)
-        .execute(&pool)
-        .await
-        .expect("debe dejar el minimo en cero");
+    // El producto se crea sin par_level_config → sin stock mínimo manual, que es
+    // justo lo que valida este caso ("agotados sin minimo"). El estado de alerta lo
+    // determina fn_estado_stock por cobertura/inicialización, no un mínimo manual.
+    let (_producto_uuid, producto_id) = setup_stock(&pool, &token, &app, 1, 100.0).await;
 
     let idem_key = Uuid::new_v4().to_string();
     let (status, _) = common::post_json_idempotent(
@@ -638,8 +662,8 @@ async fn filtro_sin_stock_incluye_stock_directo_en_cero(pool: PgPool) {
 
     sqlx::query(
         r#"INSERT INTO productos
-           (id, codigo_interno, nombre, categoria_id, unidad_base_id, stock_minimo, activo)
-           VALUES ($1, 'ZERO-DIRECT-001', 'Producto directo en cero', 1, 1, 0, true)"#,
+           (id, codigo_interno, nombre, categoria_id, unidad_base_id, activo)
+           VALUES ($1, 'ZERO-DIRECT-001', 'Producto directo en cero', 1, 1, true)"#,
     )
     .bind(producto_id)
     .execute(&pool)
@@ -684,8 +708,8 @@ async fn producto_sin_historial_queda_pendiente_y_no_alerta_dashboard(pool: PgPo
 
     sqlx::query(
         r#"INSERT INTO productos
-           (id, codigo_interno, nombre, categoria_id, unidad_base_id, stock_minimo, activo)
-           VALUES ($1, 'SIN-STOCK-001', 'Producto sin stock test', 1, 1, 10, true)"#,
+           (id, codigo_interno, nombre, categoria_id, unidad_base_id, activo)
+           VALUES ($1, 'SIN-STOCK-001', 'Producto sin stock test', 1, 1, true)"#,
     )
     .bind(producto_id)
     .execute(&pool)
@@ -795,17 +819,22 @@ async fn buscar_lote_por_codigo(pool: PgPool) {
 // VALIDACIÓN DE ACCESO POR ÁREA
 // ==========================================
 
+/// Política actual del laboratorio: todos los tecnólogos pueden operar en cualquier
+/// área. El filtro de área es de UI, no un control de acceso — el handler de stock
+/// valida sólo el rol (`validar_puede_operar_stock`), no la membresía de área. Este
+/// test documenta esa política como spec ejecutable: si alguien agrega control de
+/// acceso por área en el futuro, esta aserción lo va a marcar.
 #[sqlx::test(migrations = "./migrations")]
-async fn tecnologo_sin_acceso_a_area_recibe_403(pool: PgPool) {
+async fn tecnologo_puede_operar_en_cualquier_area(pool: PgPool) {
     let token = common::admin_access_token(&pool).await;
     let app = common::test_app(pool.clone());
 
     let (_, producto_id) = setup_stock(&pool, &token, &app, 1, 100.0).await;
 
-    // Crear tecnólogo con acceso solo a área 2
+    // Tecnólogo asignado sólo al área 2.
     let tec_token = common::create_tecnologo_token(&pool, &[2]).await;
 
-    // Intentar consumir en área 1 → 403
+    // Consumir en el área 1 está permitido (sin control de acceso por área).
     let idem_key = Uuid::new_v4().to_string();
     let (status, _) = common::post_json_idempotent(
         &app,
@@ -821,5 +850,5 @@ async fn tecnologo_sin_acceso_a_area_recibe_403(pool: PgPool) {
     )
     .await;
 
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(status, StatusCode::CREATED);
 }

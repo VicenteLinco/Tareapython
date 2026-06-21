@@ -136,7 +136,7 @@ export default function StockPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-30 group-focus-within:opacity-100 transition-opacity z-10 pointer-events-none" />
             <Input
               placeholder="Buscar por nombre o código..."
-              className="pl-9 h-10 bg-base-200/50 border-transparent focus:bg-base-100 transition-all rounded-xl text-xs"
+              className="pl-9 h-10 bg-base-100 border border-base-300 focus:border-primary transition-all rounded-xl text-xs"
               value={search}
               onChange={(e) => { setSearch(e.target.value); setSearchDropdownOpen(true) }}
               onKeyDown={(e) => handleSearchKeyDown(e, searchSuggestions)}

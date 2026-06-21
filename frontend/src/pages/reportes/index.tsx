@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { BarChart3, CalendarDays, Download, PackageSearch, Trash2 } from 'lucide-react'
 import api from '@/lib/api'
@@ -9,7 +9,7 @@ import {
   type TopDescartadoRow,
 } from '@/api/reportes'
 import { exportToExcel } from '@/lib/export-excel'
-import { formatCantidad, formatDate } from '@/lib/utils'
+import { cn, formatCantidad, formatDate } from '@/lib/utils'
 import type { Area, PaginatedResponse } from '@/types'
 
 type Tab = 'calendario' | 'productos' | 'descartes'
@@ -41,6 +41,10 @@ export default function ReportesPage() {
   const [areaId, setAreaId] = useState('')
   const [productoId, setProductoId] = useState('')
   const [productoSearch, setProductoSearch] = useState('')
+  const [productoOpen, setProductoOpen] = useState(false)
+  const [productoActiveIndex, setProductoActiveIndex] = useState(-1)
+  const productoBoxRef = useRef<HTMLDivElement>(null)
+  const productoItemRefs = useRef<(HTMLDivElement | null)[]>([])
 
   const params = {
     desde,
@@ -63,6 +67,60 @@ export default function ReportesPage() {
         })
         .then((r) => r.data.data),
   })
+
+  const productoSugerencias = productos ?? []
+  const showProductoDropdown = productoOpen && productoSugerencias.length > 0
+
+  // Reset índice activo cuando cambian las sugerencias
+  useEffect(() => { setProductoActiveIndex(-1) }, [productoSearch])
+
+  // Scroll automático al ítem activo
+  useEffect(() => {
+    if (productoActiveIndex >= 0) {
+      productoItemRefs.current[productoActiveIndex]?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [productoActiveIndex])
+
+  // Cerrar al hacer click fuera
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (productoBoxRef.current && !productoBoxRef.current.contains(e.target as Node)) {
+        setProductoOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  function selectProducto(p: ProductoOption) {
+    setProductoId(p.id)
+    setProductoSearch(p.nombre)
+    setProductoOpen(false)
+    setProductoActiveIndex(-1)
+  }
+
+  function handleProductoKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (!productoOpen) { setProductoOpen(true) }
+      if (productoSugerencias.length === 0) return
+      setProductoActiveIndex((i) => (i < productoSugerencias.length - 1 ? i + 1 : 0))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (productoSugerencias.length === 0) return
+      setProductoActiveIndex((i) => (i > 0 ? i - 1 : productoSugerencias.length - 1))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (productoActiveIndex >= 0 && productoSugerencias[productoActiveIndex]) {
+        selectProducto(productoSugerencias[productoActiveIndex])
+      }
+    } else if (e.key === 'Escape') {
+      setProductoOpen(false)
+      setProductoActiveIndex(-1)
+      setProductoSearch('')
+      setProductoId('')
+    }
+  }
 
   const [calendarioQ, productosQ, descartesQ] = useQueries({
     queries: [
@@ -188,24 +246,53 @@ export default function ReportesPage() {
             ))}
           </select>
         </div>
-        <div className="flex flex-col gap-1 min-w-[220px]">
+        <div className="flex flex-col gap-1 min-w-[220px]" ref={productoBoxRef}>
           <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Producto</label>
-          <input
-            className="input input-sm input-bordered bg-base-100 border border-base-300 rounded-lg"
-            list="reportes-productos"
-            placeholder="Buscar producto"
-            value={productoSearch}
-            onChange={(e) => {
-              setProductoSearch(e.target.value)
-              const found = (productos ?? []).find((p) => p.nombre === e.target.value)
-              setProductoId(found?.id ?? '')
-            }}
-          />
-          <datalist id="reportes-productos">
-            {(productos ?? []).map((p) => (
-              <option key={p.id} value={p.nombre} />
-            ))}
-          </datalist>
+          <div className="relative">
+            <input
+              className="input input-sm input-bordered bg-base-100 border border-base-300 rounded-lg w-full"
+              placeholder="Buscar producto"
+              value={productoSearch}
+              role="combobox"
+              aria-expanded={showProductoDropdown}
+              aria-autocomplete="list"
+              aria-activedescendant={productoActiveIndex >= 0 ? `reporte-producto-${productoActiveIndex}` : undefined}
+              onChange={(e) => {
+                setProductoSearch(e.target.value)
+                setProductoId('')
+                setProductoOpen(true)
+              }}
+              onFocus={() => setProductoOpen(true)}
+              onKeyDown={handleProductoKeyDown}
+            />
+            {showProductoDropdown && (
+              <div
+                role="listbox"
+                className="absolute top-full left-0 right-0 mt-1 z-50 bg-base-100 border border-base-200 rounded-xl shadow-lg overflow-y-auto max-h-72"
+              >
+                {productoSugerencias.map((p, i) => (
+                  <div
+                    key={p.id}
+                    id={`reporte-producto-${i}`}
+                    role="option"
+                    aria-selected={i === productoActiveIndex}
+                    ref={(el) => { productoItemRefs.current[i] = el }}
+                    className={cn(
+                      'flex items-center justify-between px-3 py-2 cursor-pointer text-sm transition-colors',
+                      i === productoActiveIndex ? 'bg-primary/10 text-primary' : 'hover:bg-base-200/60'
+                    )}
+                    onMouseDown={(e) => { e.preventDefault(); selectProducto(p) }}
+                    onMouseEnter={() => setProductoActiveIndex(i)}
+                  >
+                    <span className="font-medium truncate">{p.nombre}</span>
+                    {p.codigo_interno && (
+                      <span className="text-[10px] font-mono opacity-40 shrink-0 ml-2">#{p.codigo_interno}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         {(areaId || productoId || productoSearch) && (
           <button
@@ -214,6 +301,8 @@ export default function ReportesPage() {
               setAreaId('')
               setProductoId('')
               setProductoSearch('')
+              setProductoOpen(false)
+              setProductoActiveIndex(-1)
             }}
           >
             Limpiar

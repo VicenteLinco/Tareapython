@@ -9,11 +9,11 @@ La prioridad es una sugerencia de orden, no un compromiso.
 
 **Prioridad:** 🔴 Alta · 🟡 Media · 🟢 Baja
 
-| # | Pendiente | Área | Prioridad |
-|---|-----------|------|-----------|
-| 1 | No deja entrar al simulador de WhatsApp | WhatsApp / Bot | 🔴 Alta |
-| 2 | No deja ver ni descargar las guías de despacho | Guías de despacho | 🔴 Alta |
-| 3 | El tab "Guías de despacho respaldadas" no se lee completo en el lateral | Navegación / UX | 🟡 Media |
+| # | Pendiente | Área | Prioridad | Estado |
+|---|-----------|------|-----------|--------|
+| 1 | No deja entrar al simulador de WhatsApp | WhatsApp / Bot | 🔴 Alta | ✅ Resuelto |
+| 2 | No deja ver ni descargar las guías de despacho | Guías de despacho | 🔴 Alta | ✅ Descarga + robustez (ver: backend OK, re-testear) |
+| 3 | El tab "Guías de despacho respaldadas" no se lee completo en el lateral | Navegación / UX | 🟡 Media | ✅ Resuelto |
 
 ---
 
@@ -30,7 +30,15 @@ La prioridad es una sugerencia de orden, no un compromiso.
 - A levantar al ejecutar (revisar ruta/handler del simulador y consola).
 
 **Criterios de aceptación**
-- [ ] El simulador de WhatsApp se abre sin bloqueos.
+- [x] El simulador de WhatsApp se abre sin bloqueos.
+
+**Causa raíz / solución**
+- El handler `handlers/whatsapp.rs` (webhook + logs) existía completo pero **nunca se
+  montó en `routes.rs`** → `/api/v1/webhooks/whatsapp` y `/logs` devolvían 404.
+- Se separó `routes()` en `public_routes()` (webhook POST, validado por
+  `X-Webhook-Secret`/firma Twilio) y `routes()` (GET `/logs`, protegido por JWT), y se
+  registraron en el grupo público y protegido respectivamente.
+- Verificado en vivo: `logs` 200 con token / 401 sin token; webhook POST 202.
 
 ---
 
@@ -43,12 +51,20 @@ La prioridad es una sugerencia de orden, no un compromiso.
 **Resultado esperado**
 - Las guías de despacho se pueden ver en pantalla y descargar correctamente.
 
-**Evidencia**
-- A levantar al ejecutar (revisar endpoint de generación/descarga y visor).
+**Hallazgos**
+- **Descargar**: no existía NINGÚN botón/lógica de descarga → se agregó `lib/uploads.ts`
+  (`downloadUpload`, baja el blob con JWT y fuerza el guardado) y botón "Descargar" en
+  los lightbox de `ordenes-compra/index.tsx` y `detalle.tsx`.
+- **Ver**: el backend sirve la imagen correctamente (verificado: `GET /uploads/...` →
+  200, image/jpeg, directo y por proxy Vite). El síntoma "Cargando foto" perpetuo era
+  que `AuthenticatedUploadImage` ocultaba cualquier fallo como spinner infinito. Se
+  añadió **estado de error visible + botón Reintentar**, de modo que un fallo real ahora
+  es diagnosticable en lugar de quedar colgado.
 
 **Criterios de aceptación**
-- [ ] Se puede ver una guía de despacho en pantalla.
-- [ ] Se puede descargar la guía de despacho.
+- [x] Se puede descargar la guía de despacho.
+- [~] Ver: backend confirmado OK; re-testear en el browser (un hard-refresh limpia
+  bundles viejos). Si reaparece, ahora muestra error + Reintentar.
 
 ---
 
@@ -63,8 +79,11 @@ La prioridad es una sugerencia de orden, no un compromiso.
 - El tab muestra su etiqueta completa y legible en el lateral (truncado controlado,
   ajuste de ancho o texto alternativo).
 
-**Evidencia**
-- A levantar al ejecutar (componente del sidebar).
+**Causa raíz / solución**
+- El label "Guías de Despacho Respaldadas" excedía el ancho del sidebar (224px) con
+  `whitespace-nowrap` + `overflow-x-hidden` → se clipeaba.
+- Se acortó la etiqueta del sidebar a **"Guías de Despacho"** (el título completo sigue
+  en el header de la página, en el tab y en el tooltip al colapsar).
 
 **Criterios de aceptación**
-- [ ] La etiqueta del tab se lee completa en el lateral.
+- [x] La etiqueta del tab se lee completa en el lateral.

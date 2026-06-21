@@ -155,6 +155,54 @@ async fn no_se_puede_guardar_dos_veces(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
+// Caracterización del PUT /{id}: reemplaza la nota y el detalle completo de un borrador.
+#[sqlx::test(migrations = "./migrations")]
+async fn actualizar_modifica_borrador(pool: PgPool) {
+    let admin_token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let prod_a = setup_producto(&pool, &admin_token, &app).await;
+    let prod_b = setup_producto(&pool, &admin_token, &app).await;
+
+    // Crear borrador con prod_a, cantidad 10.
+    let (_, res) = common::post_json(
+        &app,
+        "/api/v1/solicitudes-compra",
+        &admin_token,
+        serde_json::json!({
+            "nota": "nota inicial",
+            "items": [{ "producto_id": prod_a, "cantidad_sugerida": 10, "unidad_basica_id": 1 }]
+        }),
+    )
+    .await;
+    let solicitud_id = res["id"].as_str().unwrap();
+
+    // PUT: cambiar nota y reemplazar el detalle por prod_b cantidad 25.
+    let (status, _) = common::put_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}", solicitud_id),
+        &admin_token,
+        serde_json::json!({
+            "nota": "nota corregida",
+            "items": [{ "producto_id": prod_b, "cantidad_sugerida": 25, "unidad_basica_id": 1 }]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Verificar que el detalle refleja el reemplazo, no la acumulación.
+    let (_, det) = common::get_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}", solicitud_id),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(det["nota"], "nota corregida");
+    let items = det["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "el detalle se reemplaza, no se acumula");
+    assert_eq!(items[0]["producto_id"].as_str(), Some(prod_b.to_string().as_str()));
+    assert_eq!(items[0]["cantidad_sugerida"].as_str(), Some("25.00"));
+}
+
 #[sqlx::test(migrations = "./migrations")]
 async fn cancelacion_con_motivo(pool: PgPool) {
     let admin_token = common::admin_access_token(&pool).await;
@@ -198,6 +246,200 @@ async fn cancelacion_con_motivo(pool: PgPool) {
     .await;
     assert_eq!(res["estado"], "cancelada");
     assert_eq!(res["motivo_cierre"], "Stock suficiente");
+}
+
+// Caracterización de envíos granulares: registrar_envio marca un proveedor como
+// enviado (y la solicitud pasa a enviada); cancelar_envio lo revierte a pendiente.
+#[sqlx::test(migrations = "./migrations")]
+async fn flujo_envios_por_proveedor(pool: PgPool) {
+    let admin_token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let prod_id = setup_producto(&pool, &admin_token, &app).await;
+
+    let (_, res) = common::post_json(
+        &app,
+        "/api/v1/solicitudes-compra",
+        &admin_token,
+        serde_json::json!({
+            "items": [{ "producto_id": prod_id, "cantidad_sugerida": 10, "unidad_basica_id": 1 }]
+        }),
+    )
+    .await;
+    let solicitud_id = res["id"].as_str().unwrap().to_string();
+
+    common::post_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}/guardar", solicitud_id),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+
+    // Detalle tras guardar: un envío pendiente por proveedor.
+    let (_, det) = common::get_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}", solicitud_id),
+        &admin_token,
+    )
+    .await;
+    let envio = &det["envios"][0];
+    let proveedor_id = envio["proveedor_id"].as_i64().unwrap();
+    let version = envio["version"].as_i64().unwrap();
+    assert_eq!(envio["estado"], "pendiente");
+
+    // Registrar envío para ese proveedor.
+    let (status, det) = common::post_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}/envios", solicitud_id),
+        &admin_token,
+        serde_json::json!({
+            "proveedor_id": proveedor_id,
+            "metodo_envio": "email",
+            "version": version
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(det["envios"][0]["estado"], "enviado");
+    assert_eq!(det["estado"], "enviada", "único proveedor enviado => solicitud enviada");
+
+    // Cancelar el envío (con la version actualizada) lo vuelve a pendiente.
+    let nueva_version = det["envios"][0]["version"].as_i64().unwrap();
+    let (status, det) = common::delete_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}/envios/{}", solicitud_id, proveedor_id),
+        &admin_token,
+        serde_json::json!({ "version": nueva_version }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(det["envios"][0]["estado"], "pendiente");
+    assert_eq!(det["estado"], "guardada", "sin envíos => vuelve a guardada");
+}
+
+// Caracterización del endpoint `enviar` (POST /{id}/enviar): hoy responde 200 pero NO
+// actualiza los envíos que `guardar` ya dejó en 'pendiente' (el INSERT usa
+// ON CONFLICT DO NOTHING), así que la solicitud permanece en 'guardada'.
+// Esto fija el COMPORTAMIENTO ACTUAL (bug latente registrado aparte): el refactor del
+// service no debe alterarlo. Si en el futuro se corrige el bug, este test debe cambiarse
+// conscientemente.
+#[sqlx::test(migrations = "./migrations")]
+async fn enviar_no_actualiza_envios_pendientes_preexistentes(pool: PgPool) {
+    let admin_token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let prod_id = setup_producto(&pool, &admin_token, &app).await;
+
+    let (_, res) = common::post_json(
+        &app,
+        "/api/v1/solicitudes-compra",
+        &admin_token,
+        serde_json::json!({
+            "items": [{ "producto_id": prod_id, "cantidad_sugerida": 10, "unidad_basica_id": 1 }]
+        }),
+    )
+    .await;
+    let solicitud_id = res["id"].as_str().unwrap().to_string();
+
+    common::post_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}/guardar", solicitud_id),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+
+    let (status, _) = common::post_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}/enviar", solicitud_id),
+        &admin_token,
+        serde_json::json!({ "metodo_envio": "email" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (_, det) = common::get_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}", solicitud_id),
+        &admin_token,
+    )
+    .await;
+    // Comportamiento actual: los envíos pendientes preexistentes NO se marcan enviados.
+    assert_eq!(det["estado"], "guardada");
+    assert_eq!(det["envios"][0]["estado"], "pendiente");
+}
+
+// Caracterización de completar: exige una recepción `completa` vinculada; sin ella, 422.
+#[sqlx::test(migrations = "./migrations")]
+async fn completar_requiere_recepcion_completa(pool: PgPool) {
+    let admin_token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let prod_id = setup_producto(&pool, &admin_token, &app).await;
+
+    let (_, res) = common::post_json(
+        &app,
+        "/api/v1/solicitudes-compra",
+        &admin_token,
+        serde_json::json!({
+            "items": [{ "producto_id": prod_id, "cantidad_sugerida": 10, "unidad_basica_id": 1 }]
+        }),
+    )
+    .await;
+    let solicitud_id: Uuid = res["id"].as_str().unwrap().parse().unwrap();
+
+    common::post_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}/guardar", solicitud_id),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+
+    // Sin recepción completa vinculada -> 422.
+    let (status, _) = common::post_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}/completar", solicitud_id),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Insertar una recepción completa vinculada a la solicitud.
+    let proveedor_id: Option<i32> =
+        sqlx::query_scalar("SELECT proveedor_id FROM productos WHERE id = $1")
+            .bind(prod_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let usuario_id = common::get_admin_id(&pool).await;
+    sqlx::query(
+        "INSERT INTO recepciones (proveedor_id, estado, fecha_recepcion, usuario_id, solicitud_id)
+         VALUES ($1, 'completa', NOW(), $2, $3)",
+    )
+    .bind(proveedor_id)
+    .bind(usuario_id)
+    .bind(solicitud_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Ahora sí completa -> OK y estado completada.
+    let (status, _) = common::post_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}/completar", solicitud_id),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (_, det) = common::get_json(
+        &app,
+        &format!("/api/v1/solicitudes-compra/{}", solicitud_id),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(det["estado"], "completada");
 }
 
 #[sqlx::test(migrations = "./migrations")]

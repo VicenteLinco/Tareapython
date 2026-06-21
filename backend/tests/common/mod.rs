@@ -348,6 +348,29 @@ pub async fn delete_req(app: &Router, path: &str, token: &str) -> (StatusCode, s
     (status, json)
 }
 
+/// Helper: envía un request DELETE con JSON body
+pub async fn delete_json(
+    app: &Router,
+    path: &str,
+    token: &str,
+    body: serde_json::Value,
+) -> (StatusCode, serde_json::Value) {
+    let req = Request::builder()
+        .method(Method::DELETE)
+        .uri(path)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_string(&body).unwrap()))
+        .unwrap();
+
+    let response = app.clone().oneshot(req).await.unwrap();
+    let status = response.status();
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value =
+        serde_json::from_slice(&body_bytes).unwrap_or(serde_json::json!(null));
+    (status, json)
+}
+
 /// Helper: POST con idempotency key
 pub async fn post_json_idempotent(
     app: &Router,

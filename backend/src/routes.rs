@@ -89,6 +89,8 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
         .nest("/setup", handlers::setup::routes())
         // Uploads privados (documentos de recepcion, guias, etc.)
         .nest("/uploads", handlers::uploads::routes())
+        // WhatsApp: consola de logs del simulador (admin)
+        .nest("/webhooks/whatsapp", handlers::whatsapp::routes())
         // Middleware de auth
         .route_layer(middleware::from_fn_with_state(state, require_auth));
 
@@ -98,6 +100,11 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
         .nest("/api/v1/auth", auth_protected)
         // Branding público para la pantalla de login (sin auth)
         .nest("/api/v1", handlers::configuracion::public_routes())
+        // WhatsApp webhook público (validado por X-Webhook-Secret / firma Twilio)
+        .nest(
+            "/api/v1/webhooks/whatsapp",
+            handlers::whatsapp::public_routes(),
+        )
         .nest_service(
             "/api/v1/uploads/productos",
             ServeDir::new("uploads/productos"),

@@ -460,10 +460,15 @@ pub async fn get_logs_handler(
     Ok(axum::Json(logs))
 }
 
+/// Public webhook endpoint. Authenticated by `X-Webhook-Secret` (or the Twilio
+/// signature), never by JWT — a real WhatsApp provider cannot send a bearer token.
+pub fn public_routes() -> Router<AppState> {
+    Router::new().route("/", axum::routing::post(webhook_handler))
+}
+
+/// Protected admin endpoints (behind JWT). Powers the WhatsApp simulator console.
 pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/", axum::routing::post(webhook_handler))
-        .route("/logs", axum::routing::get(get_logs_handler))
+    Router::new().route("/logs", axum::routing::get(get_logs_handler))
 }
 
 #[cfg(test)]

@@ -1,7 +1,5 @@
 use sqlx::PgPool;
 use rust_decimal::Decimal;
-use std::collections::HashMap;
-use std::str::FromStr;
 use crate::errors::AppError;
 use serde::{Deserialize, Serialize};
 
@@ -541,7 +539,7 @@ pub async fn registrar_recepcion_tool(
     let lote_id: uuid::Uuid = sqlx::query_scalar(
         r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento)
            VALUES ($1, $2, $3, $4)
-           ON CONFLICT (producto_id, proveedor_id, numero_lote)
+           ON CONFLICT (producto_id, numero_lote)
            DO UPDATE SET fecha_vencimiento = EXCLUDED.fecha_vencimiento
            RETURNING id"#
     )

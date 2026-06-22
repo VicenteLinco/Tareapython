@@ -350,7 +350,7 @@ pub async fn crear_recepcion(
             let lote_id: Uuid = sqlx::query_scalar(
                 r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento, costo_unitario, presentacion_id, recepcion_id)
                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                   ON CONFLICT (producto_id, proveedor_id, numero_lote)
+                   ON CONFLICT (producto_id, numero_lote)
                    DO UPDATE SET
                        fecha_vencimiento = EXCLUDED.fecha_vencimiento,
                        costo_unitario = EXCLUDED.costo_unitario,

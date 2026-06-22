@@ -92,3 +92,14 @@ pub enum UrgenciaReposicion {
     Alta,
     Media,
 }
+
+// Política de control de lote de un producto.
+// 'con_vto' es el comportamiento por defecto (actual).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, SqlxType)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum ControlLote {
+    Trazable,
+    ConVto,
+    Simple,
+}

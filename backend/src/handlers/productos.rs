@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::auth::models::Claims;
 use crate::db::AppState;
+use crate::domain::ControlLote;
 use crate::dto::pagination::{PaginatedResponse, PaginationParams};
 use crate::errors::{AppError, validate_text_length};
 use crate::models::producto::Producto;
@@ -107,6 +108,8 @@ struct CreateProducto {
     pres_codigo_barras: Option<String>,
     pres_gtin: Option<String>,
     pres_gs1_habilitado: Option<bool>,
+    // Política de lote (default 'con_vto' si se omite)
+    control_lote: Option<ControlLote>,
     // Extra presentations still supported
     presentaciones: Option<Vec<CreatePresentacionInline>>,
     area_ids: Option<Vec<i32>>,
@@ -132,6 +135,7 @@ struct UpdateProducto {
     pres_codigo_barras: Option<String>,
     pres_gtin: Option<String>,
     pres_gs1_habilitado: Option<bool>,
+    control_lote: Option<ControlLote>,
     area_ids: Option<Vec<i32>>,
     version: i32,
 }
@@ -285,6 +289,7 @@ async fn crear(
             pres_gtin: req.pres_gtin,
             pres_gs1_habilitado: req.pres_gs1_habilitado.unwrap_or(false),
             presentaciones: req.presentaciones,
+            control_lote: req.control_lote.unwrap_or(ControlLote::ConVto),
             area_ids: req.area_ids,
             usuario_id: claims.sub,
         },
@@ -337,6 +342,7 @@ async fn actualizar(
             pres_codigo_barras: req.pres_codigo_barras,
             pres_gtin: req.pres_gtin,
             pres_gs1_habilitado: req.pres_gs1_habilitado,
+            control_lote: req.control_lote,
             area_ids: req.area_ids,
             version_esperada: req.version,
             usuario_id: claims.sub,

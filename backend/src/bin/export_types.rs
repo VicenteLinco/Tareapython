@@ -1,5 +1,5 @@
 use inventario_lab_backend::domain::{
-    ConfianzaForecast, EstadoConteoItem, EstadoConteoSesion, EstadoEnvioProveedor,
+    ConfianzaForecast, ControlLote, EstadoConteoItem, EstadoConteoSesion, EstadoEnvioProveedor,
     EstadoOrdenCompra, EstadoRecepcion, EstadoSolicitud, UrgenciaReposicion,
 };
 use inventario_lab_backend::dto::{
@@ -75,6 +75,7 @@ fn main() {
     append!(EstadoEnvioProveedor);
     append!(ConfianzaForecast);
     append!(UrgenciaReposicion);
+    append!(ControlLote);
 
     // Modelos
     append!(Area);

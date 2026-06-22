@@ -33,6 +33,50 @@ async fn crear_producto_con_presentaciones(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn producto_control_lote_default_y_set(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    // 1. Sin control_lote explícito -> default 'con_vto'
+    let (status, json) = common::post_json(
+        &app,
+        "/api/v1/productos",
+        &token,
+        serde_json::json!({ "nombre": "Gasa esteril", "unidad_base_id": 1 }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let id1 = json["id"].as_str().unwrap();
+    let cl1: String = sqlx::query_scalar("SELECT control_lote FROM productos WHERE id = $1::uuid")
+        .bind(id1)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(cl1, "con_vto");
+
+    // 2. control_lote 'trazable' explícito -> se persiste
+    let (status2, json2) = common::post_json(
+        &app,
+        "/api/v1/productos",
+        &token,
+        serde_json::json!({
+            "nombre": "Reactivo critico",
+            "unidad_base_id": 1,
+            "control_lote": "trazable"
+        }),
+    )
+    .await;
+    assert_eq!(status2, StatusCode::CREATED);
+    let id2 = json2["id"].as_str().unwrap();
+    let cl2: String = sqlx::query_scalar("SELECT control_lote FROM productos WHERE id = $1::uuid")
+        .bind(id2)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(cl2, "trazable");
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn listar_productos_paginado(pool: PgPool) {
     let token = common::admin_access_token(&pool).await;
 

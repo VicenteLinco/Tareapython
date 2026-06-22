@@ -214,6 +214,7 @@ pub struct CrearProductoParams {
     pub pres_codigo_barras: Option<String>,
     pub pres_gtin: Option<String>,
     pub pres_gs1_habilitado: bool,
+    pub control_lote: crate::domain::ControlLote,
     pub presentaciones: Option<Vec<crate::handlers::productos::CreatePresentacionInline>>,
     pub area_ids: Option<Vec<i32>>,
     pub usuario_id: Uuid,
@@ -238,6 +239,7 @@ pub struct ActualizarProductoParams {
     pub pres_codigo_barras: Option<String>,
     pub pres_gtin: Option<String>,
     pub pres_gs1_habilitado: Option<bool>,
+    pub control_lote: Option<crate::domain::ControlLote>,
     pub area_ids: Option<Vec<i32>>,
     pub version_esperada: i32,
     pub usuario_id: Uuid,
@@ -309,8 +311,9 @@ impl ProductoService {
                 proveedor_id, sku, precio_unidad,
                 ubicacion,
                 temperatura_almacenamiento, requiere_cadena_frio, dias_estabilidad_abierto, clase_riesgo,
-                pres_nombre, pres_nombre_plural, pres_factor, pres_codigo_barras, pres_gtin, pres_gs1_habilitado)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+                pres_nombre, pres_nombre_plural, pres_factor, pres_codigo_barras, pres_gtin, pres_gs1_habilitado,
+                control_lote)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
                RETURNING *"#,
         )
         .bind(&codigo)
@@ -332,6 +335,7 @@ impl ProductoService {
         .bind(&params.pres_codigo_barras)
         .bind(&params.pres_gtin)
         .bind(params.pres_gs1_habilitado)
+        .bind(&params.control_lote)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| match &e {
@@ -576,6 +580,7 @@ impl ProductoService {
                    pres_codigo_barras = COALESCE($15, pres_codigo_barras),
                    pres_gtin = COALESCE($16, pres_gtin),
                    pres_gs1_habilitado = COALESCE($17, pres_gs1_habilitado),
+                   control_lote = COALESCE($20, control_lote),
                    version = version + 1, updated_at = NOW()
                WHERE id = $18 AND version = $19
                RETURNING *"#,
@@ -603,6 +608,7 @@ impl ProductoService {
         .bind(params.pres_gs1_habilitado)
         .bind(params.id)
         .bind(params.version_esperada)
+        .bind(&params.control_lote)
         .fetch_optional(&mut *tx)
         .await?
         .ok_or(AppError::VersionConflict {

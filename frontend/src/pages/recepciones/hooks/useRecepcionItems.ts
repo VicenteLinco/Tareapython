@@ -10,6 +10,7 @@ import { mulDecimal, toNum } from '@/domain/parse'
 import { useDialogState } from '@/hooks/useDialogState'
 import { type DetalleLineUI, type LoteLineUI } from '../components/item-card'
 import { type LoteParaEtiqueta } from '@/lib/label-print'
+import { decideGs1Scan } from '../recepcion-scan'
 import type { Proveedor, Area } from '@/types'
 
 // Re-export for consumers
@@ -22,6 +23,8 @@ export interface PendingScan {
   presentacionId: number | null
   areaId: number | null
   areaNombre: string
+  // When set, the lot is known from a GS1 scan and the sheet only needs the expiry.
+  prefillNumeroLote?: string
 }
 
 interface LoteConfirmadoApi {
@@ -68,6 +71,74 @@ function buildScannedPresentacion(data: ScannedPresentacionData) {
     activa: true,
     version: 1,
     created_at: '',
+  }
+}
+
+/** Fields the scan response carries to build a reception line directly (no extra fetch). */
+interface ScanProductData {
+  producto_id: string | number
+  producto_nombre: string
+  codigo_interno_lote?: string | null
+  presentacion_id?: number | null
+  presentacion_nombre?: string | null
+  factor_conversion?: number | string | null
+  unidad_base_nombre?: string | null
+  unidad_base_nombre_plural?: string | null
+  area_id?: number | null
+  area_nombre?: string | null
+  precio_unidad?: number | string | null
+  imagen_url?: string | null
+}
+
+/**
+ * Builds a fully prefilled reception line from a scan result that already
+ * carries product + presentation data. Used by both the registered-lot path
+ * and the GS1 auto-add path so the line shape stays identical.
+ */
+function buildDetalleLineFromScan(
+  data: ScanProductData,
+  numeroLote: string,
+  fechaVencimiento: string,
+): DetalleLineUI {
+  const nuevoLote: LoteLineUI = {
+    id: uuidv4(),
+    codigo_lote: numeroLote,
+    fecha_vencimiento: fechaVencimiento,
+    cantidad_presentacion: 1,
+    incluir_etiqueta: false,
+    cantidad_etiquetas: 1,
+  }
+  const pres = data.presentacion_id
+    ? [buildScannedPresentacion({
+        producto_id: data.producto_id,
+        presentacion_id: data.presentacion_id,
+        presentacion_nombre: data.presentacion_nombre,
+      })]
+    : []
+  const precio = data.precio_unidad
+    ? mulDecimal(data.precio_unidad, data.factor_conversion || 1).toDecimalPlaces(0).toString()
+    : ''
+  return {
+    id: uuidv4(),
+    producto_id: String(data.producto_id),
+    producto_nombre: data.producto_nombre,
+    codigo_interno: data.codigo_interno_lote || '',
+    presentacion_id: data.presentacion_id || null,
+    presentacion_nombre: data.presentacion_nombre || '',
+    presentacion_nombre_plural: data.presentacion_nombre ? data.presentacion_nombre + 's' : '',
+    cantidad_solicitada: null,
+    factor_conversion: data.factor_conversion ? toNum(data.factor_conversion) : 1,
+    unidad_base_nombre: data.unidad_base_nombre || '',
+    unidad_base_nombre_plural: data.unidad_base_nombre_plural || '',
+    area_destino_id: data.area_id || null,
+    area_destino_nombre: data.area_nombre || '',
+    presentaciones: pres,
+    precio_unitario: precio,
+    precio_anterior: precio,
+    precio_base: data.precio_unidad ? String(data.precio_unidad) : '',
+    imagen_url: data.imagen_url || null,
+    lotes: [nuevoLote],
+    collapsed: false,
   }
 }
 
@@ -385,6 +456,69 @@ export function useRecepcionItems({
       const productoId = String(data.producto_id)
       if (!validarProveedorEscaneado(data.producto_nombre, data.proveedor_id)) return
 
+      // ── GS1 DataMatrix: the code carries lot + expiry → respect the scanned lot ──
+      if (data.tipo === 'gs1') {
+        const outcome = decideGs1Scan(detalles, data)
+        if (outcome.kind === 'increment') {
+          setDetalles(prev => prev.map(d =>
+            d.id !== outcome.detalleId ? d : {
+              ...d,
+              lotes: d.lotes.map(l => l.id !== outcome.loteId ? l : {
+                ...l,
+                cantidad_presentacion: l.cantidad_presentacion + 1,
+                cantidad_etiquetas: l.cantidad_presentacion + 1,
+              }),
+            }
+          ))
+          setScanCount(prev => prev + 1)
+          navigator.vibrate?.(50)
+          notify.success(`+1 ${data.producto_nombre} (lote ${data.gs1?.numero_lote ?? ''})`)
+          return
+        }
+        if (outcome.kind === 'append-lote') {
+          setDetalles(prev => prev.map(d =>
+            d.id !== outcome.detalleId ? d : {
+              ...d,
+              collapsed: false,
+              lotes: [...d.lotes, {
+                id: uuidv4(),
+                codigo_lote: outcome.numeroLote,
+                fecha_vencimiento: outcome.fechaVencimiento,
+                cantidad_presentacion: 1,
+                incluir_etiqueta: false,
+                cantidad_etiquetas: 1,
+              }],
+            }
+          ))
+          setScanCount(prev => prev + 1)
+          navigator.vibrate?.(50)
+          notify.success(`Lote ${outcome.numeroLote} añadido a ${data.producto_nombre}`)
+          return
+        }
+        if (outcome.kind === 'new-line') {
+          const line = buildDetalleLineFromScan(data, outcome.numeroLote, outcome.fechaVencimiento)
+          setDetalles(prev => [line, ...prev])
+          setScanCount(prev => prev + 1)
+          navigator.vibrate?.(50)
+          notify.success(`${data.producto_nombre} agregado`)
+          return
+        }
+        if (outcome.kind === 'prompt-venc') {
+          setScannerPaused(true)
+          setPendingScan({
+            productoId,
+            productoNombre: data.producto_nombre,
+            codigoInterno: data.codigo_interno_lote || '',
+            presentacionId: data.presentacion_id || null,
+            areaId: data.area_id || null,
+            areaNombre: data.area_nombre || '',
+            prefillNumeroLote: outcome.numeroLote,
+          })
+          return
+        }
+        // outcome.kind === 'manual' (GTIN only, no lot) → fall through to generic flow.
+      }
+
       const existingDetalle = detalles.find(d => d.producto_id === productoId)
       if (existingDetalle) {
         setDetalles(prev => prev.map(d => {
@@ -403,43 +537,7 @@ export function useRecepcionItems({
       }
 
       if (data.tipo === 'lote' && data.numero_lote && data.fecha_vencimiento) {
-        const nuevoLote: LoteLineUI = {
-          id: uuidv4(),
-          codigo_lote: data.numero_lote,
-          fecha_vencimiento: data.fecha_vencimiento,
-          cantidad_presentacion: 1,
-          incluir_etiqueta: false,
-          cantidad_etiquetas: 1,
-        }
-        const pres = data.presentacion_id
-          ? [buildScannedPresentacion(data)]
-          : []
-        const line: DetalleLineUI = {
-          id: uuidv4(),
-          producto_id: productoId,
-          producto_nombre: data.producto_nombre,
-          codigo_interno: data.codigo_interno_lote || '',
-          presentacion_id: data.presentacion_id || null,
-          presentacion_nombre: data.presentacion_nombre || '',
-          presentacion_nombre_plural: data.presentacion_nombre ? data.presentacion_nombre + 's' : '',
-          cantidad_solicitada: null,
-          factor_conversion: data.factor_conversion ? toNum(data.factor_conversion) : 1,
-          unidad_base_nombre: data.unidad_base_nombre || '',
-          unidad_base_nombre_plural: data.unidad_base_nombre_plural || '',
-          area_destino_id: data.area_id || null,
-          area_destino_nombre: data.area_nombre || '',
-          presentaciones: pres,
-          precio_unitario: data.precio_unidad
-            ? mulDecimal(data.precio_unidad, data.factor_conversion || 1).toDecimalPlaces(0).toString()
-            : '',
-          precio_anterior: data.precio_unidad
-            ? mulDecimal(data.precio_unidad, data.factor_conversion || 1).toDecimalPlaces(0).toString()
-            : '',
-          precio_base: data.precio_unidad ? String(data.precio_unidad) : '',
-          imagen_url: data.imagen_url || null,
-          lotes: [nuevoLote],
-          collapsed: false,
-        }
+        const line = buildDetalleLineFromScan(data, data.numero_lote, data.fecha_vencimiento)
         setDetalles(prev => [line, ...prev])
         setScanCount(prev => prev + 1)
         navigator.vibrate?.(50)

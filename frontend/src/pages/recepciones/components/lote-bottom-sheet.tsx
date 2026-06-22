@@ -6,11 +6,13 @@ import { Button } from '@/components/ui/button'
 interface LoteBottomSheetProps {
   open: boolean
   productoNombre: string
+  // When set (GS1 scan with lot but no expiry), the lot is locked and we ask only the expiry.
+  prefillNumeroLote?: string
   onConfirm: (data: { numero_lote: string; fecha_vencimiento: string; cantidad: number }) => void
   onCancel: () => void
 }
 
-export function LoteBottomSheet({ open, productoNombre, onConfirm, onCancel }: LoteBottomSheetProps) {
+export function LoteBottomSheet({ open, productoNombre, prefillNumeroLote, onConfirm, onCancel }: LoteBottomSheetProps) {
   const [numeroLote, setNumeroLote] = useState('')
   const [fechaVencimiento, setFechaVencimiento] = useState('')
   const [cantidad, setCantidad] = useState(1)
@@ -18,17 +20,20 @@ export function LoteBottomSheet({ open, productoNombre, onConfirm, onCancel }: L
   const fechaRef = useRef<HTMLInputElement>(null)
   const cantidadRef = useRef<HTMLInputElement>(null)
 
+  const loteLocked = !!prefillNumeroLote
+
   // Resetear y enfocar al abrir
   useEffect(() => {
     if (open) {
-      setNumeroLote('')
+      setNumeroLote(prefillNumeroLote ?? '')
       setFechaVencimiento('')
       setCantidad(1)
-      // Pequeño delay para que la animación se vea antes del focus
-      const t = setTimeout(() => loteRef.current?.focus(), 150)
+      // Pequeño delay para que la animación se vea antes del focus.
+      // Con lote prellenado (GS1) saltamos directo al vencimiento.
+      const t = setTimeout(() => (loteLocked ? fechaRef.current : loteRef.current)?.focus(), 150)
       return () => clearTimeout(t)
     }
-  }, [open])
+  }, [open, prefillNumeroLote, loteLocked])
 
   const canConfirm = numeroLote.trim().length > 0 && fechaVencimiento.length > 0
 
@@ -79,12 +84,16 @@ export function LoteBottomSheet({ open, productoNombre, onConfirm, onCancel }: L
             <div>
               <label className="label py-0.5">
                 <span className="label-text text-xs font-semibold">Número de lote *</span>
+                {loteLocked && (
+                  <span className="label-text-alt text-xs text-success">Detectado por escaneo</span>
+                )}
               </label>
               <input
                 ref={loteRef}
-                className="input input-bordered input-sm w-full font-mono"
+                className={`input input-bordered input-sm w-full font-mono ${loteLocked ? 'input-disabled' : ''}`}
                 placeholder="Ej: LOT-240115"
                 value={numeroLote}
+                readOnly={loteLocked}
                 onChange={e => setNumeroLote(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter') { e.preventDefault(); fechaRef.current?.focus() }

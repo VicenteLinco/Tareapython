@@ -296,6 +296,7 @@ export default function NuevaRecepcionPage() {
       <LoteBottomSheet
         open={pendingScan !== null}
         productoNombre={pendingScan?.productoNombre ?? ''}
+        prefillNumeroLote={pendingScan?.prefillNumeroLote}
         onConfirm={handleConfirmLote}
         onCancel={handleCancelLote}
       />

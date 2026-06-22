@@ -13,6 +13,7 @@ pub struct Presentacion {
     pub codigo_barras: Option<String>,
     pub gtin: Option<String>,
     pub gs1_habilitado: bool,
+    pub gtin_interno: bool,
     pub activa: bool,
     pub version: i32,
     pub created_at: DateTime<Utc>,

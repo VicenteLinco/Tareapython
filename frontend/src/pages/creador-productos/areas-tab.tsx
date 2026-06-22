@@ -79,7 +79,7 @@ export default function AreasTab() {
     onError: (err) => notify.error(parseApiError(err)),
   })
 
-  const { data: productosArea = [], isLoading: loadingProductosArea } = useQuery({
+  const { data: productosArea, isLoading: loadingProductosArea } = useQuery({
     queryKey: ['area-productos-config', configArea?.id],
     queryFn: () => api.get<ProductoAreaConfig[]>(`/areas/${configArea!.id}/productos`).then((r) => r.data),
     enabled: !!configArea,
@@ -87,8 +87,12 @@ export default function AreasTab() {
 
   const [productosConfig, setProductosConfig] = useState<ProductoAreaConfig[]>([])
 
+  // Guard the sync: a bare `= []` default produced a new array reference every
+  // render, so this effect looped (setState → render → new [] → effect → …) and
+  // froze the tab. React Query keeps `data` referentially stable, so syncing only
+  // when it is defined is safe and breaks the loop.
   useEffect(() => {
-    setProductosConfig(productosArea)
+    if (productosArea) setProductosConfig(productosArea)
   }, [productosArea])
 
   const saveAreaConfigMut = useMutation({

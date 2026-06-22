@@ -1,11 +1,21 @@
 import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
+import autoTable, { type RowInput } from 'jspdf-autotable'
 import type { StockItem, Area } from '@/types'
 import { daysUntil, formatDate, formatCantidad, formatPrecio, APP_LOCALE } from '@/lib/utils'
 import { drawPdfLogo } from '@/lib/pdf-logo'
+import {
+  type RowEstado,
+  esSinStock,
+  esBajo,
+  esPorVencer30,
+  getEstado,
+  ESTADO_LABEL,
+} from '@/lib/stock-pdf-estado'
 import api from '@/lib/api'
 
-// ─── Paleta Minimal Pro ────────────────────────────────────────────────────
+// ─── Paleta monocroma ───────────────────────────────────────────────────────
+// Reporte completamente sobrio: solo escala de grises. El estado de cada ítem se
+// comunica por tipografía (peso/tamaño), nunca por color.
 const C = {
   black:       [17,  24,  39]  as [number,number,number], // #111827
   grayDark:    [55,  65,  81]  as [number,number,number], // #374151
@@ -14,19 +24,6 @@ const C = {
   grayLight:   [249, 250, 251] as [number,number,number], // #f9fafb
   grayBorder:  [229, 231, 235] as [number,number,number], // #e5e7eb
   white:       [255, 255, 255] as [number,number,number],
-
-  red:         [220,  38,  38] as [number,number,number], // #dc2626
-  redLight:    [254, 242, 242] as [number,number,number], // #fef2f2
-  redBorder:   [252, 165, 165] as [number,number,number], // #fca5a5
-  redDark:     [185,  28,  28] as [number,number,number], // #b91c1c
-
-  amber:       [217, 119,   6] as [number,number,number], // #d97706
-  amberLight:  [255, 251, 235] as [number,number,number], // #fffbeb
-  amberBorder: [252, 211,  77] as [number,number,number], // #fcd34d
-  amberDark:   [180,  83,   9] as [number,number,number], // #b45309
-
-  green:       [ 34, 197,  94] as [number,number,number], // #22c55e
-  greenOk:     [ 22, 163,  74] as [number,number,number], // #16a34a
 }
 
 // ─── Interfaces ────────────────────────────────────────────────────────────
@@ -63,7 +60,8 @@ interface GlobalStockResponse extends StockResponse {
 
 interface GlobalAlertData {
   totalActivos: number   // todos los insumos activos (con o sin stock)
-  itemsBajo: StockItem[]
+  itemsSinStock: StockItem[]   // agotado (eje cantidad)
+  itemsBajo: StockItem[]       // critico / reponer (eje cantidad)
   itemsPorVencer30: StockItem[]
   itemsVencidos: StockItem[]
   valorTotalInventario: number
@@ -78,21 +76,10 @@ function badgeDate(d: Date): string {
   return `Stock · ${String(d.getDate()).padStart(2,'0')} ${MESES[d.getMonth()]} ${d.getFullYear()}`
 }
 
-function getAlerta(item: StockItem): 'bajo' | 'vencer' | null {
-  const e = item.estado_alerta
-  if (e === 'agotado' || e === 'critico' || e === 'reponer') return 'bajo'
-  if (e === 'riesgo_venc') return 'vencer'
-  if (item.proximo_vencimiento) {
-    const d = daysUntil(item.proximo_vencimiento)
-    if (d !== null && d >= 0 && d <= 30) return 'vencer'
-  }
-  return null
-}
-
 // ─── fetchGlobalResumenData ───────────────────────────────────────────────
 // Obtiene datos globales para el Resumen Ejecutivo (sin filtro de área).
 // - totalActivos: todos los insumos activos (stock>0 OR stock_minimo>0), igual al dashboard
-// - alertas: bajo mínimo (incl. agotados), por vencer 30d, vencidos
+// - alertas: sin stock (agotado), bajo (critico/reponer), por vencer 30d, vencidos
 async function fetchGlobalResumenData(filters?: PdfOptions['filters']): Promise<GlobalAlertData> {
   // Dos llamadas en paralelo:
   // 1. Sin filtro especial → total de insumos activos en el sistema
@@ -121,7 +108,8 @@ async function fetchGlobalResumenData(filters?: PdfOptions['filters']): Promise<
     valorTotalInventario: activosResp.resumen?.valor_total_inventario ?? 0,
     unidadesSinCosto: activosResp.resumen?.unidades_sin_costo ?? 0,
     unidadesTotal: activosResp.resumen?.unidades_total_inventario ?? 0,
-    itemsBajo: allAlerts.filter(i => ['critico', 'reponer', 'agotado'].includes(i.estado_alerta ?? '')),
+    itemsSinStock: allAlerts.filter(esSinStock),
+    itemsBajo: allAlerts.filter(esBajo),
     itemsPorVencer30: allAlerts.filter(i => {
       if (!i.proximo_vencimiento) return false
       const d = daysUntil(i.proximo_vencimiento)
@@ -267,6 +255,7 @@ function drawResumen(
 
   const {
     totalActivos,
+    itemsSinStock,
     itemsBajo,
     itemsPorVencer30: itemsVencer,
     itemsVencidos,
@@ -305,13 +294,16 @@ function drawResumen(
 
   y += 30
 
-  // ── KPI Strip (números sueltos, sin recuadros) ──────────────────────────
+  // ── KPI Strip (5 números sueltos, monocromos, sin recuadros) ─────────────
+  // Sin stock y Stock bajo van separados: la acción es distinta (comprar YA vs
+  // planificar compra). Peso tipográfico, nunca color.
   const kpiH = 24
-  const kpiW = (W - MARGIN * 2) / 4
-  const kpis = [
-    { val: totalActivos,         lbl: 'Insumos activos',    color: C.black   },
-    { val: itemsBajo.length,     lbl: 'Stock bajo',         color: C.red     },
-    { val: itemsVencer.length,   lbl: 'Por vencer 30 días', color: C.amber   },
+  const kpiW = (W - MARGIN * 2) / 5
+  const kpis: { val: number; lbl: string; color: [number,number,number] }[] = [
+    { val: totalActivos,         lbl: 'Insumos activos',    color: C.black    },
+    { val: itemsSinStock.length, lbl: 'Sin stock',          color: C.black    },
+    { val: itemsBajo.length,     lbl: 'Stock bajo',         color: C.grayDark },
+    { val: itemsVencer.length,   lbl: 'Por vencer 30 días', color: C.grayDark },
     { val: itemsVencidos.length, lbl: 'Lotes vencidos',     color: C.grayDark },
   ]
 
@@ -327,7 +319,7 @@ function drawResumen(
 
     // Número grande
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(24)
+    doc.setFontSize(22)
     doc.setTextColor(...kpi.color)
     doc.text(String(kpi.val), kx + 4, y + 11)
 
@@ -375,7 +367,9 @@ function drawResumen(
 
   y += valBandH + 8
 
-  // ── Columnas de alertas ────────────────────────────────────────────────
+  // ── Columnas de alertas (monocromas) ─────────────────────────────────────
+  // Dos columnas físicas. Izquierda = reposición (sin stock primero, en negrita,
+  // luego bajo). Derecha = por vencer. El KPI strip ya separó los conteos.
   const colW   = (W - MARGIN * 2 - 14) / 2
   const colL   = MARGIN
   const colR   = MARGIN + colW + 14
@@ -387,30 +381,23 @@ function drawResumen(
     x: number,
     titulo: string,
     count: number,
-    borderColor: [number,number,number],
-    dotColor: [number,number,number],
-    titleColor: [number,number,number],
-    valColor: [number,number,number],
-    rows: { name: string; val: string }[]
+    rows: { name: string; val: string; bold?: boolean }[]
   ) {
     // Encabezado de columna
-    doc.setFillColor(...dotColor)
-    doc.circle(x + 3, y + 1.5, 2, 'F')
-
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(7.5)
-    doc.setTextColor(...titleColor)
-    doc.text(titulo, x + 8, y + 3)
+    doc.setFontSize(8)
+    doc.setTextColor(...C.black)
+    doc.text(titulo, x, y + 3)
 
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(7)
-    doc.setTextColor(...titleColor)
+    doc.setTextColor(...C.gray)
     const countLabel = `${count} ${count === 1 ? 'producto' : 'productos'}`
     doc.text(countLabel, x + colW, y + 3, { align: 'right' })
 
     // Línea bajo encabezado
-    doc.setDrawColor(...borderColor)
-    doc.setLineWidth(1)
+    doc.setDrawColor(...C.black)
+    doc.setLineWidth(0.6)
     doc.line(x, y + 6, x + colW, y + 6)
     doc.setLineWidth(0.4)
 
@@ -432,14 +419,13 @@ function drawResumen(
         doc.rect(x, ry - ROW_H + 1.5, colW, ROW_H, 'F')
       }
 
-      // Nombre (truncado)
-      doc.setFont('helvetica', 'normal')
+      // Nombre (truncado). Bold para los ítems sin stock (máxima urgencia).
+      doc.setFont('helvetica', row.bold ? 'bold' : 'normal')
       doc.setFontSize(7)
       doc.setTextColor(...C.grayDark)
       const valW = doc.getTextWidth(row.val) + 2
       const maxNomW = colW - valW - 4
       let nombre = row.name
-      doc.setFont('helvetica', 'normal')
       while (doc.getTextWidth(nombre) > maxNomW && nombre.length > 4)
         nombre = nombre.slice(0, -1)
       if (nombre !== row.name) nombre += '…'
@@ -447,7 +433,7 @@ function drawResumen(
 
       // Valor
       doc.setFont('helvetica', 'bold')
-      doc.setTextColor(...valColor)
+      doc.setTextColor(...C.grayDark)
       doc.text(row.val, x + colW - 2, ry, { align: 'right' })
     })
 
@@ -460,20 +446,25 @@ function drawResumen(
     }
   }
 
-  // Columna izquierda — Bajo mínimo
+  // Columna izquierda — Reposición (sin stock + bajo)
   drawAlertCol(
-    colL, 'Stock Bajo', itemsBajo.length,
-    C.redBorder, C.red, C.redDark, C.redDark,
-    itemsBajo.map(i => ({
-      name: i.producto_nombre,
-      val:  `${formatCantidad(Math.round(i.stock_total ?? 0), i.unidad, i.unidad_plural)}${i.dias_autonomia != null ? ` · ~${i.dias_autonomia}d` : ''}`
-    }))
+    colL, 'Reposición', itemsSinStock.length + itemsBajo.length,
+    [
+      ...itemsSinStock.map(i => ({
+        name: i.producto_nombre,
+        val:  'sin stock',
+        bold: true,
+      })),
+      ...itemsBajo.map(i => ({
+        name: i.producto_nombre,
+        val:  `${formatCantidad(Math.round(i.stock_total ?? 0), i.unidad, i.unidad_plural)}${i.dias_autonomia != null ? ` · ~${i.dias_autonomia}d` : ''}`,
+      })),
+    ]
   )
 
   // Columna derecha — Por vencer
   drawAlertCol(
-    colR, 'Por Vencer en 30 días', itemsVencer.length,
-    C.amberBorder, C.amber, C.amberDark, C.amberDark,
+    colR, 'Por vencer en 30 días', itemsVencer.length,
     itemsVencer.map(i => {
       const d = daysUntil(i.proximo_vencimiento!)
       const val = d === null ? '—' : d === 0 ? 'hoy' : `vence en ${d} ${d === 1 ? 'día' : 'días'}`
@@ -497,21 +488,21 @@ function drawAreaPage(
   monedaCodigo: string
 ) {
   const SECTION_H = 22   // altura de la sección de título del área
-  const alertas = items.map(getAlerta)
 
-  const bajoCuenta = items.filter(i =>
-    ['critico', 'reponer', 'agotado'].includes(i.estado_alerta ?? '')
-  ).length
-  const vencerCuenta = items.filter(i => {
-    if (!i.proximo_vencimiento) return false
-    const d = daysUntil(i.proximo_vencimiento)
-    return d !== null && d >= 0 && d <= 30
-  }).length
+  const sinStockCuenta = items.filter(esSinStock).length
+  const bajoCuenta     = items.filter(esBajo).length
+  const vencerCuenta   = items.filter(esPorVencer30).length
 
   // Valor total del área para calcular el peso (% del valor) de cada ítem.
   const totalValorArea = items.reduce((s, i) => s + (i.valor_stock ?? 0), 0)
 
-  const tableBody = items.map(item => {
+  // Lista plana de productos: el reporte busca máxima sobriedad, sin bandas de
+  // grupo por categoría ni subtotales (cero peso visual). rowMeta empareja cada
+  // fila del body con su RowEstado; lo usa didParseCell para el peso tipográfico.
+  const rowMeta: RowEstado[] = []
+  const tableBody: RowInput[] = []
+
+  for (const item of items) {
     const stock = item.stock_total ?? 0
     const stockRound = Math.round(stock)
     const stockStr = formatCantidad(stockRound, item.unidad, item.unidad_plural)
@@ -530,82 +521,111 @@ function drawAreaPage(
       ? `${Math.round((item.valor_stock / totalValorArea) * 100)}%`
       : '—'
 
+    // % del stock que vence en la fecha más próxima. Distingue un vencimiento
+    // marginal (ej. 1% del total) de uno real. Solo se anexa si el backend lo
+    // informa y el vencimiento es próximo o ya ocurrió (donde el dato importa).
+    const pct = item.pct_por_vencer
+    const pctStr = pct != null ? ` · vence ${pct}%` : ''
+
     let vencStr = '—'
     if (item.proximo_vencimiento) {
       const d = daysUntil(item.proximo_vencimiento)
       if (d !== null && d < 0) {
-        vencStr = `${formatDate(item.proximo_vencimiento)} (Vencido)`
+        vencStr = `${formatDate(item.proximo_vencimiento)} (Vencido)${pctStr}`
       } else if (d !== null && d <= 30) {
-        vencStr = `${formatDate(item.proximo_vencimiento)} · ${d}d`
+        vencStr = `${formatDate(item.proximo_vencimiento)} · ${d}d${pctStr}`
       } else {
         vencStr = formatDate(item.proximo_vencimiento)
       }
     }
 
-    return [
+    // Columna Estado (texto): único canal de estado ahora que no hay color.
+    const estado = getEstado(item)
+    const estadoStr = estado ? ESTADO_LABEL[estado] : '—'
+
+    tableBody.push([
       item.producto_nombre,
-      item.codigo_interno ?? '—',
-      item.categoria ?? '—',
+      item.sku || item.codigo_interno || '—',
       item.proveedor_nombre ?? '—',
       stockStr,
       cobStr,
       vencStr,
+      estadoStr,
       valorStr,
       pctValStr,
-    ]
-  })
+    ])
+    rowMeta.push(estado)
+  }
 
   let isFirstPage = true
 
   autoTable(doc, {
     startY: HEADER_H + SECTION_H,
-    head: [['Producto', 'Código', 'Categoría', 'Proveedor', 'Stock', 'Cobertura', 'Vencimiento', 'Valor', '% Val']],
+    head: [['Producto', 'Código', 'Proveedor', 'Stock', 'Cobertura', 'Vencimiento', 'Estado', 'Valor', '% del valor del área']],
     body: tableBody,
 
+    // Grid completo estilo planilla: separadores verticales y horizontales en gris
+    // claro. `linebreak` evita que las palabras se corten (parten en la línea
+    // siguiente por palabra completa); `valign: middle` centra verticalmente.
+    theme: 'grid',
+    styles: {
+      lineColor: C.grayBorder,
+      lineWidth: 0.1,
+      overflow:  'linebreak',
+      valign:    'middle',
+    },
     headStyles: {
-      fillColor:   C.black,
-      textColor:   C.white,
+      fillColor:   C.white,
+      textColor:   C.black,
       fontStyle:   'bold',
       fontSize:    6.5,
-      cellPadding: { top: 4, bottom: 4, left: 4, right: 4 },
+      halign:      'center',
+      valign:      'middle',
+      cellPadding: { top: 4, bottom: 4, left: 3, right: 3 },
     },
     bodyStyles: {
       fontSize:    7,
-      cellPadding: { top: 3.5, bottom: 3.5, left: 4, right: 4 },
+      cellPadding: { top: 3.5, bottom: 3.5, left: 3, right: 3 },
       textColor:   C.grayDark,
     },
-    alternateRowStyles: { fillColor: C.grayLight },
-    tableLineColor: C.grayBorder,
-    tableLineWidth: 0.2,
 
     columnStyles: {
-      0: { cellWidth: 'auto', fontStyle: 'bold', textColor: C.black },
-      1: { cellWidth: 20, font: 'courier', fontSize: 6.5, textColor: C.gray },
-      2: { cellWidth: 22, fontSize: 6.5, textColor: C.gray },
-      3: { cellWidth: 26, fontSize: 6.5, textColor: C.gray },
-      4: { cellWidth: 24, halign: 'right' },
-      5: { cellWidth: 20, halign: 'center', fontSize: 6.5 },
-      6: { cellWidth: 26, fontSize: 6.5 },
-      7: { cellWidth: 24, halign: 'right', fontStyle: 'bold', textColor: C.black },
-      8: { cellWidth: 14, halign: 'right', fontSize: 6.5, textColor: C.gray },
+      0: { cellWidth: 'auto', halign: 'left',   fontStyle: 'bold', textColor: C.black },
+      1: { cellWidth: 20, halign: 'center', font: 'courier', fontSize: 6.5, textColor: C.gray },
+      2: { cellWidth: 28, halign: 'left',   fontSize: 6.5, textColor: C.gray },
+      3: { cellWidth: 22, halign: 'center' },
+      4: { cellWidth: 20, halign: 'center', fontSize: 6.5 },
+      5: { cellWidth: 30, halign: 'center', fontSize: 6.5 },
+      6: { cellWidth: 22, halign: 'center', fontSize: 6.5 },
+      7: { cellWidth: 26, halign: 'center', fontStyle: 'bold', textColor: C.black },
+      8: { cellWidth: 26, halign: 'center', fontSize: 6.5, textColor: C.gray },
     },
 
     margin: { left: MARGIN, right: MARGIN, top: HEADER_H + SECTION_H - 2, bottom: FOOTER_H + 2 },
 
     didParseCell: (data) => {
       if (data.section !== 'body') return
-      const alerta = alertas[data.row.index]
+      const meta = rowMeta[data.row.index]
 
-      if (alerta === 'bajo') {
-        data.cell.styles.fillColor = C.redLight
-        // Stock (4) y Cobertura (5) en rojo
-        if (data.column.index === 4 || data.column.index === 5)
-          data.cell.styles.textColor = C.redDark
-      } else if (alerta === 'vencer') {
-        data.cell.styles.fillColor = C.amberLight
-        // Vencimiento (6) en ámbar
-        if (data.column.index === 6)
-          data.cell.styles.textColor = C.amberDark
+      // Monocromo: el estado se distingue solo por peso tipográfico. Los estados
+      // más urgentes (sin stock / vencido) van en negrita en la columna Estado (6);
+      // el resto, normal.
+      if (data.column.index === 6 && (meta === 'sin_stock' || meta === 'vencido')) {
+        data.cell.styles.fontStyle = 'bold'
+        data.cell.styles.textColor = C.black
+      }
+    },
+
+    didDrawCell: (data) => {
+      // Encabezado sobrio: sin relleno, solo una línea inferior fina que lo separa
+      // del cuerpo (cero peso visual, estilo informe serio).
+      if (data.section === 'head') {
+        doc.setDrawColor(...C.grayDark)
+        doc.setLineWidth(0.5)
+        doc.line(
+          data.cell.x, data.cell.y + data.cell.height,
+          data.cell.x + data.cell.width, data.cell.y + data.cell.height,
+        )
       }
     },
 
@@ -625,39 +645,24 @@ function drawAreaPage(
         doc.setTextColor(...C.black)
         doc.text(area.nombre, MARGIN, secY + 10)
 
-        // Mini-stats (derecha)
+        // Mini-stats (derecha): conteo + resumen de estados, todo sobrio en texto.
         const statsX = W - MARGIN
-        doc.setFont('helvetica', 'normal')
-        doc.setFontSize(7)
-        doc.setTextColor(...C.gray)
+        const partes: string[] = []
+        if (sinStockCuenta > 0) partes.push(`${sinStockCuenta} sin stock`)
+        if (bajoCuenta > 0)     partes.push(`${bajoCuenta} bajo`)
+        if (vencerCuenta > 0)   partes.push(`${vencerCuenta} por vencer`)
         const statsStr = `${items.length} ${items.length === 1 ? 'producto' : 'productos'}`
-        doc.text(statsStr, statsX, secY + 10, { align: 'right' })
 
-        // Pills de alerta
-        if (bajoCuenta > 0 || vencerCuenta > 0) {
-          let pillX = statsX - doc.getTextWidth(statsStr) - 4
-          doc.setFontSize(6.5)
-
-          if (vencerCuenta > 0) {
-            const pillTxt = `${vencerCuenta} por vencer`
-            const pW = doc.getTextWidth(pillTxt) + 8
-            pillX -= pW + 4
-            doc.setFillColor(...C.amberLight)
-            doc.roundedRect(pillX, secY + 5, pW, 6.5, 2, 2, 'F')
-            doc.setTextColor(...C.amberDark)
-            doc.text(pillTxt, pillX + 4, secY + 9.5)
-          }
-
-          if (bajoCuenta > 0) {
-            const pillTxt = `${bajoCuenta} stock bajo`
-            const pW = doc.getTextWidth(pillTxt) + 8
-            pillX -= pW + 4
-            doc.setFillColor(...C.redLight)
-            doc.roundedRect(pillX, secY + 5, pW, 6.5, 2, 2, 'F')
-            doc.setTextColor(...C.redDark)
-            doc.text(pillTxt, pillX + 4, secY + 9.5)
-          }
+        if (partes.length > 0) {
+          doc.setFont('helvetica', 'normal')
+          doc.setFontSize(7)
+          doc.setTextColor(...C.gray)
+          doc.text(partes.join('  ·  '), statsX, secY + 6, { align: 'right' })
         }
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(7.5)
+        doc.setTextColor(...C.grayDark)
+        doc.text(statsStr, statsX, secY + 12, { align: 'right' })
       } else {
         // Continuación
         doc.setFont('helvetica', 'normal')
@@ -666,13 +671,10 @@ function drawAreaPage(
         doc.text(`${area.nombre} — continuación`, MARGIN, secY + 10)
       }
 
-      // Línea divisora degradada (simulada con dos segmentos)
-      doc.setDrawColor(...C.black)
-      doc.setLineWidth(1.5)
-      doc.line(MARGIN, secY + 14, MARGIN + 60, secY + 14)
+      // Línea divisora fina bajo el título del área (gris claro, sin peso visual).
       doc.setDrawColor(...C.grayBorder)
       doc.setLineWidth(0.4)
-      doc.line(MARGIN + 60, secY + 14, W - MARGIN, secY + 14)
+      doc.line(MARGIN, secY + 14, W - MARGIN, secY + 14)
     },
   })
 }

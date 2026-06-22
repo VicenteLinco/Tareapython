@@ -53,6 +53,10 @@ Donde hubo análisis previo se deja la **causa raíz** y la **evidencia** (archi
 - [x] El logo respeta transparencia/forma (sin recuadro opaco) — círculo de fondo eliminado.
 - [ ] Revisión visual sobre un logo PNG transparente real (requiere render — pendiente del usuario).
 - [x] Afinar el listado → columna **Valor** por producto (moneda configurada; "—" si el lote no tiene costo).
+- [x] Rediseño del layout del listado por área → **agrupación por categoría con subtotal de
+      valor por grupo**. Se eliminó la columna Categoría (redundante con el encabezado de grupo),
+      liberando ancho horizontal. Función pura testeable `lib/stock-pdf-group.ts::agruparPorCategoria`
+      (8 tests vitest); las filas-encabezado se intercalan en el body con `colSpan`.
 - [x] Mejorar estética del resumen ejecutivo → banda **Valor total del inventario** + "% del stock sin costo".
 - [x] (Backend) Exponer costo en `/stock` para la valorización del inventario.
       → Decisión: **costo por lote**. `/stock` ahora devuelve `valor_stock` por ítem y

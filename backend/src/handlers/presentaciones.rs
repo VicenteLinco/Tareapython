@@ -1,5 +1,5 @@
 use axum::extract::{Path, State};
-use axum::routing::{get, post, put};
+use axum::routing::{delete, get, post, put};
 use axum::{Extension, Json, Router};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -143,10 +143,11 @@ pub async fn assign_gtin(
     }
 
     let updated = sqlx::query(
-        "UPDATE presentaciones SET gtin = $1, gs1_habilitado = true \
-         WHERE id = $2 AND deleted_at IS NULL",
+        "UPDATE presentaciones SET gtin = $1, gs1_habilitado = true, gtin_interno = $2 \
+         WHERE id = $3 AND deleted_at IS NULL",
     )
     .bind(&gtin)
+    .bind(generated)
     .bind(id)
     .execute(&state.pool)
     .await;
@@ -215,7 +216,7 @@ pub async fn bulk_assign_gtin(
         let new_gtin = row.0;
 
         let result = sqlx::query(
-            "UPDATE presentaciones SET gtin = $1, gs1_habilitado = true \
+            "UPDATE presentaciones SET gtin = $1, gs1_habilitado = true, gtin_interno = true \
              WHERE id = $2 AND gtin IS NULL",
         )
         .bind(&new_gtin)
@@ -233,6 +234,32 @@ pub async fn bulk_assign_gtin(
     Ok(Json(BulkAssignGtinResponse { updated: count }))
 }
 
+/// DELETE /api/v1/presentaciones/:id/gtin
+///
+/// Removes the GTIN from a presentation (clears the code, disables GS1 and
+/// resets the internal flag). Used to fix a wrongly assigned code.
+pub async fn clear_gtin(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<i32>,
+) -> Result<axum::http::StatusCode, AppError> {
+    crate::auth::middleware::require_role(&["admin"])(&claims)?;
+
+    let result = sqlx::query(
+        "UPDATE presentaciones SET gtin = NULL, gs1_habilitado = false, gtin_interno = false \
+         WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(id)
+    .execute(&state.pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Presentacion not found".into()));
+    }
+
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct PresentacionConProducto {
     pub id: i32,
@@ -242,6 +269,7 @@ pub struct PresentacionConProducto {
     pub nombre_plural: String,
     pub gtin: Option<String>,
     pub gs1_habilitado: bool,
+    pub gtin_interno: bool,
     pub activa: bool,
 }
 
@@ -256,7 +284,7 @@ pub async fn listar_todas(
 
     let rows: Vec<PresentacionConProducto> = sqlx::query_as(
         "SELECT p.id, p.producto_id, pr.nombre AS producto_nombre, \
-                p.nombre, p.nombre_plural, p.gtin, p.gs1_habilitado, p.activa \
+                p.nombre, p.nombre_plural, p.gtin, p.gs1_habilitado, p.gtin_interno, p.activa \
          FROM presentaciones p \
          JOIN productos pr ON pr.id = p.producto_id \
          WHERE p.deleted_at IS NULL AND pr.deleted_at IS NULL \
@@ -279,5 +307,6 @@ pub fn direct_routes() -> Router<AppState> {
         .route("/", get(listar_todas))
         .route("/{id}", put(actualizar).delete(eliminar))
         .route("/{id}/assign-gtin", post(assign_gtin))
+        .route("/{id}/gtin", delete(clear_gtin))
         .route("/bulk-assign-gtin", post(bulk_assign_gtin))
 }

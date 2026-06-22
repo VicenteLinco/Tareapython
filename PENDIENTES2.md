@@ -16,7 +16,6 @@ compromiso.
 | # | Pendiente | Área | Prioridad |
 |---|-----------|------|-----------|
 | 7 | Normalización ortográfica y español neutro (solo la pasada ortográfica) | Texto / i18n | 🟢 Baja |
-| 9 | Facade inconsistente: SQL crudo en handlers vs. capa `services` | Arquitectura | 🟡 Media |
 
 ---
 
@@ -36,7 +35,11 @@ compromiso.
 - Textos de UI y PDF (lista concreta a levantar al ejecutar).
 
 **Criterios de aceptación**
-- [ ] Revisar acentos y español neutro en: textos de UI, prompts/mensajes del bot, PDF.
+- [x] Prompts/mensajes del bot (`llm.rs`): revisado, ortografía y acentos correctos (sin cambios).
+- [x] Acentos en textos de UI: corregidos 9 errores objetivos (Área, Días, Áreas, Último consumo,
+      Teléfono, análisis) en reportes, conteo, movimientos y solicitudes-compra.
+- [ ] **Decisión pendiente del usuario:** neutralizar voseo (ej. "Seleccioná" → "Selecciona"/"Seleccione").
+      Es tono de producto, no error ortográfico; requiere decisión antes de un barrido de voseo.
 
 > La parte de **locale** ya está cerrada y centralizada (`APP_LOCALE` en `lib/utils.ts`,
 > se mantiene `es-CL`). Solo queda la pasada **ortográfica / español neutro**, que se ejecuta
@@ -58,42 +61,6 @@ El objetivo es coherencia: que un mismo problema se resuelva siempre del mismo m
 - **Observer** — trigger de PostgreSQL (migration 032) `movimientos → stock`; React Query/Zustand en el frontend.
 
 El pendiente de abajo es una **inconsistencia**, no un acierto.
-
----
-
-## 9. Facade inconsistente — SQL crudo en handlers vs. capa `services`
-**Prioridad:** 🟡 Media · **Área:** Arquitectura
-
-**Problema**
-- La capa `services/` funciona como fachada sobre el subsistema SQL para algunos módulos
-  (`stock_ops`, `recepcion_service`, `consumo_service`…), pero otros handlers tiran SQL
-  directo sin pasar por un service. No hay una regla pareja de dónde vive la lógica de datos.
-- Esto dificulta testear, reutilizar y razonar: el mismo tipo de operación está resuelto de
-  dos formas distintas según el módulo.
-
-**Resultado esperado**
-- Una convención única y documentada: qué va en el handler (HTTP, validación de entrada,
-  orquestación) y qué va en el service (acceso a datos + reglas de negocio).
-
-**Evidencia (handlers con más SQL directo)**
-- `backend/src/handlers/solicitudes_compra.rs` — 66 queries directas.
-- `backend/src/handlers/configuracion.rs` — 64.
-- `backend/src/handlers/productos.rs` — 32.
-- `backend/src/handlers/stock.rs` — 22.
-
-**Criterios de aceptación**
-- [x] Documentar la convención handler/service en `CLAUDE.md`. → hecho (sección "Convención handler / service").
-- [~] Identificar los handlers que concentran lógica de datos y mover las queries a su service.
-      → **En progreso.** Dos handlers grandes ya migrados 100% (sin SQL crudo):
-        - `productos.rs` → `producto_service` (molde de referencia del patrón). Tests:
-          `productos_test` 9/9 + `productos_codigos_test` 9/9 + `productos_imagen_test` 5/5.
-        - `solicitudes_compra.rs` → `solicitud_service` (1274→196 líneas, 0 `sqlx::`).
-          Migrado en 5 slices (lecturas, borrador, cierre, envíos, forecast) con tests de
-          caracterización primero. `solicitudes_test` 12/12 (4 nuevos: actualizar, completar,
-          flujo de envíos, enviar). **Próximo handler**: `configuracion` (~64 queries).
-- [ ] Priorizar los más grandes (`configuracion` 64 queries, `stock` 22) por superficie de impacto.
-- [x] Migrar **con tests** (el harness ya está desbloqueado vía `common::seed_base_data`), incremental, no big-bang.
-      → patrón establecido: tests de caracterización primero, luego mover el SQL.
 
 ---
 

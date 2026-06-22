@@ -2,7 +2,8 @@
 
 Tercera tanda. A diferencia de la tanda 2 (auditoría de patrones), acá el foco son
 **rediseños de flujo y UX** pedidos sobre módulos en uso: exportable de inventario,
-catálogo de productos, solicitudes de compra, órdenes/guías, conteo y el menú lateral.
+catálogo de productos, solicitudes de compra, órdenes/guías, conteo, el menú lateral
+y el escaneo GS1 end-to-end (recepción, consumo, conteo).
 
 Cada ítem describe el **problema** y el **resultado esperado**, no la solución técnica.
 Donde hubo análisis previo se deja la **causa raíz** y la **evidencia** (archivo:línea).
@@ -56,10 +57,17 @@ La prioridad es una sugerencia de orden, no un compromiso.
 
 **Criterios de aceptación**
 - [x] El logo respeta transparencia/forma (sin recuadro opaco) — círculo de fondo eliminado.
-- [ ] Revisión visual sobre un logo PNG transparente real (requiere render).
-- [ ] Afinar el listado (cobertura en días, legibilidad) — iterar con el PDF a la vista.
-- [ ] Mejorar estética del resumen ejecutivo — iterar con el PDF a la vista.
-- [ ] (Backend) Exponer costo en `/stock` para la valorización del inventario.
+- [ ] Revisión visual sobre un logo PNG transparente real (requiere render — pendiente del usuario).
+- [x] Afinar el listado → columna **Valor** por producto (moneda configurada; "—" si el lote no tiene costo).
+- [x] Mejorar estética del resumen ejecutivo → banda **Valor total del inventario** + "% del stock sin costo".
+- [x] (Backend) Exponer costo en `/stock` para la valorización del inventario.
+      → Decisión: **costo por lote**. `/stock` ahora devuelve `valor_stock` por ítem y
+        `valor_total_inventario` + `unidades_sin_costo` en el resumen. Costo base del lote =
+        `COALESCE(lotes.costo_unitario, precio_unitario/factor de la última recepción)`.
+        Hallazgo: la UI de recepción puebla `recepcion_detalle.precio_unitario` (por
+        presentación), no `lotes.costo_unitario`; por eso el COALESCE + `/factor`.
+        Tests: `stock_test::test_listar_valoriza_stock_por_costo_de_lote` +
+        `test_listar_stock_sin_costo_se_informa`.
 
 ---
 

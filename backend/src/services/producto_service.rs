@@ -15,46 +15,29 @@ struct Gs1Parsed {
 }
 
 fn parse_gs1(codigo: &str) -> Option<Gs1Parsed> {
-    let raw = codigo.trim().replace(['(', ')'], "");
-    let mut i = 0usize;
-    let bytes = raw.as_bytes();
+    let trimmed = codigo.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let pairs = if trimmed.contains('(') {
+        parse_gs1_bracketed(trimmed)
+    } else {
+        parse_gs1_plain(trimmed)
+    }?;
+
     let mut gtin = None;
     let mut lote = None;
     let mut vencimiento = None;
-
-    while i + 2 <= raw.len() {
-        let ai = &raw[i..i + 2];
-        i += 2;
-        match ai {
-            "01" if i + 14 <= raw.len() => {
-                gtin = Some(raw[i..i + 14].to_string());
-                i += 14;
-            }
-            "17" if i + 6 <= raw.len() => {
-                let val = &raw[i..i + 6];
-                i += 6;
-                let year = 2000 + val[0..2].parse::<i32>().ok()?;
-                let month = val[2..4].parse::<u32>().ok()?;
-                let day = val[4..6].parse::<u32>().ok()?;
-                vencimiento = chrono::NaiveDate::from_ymd_opt(year, month, day);
-            }
-            "10" => {
-                let start = i;
-                while i + 2 <= raw.len() {
-                    let maybe_ai = &raw[i..i + 2];
-                    if matches!(maybe_ai, "01" | "17" | "21" | "30") {
-                        break;
-                    }
-                    if bytes[i] == 29 {
-                        break;
-                    }
-                    i += 1;
-                }
-                if i > start {
-                    lote = Some(raw[start..i].trim_matches(char::from(29)).to_string());
-                }
-            }
-            _ => break,
+    for (ai, data) in pairs {
+        if data.is_empty() {
+            continue;
+        }
+        match ai.as_str() {
+            "01" => gtin = Some(data),
+            "17" => vencimiento = parse_gs1_date(&data),
+            "10" => lote = Some(data),
+            _ => {}
         }
     }
 
@@ -63,6 +46,151 @@ fn parse_gs1(codigo: &str) -> Option<Gs1Parsed> {
         lote,
         vencimiento,
     })
+}
+
+/// Splits the bracketed notation `(01)...(17)...(10)...` into (AI, data) pairs.
+/// Each data segment runs until the next `(`, so embedded digits never confuse it.
+fn parse_gs1_bracketed(input: &str) -> Option<Vec<(String, String)>> {
+    let mut pairs = Vec::new();
+    let mut rest = input;
+    while let Some(open) = rest.find('(') {
+        let after_open = &rest[open + 1..];
+        let close = after_open.find(')')?;
+        let ai = after_open[..close].trim().to_string();
+        let after_close = &after_open[close + 1..];
+        let data_end = after_close.find('(').unwrap_or(after_close.len());
+        let data = after_close[..data_end].trim().to_string();
+        pairs.push((ai, data));
+        rest = &after_close[data_end..];
+    }
+    if pairs.is_empty() {
+        None
+    } else {
+        Some(pairs)
+    }
+}
+
+/// Splits a concatenated / FNC1-separated string into (AI, data) pairs.
+/// Fixed-length AIs (01, 11, 17) consume a known width; variable-length AIs run
+/// until the FNC1 group separator (0x1d) or the end of the string.
+fn parse_gs1_plain(input: &str) -> Option<Vec<(String, String)>> {
+    const GS: u8 = 0x1d;
+    let bytes = input.as_bytes();
+    let mut pairs = Vec::new();
+    let mut i = 0usize;
+    while i + 2 <= input.len() {
+        if bytes[i] == GS {
+            i += 1;
+            continue;
+        }
+        let ai = &input[i..i + 2];
+        if !ai.bytes().all(|b| b.is_ascii_digit()) {
+            break;
+        }
+        i += 2;
+        let fixed = match ai {
+            "01" => Some(14usize),
+            "11" | "17" => Some(6usize),
+            _ => None,
+        };
+        match fixed {
+            Some(len) => {
+                if i + len > input.len() {
+                    break;
+                }
+                pairs.push((ai.to_string(), input[i..i + len].to_string()));
+                i += len;
+            }
+            None => {
+                let start = i;
+                while i < input.len() && bytes[i] != GS {
+                    i += 1;
+                }
+                pairs.push((ai.to_string(), input[start..i].to_string()));
+            }
+        }
+    }
+    if pairs.is_empty() {
+        None
+    } else {
+        Some(pairs)
+    }
+}
+
+/// Converts a GS1 `YYMMDD` value to a date. `DD=00` means the last day of the month.
+fn parse_gs1_date(val: &str) -> Option<chrono::NaiveDate> {
+    if val.len() != 6 || !val.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let year = 2000 + val[0..2].parse::<i32>().ok()?;
+    let month = val[2..4].parse::<u32>().ok()?;
+    let day = val[4..6].parse::<u32>().ok()?;
+    if day == 0 {
+        let (ny, nm) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+        chrono::NaiveDate::from_ymd_opt(ny, nm, 1)?.pred_opt()
+    } else {
+        chrono::NaiveDate::from_ymd_opt(year, month, day)
+    }
+}
+
+#[cfg(test)]
+mod gs1_tests {
+    use super::parse_gs1;
+    use chrono::NaiveDate;
+
+    fn ymd(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    #[test]
+    fn parses_gtin_expiry_lot_bracketed() {
+        let r = parse_gs1("(01)07501234567890(17)260815(10)LOTE123").unwrap();
+        assert_eq!(r.gtin, "07501234567890");
+        assert_eq!(r.vencimiento, Some(ymd(2026, 8, 15)));
+        assert_eq!(r.lote.as_deref(), Some("LOTE123"));
+    }
+
+    #[test]
+    fn expiry_day_zero_means_last_day_of_month() {
+        let r = parse_gs1("(01)07501234567890(17)260800").unwrap();
+        assert_eq!(r.vencimiento, Some(ymd(2026, 8, 31)));
+    }
+
+    #[test]
+    fn expiry_day_zero_february_leap_year() {
+        let r = parse_gs1("(01)07501234567890(17)240200").unwrap();
+        assert_eq!(r.vencimiento, Some(ymd(2024, 2, 29)));
+    }
+
+    #[test]
+    fn lot_with_embedded_ai_digits_is_not_truncated() {
+        let r = parse_gs1("(01)07501234567890(10)AB01CD").unwrap();
+        assert_eq!(r.lote.as_deref(), Some("AB01CD"));
+    }
+
+    #[test]
+    fn parses_fnc1_separated_lot_then_expiry() {
+        let code = format!("0107501234567890{}{}{}", "10LOTE123", "\u{1d}", "17260815");
+        let r = parse_gs1(&code).unwrap();
+        assert_eq!(r.gtin, "07501234567890");
+        assert_eq!(r.lote.as_deref(), Some("LOTE123"));
+        assert_eq!(r.vencimiento, Some(ymd(2026, 8, 15)));
+    }
+
+    #[test]
+    fn parses_plain_concatenated_fixed_then_variable() {
+        // 01(14) + 17(6) + 10(rest) with no separators (10 is last)
+        let r = parse_gs1("01075012345678901726081510LOTE123").unwrap();
+        assert_eq!(r.gtin, "07501234567890");
+        assert_eq!(r.vencimiento, Some(ymd(2026, 8, 15)));
+        assert_eq!(r.lote.as_deref(), Some("LOTE123"));
+    }
+
+    #[test]
+    fn returns_none_without_gtin() {
+        assert!(parse_gs1("(10)LOTE123").is_none());
+        assert!(parse_gs1("").is_none());
+    }
 }
 
 pub struct ProductoService;

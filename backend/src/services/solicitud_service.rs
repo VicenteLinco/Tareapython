@@ -864,6 +864,7 @@ impl SolicitudService {
             precio_ultimo: Option<f64>,
             unidad_base: String,
             unidad_base_plural: Option<String>,
+            unidad_basica_id: Option<i32>,
             imagen_url: Option<String>,
         }
 
@@ -972,6 +973,7 @@ impl SolicitudService {
                 COALESCE(up.precio_unitario, p.precio_unidad)::FLOAT8             AS precio_ultimo,
                 ub.nombre                                                         AS unidad_base,
                 ub.nombre_plural                                                  AS unidad_base_plural,
+                p.unidad_base_id                                                  AS unidad_basica_id,
                 p.imagen_url                                                      AS imagen_url
             FROM productos p
             JOIN series s ON s.producto_id = p.id
@@ -1045,6 +1047,7 @@ impl SolicitudService {
                 "precio_ultima_recepcion": r.precio_ultimo,
                 "unidad_base": r.unidad_base,
                 "unidad_base_plural": r.unidad_base_plural,
+                "unidad_basica_id": r.unidad_basica_id,
                 "imagen_url": r.imagen_url,
                 "ya_pedido_unidades": r.ya_pedido,
             }));

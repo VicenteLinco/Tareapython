@@ -23,6 +23,11 @@ import { calcularCantidad, fetchHorizonte } from '../solicitud-utils'
 
 type ProductoExt = Producto & {
   imagen_url?: string | null
+  // Campos que el endpoint de listado de productos devuelve pero que no viven
+  // en el modelo Producto base (la relación producto↔proveedor está normalizada).
+  codigo_proveedor?: string | null
+  codigo_maestro?: string | null
+  lead_time_propio?: number | null
   unidad_base?: { id: number; nombre: string; nombre_plural: string }
   proveedor?: { id: number; nombre: string; icono?: string | null }
   pres_id?: number | null
@@ -187,6 +192,7 @@ export function useSolicitudState() {
           factor_conversion: item.factor_conversion ? toNum(item.factor_conversion) : null,
           unidad_base: item.unidad,
           unidad_base_plural: item.unidad_plural ?? item.unidad,
+          unidad_basica_id: item.unidad_basica_id,
           cantidad: toNum(item.cantidad_sugerida),
           precio_unitario: item.precio_unitario ? toNum(item.precio_unitario) : 0,
           imagen_url: item.imagen_url,
@@ -247,7 +253,7 @@ export function useSolicitudState() {
         items: items.map(i => ({
           producto_id: i.producto_id,
           cantidad_sugerida: i.cantidad.toString(),
-          unidad: i.unidad_base,
+          unidad_basica_id: i.unidad_basica_id,
           precio_unitario: i.precio_unitario.toString(),
           presentacion_id: i.presentacion_id,
           cantidad_presentaciones: i.cantidad.toString(),
@@ -343,6 +349,7 @@ export function useSolicitudState() {
       factor_conversion: factorConv,
       unidad_base: r.unidad_base,
       unidad_base_plural: r.unidad_base_plural || r.unidad_base,
+      unidad_basica_id: r.unidad_basica_id ?? null,
       cantidad,
       precio_unitario: r.precio_ultima_recepcion ? toNum(r.precio_ultima_recepcion) : 0,
       imagen_url: r.imagen_url,
@@ -383,6 +390,7 @@ export function useSolicitudState() {
       factor_conversion: factorConv,
       unidad_base: r.unidad_base,
       unidad_base_plural: r.unidad_base_plural || r.unidad_base,
+      unidad_basica_id: r.unidad_basica_id ?? null,
       cantidad,
       precio_unitario: r.precio_ultima_recepcion ? toNum(r.precio_ultima_recepcion) : 0,
       imagen_url: r.imagen_url,
@@ -413,23 +421,24 @@ export function useSolicitudState() {
     const horizData = await fetchHorizonte(p.id, proveedorId)
     const factorConvSearch = px.pres_factor ? toNum(px.pres_factor) : null
     const cantidad = calcularCantidad(
-      horizonteGlobal, horizData.consumo_diario, p.lead_time_propio || 0,
+      horizonteGlobal, horizData.consumo_diario, px.lead_time_propio || 0,
       horizData.stock_minimo, horizData.stock_actual, factorConvSearch
     )
     setItems(prev => [...prev, {
       producto_id: p.id,
       producto_nombre: p.nombre,
-      codigo_proveedor: p.codigo_proveedor,
-      codigo_maestro: p.codigo_maestro,
+      codigo_proveedor: px.codigo_proveedor ?? null,
+      codigo_maestro: px.codigo_maestro ?? null,
       proveedor_id: proveedorId,
       proveedor_nombre: px.proveedor?.nombre ?? selectedProveedor?.nombre ?? 'Manual',
-      lead_time: p.lead_time_propio || 0,
+      lead_time: px.lead_time_propio || 0,
       presentacion_id: px.pres_id ?? null,
       presentacion_nombre: px.pres_nombre ?? null,
       presentacion_nombre_plural: px.pres_nombre_plural ?? null,
       factor_conversion: factorConvSearch,
       unidad_base: px.unidad_base?.nombre ?? 'u',
       unidad_base_plural: px.unidad_base?.nombre_plural ?? 'u',
+      unidad_basica_id: px.unidad_base?.id ?? null,
       cantidad,
       precio_unitario: horizData.precio_ultimo != null
         ? horizData.precio_ultimo
@@ -507,7 +516,7 @@ export function useSolicitudState() {
         items: items.map(i => ({
           producto_id: i.producto_id,
           cantidad_sugerida: i.cantidad.toString(),
-          unidad: i.unidad_base,
+          unidad_basica_id: i.unidad_basica_id,
           precio_unitario: i.precio_unitario.toString(),
           presentacion_id: i.presentacion_id,
           cantidad_presentaciones: i.cantidad.toString(),

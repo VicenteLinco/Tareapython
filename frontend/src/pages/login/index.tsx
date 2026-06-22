@@ -70,6 +70,7 @@ export default function LoginPage() {
         activo: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        deleted_at: null,
       }
       
       login(access_token, refresh_token, usuarioFull)

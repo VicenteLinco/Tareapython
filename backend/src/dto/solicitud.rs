@@ -38,6 +38,7 @@ pub struct ItemRecomendado {
     pub precio_ultima_recepcion: Option<Decimal>,
     pub unidad_base: String,
     pub unidad_base_plural: Option<String>,
+    pub unidad_basica_id: Option<i32>,
     pub imagen_url: Option<String>,
     pub ya_pedido_unidades: Decimal,
 }

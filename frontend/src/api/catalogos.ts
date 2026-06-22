@@ -18,7 +18,6 @@ import type {
   CreateProveedor,
   UpdateProveedor,
   ProveedorQuery,
-  ProductoProveedor,
 } from '@/types'
 
 // ─── Tipos locales ────────────────────────────────────────────────────────────
@@ -47,7 +46,10 @@ export interface ProductoDetalle extends Producto {
   unidad_base_nombre_plural: string
   proveedor_nombre: string | null
   presentaciones: Presentacion[]
-  proveedores: ProductoProveedor[]
+  // NOTE: el backend (obtener_detalle) NO devuelve este campo — siempre llega
+  // undefined. El flujo de "presentaciones por proveedor" en recepción depende
+  // de él, por lo que está inactivo. Tipado como opcional para reflejar la realidad.
+  proveedores?: { id: number; proveedor_id: number }[]
   area_ids: number[]
 }
 

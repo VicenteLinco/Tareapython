@@ -213,6 +213,7 @@ export interface SolicitudItem {
   factor_conversion: number | null
   unidad_base: string
   unidad_base_plural: string | null
+  unidad_basica_id: number | null
   cantidad: number
   precio_unitario: number
   imagen_url?: string | null

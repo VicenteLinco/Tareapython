@@ -89,7 +89,8 @@ export function LoteSelector({ lotes, cargandoLotes, loteElegidoId, unidad, unid
             const isSelected = loteElegidoId === l.lote_id
             // Lote vencido: no se consume, sólo se descarta. Se muestra bloqueado
             // para que el usuario VEA que hay algo y entienda la acción correcta.
-            const vencido = daysUntil(l.fecha_vencimiento) < 0
+            const diasParaVencer = daysUntil(l.fecha_vencimiento)
+            const vencido = diasParaVencer !== null && diasParaVencer < 0
             if (vencido) {
               return (
                 <div

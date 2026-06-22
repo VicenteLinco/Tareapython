@@ -240,6 +240,227 @@ async fn consumo_stock_insuficiente(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
+/// El FEFO de consumo NO debe ofrecer producto vencido: su única salida es el
+/// descarte. Un producto cuyo único stock está vencido reporta 0 usable y el
+/// consumo falla con stock insuficiente (no "marca 1 y deja consumir vencido").
+#[sqlx::test(migrations = "./migrations")]
+async fn consumo_excluye_lotes_vencidos(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (_, producto_id) = setup_stock(&pool, &token, &app, 1, 10.0).await;
+
+    // Vencer todo el stock del producto: ya no hay nada usable que consumir.
+    sqlx::query("UPDATE lotes SET fecha_vencimiento = CURRENT_DATE - 1 WHERE producto_id = $1::uuid")
+        .bind(&producto_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let idem_key = Uuid::new_v4().to_string();
+    let (status, _) = common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos",
+        &token,
+        serde_json::json!({
+            "producto_id": producto_id,
+            "area_id": 1,
+            "cantidad": 1,
+            "unidad": "base",
+        }),
+        &idem_key,
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "consumir un producto sólo-vencido debe fallar: 0 usable, sale por descarte"
+    );
+}
+
+// ─── Prueba integral: matriz de estados, alarmas del dashboard y consumo de vacíos ───
+
+async fn mz_set_par(pool: &PgPool, producto: Uuid, min: f64, max: Option<f64>) {
+    let maxs = max.map(|m| m.to_string()).unwrap_or_else(|| "NULL".into());
+    sqlx::query(&format!(
+        "INSERT INTO par_level_config (producto_id, area_id, stock_minimo, stock_maximo, safety_stock, metodo) \
+         VALUES ($1, 1, {min}, {maxs}, 0, 'manual')"
+    ))
+    .bind(producto)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn mz_venc(pool: &PgPool, producto: Uuid, dias_offset: i64) {
+    sqlx::query(&format!(
+        "UPDATE lotes SET fecha_vencimiento = CURRENT_DATE + {dias_offset} WHERE producto_id = $1"
+    ))
+    .bind(producto)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn mz_consumo_hist(pool: &PgPool, producto: Uuid, admin: Uuid, qty: i32, dias: i32) {
+    let lote: Uuid =
+        sqlx::query_scalar("SELECT id FROM lotes WHERE producto_id = $1 ORDER BY fecha_vencimiento NULLS LAST LIMIT 1")
+            .bind(producto)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    sqlx::query(&format!(
+        "INSERT INTO movimientos (lote_id, area_id, tipo, cantidad, cantidad_resultante, usuario_id, created_at) \
+         VALUES ($1, 1, 'CONSUMO', {qty}, 0, $2, NOW() - make_interval(days => $3))"
+    ))
+    .bind(lote)
+    .bind(admin)
+    .bind(dias)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn mz_add_lote_vencido(pool: &PgPool, producto: Uuid, admin: Uuid, qty: i32) {
+    let prov: i32 = sqlx::query_scalar("SELECT proveedor_id FROM lotes WHERE producto_id = $1 LIMIT 1")
+        .bind(producto)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let lote: Uuid = sqlx::query_scalar(
+        "INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento) \
+         VALUES ($1, $2, $3, CURRENT_DATE - 5) RETURNING id",
+    )
+    .bind(producto)
+    .bind(prov)
+    .bind(format!("VENC-{}", &Uuid::new_v4().to_string()[..6]))
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query(&format!(
+        "INSERT INTO movimientos (lote_id, area_id, tipo, cantidad, cantidad_resultante, usuario_id) \
+         VALUES ($1, 1, 'AJUSTE_POSITIVO', {qty}, 0, $2)"
+    ))
+    .bind(lote)
+    .bind(admin)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn mz_consume(app: &axum::Router, token: &str, producto_id: &str, qty: i64) -> StatusCode {
+    let (status, _) = common::post_json_idempotent(
+        app,
+        "/api/v1/consumos",
+        token,
+        serde_json::json!({ "producto_id": producto_id, "area_id": 1, "cantidad": qty, "unidad": "base" }),
+        &Uuid::new_v4().to_string(),
+    )
+    .await;
+    status
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn matriz_estados_dashboard_y_consumo_de_vacios(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let admin = common::get_admin_id(&pool).await;
+
+    // ── Sembrar la matriz (estados deterministas vía min/max manual) ──
+    // N — normal: stock sano + historia liviana, sin par.
+    let (n_uuid, n_id) = setup_stock(&pool, &token, &app, 1, 150.0).await;
+    for d in [5, 3, 1] {
+        mz_consumo_hist(&pool, n_uuid, admin, 1, d).await;
+    }
+    // SD — sin_datos: stock, sin historia, sin par.
+    let (_sd, _sd_id) = setup_stock(&pool, &token, &app, 1, 150.0).await;
+    // AG — agotado: consumir todo.
+    let (_ag, ag_id) = setup_stock(&pool, &token, &app, 1, 100.0).await;
+    assert_eq!(mz_consume(&app, &token, &ag_id, 100).await, StatusCode::CREATED);
+    // SV — solo vencido (agotado + vencido).
+    let (sv, sv_id) = setup_stock(&pool, &token, &app, 1, 150.0).await;
+    mz_venc(&pool, sv, -3).await;
+    // MX — usable + un lote vencido aparte (normal/sin_datos + vencido).
+    let (mx, mx_id) = setup_stock(&pool, &token, &app, 1, 150.0).await;
+    mz_add_lote_vencido(&pool, mx, admin, 10).await;
+    // CR — critico: stock 5, mínimo manual 20 (5 <= 20*0.5).
+    let (cr, _cr_id) = setup_stock(&pool, &token, &app, 1, 5.0).await;
+    mz_set_par(&pool, cr, 20.0, None).await;
+    // RP — reponer: stock 15, mínimo manual 20 (15 <= 20).
+    let (rp, _rp_id) = setup_stock(&pool, &token, &app, 1, 15.0).await;
+    mz_set_par(&pool, rp, 20.0, None).await;
+    // EX — exceso: stock 150, máximo manual 10.
+    let (ex, _ex_id) = setup_stock(&pool, &token, &app, 1, 150.0).await;
+    mz_set_par(&pool, ex, 5.0, Some(10.0)).await;
+    // PV — por_vencer: vence en 60 días.
+    let (pv, _pv_id) = setup_stock(&pool, &token, &app, 1, 150.0).await;
+    mz_venc(&pool, pv, 60).await;
+    // RG — riesgo_venc: vence en 15 días.
+    let (rg, _rg_id) = setup_stock(&pool, &token, &app, 1, 150.0).await;
+    mz_venc(&pool, rg, 15).await;
+
+    // ── Dashboard real: /stock/alertas ──
+    let (status, json) = common::get_json(&app, "/api/v1/stock/alertas", &token).await;
+    assert_eq!(status, StatusCode::OK, "alertas: {json}");
+    let r = &json["resumen"];
+    eprintln!(
+        "\n=== RESUMEN DASHBOARD ===\n sin_stock(agotado)={}  vencido={}  bajo_minimo={}  vencimiento={}\n",
+        r["sin_stock"], r["vencido"], r["bajo_minimo"], r["vencimiento"]
+    );
+
+    // Conteos esperados por eje (cada producto cuenta en el/los eje(s) que le corresponde).
+    assert_eq!(r["sin_stock"].as_i64().unwrap(), 2, "agotado: AG + SV");
+    assert_eq!(r["vencido"].as_i64().unwrap(), 2, "vencido: SV + MX (ejes independientes)");
+    assert_eq!(r["bajo_minimo"].as_i64().unwrap(), 2, "bajo: CR + RP");
+    assert_eq!(r["vencimiento"].as_i64().unwrap(), 2, "por vencer/riesgo: PV + RG");
+
+    // ── Filtros de la lista por los dos ejes ──
+    let contiene = |json: &serde_json::Value, id: &str| -> bool {
+        json["data"].as_array().unwrap().iter().any(|x| x["producto_id"].as_str() == Some(id))
+    };
+    let (_, agotados) = common::get_json(&app, "/api/v1/stock?estado=sin_stock", &token).await;
+    assert!(contiene(&agotados, &sv_id), "SV debe salir bajo filtro 'agotado'");
+    let (_, vencidos) = common::get_json(&app, "/api/v1/stock?estado=vencidos", &token).await;
+    assert!(contiene(&vencidos, &sv_id), "SV debe salir bajo filtro 'vencido'");
+    assert!(contiene(&vencidos, &mx_id), "MX (usable+vencido) debe salir bajo filtro 'vencido'");
+    let (_, excesos) = common::get_json(&app, "/api/v1/stock?estado=exceso", &token).await;
+    assert!(contiene(&excesos, &_ex_id), "EX debe salir bajo filtro 'exceso'");
+
+    // ── Consumo de vacíos: NO se pueden consumir; los sanos sí ──
+    assert_eq!(
+        mz_consume(&app, &token, &ag_id, 1).await,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "AGOTADO (0 stock) no se puede consumir"
+    );
+    assert_eq!(
+        mz_consume(&app, &token, &sv_id, 1).await,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "SOLO-VENCIDO no se puede consumir (FEFO excluye vencidos)"
+    );
+    assert_eq!(
+        mz_consume(&app, &token, &n_id, 1).await,
+        StatusCode::CREATED,
+        "NORMAL (stock usable) sí se consume"
+    );
+    // MX: consume del lote usable y deja intacto el vencido.
+    assert_eq!(mz_consume(&app, &token, &mx_id, 1).await, StatusCode::CREATED, "MX consume lo usable");
+    let vencido_intacto: bool = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(s.cantidad), 0) = 10 FROM stock s JOIN lotes l ON l.id = s.lote_id \
+         WHERE l.producto_id = $1 AND l.fecha_vencimiento < CURRENT_DATE",
+    )
+    .bind(mx)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        vencido_intacto,
+        "el lote vencido de MX NO se tocó al consumir (sigue en 10, sale por descarte)"
+    );
+
+    eprintln!("=== OK: matriz, dashboard y consumo de vacíos verificados ===\n");
+}
+
 #[sqlx::test(migrations = "./migrations")]
 async fn consumo_idempotente(pool: PgPool) {
     let token = common::admin_access_token(&pool).await;

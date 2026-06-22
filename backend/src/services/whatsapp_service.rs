@@ -783,6 +783,7 @@ pub async fn registrar_consumo_fefo_tool(
             JOIN lotes l ON l.id = s.lote_id
             JOIN areas a ON a.id = s.area_id
             WHERE l.producto_id = $1 AND s.cantidad > 0
+              AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
             ORDER BY l.fecha_vencimiento ASC"#
         )
         .bind(resolved.producto_id)
@@ -904,6 +905,7 @@ pub async fn registrar_consumo_fefo_tool(
                 WHERE l.producto_id = $1
                   AND (l.numero_lote = $2 OR l.id::text = $2)
                   AND s.cantidad > 0
+                  AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
                   AND s.area_id = $3"#
             )
             .bind(resolved.producto_id)
@@ -927,7 +929,8 @@ pub async fn registrar_consumo_fefo_tool(
                 JOIN areas a ON a.id = s.area_id
                 WHERE l.producto_id = $1
                   AND (l.numero_lote = $2 OR l.id::text = $2)
-                  AND s.cantidad > 0"#
+                  AND s.cantidad > 0
+                  AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)"#
             )
             .bind(resolved.producto_id)
             .bind(lote_str)

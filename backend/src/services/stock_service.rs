@@ -68,6 +68,9 @@ pub async fn load_forecast_config(pool: &PgPool) -> Result<ForecastConfig, AppEr
 pub struct StockItemRow {
     pub producto_id: Uuid,
     pub codigo_interno: String,
+    // SKU comercial (opcional). Es el código de negocio que el usuario prioriza
+    // sobre codigo_interno; puede venir NULL si el producto no lo tiene cargado.
+    pub sku: Option<String>,
     pub producto_nombre: String,
     pub categoria: Option<String>,
     pub unidad: String,
@@ -87,6 +90,15 @@ pub struct StockItemRow {
     pub imagen_url: Option<String>,
     // estado_alerta proviene exclusivamente de fn_estado_stock (única fuente de verdad).
     pub estado_alerta: String,
+    // Modelo de dos ejes ortogonales (migration 002). estado_cantidad responde
+    // "¿comprar?" (sobre stock usable); estado_vencimiento responde "¿descartar?".
+    // Nunca se pisan: cascada dentro de cada eje, jamás entre ejes.
+    pub estado_cantidad: String,
+    pub estado_vencimiento: String,
+    // Stock usable (no vencido) vs stock vencido (sólo apto para descarte).
+    // stock_usable es lo que el FEFO deja consumir y el titular que muestra la UI.
+    pub stock_usable: Decimal,
+    pub stock_vencido: Decimal,
     pub consumo_diario_ajustado: Decimal,
     pub dias_con_consumo: i64,
     // dias_autonomia se calcula en SQL con el mismo consumo que el estado.
@@ -232,6 +244,13 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
     } else {
         "".to_string()
     };
+    // Manual reorder/ceiling levels are per producto+area. With no area filter we
+    // sum across all areas; with an area filter we scope to that exact area.
+    let par_area_filter = if let Some(area_ids) = &scoped_area_array {
+        format!("AND pl.area_id = ANY(ARRAY[{}]::integer[])", area_ids)
+    } else {
+        "".to_string()
+    };
 
     let q_filter = if let Some(q) = &params.q {
         param_idx += 1;
@@ -274,22 +293,26 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
           OR EXISTS (SELECT 1 FROM stock si JOIN lotes lsi ON lsi.id = si.lote_id WHERE lsi.producto_id = p.id))".to_string()
     };
 
+    // Filtros por los dos ejes ortogonales: "agotado"/"bajo" miran el eje cantidad,
+    // "vencido"/"vence_pronto" el eje vencimiento. Un ítem vencido+agotado aparece
+    // bajo AMBOS filtros, porque son hechos simultáneos.
     let type_filter = match estado {
-        "agotado" => "AND estado_alerta = 'agotado'",
-        "vencido" => "AND estado_alerta = 'vencido'",
-        "bajo" => "AND estado_alerta IN ('critico', 'reponer')",
-        "vence_pronto" => "AND estado_alerta IN ('riesgo_venc', 'por_vencer')",
-        "sin_datos" => "AND estado_alerta = 'sin_datos'",
-        "normal" => "AND estado_alerta = 'normal'",
-        _ if params.stock_bajo == Some(true) => "AND estado_alerta IN ('critico', 'reponer')",
+        "agotado" => "AND estado_cantidad = 'agotado'",
+        "vencido" => "AND estado_vencimiento = 'vencido'",
+        "bajo" => "AND estado_cantidad IN ('critico', 'reponer')",
+        "vence_pronto" => "AND estado_vencimiento IN ('riesgo_venc', 'por_vencer')",
+        "exceso" => "AND estado_cantidad = 'exceso'",
+        "sin_datos" => "AND estado_cantidad = 'sin_datos'",
+        "normal" => "AND estado_cantidad = 'normal' AND estado_vencimiento = 'ok'",
+        _ if params.stock_bajo == Some(true) => "AND estado_cantidad IN ('critico', 'reponer')",
         _ if params.con_alertas == Some(true) => {
-            "AND estado_alerta IN ('vencido','agotado','critico','reponer','riesgo_venc','por_vencer')"
+            "AND (estado_cantidad IN ('agotado','critico','reponer') OR estado_vencimiento IN ('vencido','riesgo_venc','por_vencer'))"
         }
         _ => match filter {
-            "vencimiento" => "AND estado_alerta IN ('riesgo_venc', 'por_vencer')",
-            "vencidos" => "AND estado_alerta = 'vencido'",
-            "sin-stock" => "AND estado_alerta = 'agotado'",
-            "bajo" | "critico" => "AND estado_alerta IN ('critico', 'reponer')",
+            "vencimiento" => "AND estado_vencimiento IN ('riesgo_venc', 'por_vencer')",
+            "vencidos" => "AND estado_vencimiento = 'vencido'",
+            "sin-stock" => "AND estado_cantidad = 'agotado'",
+            "bajo" | "critico" => "AND estado_cantidad IN ('critico', 'reponer')",
             _ => "",
         },
     };
@@ -334,8 +357,12 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                    l.id AS lote_id,
                    l.fecha_vencimiento,
                    s.cantidad,
-                   MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0)
-                       OVER (PARTITION BY l.producto_id) AS prox_fecha
+                   -- Vencimiento más próximo entre el stock USABLE (no vencido).
+                   -- Excluir lo vencido es lo que separa "vence pronto" de "ya venció".
+                   MIN(l.fecha_vencimiento) FILTER (
+                       WHERE s.cantidad > 0
+                         AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
+                   ) OVER (PARTITION BY l.producto_id) AS prox_fecha
                FROM stock s
                JOIN lotes l ON l.id = s.lote_id
                WHERE 1=1 {}
@@ -344,9 +371,32 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                SELECT
                    producto_id,
                    SUM(cantidad) AS total,
+                   -- Usable = no vencido (o sin fecha). Es lo que el FEFO realmente
+                   -- deja consumir y el número que la UI muestra como titular.
+                   COALESCE(SUM(cantidad) FILTER (
+                       WHERE cantidad > 0
+                         AND (fecha_vencimiento IS NULL OR fecha_vencimiento >= CURRENT_DATE)
+                   ), 0) AS stock_usable,
+                   -- Vencido = stock físico con fecha pasada, sólo apto para descarte.
+                   COALESCE(SUM(cantidad) FILTER (
+                       WHERE cantidad > 0
+                         AND fecha_vencimiento IS NOT NULL
+                         AND fecha_vencimiento < CURRENT_DATE
+                   ), 0) AS stock_vencido,
                    MIN(fecha_vencimiento) FILTER (WHERE cantidad > 0) AS proxima_fecha_venc,
-                   -- Stock del/los lote(s) que vencen en la fecha MÁS próxima (no toda la
-                   -- ventana de 90 días). El porcentaje informado corresponde al vencimiento
+                   -- Vencimiento más próximo del stock usable: alimenta riesgo_venc/por_vencer.
+                   MIN(fecha_vencimiento) FILTER (
+                       WHERE cantidad > 0
+                         AND fecha_vencimiento IS NOT NULL
+                         AND fecha_vencimiento >= CURRENT_DATE
+                   ) AS prox_venc_usable,
+                   bool_or(
+                       cantidad > 0
+                         AND fecha_vencimiento IS NOT NULL
+                         AND fecha_vencimiento < CURRENT_DATE
+                   ) AS tiene_vencido,
+                   -- Stock del/los lote(s) usables que vencen en la fecha MÁS próxima (no toda
+                   -- la ventana de 90 días). El porcentaje informado corresponde al vencimiento
                    -- más inmediato, que es lo que el badge alerta junto a "vence en X días".
                    COALESCE(SUM(cantidad) FILTER (
                        WHERE cantidad > 0
@@ -355,6 +405,15 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                    ), 0) AS cantidad_por_vencer,
                    COUNT(DISTINCT lote_id) FILTER (WHERE cantidad > 0) AS lotes_con_stock
                FROM stock_lotes
+               GROUP BY producto_id
+           ),
+           par_levels AS (
+               SELECT
+                   producto_id,
+                   SUM(stock_minimo) AS min_manual,
+                   SUM(stock_maximo) AS max_manual
+               FROM par_level_config pl
+               WHERE 1=1 {}
                GROUP BY producto_id
            ),
            movimiento_stats AS (
@@ -384,6 +443,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                SELECT
                    p.id as producto_id,
                    p.codigo_interno,
+                   p.sku,
                    p.nombre as producto_nombre,
                    c.nombre as categoria,
                    um.nombre as unidad,
@@ -415,7 +475,13 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                        WHEN COALESCE(ms.dias_con_consumo, 0) >= 1
                            THEN COALESCE(ms.total_consumo_ventana, 0) / GREATEST(ms.dias_vida_sistema::FLOAT8, 1)
                        ELSE 0.0
-                   END AS consumo_base_estimado
+                   END AS consumo_base_estimado,
+                   COALESCE(ss.stock_usable, 0) AS stock_usable,
+                   COALESCE(ss.stock_vencido, 0) AS stock_vencido,
+                   ss.prox_venc_usable,
+                   COALESCE(ss.tiene_vencido, false) AS tiene_vencido,
+                   pl.min_manual,
+                   pl.max_manual
                FROM productos p
                JOIN unidades_basicas um ON um.id = p.unidad_base_id
                LEFT JOIN categorias c ON c.id = p.categoria_id
@@ -424,6 +490,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
                LEFT JOIN fefo_prov fp ON fp.producto_id = p.id
                LEFT JOIN series sr ON sr.producto_id = p.id
+               LEFT JOIN par_levels pl ON pl.producto_id = p.id
                WHERE p.activo = true {} {} {}
            ),
            enriched AS (
@@ -445,7 +512,27 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                        3,    -- dias_min_historia para estimar autonomía
                        {},   -- vencimiento_riesgo_dias
                        {}    -- vencimiento_proximo_dias
-                   ) AS estado_alerta
+                   ) AS estado_alerta,
+                   -- Eje cantidad: sobre stock USABLE; el mínimo manual sólo respalda
+                   -- el caso sin historia de consumo.
+                   fn_estado_cantidad(
+                       stock_usable,
+                       consumo_base_estimado,
+                       dias_con_consumo::int,
+                       lead_time_efectivo::int,
+                       {},   -- dias_objetivo_cobertura
+                       inicializado,
+                       min_manual,
+                       max_manual,
+                       3     -- dias_min_historia
+                   ) AS estado_cantidad,
+                   -- Eje vencimiento: cascada interna de urgencia, independiente de cantidad.
+                   fn_estado_vencimiento(
+                       tiene_vencido,
+                       prox_venc_usable,
+                       {},   -- vencimiento_riesgo_dias
+                       {}    -- vencimiento_proximo_dias
+                   ) AS estado_vencimiento
                FROM final_stats
            ),
            filtered AS (
@@ -461,6 +548,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
         forecast_cfg.ventana_demanda_dias,
         movement_area_filter,
         area_filter,
+        par_area_filter,
         forecast_cfg.ventana_demanda_dias,
         movement_area_filter,
         inicializado_expr,
@@ -470,12 +558,15 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
         forecast_cfg.dias_objetivo_cobertura,
         forecast_cfg.vencimiento_riesgo_dias,
         forecast_cfg.vencimiento_proximo_dias,
+        forecast_cfg.dias_objetivo_cobertura,
+        forecast_cfg.vencimiento_riesgo_dias,
+        forecast_cfg.vencimiento_proximo_dias,
         if !con_alertas
             && params.q.is_none()
             && params.categoria_id.is_none()
             && params.proveedor_id.is_none()
         {
-            "AND estado_alerta <> 'no_gestionado'"
+            "AND estado_cantidad <> 'no_gestionado'"
         } else {
             ""
         },
@@ -503,6 +594,10 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
     let resumen_area_filter = scoped_area_array
         .as_ref()
         .map(|area_ids| format!("AND s.area_id = ANY(ARRAY[{}]::integer[])", area_ids))
+        .unwrap_or_default();
+    let par_resumen_area_filter = scoped_area_array
+        .as_ref()
+        .map(|area_ids| format!("AND pl.area_id = ANY(ARRAY[{}]::integer[])", area_ids))
         .unwrap_or_default();
 
     // Valorización por producto para los ítems de la página (query aislada del
@@ -575,8 +670,8 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
         r#"SELECT COUNT(*) FROM (
             WITH stock_stats AS (
                 SELECT l.producto_id,
-                       SUM(s.cantidad) AS total,
-                       MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0) AS prox
+                       -- Mismo motor que la lista/dashboard: el eje cantidad mira lo USABLE.
+                       SUM(s.cantidad) FILTER (WHERE s.cantidad > 0 AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)) AS usable
                 FROM stock s JOIN lotes l ON l.id = s.lote_id
                 WHERE 1=1 {0}
                 GROUP BY l.producto_id
@@ -592,19 +687,28 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                 JOIN movimientos m ON m.lote_id = l.id AND m.tipo = 'CONSUMO'
                     AND m.created_at >= NOW() - ({2}::int * INTERVAL '1 day') {1}
                 GROUP BY l.producto_id
+            ),
+            par AS (
+                SELECT producto_id,
+                       SUM(stock_minimo) AS min_manual,
+                       SUM(stock_maximo) AS max_manual
+                FROM par_level_config pl
+                WHERE 1=1 {4}
+                GROUP BY producto_id
             )
-            SELECT fn_estado_stock(
-                COALESCE(ss.total, 0),
+            SELECT fn_estado_cantidad(
+                COALESCE(ss.usable, 0),
                 CASE WHEN COALESCE(mv.dcc, 0) >= 14 THEN COALESCE(mv.cdp, 0)::FLOAT8
                      WHEN COALESCE(mv.dcc, 0) >= 1  THEN COALESCE(mv.total_cons, 0) / GREATEST(mv.dvs::FLOAT8, 1)
                      ELSE 0.0 END,
                 COALESCE(mv.dcc, 0)::int,
                 COALESCE(p.lead_time_propio, pv.dias_despacho_tierra, pv.dias_despacho_aereo, 7)::int,
-                {3}, ss.prox, true, 3, {4}, {5}
+                {3}, true, par.min_manual, par.max_manual, 3
             ) AS est
             FROM productos p
             LEFT JOIN proveedores pv ON pv.id = p.proveedor_id
             LEFT JOIN stock_stats ss ON ss.producto_id = p.id
+            LEFT JOIN par ON par.producto_id = p.id
             LEFT JOIN mov mv ON mv.producto_id = p.id
             WHERE p.activo = true
         ) sub WHERE est IN ('critico', 'reponer')"#,
@@ -612,8 +716,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
         movement_area_filter,
         forecast_cfg.ventana_demanda_dias,
         forecast_cfg.dias_objetivo_cobertura,
-        forecast_cfg.vencimiento_riesgo_dias,
-        forecast_cfg.vencimiento_proximo_dias,
+        par_resumen_area_filter,
     ))
     .fetch_one(pool)
     .await?;
@@ -848,9 +951,9 @@ pub async fn alertas(
     offset: i64,
 ) -> Result<AlertasResultado, AppError> {
     // El área es solo un filtro opcional: cualquier rol puede pedir cualquier área (o todas).
-    let (stock_area_filter, stock_exists_area_filter, movement_area_filter, product_area_filter) =
+    let (stock_area_filter, stock_exists_area_filter, movement_area_filter, product_area_filter, par_area_filter) =
         if area_ids.is_empty() {
-            (String::new(), String::new(), String::new(), String::new())
+            (String::new(), String::new(), String::new(), String::new(), String::new())
         } else {
             let arr = area_ids
                 .iter()
@@ -862,6 +965,7 @@ pub async fn alertas(
                 format!("AND si.area_id = ANY(ARRAY[{}]::integer[])", arr),
                 format!("AND m.area_id = ANY(ARRAY[{}]::integer[])", arr),
                 String::new(),
+                format!("AND pl.area_id = ANY(ARRAY[{}]::integer[])", arr),
             )
         };
 
@@ -882,6 +986,11 @@ pub async fn alertas(
                SELECT
                    p.id as producto_id,
                    COALESCE(SUM(s.cantidad), 0) AS total,
+                   -- Modelo de dos ejes (migration 002): usable vs vencido, igual que /stock listar.
+                   COALESCE(SUM(s.cantidad) FILTER (WHERE s.cantidad > 0 AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)), 0) AS stock_usable,
+                   COALESCE(SUM(s.cantidad) FILTER (WHERE s.cantidad > 0 AND l.fecha_vencimiento IS NOT NULL AND l.fecha_vencimiento < CURRENT_DATE), 0) AS stock_vencido,
+                   MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0 AND l.fecha_vencimiento IS NOT NULL AND l.fecha_vencimiento >= CURRENT_DATE) AS prox_venc_usable,
+                   COALESCE(bool_or(s.cantidad > 0 AND l.fecha_vencimiento IS NOT NULL AND l.fecha_vencimiento < CURRENT_DATE), false) AS tiene_vencido,
                    MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0) AS proxima_fecha_venc,
                    EXISTS (
                        SELECT 1
@@ -899,6 +1008,14 @@ pub async fn alertas(
                LEFT JOIN stock s ON s.lote_id = l.id {2}
                WHERE p.activo = true
                GROUP BY p.id
+           ),
+           par_levels AS (
+               SELECT producto_id,
+                      SUM(stock_minimo) AS min_manual,
+                      SUM(stock_maximo) AS max_manual
+               FROM par_level_config pl
+               WHERE 1=1 {9}
+               GROUP BY producto_id
            ),
            prox_venc AS (
                -- Stock del/los lote(s) que vencen en la fecha MÁS próxima (no toda la
@@ -949,6 +1066,12 @@ pub async fn alertas(
                    ub.nombre AS unidad,
                    ub.nombre_plural AS unidad_plural,
                    COALESCE(ss.total, 0) AS total,
+                   COALESCE(ss.stock_usable, 0) AS stock_usable,
+                   COALESCE(ss.stock_vencido, 0) AS stock_vencido,
+                   ss.prox_venc_usable,
+                   COALESCE(ss.tiene_vencido, false) AS tiene_vencido,
+                   pl.min_manual,
+                   pl.max_manual,
                    COALESCE(ss.inicializado, false) AS inicializado,
                    COALESCE(pp.total_en_camino, 0) AS total_en_camino,
                    ss.proxima_fecha_venc,
@@ -971,6 +1094,7 @@ pub async fn alertas(
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
                LEFT JOIN proveedores pv ON pv.id = p.proveedor_id
                LEFT JOIN stock_stats ss ON ss.producto_id = p.id
+               LEFT JOIN par_levels pl ON pl.producto_id = p.id
                LEFT JOIN prox_venc pvenc ON pvenc.producto_id = p.id
                LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
                LEFT JOIN pedidos_pendientes pp ON pp.producto_id = p.id
@@ -988,7 +1112,14 @@ pub async fn alertas(
                     fn_estado_stock(
                         total, consumo_base_estimado, dias_con_consumo::int, dias_despacho::int,
                         {6}, proxima_fecha_venc, inicializado, 3, {7}, {8}
-                    ) AS estado
+                    ) AS estado,
+                    -- Dos ejes ortogonales: el conteo del dashboard cuenta por cada eje,
+                    -- así un ítem vencido+agotado suma en AMBOS (vencido y agotado).
+                    fn_estado_cantidad(
+                        stock_usable, consumo_base_estimado, dias_con_consumo::int, dias_despacho::int,
+                        {6}, inicializado, min_manual, max_manual, 3
+                    ) AS estado_cantidad,
+                    fn_estado_vencimiento(tiene_vencido, prox_venc_usable, {7}, {8}) AS estado_vencimiento
                 FROM stats s
            ),
            filtered_alertas AS (
@@ -1015,19 +1146,22 @@ pub async fn alertas(
                    dias_con_consumo,
                    es_anomalia,
                    dias_autonomia,
-                   estado as tipo_alerta
+                   estado as tipo_alerta,
+                   estado_cantidad,
+                   estado_vencimiento
                FROM con_estado
-               WHERE estado IN ('vencido', 'agotado', 'critico', 'reponer', 'riesgo_venc', 'por_vencer')
+               WHERE estado_cantidad IN ('agotado', 'critico', 'reponer')
+                  OR estado_vencimiento IN ('vencido', 'riesgo_venc', 'por_vencer')
            ),
            total_count AS (
                SELECT COUNT(*) as full_count FROM filtered_alertas
            ),
            resumen AS (
                SELECT
-                   COUNT(*) FILTER (WHERE tipo_alerta = 'agotado') AS sin_stock_count,
-                   COUNT(*) FILTER (WHERE tipo_alerta = 'vencido') AS vencido_count,
-                   COUNT(*) FILTER (WHERE tipo_alerta IN ('critico', 'reponer')) AS bajo_minimo_count,
-                   COUNT(*) FILTER (WHERE tipo_alerta IN ('riesgo_venc', 'por_vencer')) AS vencimiento_count
+                   COUNT(*) FILTER (WHERE estado_cantidad = 'agotado') AS sin_stock_count,
+                   COUNT(*) FILTER (WHERE estado_vencimiento = 'vencido') AS vencido_count,
+                   COUNT(*) FILTER (WHERE estado_cantidad IN ('critico', 'reponer')) AS bajo_minimo_count,
+                   COUNT(*) FILTER (WHERE estado_vencimiento IN ('riesgo_venc', 'por_vencer')) AS vencimiento_count
                FROM filtered_alertas
            )
            SELECT
@@ -1061,6 +1195,7 @@ pub async fn alertas(
         forecast_cfg.dias_objetivo_cobertura,
         forecast_cfg.vencimiento_riesgo_dias,
         forecast_cfg.vencimiento_proximo_dias,
+        par_area_filter,
     );
 
     let rows = sqlx::query_as::<_, AlertaRow>(&sql)

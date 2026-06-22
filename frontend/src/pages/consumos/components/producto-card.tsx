@@ -54,7 +54,11 @@ export function ProductoCard({
 }: ProductoCardProps) {
   const [flash, setFlash] = useState(false)
   const didMountRef = useRef(false)
-  const sinStock = (producto.stock_total ?? 0) <= 0
+  // Disponible para consumo = stock usable (no vencido). Lo vencido no se consume,
+  // sólo se descarta, así que NO cuenta como disponible. Esto evita "marcar 1"
+  // cuando la única existencia está vencida.
+  const disponible = producto.stock_usable ?? producto.stock_total ?? 0
+  const sinStock = disponible <= 0
   const dias = producto.dias_autonomia
   const subtitulo = [producto.area_nombre, producto.categoria].filter(Boolean).join(' · ')
 
@@ -160,7 +164,7 @@ export function ProductoCard({
           <>
             {/* Stock total — visible en md+ */}
             <span className="hidden md:block text-xs text-base-content/50 font-medium whitespace-nowrap">
-              {formatCantidad(producto.stock_total ?? 0, producto.unidad, producto.unidad_plural ?? undefined)}
+              {formatCantidad(disponible, producto.unidad, producto.unidad_plural ?? undefined)}
             </span>
             <button
               className={cn(

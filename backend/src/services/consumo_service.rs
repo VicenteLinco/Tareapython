@@ -189,9 +189,12 @@ impl ConsumoService {
                 let pinned = sqlx::query_as::<_, stock_ops::LoteFefo>(
                     r#"SELECT s.id as stock_id, s.lote_id, s.cantidad, s.area_id
                        FROM stock s
+                       JOIN lotes l ON l.id = s.lote_id
                        WHERE s.lote_id = $1
                          AND ($2::integer IS NULL OR s.area_id = $2)
                          AND s.cantidad > 0
+                         -- No se consume producto vencido: sólo sale por descarte.
+                         AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
                        LIMIT 1"#,
                 )
                 .bind(lote_id)

@@ -268,6 +268,93 @@ async fn test_listar_stock_envelope_y_resumen(pool: PgPool) {
     assert!(found["estado_alerta"].is_string());
 }
 
+/// Modelo de dos ejes ortogonales (migration 002): un producto cuyo ÚNICO stock
+/// está vencido debe reportar estado_cantidad='agotado' (no hay usable que comprar)
+/// Y estado_vencimiento='vencido' (hay físico que descartar) AL MISMO TIEMPO.
+/// Antes el enum único en cascada sólo mostraba 'vencido' y ocultaba el 'agotado'.
+/// Además el titular deja de "marcar 1": stock_usable=0, lo vencido va aparte.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_dos_ejes_solo_vencido_es_agotado_y_vencido(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
+    let lote_id =
+        create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
+            .await;
+
+    // Vencer el lote: sus 150 u. pasan a ser físico-vencido (0 usable).
+    sqlx::query("UPDATE lotes SET fecha_vencimiento = CURRENT_DATE - 5 WHERE id = $1")
+        .bind(lote_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (status, json) = common::get_json(&app, "/api/v1/stock?con_alertas=true", &token).await;
+    assert_eq!(status, StatusCode::OK, "got {:?}: {:?}", status, json);
+
+    let data = json["data"].as_array().unwrap();
+    let found = data
+        .iter()
+        .find(|r| r["producto_id"].as_str() == Some(&producto_id.to_string()))
+        .expect("el producto sólo-vencido debe aparecer en /stock");
+
+    // Dos ejes ortogonales: ambos hechos visibles a la vez, sin pisarse.
+    assert_eq!(
+        found["estado_cantidad"].as_str(),
+        Some("agotado"),
+        "sin stock usable → eje cantidad = agotado"
+    );
+    assert_eq!(
+        found["estado_vencimiento"].as_str(),
+        Some("vencido"),
+        "hay stock físico vencido → eje vencimiento = vencido"
+    );
+    // El titular ya no "marca 1": usable = 0, lo vencido se informa aparte.
+    assert_eq!(json_num(&found["stock_usable"]), 0.0, "usable debe ser 0");
+    assert!(
+        json_num(&found["stock_vencido"]) >= 150.0 - 0.5,
+        "el stock vencido (150 u.) se reporta aparte, got {}",
+        json_num(&found["stock_vencido"])
+    );
+}
+
+/// Los filtros de la lista de Stock van por los dos ejes: un producto vencido+agotado
+/// debe aparecer tanto bajo el filtro "agotado" como bajo "vencido" (antes, con el
+/// enum único, sólo salía en uno).
+#[sqlx::test(migrations = "./migrations")]
+async fn test_filtros_dos_ejes_vencido_agotado_aparece_en_ambos(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
+    create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
+        .await;
+    sqlx::query("UPDATE lotes SET fecha_vencimiento = CURRENT_DATE - 2 WHERE producto_id = $1")
+        .bind(producto_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let aparece = |json: &serde_json::Value| -> bool {
+        json["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["producto_id"].as_str() == Some(&producto_id.to_string()))
+    };
+
+    // Filtro "agotado" (sin_stock) → aparece (0 usable).
+    let (s1, j1) = common::get_json(&app, "/api/v1/stock?estado=sin_stock", &token).await;
+    assert_eq!(s1, StatusCode::OK);
+    assert!(aparece(&j1), "el ítem debe aparecer bajo el filtro 'agotado'");
+
+    // Filtro "vencido" → aparece el MISMO ítem.
+    let (s2, j2) = common::get_json(&app, "/api/v1/stock?estado=vencidos", &token).await;
+    assert_eq!(s2, StatusCode::OK);
+    assert!(aparece(&j2), "el MISMO ítem debe aparecer bajo el filtro 'vencido'");
+}
+
 /// GET /api/v1/stock — valoriza cada producto por el costo real de sus lotes.
 /// El costo del lote sale del precio de su recepción de origen (por presentación)
 /// normalizado a unidad base: precio_unitario / factor_conversion_usado.
@@ -379,6 +466,39 @@ async fn test_alertas_envelope_y_resumen(pool: PgPool) {
     assert!(resumen["vencido"].is_number());
     assert!(resumen["bajo_minimo"].is_number());
     assert!(resumen["vencimiento"].is_number());
+}
+
+/// Bug #1 del dashboard: un producto vencido+agotado debe contar en AMBOS
+/// contadores (sin_stock Y vencido), no sólo en vencido. Con el enum único en
+/// cascada sólo sumaba en vencido; con los dos ejes suma en los dos a la vez.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_alertas_vencido_agotado_cuenta_en_ambos_ejes(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
+    create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
+        .await;
+
+    // Vencer todo el stock: 0 usable (agotado) + stock vencido (vencido).
+    sqlx::query("UPDATE lotes SET fecha_vencimiento = CURRENT_DATE - 3 WHERE producto_id = $1")
+        .bind(producto_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (status, json) = common::get_json(&app, "/api/v1/stock/alertas", &token).await;
+    assert_eq!(status, StatusCode::OK, "got {:?}: {:?}", status, json);
+
+    let resumen = &json["resumen"];
+    assert!(
+        resumen["vencido"].as_i64().unwrap() >= 1,
+        "el producto vencido debe contar en 'vencido'"
+    );
+    assert!(
+        resumen["sin_stock"].as_i64().unwrap() >= 1,
+        "el MISMO producto (0 usable) debe contar también en 'sin_stock' (agotado) — bug #1"
+    );
 }
 
 /// GET /api/v1/stock/lotes-vencidos — con una ventana de alerta amplia incluye

@@ -69,6 +69,8 @@ pub async fn lotes_fefo(
            WHERE l.producto_id = $1
              AND s.area_id = $2
              AND s.cantidad > 0
+             -- No se consume producto vencido: sólo sale por descarte.
+             AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
            ORDER BY l.fecha_vencimiento ASC
            FOR UPDATE OF s"#,
     )
@@ -91,6 +93,8 @@ pub async fn lotes_fefo_global(
            JOIN lotes l ON l.id = s.lote_id
            WHERE l.producto_id = $1
              AND s.cantidad > 0
+             -- No se consume producto vencido: sólo sale por descarte.
+             AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
            ORDER BY l.fecha_vencimiento ASC
            FOR UPDATE OF s"#,
     )

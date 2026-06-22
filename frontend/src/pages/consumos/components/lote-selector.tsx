@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ChevronDown, Sparkles, Check } from 'lucide-react'
-import { cn, formatCantidad, formatDate } from '@/lib/utils'
+import { cn, formatCantidad, formatDate, daysUntil } from '@/lib/utils'
 
 export interface LoteDisponible {
   lote_id: string
@@ -87,6 +87,27 @@ export function LoteSelector({ lotes, cargandoLotes, loteElegidoId, unidad, unid
 
           {lotes.map(l => {
             const isSelected = loteElegidoId === l.lote_id
+            // Lote vencido: no se consume, sólo se descarta. Se muestra bloqueado
+            // para que el usuario VEA que hay algo y entienda la acción correcta.
+            const vencido = daysUntil(l.fecha_vencimiento) < 0
+            if (vencido) {
+              return (
+                <div
+                  key={l.lote_id}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-left opacity-60 cursor-not-allowed select-none"
+                  title="Lote vencido — sólo puede descartarse, no consumirse"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold font-mono line-through text-base-content/50">
+                      {l.numero_lote}
+                    </div>
+                    <div className="text-error/70 font-bold text-[11px] uppercase tracking-tight">
+                      Vencido — descartar
+                    </div>
+                  </div>
+                </div>
+              )
+            }
             return (
               <button
                 key={l.lote_id}

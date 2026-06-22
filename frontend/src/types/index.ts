@@ -56,9 +56,26 @@ export type EstadoAlerta =
 // Tipos de alerta que devuelve /stock/alertas (subconjunto accionable de EstadoAlerta).
 export type TipoAlerta = 'vencido' | 'agotado' | 'critico' | 'reponer' | 'riesgo_venc' | 'por_vencer'
 
+// Modelo de dos ejes ortogonales (migration 002). Nunca se pisan: cascada dentro
+// de cada eje, jamás entre ejes.
+// Eje cantidad ("¿comprar?") — se calcula sobre el stock usable (no vencido).
+export type EstadoCantidad =
+  | 'agotado'
+  | 'critico'
+  | 'reponer'
+  | 'normal'
+  | 'exceso'
+  | 'sin_datos'
+  | 'no_gestionado'
+
+// Eje vencimiento ("¿descartar?") — cascada interna de urgencia.
+export type EstadoVencimiento = 'vencido' | 'riesgo_venc' | 'por_vencer' | 'ok'
+
 export interface StockItem {
   producto_id: string
   codigo_interno: string
+  // SKU comercial (opcional). Código de negocio preferido sobre codigo_interno.
+  sku?: string | null
   producto_nombre: string
   categoria: string | null
   unidad: string
@@ -77,6 +94,13 @@ export interface StockItem {
   proveedor_nombre: string | null
   proveedor_icono: string | null
   estado_alerta?: EstadoAlerta
+  // Modelo de dos ejes ortogonales (migration 002).
+  estado_cantidad?: EstadoCantidad
+  estado_vencimiento?: EstadoVencimiento
+  // Stock usable (no vencido) vs vencido (sólo apto para descarte). El titular que
+  // ve el usuario es stock_usable; stock_vencido se muestra como "X por descartar".
+  stock_usable?: number
+  stock_vencido?: number
   // % del stock total en el/los lote(s) que vencen en la fecha más próxima.
   pct_por_vencer?: number | null
   imagen_url?: string | null

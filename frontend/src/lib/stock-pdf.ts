@@ -1,8 +1,7 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import type { CellHookData } from 'jspdf-autotable'
 import type { StockItem, Area } from '@/types'
-import { daysUntil, formatDate, formatCantidad, APP_LOCALE } from '@/lib/utils'
+import { daysUntil, formatDate, formatCantidad, formatPrecio, APP_LOCALE } from '@/lib/utils'
 import { drawPdfLogo } from '@/lib/pdf-logo'
 import api from '@/lib/api'
 
@@ -37,6 +36,7 @@ interface PdfOptions {
   nombreLaboratorio: string
   logoBase64: string
   usuarioNombre: string
+  monedaCodigo?: string
   filters?: {
     q?: string
     categoria_id?: string
@@ -55,6 +55,9 @@ interface GlobalStockResponse extends StockResponse {
   resumen: {
     total_productos_con_stock: number
     productos_bajo_minimo: number
+    valor_total_inventario?: number
+    unidades_sin_costo?: number
+    unidades_total_inventario?: number
   }
 }
 
@@ -63,6 +66,9 @@ interface GlobalAlertData {
   itemsBajo: StockItem[]
   itemsPorVencer30: StockItem[]
   itemsVencidos: StockItem[]
+  valorTotalInventario: number
+  unidadesSinCosto: number
+  unidadesTotal: number
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -92,7 +98,7 @@ async function fetchGlobalResumenData(filters?: PdfOptions['filters']): Promise<
   // 1. Sin filtro especial → total de insumos activos en el sistema
   // 2. con_alertas=true → todos los ítems que necesitan atención
   const [activosResp, alertsFirst] = await Promise.all([
-    api.get<StockResponse>('/stock', { params: { ...filters, per_page: 1, page: 1 } }).then(r => r.data),
+    api.get<GlobalStockResponse>('/stock', { params: { ...filters, per_page: 1, page: 1 } }).then(r => r.data),
     api.get<GlobalStockResponse>('/stock', { params: { ...filters, con_alertas: true, per_page: 100, page: 1 } }).then(r => r.data),
   ])
 
@@ -112,6 +118,9 @@ async function fetchGlobalResumenData(filters?: PdfOptions['filters']): Promise<
   return {
     // total = todos los productos activos (igual al dashboard)
     totalActivos: activosResp.total,
+    valorTotalInventario: activosResp.resumen?.valor_total_inventario ?? 0,
+    unidadesSinCosto: activosResp.resumen?.unidades_sin_costo ?? 0,
+    unidadesTotal: activosResp.resumen?.unidades_total_inventario ?? 0,
     itemsBajo: allAlerts.filter(i => ['critico', 'reponer', 'agotado'].includes(i.estado_alerta ?? '')),
     itemsPorVencer30: allAlerts.filter(i => {
       if (!i.proximo_vencimiento) return false
@@ -194,18 +203,11 @@ function drawHeader(
   doc.setTextColor(...C.grayMid)
   doc.text('Sistema de Inventario · Reporte de Stock', textX, HEADER_H / 2 + 5)
 
-  // Badge negro (derecha)
-  const badgeH = 8
-  const badgePadX = 7
+  // Fecha del snapshot (derecha, texto sobrio sin recuadro)
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7)
-  const bW = doc.getTextWidth(badgeTxt) + badgePadX * 2
-  const bX = W - MARGIN - bW
-  const bY = HEADER_H / 2 - 8
-  doc.setFillColor(...C.black)
-  doc.roundedRect(bX, bY, bW, badgeH, badgeH / 2, badgeH / 2, 'F')
-  doc.setTextColor(...C.white)
-  doc.text(badgeTxt, bX + badgePadX, bY + 5.5)
+  doc.setFontSize(7.5)
+  doc.setTextColor(...C.grayDark)
+  doc.text(badgeTxt, W - MARGIN, HEADER_H / 2 - 2, { align: 'right' })
 
   // Meta (usuario · hora)
   doc.setFont('helvetica', 'normal')
@@ -258,11 +260,20 @@ function drawResumen(
   logo: string,
   badgeTxt: string,
   usuarioNombre: string,
-  horaStr: string
+  horaStr: string,
+  monedaCodigo: string
 ) {
   drawHeader(doc, W, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr)
 
-  const { totalActivos, itemsBajo, itemsPorVencer30: itemsVencer, itemsVencidos } = globalData
+  const {
+    totalActivos,
+    itemsBajo,
+    itemsPorVencer30: itemsVencer,
+    itemsVencidos,
+    valorTotalInventario,
+    unidadesSinCosto,
+    unidadesTotal,
+  } = globalData
 
   const bodyTop = HEADER_H + 14
   let y = bodyTop
@@ -294,58 +305,75 @@ function drawResumen(
 
   y += 30
 
-  // ── KPI Strip ─────────────────────────────────────────────────────────
-  const kpiH   = 26
-  const kpiGap = 1
-  const kpiW   = (W - MARGIN * 2 - kpiGap * 3) / 4
+  // ── KPI Strip (números sueltos, sin recuadros) ──────────────────────────
+  const kpiH = 24
+  const kpiW = (W - MARGIN * 2) / 4
   const kpis = [
-    { val: totalActivos,         lbl: 'Insumos\nactivos',    color: C.black },
-    { val: itemsBajo.length,     lbl: 'Stock\nbajo',        color: C.red   },
-    { val: itemsVencer.length,   lbl: 'Por vencer\n30 días', color: C.amber },
-    { val: itemsVencidos.length, lbl: 'Lotes\nvencidos',     color: C.gray  },
+    { val: totalActivos,         lbl: 'Insumos activos',    color: C.black   },
+    { val: itemsBajo.length,     lbl: 'Stock bajo',         color: C.red     },
+    { val: itemsVencer.length,   lbl: 'Por vencer 30 días', color: C.amber   },
+    { val: itemsVencidos.length, lbl: 'Lotes vencidos',     color: C.grayDark },
   ]
 
-  // Fondo unificado gris (separador entre tarjetas)
-  doc.setFillColor(...C.grayBorder)
-  doc.roundedRect(MARGIN, y, W - MARGIN * 2, kpiH, 4, 4, 'F')
-
   kpis.forEach((kpi, i) => {
-    const kx = MARGIN + i * (kpiW + kpiGap)
-    const ky = y
+    const kx = MARGIN + i * kpiW
 
-    // Fondo blanco de la tarjeta
-    doc.setFillColor(...C.white)
-    if (i === 0) {
-      doc.roundedRect(kx, ky, kpiW, kpiH, 4, 4, 'F')
-      // Cubrir esquinas derechas
-      doc.rect(kx + kpiW - 4, ky, 4, kpiH, 'F')
-    } else if (i === 3) {
-      doc.roundedRect(kx, ky, kpiW, kpiH, 4, 4, 'F')
-      // Cubrir esquinas izquierdas
-      doc.rect(kx, ky, 4, kpiH, 'F')
-    } else {
-      doc.rect(kx, ky, kpiW, kpiH, 'F')
+    // Separador vertical fino entre KPIs (no antes del primero)
+    if (i > 0) {
+      doc.setDrawColor(...C.grayBorder)
+      doc.setLineWidth(0.3)
+      doc.line(kx, y + 2, kx, y + kpiH - 4)
     }
-
-    const cx = kx + kpiW / 2
 
     // Número grande
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(22)
+    doc.setFontSize(24)
     doc.setTextColor(...kpi.color)
-    doc.text(String(kpi.val), cx, ky + 13, { align: 'center' })
+    doc.text(String(kpi.val), kx + 4, y + 11)
 
-    // Label (puede tener salto de línea)
+    // Label
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(6.5)
-    doc.setTextColor(...C.grayMid)
-    const lblLines = kpi.lbl.split('\n')
-    lblLines.forEach((line, li) => {
-      doc.text(line, cx, ky + 18 + li * 4, { align: 'center' })
-    })
+    doc.setFontSize(7)
+    doc.setTextColor(...C.gray)
+    doc.text(kpi.lbl, kx + 4, y + 18)
   })
 
-  y += kpiH + 10
+  y += kpiH + 6
+
+  // ── Valorización (fila sobria, sin banda negra) ─────────────────────────
+  const valBandH = 16
+  // Línea fina superior
+  doc.setDrawColor(...C.grayBorder)
+  doc.setLineWidth(0.4)
+  doc.line(MARGIN, y, W - MARGIN, y)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7.5)
+  doc.setTextColor(...C.gray)
+  doc.text('VALOR TOTAL DEL INVENTARIO', MARGIN, y + 7)
+
+  // Cobertura de costo: qué % de las unidades no tiene costo cargado.
+  const pctSinCosto = unidadesTotal > 0
+    ? Math.round((unidadesSinCosto / unidadesTotal) * 100)
+    : 0
+  const coberturaTxt = unidadesSinCosto > 0
+    ? `${pctSinCosto}% del stock sin costo cargado`
+    : 'todo el stock con costo cargado'
+  doc.setFontSize(6.5)
+  doc.setTextColor(...C.grayMid)
+  doc.text(coberturaTxt, MARGIN, y + 12)
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(17)
+  doc.setTextColor(...C.black)
+  doc.text(formatPrecio(valorTotalInventario, monedaCodigo), W - MARGIN, y + 9, { align: 'right' })
+
+  // Línea fina inferior
+  doc.setDrawColor(...C.grayBorder)
+  doc.setLineWidth(0.4)
+  doc.line(MARGIN, y + valBandH, W - MARGIN, y + valBandH)
+
+  y += valBandH + 8
 
   // ── Columnas de alertas ────────────────────────────────────────────────
   const colW   = (W - MARGIN * 2 - 14) / 2
@@ -465,7 +493,8 @@ function drawAreaPage(
   logo: string,
   badgeTxt: string,
   usuarioNombre: string,
-  horaStr: string
+  horaStr: string,
+  monedaCodigo: string
 ) {
   const SECTION_H = 22   // altura de la sección de título del área
   const alertas = items.map(getAlerta)
@@ -479,10 +508,27 @@ function drawAreaPage(
     return d !== null && d >= 0 && d <= 30
   }).length
 
+  // Valor total del área para calcular el peso (% del valor) de cada ítem.
+  const totalValorArea = items.reduce((s, i) => s + (i.valor_stock ?? 0), 0)
+
   const tableBody = items.map(item => {
     const stock = item.stock_total ?? 0
     const stockRound = Math.round(stock)
     const stockStr = formatCantidad(stockRound, item.unidad, item.unidad_plural)
+
+    // Cobertura: días de autonomía directos. Sin consumo registrado → guion.
+    const cob = item.dias_autonomia
+    const cobStr = cob == null ? '—' : cob <= 0 ? '0 d' : `~${cob} d`
+
+    // Valor del stock del producto. Sin costo cargado → guion.
+    const valorStr = item.valor_stock && item.valor_stock > 0
+      ? formatPrecio(item.valor_stock, monedaCodigo)
+      : '—'
+
+    // Peso del ítem en el valor total del área.
+    const pctValStr = totalValorArea > 0 && item.valor_stock
+      ? `${Math.round((item.valor_stock / totalValorArea) * 100)}%`
+      : '—'
 
     let vencStr = '—'
     if (item.proximo_vencimiento) {
@@ -496,19 +542,16 @@ function drawAreaPage(
       }
     }
 
-    let estadoStr = 'OK'
-    const alerta = getAlerta(item)
-    if (alerta === 'bajo')   estadoStr = 'Bajo'
-    if (alerta === 'vencer') estadoStr = 'Vence'
-
     return [
       item.producto_nombre,
       item.codigo_interno ?? '—',
       item.categoria ?? '—',
+      item.proveedor_nombre ?? '—',
       stockStr,
+      cobStr,
       vencStr,
-      estadoStr,
-      '',          // col 6: barra de nivel — texto vacío, se dibuja en didDrawCell
+      valorStr,
+      pctValStr,
     ]
   })
 
@@ -516,7 +559,7 @@ function drawAreaPage(
 
   autoTable(doc, {
     startY: HEADER_H + SECTION_H,
-    head: [['Producto', 'Código', 'Categoría', 'Stock', 'Vencimiento', 'Estado', 'Nivel']],
+    head: [['Producto', 'Código', 'Categoría', 'Proveedor', 'Stock', 'Cobertura', 'Vencimiento', 'Valor', '% Val']],
     body: tableBody,
 
     headStyles: {
@@ -536,13 +579,15 @@ function drawAreaPage(
     tableLineWidth: 0.2,
 
     columnStyles: {
-      0: { cellWidth: 'auto',  fontStyle: 'bold', textColor: C.black },
-      1: { cellWidth: 24, font: 'courier', fontSize: 6.5, textColor: C.gray },
-      2: { cellWidth: 28, fontSize: 6.5, textColor: C.gray },
-      3: { cellWidth: 32, halign: 'right' },
-      4: { cellWidth: 36, fontSize: 6.5 },
-      5: { cellWidth: 20, halign: 'center', fontSize: 6.5, fontStyle: 'bold' },
-      6: { cellWidth: 20, halign: 'right' },
+      0: { cellWidth: 'auto', fontStyle: 'bold', textColor: C.black },
+      1: { cellWidth: 20, font: 'courier', fontSize: 6.5, textColor: C.gray },
+      2: { cellWidth: 22, fontSize: 6.5, textColor: C.gray },
+      3: { cellWidth: 26, fontSize: 6.5, textColor: C.gray },
+      4: { cellWidth: 24, halign: 'right' },
+      5: { cellWidth: 20, halign: 'center', fontSize: 6.5 },
+      6: { cellWidth: 26, fontSize: 6.5 },
+      7: { cellWidth: 24, halign: 'right', fontStyle: 'bold', textColor: C.black },
+      8: { cellWidth: 14, halign: 'right', fontSize: 6.5, textColor: C.gray },
     },
 
     margin: { left: MARGIN, right: MARGIN, top: HEADER_H + SECTION_H - 2, bottom: FOOTER_H + 2 },
@@ -553,56 +598,14 @@ function drawAreaPage(
 
       if (alerta === 'bajo') {
         data.cell.styles.fillColor = C.redLight
-        if (data.column.index === 3 || data.column.index === 5)
+        // Stock (4) y Cobertura (5) en rojo
+        if (data.column.index === 4 || data.column.index === 5)
           data.cell.styles.textColor = C.redDark
       } else if (alerta === 'vencer') {
         data.cell.styles.fillColor = C.amberLight
-        if (data.column.index === 4 || data.column.index === 5)
+        // Vencimiento (6) en ámbar
+        if (data.column.index === 6)
           data.cell.styles.textColor = C.amberDark
-      }
-
-      // Col 6: vaciar texto (la barra se dibuja en didDrawCell)
-      if (data.column.index === 6) {
-        data.cell.text = ['']
-      }
-    },
-
-    didDrawCell: (data: CellHookData) => {
-      if (data.section !== 'body' || data.column.index !== 6) return
-
-      const item    = items[data.row.index]
-
-      // Sin mínimos: el llenado de la barra refleja el estado (días de cobertura).
-      const ratio = (() => {
-        switch (item.estado_alerta) {
-          case 'agotado':
-          case 'vencido':    return 0.05
-          case 'critico':    return 0.15
-          case 'reponer':
-          case 'riesgo_venc':
-          case 'por_vencer': return 0.4
-          case 'normal':     return 0.85
-          default:           return 0.7 // sin_datos / no_gestionado → neutro
-        }
-      })()
-
-      const BAR_W  = data.cell.width - 10
-      const BAR_H  = 3.5
-      const barX   = data.cell.x + 5
-      const barY   = data.cell.y + (data.cell.height - BAR_H) / 2
-
-      // Fondo de la barra
-      doc.setFillColor(...C.grayBorder)
-      doc.roundedRect(barX, barY, BAR_W, BAR_H, BAR_H / 2, BAR_H / 2, 'F')
-
-      // Relleno coloreado
-      const fillW = BAR_W * ratio
-      if (fillW > 0.5) {
-        if (ratio >= 0.6)       doc.setFillColor(...C.green)
-        else if (ratio >= 0.2)  doc.setFillColor(...C.amber)
-        else                    doc.setFillColor(...C.red)
-        const rFill = Math.min(BAR_H / 2, fillW / 2)
-        doc.roundedRect(barX, barY, fillW, BAR_H, rFill, rFill, 'F')
       }
     },
 
@@ -677,6 +680,7 @@ function drawAreaPage(
 // ─── exportarStockPDF ──────────────────────────────────────────────────────
 export async function exportarStockPDF(options: PdfOptions): Promise<void> {
   const { selectedAreas, incluirResumen, nombreLaboratorio, logoBase64, usuarioNombre, filters } = options
+  const monedaCodigo = options.monedaCodigo ?? 'CLP'
 
   // ── Fetch de datos ────────────────────────────────────────────────────────
   // Resumen global y tablas por área en paralelo
@@ -706,7 +710,7 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
 
   // ── Página 1: Resumen Ejecutivo (datos globales) ──────────────────────────
   if (incluirResumen) {
-    drawResumen(doc, W, H, globalData, selectedAreas, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr)
+    drawResumen(doc, W, H, globalData, selectedAreas, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr, monedaCodigo)
     if (stockPorArea.length > 0) doc.addPage()
   }
 
@@ -726,7 +730,7 @@ export async function exportarStockPDF(options: PdfOptions): Promise<void> {
   for (let aIdx = 0; aIdx < stockPorArea.length; aIdx++) {
     if (aIdx > 0) doc.addPage()
     const { area, items } = stockPorArea[aIdx]
-    drawAreaPage(doc, W, H, area, items, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr)
+    drawAreaPage(doc, W, H, area, items, nombreLaboratorio, logo, badgeTxt, usuarioNombre, horaStr, monedaCodigo)
   }
 
   // ── Post-pass: footers con "Página N de T" ────────────────────────────────

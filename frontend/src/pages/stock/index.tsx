@@ -254,7 +254,7 @@ export default function StockPage() {
           onExport={async (selectedAreas, incluirResumen) => {
             try {
               const config = await api
-                .get<{ nombre_laboratorio: string; logo_base64: string }>('/configuracion')
+                .get<{ nombre_laboratorio: string; logo_base64: string; moneda_codigo: string }>('/configuracion')
                 .then((r) => r.data)
               await exportarStockPDF({
                 selectedAreas,
@@ -262,6 +262,7 @@ export default function StockPage() {
                 nombreLaboratorio: config.nombre_laboratorio,
                 logoBase64: config.logo_base64,
                 usuarioNombre: usuario?.nombre ?? 'Sistema',
+                monedaCodigo: config.moneda_codigo,
                 filters: {
                   q: search || undefined,
                   categoria_id: categoriaId?.toString() || undefined,

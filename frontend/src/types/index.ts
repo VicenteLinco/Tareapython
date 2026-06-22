@@ -65,6 +65,10 @@ export interface StockItem {
   unidad_plural: string | null
   stock_total: number | null
   lotes_count?: number
+  // Valorización: valor del stock del producto (Σ cantidad × costo del lote).
+  valor_stock?: number
+  // Unidades del producto cuyo lote no tiene costo cargado.
+  unidades_sin_costo?: number
   dias_autonomia?: number | null
   dias_autonomia_pico?: number | null
   dias_con_consumo?: number

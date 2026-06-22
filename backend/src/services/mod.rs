@@ -14,6 +14,7 @@ pub mod proveedor_service;
 pub mod recepcion_service;
 pub mod solicitud_service;
 pub mod stock_ops;
+pub mod stock_service;
 pub mod storage;
 pub mod unidad_basica_service;
 pub mod usuario_service;

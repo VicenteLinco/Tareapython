@@ -214,3 +214,220 @@ async fn test_stock_por_area_lote_without_presentacion_returns_null_equivalente(
         lote["presentacion_factor"]
     );
 }
+
+// ─── Characterization tests: contrato actual de los endpoints sin cobertura ──
+// Estos tests fijan la forma de la respuesta ANTES de mover el SQL a
+// `stock_service`. Si el refactor es fiel, siguen pasando sin cambios.
+
+/// Lee un valor numérico tolerando que `rust_decimal` se serialice como string
+/// JSON (ej. `"150.0000"`) o como número.
+fn json_num(v: &serde_json::Value) -> f64 {
+    v.as_f64()
+        .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+        .unwrap_or(0.0)
+}
+
+/// GET /api/v1/stock — la lista principal devuelve el envelope esperado y el
+/// resumen agregado, e incluye un producto que acaba de recibir stock.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_listar_stock_envelope_y_resumen(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
+    create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
+        .await;
+
+    let (status, json) = common::get_json(&app, "/api/v1/stock", &token).await;
+    assert_eq!(status, StatusCode::OK, "got {:?}: {:?}", status, json);
+
+    // Envelope de paginación
+    assert!(json["data"].is_array(), "data debe ser array");
+    assert!(json["total"].is_number(), "total debe ser número");
+    assert!(json["page"].is_number(), "page debe ser número");
+    assert!(json["per_page"].is_number(), "per_page debe ser número");
+    assert!(json["total_pages"].is_number(), "total_pages debe ser número");
+
+    // Resumen agregado con las tres claves del contrato
+    let resumen = &json["resumen"];
+    assert!(resumen["total_productos_con_stock"].is_number());
+    assert!(resumen["productos_bajo_minimo"].is_number());
+    assert!(resumen["productos_por_vencer_90d"].is_number());
+    assert!(
+        resumen["total_productos_con_stock"].as_i64().unwrap() >= 1,
+        "el producto recién recibido debe contar como con stock"
+    );
+
+    // El producto recibido aparece en la lista
+    let data = json["data"].as_array().unwrap();
+    let found = data
+        .iter()
+        .find(|r| r["producto_id"].as_str() == Some(&producto_id.to_string()))
+        .expect("el producto con stock debe aparecer en /stock");
+    assert!(json_num(&found["stock_total"]) > 0.0);
+    assert!(found["estado_alerta"].is_string());
+}
+
+/// GET /api/v1/stock — valoriza cada producto por el costo real de sus lotes.
+/// El costo del lote sale del precio de su recepción de origen (por presentación)
+/// normalizado a unidad base: precio_unitario / factor_conversion_usado.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_listar_valoriza_stock_por_costo_de_lote(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
+
+    // Recibe 15 cajas (factor 10 = 150 base) a $100 por CAJA.
+    // costo base = 100 / 10 = $10 por unidad; valor = 150 × 10 = $1500.
+    common::post_json_idempotent(
+        &app,
+        "/api/v1/recepciones",
+        &token,
+        serde_json::json!({
+            "proveedor_id": proveedor_id,
+            "estado": "completa",
+            "fecha_recepcion": "2026-03-15T10:00:00Z",
+            "detalle": [{
+                "producto_id": producto_id,
+                "numero_lote": format!("VAL-{}", &Uuid::new_v4().to_string()[..8].to_uppercase()),
+                "fecha_vencimiento": "2028-06-30",
+                "presentacion_id": presentacion_id,
+                "cantidad_presentaciones": 15.0,
+                "area_destino_id": 1,
+                "precio_unitario": 100
+            }]
+        }),
+        &Uuid::new_v4().to_string(),
+    )
+    .await;
+
+    let (status, json) = common::get_json(&app, "/api/v1/stock", &token).await;
+    assert_eq!(status, StatusCode::OK, "got {:?}: {:?}", status, json);
+
+    let data = json["data"].as_array().unwrap();
+    let found = data
+        .iter()
+        .find(|r| r["producto_id"].as_str() == Some(&producto_id.to_string()))
+        .expect("producto con stock");
+
+    let valor = json_num(&found["valor_stock"]);
+    assert!(
+        (valor - 1500.0).abs() < 0.5,
+        "valor_stock esperado ~1500, got {}",
+        valor
+    );
+
+    // El resumen agrega el valor total del inventario.
+    let valor_total = json_num(&json["resumen"]["valor_total_inventario"]);
+    assert!(
+        valor_total >= 1500.0 - 0.5,
+        "valor_total_inventario debe incluir el producto valorizado, got {}",
+        valor_total
+    );
+}
+
+/// Un lote SIN costo (recepción sin precio) cuenta como $0 y se informa cuántas
+/// unidades del inventario no tienen costo cargado.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_listar_stock_sin_costo_se_informa(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
+    // create_reception_with_pres NO manda precio → costo del lote nulo.
+    create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
+        .await;
+
+    let (status, json) = common::get_json(&app, "/api/v1/stock", &token).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let data = json["data"].as_array().unwrap();
+    let found = data
+        .iter()
+        .find(|r| r["producto_id"].as_str() == Some(&producto_id.to_string()))
+        .expect("producto con stock");
+    assert_eq!(json_num(&found["valor_stock"]), 0.0, "sin costo → valor 0");
+
+    // 150 unidades sin costo cargado se reportan en el resumen.
+    assert!(
+        json_num(&json["resumen"]["unidades_sin_costo"]) >= 150.0 - 0.5,
+        "el resumen debe informar las unidades sin costo"
+    );
+}
+
+/// GET /api/v1/stock/alertas — devuelve el envelope de alertas con su resumen
+/// por tipo. Tras una recepción limpia el endpoint responde OK y bien formado.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_alertas_envelope_y_resumen(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
+    create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
+        .await;
+
+    let (status, json) = common::get_json(&app, "/api/v1/stock/alertas", &token).await;
+    assert_eq!(status, StatusCode::OK, "got {:?}: {:?}", status, json);
+
+    assert!(json["data"].is_array(), "data debe ser array");
+    assert!(json["total"].is_number());
+    assert!(json["total_pages"].is_number());
+
+    let resumen = &json["resumen"];
+    assert!(resumen["sin_stock"].is_number());
+    assert!(resumen["vencido"].is_number());
+    assert!(resumen["bajo_minimo"].is_number());
+    assert!(resumen["vencimiento"].is_number());
+}
+
+/// GET /api/v1/stock/lotes-vencidos — con una ventana de alerta amplia incluye
+/// el lote recién recibido y devuelve los campos esperados por ítem.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_lotes_vencidos_incluye_lote_en_ventana(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
+    let lote_id =
+        create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
+            .await;
+
+    // dias_alerta amplio: el lote (vence 2028) cae dentro de la ventana
+    let (status, json) =
+        common::get_json(&app, "/api/v1/stock/lotes-vencidos?dias_alerta=3650", &token).await;
+    assert_eq!(status, StatusCode::OK, "got {:?}: {:?}", status, json);
+
+    let items = json.as_array().expect("lotes-vencidos devuelve un array");
+    let found = items
+        .iter()
+        .find(|r| r["lote_id"].as_str() == Some(&lote_id.to_string()))
+        .expect("el lote recibido debe aparecer dentro de la ventana de alerta");
+    assert_eq!(found["producto_id"].as_str(), Some(producto_id.to_string().as_str()));
+    assert!(found["fecha_vencimiento"].is_string());
+    assert!(found["area_nombre"].is_string());
+    assert!(json_num(&found["cantidad"]) > 0.0);
+    assert!(found["unidad_base_nombre"].is_string());
+}
+
+/// GET /api/v1/stock/balance-check — tras movimientos normales el ledger está
+/// sano: el stock materializado coincide con la suma de movimientos.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_balance_check_sano_tras_recepcion(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
+    create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
+        .await;
+
+    let (status, json) = common::get_json(&app, "/api/v1/stock/balance-check", &token).await;
+    assert_eq!(status, StatusCode::OK, "got {:?}: {:?}", status, json);
+
+    assert_eq!(json["sano"].as_bool(), Some(true), "el ledger debe estar sano");
+    assert_eq!(
+        json["discrepancias"].as_array().map(|a| a.len()),
+        Some(0),
+        "sin discrepancias tras una recepción limpia"
+    );
+}

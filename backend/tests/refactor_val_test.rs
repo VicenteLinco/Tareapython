@@ -75,8 +75,8 @@ async fn test_integridad_stock_y_servicios_refactorizados(pool: sqlx::PgPool) {
         motivo_rechazo: None,
         detalle: vec![DetalleRecepcionInput {
             producto_id,
-            numero_lote: num_lote.clone(),
-            fecha_vencimiento: fecha.date_naive() + chrono::Days::new(365),
+            numero_lote: Some(num_lote.clone()),
+            fecha_vencimiento: Some(fecha.date_naive() + chrono::Days::new(365)),
             presentacion_id: None,
             cantidad_presentaciones: Decimal::from(100),
             area_destino_id: area.id,

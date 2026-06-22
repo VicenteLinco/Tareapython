@@ -1,3 +1,4 @@
+use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 use sqlx::PgPool;
@@ -12,6 +13,8 @@ pub struct ConsumoParams {
     pub unidad: String,
     pub presentacion_id: Option<i32>,
     pub nota: Option<String>,
+    /// Lote exacto a consumir (escaneado). Obligatorio para 'trazable'.
+    pub lote_id: Option<Uuid>,
 }
 
 #[derive(Debug)]
@@ -86,10 +89,49 @@ impl ConsumoService {
             ));
         }
 
+        // Política de control de lote: 'trazable' exige consumir el lote escaneado.
+        let control_lote: String =
+            sqlx::query_scalar("SELECT control_lote FROM productos WHERE id = $1")
+                .bind(params.producto_id)
+                .fetch_optional(pool)
+                .await?
+                .ok_or_else(|| AppError::NotFound("Producto no encontrado".into()))?;
+        if control_lote == "trazable" && params.lote_id.is_none() {
+            return Err(AppError::Validation(
+                "El producto es de control trazable: se requiere el lote escaneado".into(),
+            ));
+        }
+
         let mut tx = pool.begin().await?;
 
-        // FEFO: obtener lotes disponibles
-        let lotes = stock_ops::lotes_fefo(&mut tx, params.producto_id, params.area_id).await?;
+        // Lotes a consumir: si viene lote_id (escaneo), se descuenta EXACTAMENTE ese
+        // lote (sin caer al FEFO); si no, FEFO automático.
+        let lotes = if let Some(lote_id) = params.lote_id {
+            let pinned = sqlx::query_as::<_, stock_ops::LoteFefo>(
+                r#"SELECT s.id as stock_id, s.lote_id, s.cantidad, s.area_id
+                   FROM stock s
+                   JOIN lotes l ON l.id = s.lote_id
+                   WHERE s.lote_id = $1
+                     AND s.area_id = $2
+                     AND s.cantidad > 0
+                     AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
+                   FOR UPDATE OF s"#,
+            )
+            .bind(lote_id)
+            .bind(params.area_id)
+            .fetch_all(&mut *tx)
+            .await?;
+            if pinned.is_empty() {
+                tx.rollback().await?;
+                return Err(AppError::Validation(format!(
+                    "Lote {} sin stock usable en el área indicada",
+                    lote_id
+                )));
+            }
+            pinned
+        } else {
+            stock_ops::lotes_fefo(&mut tx, params.producto_id, params.area_id).await?
+        };
         let disponible = stock_ops::stock_total(&lotes);
 
         if disponible < cantidad_base {
@@ -99,6 +141,43 @@ impl ConsumoService {
                 solicitado: cantidad_base,
             });
         }
+
+        // Aviso FEFO no bloqueante: si se consume un lote explícito que NO es el más
+        // próximo a vencer, se sugiere el que vence antes (sin frenar el consumo).
+        let lote_sugerido: Option<(Uuid, String, NaiveDate)> = if let Some(lote_id) = params.lote_id
+        {
+            let fv_elegido: Option<NaiveDate> =
+                sqlx::query_scalar("SELECT fecha_vencimiento FROM lotes WHERE id = $1")
+                    .bind(lote_id)
+                    .fetch_optional(&mut *tx)
+                    .await?
+                    .flatten();
+            match fv_elegido {
+                Some(fv) => sqlx::query_as::<_, (Uuid, String, NaiveDate)>(
+                    r#"SELECT l.id, l.numero_lote, l.fecha_vencimiento
+                       FROM stock s
+                       JOIN lotes l ON l.id = s.lote_id
+                       WHERE l.producto_id = $1
+                         AND s.area_id = $2
+                         AND s.cantidad > 0
+                         AND l.id <> $3
+                         AND l.fecha_vencimiento IS NOT NULL
+                         AND l.fecha_vencimiento >= CURRENT_DATE
+                         AND l.fecha_vencimiento < $4
+                       ORDER BY l.fecha_vencimiento ASC
+                       LIMIT 1"#,
+                )
+                .bind(params.producto_id)
+                .bind(params.area_id)
+                .bind(lote_id)
+                .bind(fv)
+                .fetch_optional(&mut *tx)
+                .await?,
+                None => None,
+            }
+        } else {
+            None
+        };
 
         let virtual_consumed_id: Option<i32> = sqlx::query_scalar(
             "SELECT id FROM areas WHERE nombre = 'VIRTUAL_CONSUMED'"
@@ -137,6 +216,12 @@ impl ConsumoService {
             "grupo_movimiento": grupo,
             "movimientos": movimientos,
             "stock_restante_area": stock_restante.unwrap_or(Decimal::ZERO),
+            "aviso_fefo": lote_sugerido.is_some(),
+            "lote_sugerido": lote_sugerido.map(|(id, numero, fecha)| serde_json::json!({
+                "lote_id": id,
+                "numero_lote": numero,
+                "fecha_vencimiento": fecha,
+            })),
         }))
     }
 

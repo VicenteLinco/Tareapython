@@ -319,6 +319,52 @@ async fn test_dos_ejes_solo_vencido_es_agotado_y_vencido(pool: PgPool) {
     );
 }
 
+/// control_lote = 'simple' (consumibles): el lote no lleva vencimiento y NO debe
+/// contaminar el eje de vencimiento. Un producto 'simple' con stock usable reporta
+/// estado_vencimiento = 'no_aplica' (no 'ok', que lo mezclaría con perecederos sanos).
+#[sqlx::test(migrations = "./migrations")]
+async fn test_estado_vencimiento_no_aplica_para_simple(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
+    let lote_id =
+        create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
+            .await;
+
+    // Reclasificar a 'simple' y volar el vencimiento del lote (consumible: lote
+    // implícito sin fecha). El stock usable se conserva.
+    sqlx::query("UPDATE productos SET control_lote = 'simple' WHERE id = $1")
+        .bind(producto_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE lotes SET fecha_vencimiento = NULL WHERE id = $1")
+        .bind(lote_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (status, json) = common::get_json(&app, "/api/v1/stock", &token).await;
+    assert_eq!(status, StatusCode::OK, "got {:?}: {:?}", status, json);
+
+    let data = json["data"].as_array().unwrap();
+    let found = data
+        .iter()
+        .find(|r| r["producto_id"].as_str() == Some(&producto_id.to_string()))
+        .expect("el producto simple con stock debe aparecer en /stock");
+
+    assert_eq!(
+        found["estado_vencimiento"].as_str(),
+        Some("no_aplica"),
+        "producto simple (sin vencimiento) → eje vencimiento = no_aplica"
+    );
+    assert!(
+        json_num(&found["stock_usable"]) > 0.0,
+        "el stock usable se conserva; 'simple' no afecta el eje cantidad"
+    );
+}
+
 /// Los filtros de la lista de Stock van por los dos ejes: un producto vencido+agotado
 /// debe aparecer tanto bajo el filtro "agotado" como bajo "vencido" (antes, con el
 /// enum único, sólo salía en uno).

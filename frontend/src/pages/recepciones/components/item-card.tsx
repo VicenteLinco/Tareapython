@@ -4,7 +4,7 @@ import { Trash2, ChevronDown, ChevronUp, Plus, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ProductoImage } from '@/components/ui/producto-image'
 import { formatCantidad, APP_LOCALE } from '@/lib/utils'
-import type { Area, Presentacion } from '@/types'
+import type { Area, Presentacion, ControlLote } from '@/types'
 import { isCardComplete } from './item-card-utils'
 
 // ─── Interfaces públicas ──────────────────────────────────────────────────────
@@ -39,6 +39,7 @@ export interface DetalleLineUI {
   cantidad_solicitada?: number | null
   lotes: LoteLineUI[]
   collapsed: boolean
+  control_lote: ControlLote
 }
 
 interface Props {
@@ -70,6 +71,7 @@ interface LoteRowProps {
   unidad_base_nombre: string
   unidad_base_nombre_plural: string
   canDelete: boolean
+  control_lote: ControlLote
   onChange: (patch: Partial<LoteLineUI>) => void
   onDelete: () => void
   onAddLote?: () => void
@@ -83,6 +85,7 @@ function LoteRow({
   unidad_base_nombre,
   unidad_base_nombre_plural,
   canDelete,
+  control_lote,
   onChange,
   onDelete,
   onAddLote,
@@ -112,38 +115,42 @@ function LoteRow({
   return (
     <div className="flex items-center gap-2">
       <span className="text-xs opacity-30 w-4 text-right shrink-0">{index + 1}</span>
-      <input
-        className={`input input-sm input-bordered w-28 shrink-0 font-mono ${!lote.codigo_lote ? 'input-warning' : ''}`}
-        placeholder="Nº lote"
-        value={lote.codigo_lote}
-        onChange={e => onChange({ codigo_lote: e.target.value })}
-      />
-      <div className="flex items-center gap-1 w-44 shrink-0">
-        {modoMes ? (
+      {control_lote !== 'simple' && (
+        <>
           <input
-            type="month"
-            className={`input input-sm input-bordered flex-1 min-w-0 ${!lote.fecha_vencimiento ? 'input-warning' : ''}`}
-            value={fechaDisplayValue}
-            onChange={e => handleFechaChange(e.target.value)}
+            className={`input input-sm input-bordered w-28 shrink-0 font-mono ${!lote.codigo_lote ? 'input-warning' : ''}`}
+            placeholder="Nº lote"
+            value={lote.codigo_lote}
+            onChange={e => onChange({ codigo_lote: e.target.value })}
           />
-        ) : (
-          <input
-            type="date"
-            className={`input input-sm input-bordered flex-1 min-w-0 ${!lote.fecha_vencimiento ? 'input-warning' : ''}`}
-            value={fechaDisplayValue}
-            onChange={e => handleFechaChange(e.target.value)}
-          />
-        )}
-        <button
-          type="button"
-          className={`btn btn-xs btn-ghost px-1.5 shrink-0 gap-0.5 ${modoMes ? 'text-primary' : 'opacity-35 hover:opacity-70'}`}
-          title={modoMes ? 'Cambiar a fecha exacta (D/M/A)' : 'Ingresar solo mes/año'}
-          onClick={() => setModoMes(v => !v)}
-        >
-          <Calendar className="h-3 w-3" />
-          <span className="text-[10px] font-bold leading-none">{modoMes ? 'M/A' : 'D'}</span>
-        </button>
-      </div>
+          <div className="flex items-center gap-1 w-44 shrink-0">
+            {modoMes ? (
+              <input
+                type="month"
+                className={`input input-sm input-bordered flex-1 min-w-0 ${!lote.fecha_vencimiento ? 'input-warning' : ''}`}
+                value={fechaDisplayValue}
+                onChange={e => handleFechaChange(e.target.value)}
+              />
+            ) : (
+              <input
+                type="date"
+                className={`input input-sm input-bordered flex-1 min-w-0 ${!lote.fecha_vencimiento ? 'input-warning' : ''}`}
+                value={fechaDisplayValue}
+                onChange={e => handleFechaChange(e.target.value)}
+              />
+            )}
+            <button
+              type="button"
+              className={`btn btn-xs btn-ghost px-1.5 shrink-0 gap-0.5 ${modoMes ? 'text-primary' : 'opacity-35 hover:opacity-70'}`}
+              title={modoMes ? 'Cambiar a fecha exacta (D/M/A)' : 'Ingresar solo mes/año'}
+              onClick={() => setModoMes(v => !v)}
+            >
+              <Calendar className="h-3 w-3" />
+              <span className="text-[10px] font-bold leading-none">{modoMes ? 'M/A' : 'D'}</span>
+            </button>
+          </div>
+        </>
+      )}
       <input
         type="number"
         min={1}
@@ -158,7 +165,7 @@ function LoteRow({
         }}
       />
       <span className="text-xs opacity-50 flex-1 min-w-0 truncate" title={unitLabel}>{unitLabel}</span>
-      {canDelete ? (
+      {canDelete && control_lote !== 'simple' ? (
         <button className="btn btn-ghost btn-xs btn-circle shrink-0" onClick={onDelete}>
           <Trash2 className="h-3 w-3 text-error" />
         </button>
@@ -328,8 +335,12 @@ export function ReceptionItemCard({
           {/* Cabecera de columnas */}
           <div className="flex items-center gap-2 text-xs opacity-40 pb-0.5">
             <span className="w-4 shrink-0" />
-            <span className="w-28 shrink-0">Lote</span>
-            <span className="w-44 shrink-0">Vencimiento</span>
+            {d.control_lote !== 'simple' && (
+              <>
+                <span className="w-28 shrink-0">Lote</span>
+                <span className="w-44 shrink-0">Vencimiento</span>
+              </>
+            )}
             <span className="w-16 shrink-0">Cantidad</span>
             <span className="flex-1 min-w-0">Unidad</span>
             <span className="w-6 shrink-0" />
@@ -347,6 +358,7 @@ export function ReceptionItemCard({
                 unidad_base_nombre={d.unidad_base_nombre}
                 unidad_base_nombre_plural={d.unidad_base_nombre_plural}
                 canDelete={d.lotes.length > 1}
+                control_lote={d.control_lote}
                 onChange={patch => onChangeLote(d.id, l.id, patch)}
                 onDelete={() => onRemoveLote(d.id, l.id)}
                 onAddLote={() => onAddLote(d.id)}
@@ -355,13 +367,15 @@ export function ReceptionItemCard({
           </div>
 
           {/* Agregar lote */}
-          <button
-            className="btn btn-sm btn-ghost btn-outline w-full border-dashed text-xs gap-1"
-            onClick={() => onAddLote(d.id)}
-          >
-            <Plus className="h-3 w-3" />
-            Agregar otro lote
-          </button>
+          {d.control_lote !== 'simple' && (
+            <button
+              className="btn btn-sm btn-ghost btn-outline w-full border-dashed text-xs gap-1"
+              onClick={() => onAddLote(d.id)}
+            >
+              <Plus className="h-3 w-3" />
+              Agregar otro lote
+            </button>
+          )}
 
           {/* Precio unitario */}
           <div className="flex items-center gap-2 pt-2 border-t border-base-200 flex-wrap">

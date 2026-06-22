@@ -21,6 +21,7 @@ export interface Gs1ScanData {
   tipo?: string
   producto_id: string | number
   producto_nombre: string
+  control_lote?: string
   gs1?: { gtin?: string; numero_lote?: string | null; fecha_vencimiento?: string | null } | null
 }
 
@@ -43,6 +44,16 @@ export type Gs1ScanOutcome =
 export function decideGs1Scan(detalles: ScanLikeDetalle[], data: Gs1ScanData): Gs1ScanOutcome {
   const numeroLote = data.gs1?.numero_lote?.trim() || ''
   const fechaVencimiento = data.gs1?.fecha_vencimiento?.trim() || ''
+
+  // Simple product -> direct add or increment
+  if (data.control_lote === 'simple') {
+    const productoId = String(data.producto_id)
+    const existing = detalles.find(d => d.producto_id === productoId)
+    if (existing && existing.lotes.length > 0) {
+      return { kind: 'increment', detalleId: existing.id, loteId: existing.lotes[0].id }
+    }
+    return { kind: 'new-line', numeroLote: '', fechaVencimiento: '' }
+  }
 
   // No lot → keep the existing manual form path.
   if (!numeroLote) return { kind: 'manual' }

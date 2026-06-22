@@ -11,7 +11,7 @@ import { useDialogState } from '@/hooks/useDialogState'
 import { type DetalleLineUI, type LoteLineUI } from '../components/item-card'
 import { type LoteParaEtiqueta } from '@/lib/label-print'
 import { decideGs1Scan } from '../recepcion-scan'
-import type { Proveedor, Area } from '@/types'
+import type { Proveedor, Area, ControlLote } from '@/types'
 
 // Re-export for consumers
 export type { DetalleLineUI, LoteLineUI }
@@ -90,6 +90,7 @@ interface ScanProductData {
   area_nombre?: string | null
   precio_unidad?: number | string | null
   imagen_url?: string | null
+  control_lote?: ControlLote
 }
 
 /**
@@ -102,14 +103,6 @@ function buildDetalleLineFromScan(
   numeroLote: string,
   fechaVencimiento: string,
 ): DetalleLineUI {
-  const nuevoLote: LoteLineUI = {
-    id: uuidv4(),
-    codigo_lote: numeroLote,
-    fecha_vencimiento: fechaVencimiento,
-    cantidad_presentacion: 1,
-    incluir_etiqueta: false,
-    cantidad_etiquetas: 1,
-  }
   const pres = data.presentacion_id
     ? [buildScannedPresentacion({
         producto_id: data.producto_id,
@@ -139,8 +132,16 @@ function buildDetalleLineFromScan(
     precio_anterior: precio,
     precio_base: data.precio_unidad ? String(data.precio_unidad) : '',
     imagen_url: data.imagen_url || null,
-    lotes: [nuevoLote],
+    lotes: [{
+      id: uuidv4(),
+      codigo_lote: numeroLote,
+      fecha_vencimiento: fechaVencimiento,
+      cantidad_presentacion: 1,
+      incluir_etiqueta: false,
+      cantidad_etiquetas: 1,
+    }],
     collapsed: false,
+    control_lote: data.control_lote || 'con_vto',
   }
 }
 
@@ -346,6 +347,7 @@ export function useRecepcionItems({
           cantidad_etiquetas: initialCantidad,
         }],
         collapsed: false,
+        control_lote: full.control_lote as ControlLote,
       }
       setDetalles(prev => [line, ...prev])
       notify.success(`${prod.nombre} añadido`)
@@ -425,6 +427,7 @@ export function useRecepcionItems({
           imagen_url: data.imagen_url || null,
           lotes: [nuevoLote],
           collapsed: false,
+          control_lote: data.control_lote || 'con_vto',
         }
         setDetalles(prev => [line, ...prev])
         notify.success(`Lote ${data.numero_lote} añadido`)
@@ -540,6 +543,15 @@ export function useRecepcionItems({
         return
       }
 
+      if (data.control_lote === 'simple') {
+        const line = buildDetalleLineFromScan(data, '', '')
+        setDetalles(prev => [line, ...prev])
+        setScanCount(prev => prev + 1)
+        navigator.vibrate?.(50)
+        notify.success(`${data.producto_nombre} agregado`)
+        return
+      }
+
       if (data.tipo === 'lote' && data.numero_lote && data.fecha_vencimiento) {
         const line = buildDetalleLineFromScan(data, data.numero_lote, data.fecha_vencimiento)
         setDetalles(prev => [line, ...prev])
@@ -609,6 +621,7 @@ export function useRecepcionItems({
           cantidad_etiquetas: loteData.cantidad,
         }],
         collapsed: false,
+        control_lote: full.control_lote as ControlLote,
       }
       setDetalles(prev => [line, ...prev])
       setScanCount(prev => prev + 1)
@@ -765,9 +778,9 @@ export function useRecepcionItems({
     }
 
     const validos = detalles.filter(d =>
-      d.area_destino_id && d.lotes.some(l => l.codigo_lote && l.fecha_vencimiento)
+      d.area_destino_id && d.lotes.some(l => d.control_lote === 'simple' || (l.codigo_lote && l.fecha_vencimiento))
     )
-    if (validos.length === 0) { notify.error('Completa al menos un ítem con lote, vencimiento y área'); return }
+    if (validos.length === 0) { notify.error('Completa los datos requeridos (área destino, y lote/vencimiento si corresponde) en al menos un producto'); return }
 
     if (decision === 'parcial' && !nota.trim()) {
       notify.error('Indica en la nota qué faltó por recibir')
@@ -784,11 +797,11 @@ export function useRecepcionItems({
       solicitud_id: solicitudId || undefined,
       detalle: validos.flatMap(d =>
         d.lotes
-          .filter(l => l.codigo_lote && l.fecha_vencimiento)
+          .filter(l => d.control_lote === 'simple' || (l.codigo_lote && l.fecha_vencimiento))
           .map(l => ({
             producto_id: d.producto_id,
-            numero_lote: l.codigo_lote,
-            fecha_vencimiento: l.fecha_vencimiento,
+            numero_lote: d.control_lote === 'simple' ? undefined : l.codigo_lote || undefined,
+            fecha_vencimiento: d.control_lote === 'simple' ? undefined : l.fecha_vencimiento || undefined,
             presentacion_id: d.presentacion_id,
             cantidad_presentaciones: l.cantidad_presentacion,
             area_destino_id: d.area_destino_id!,

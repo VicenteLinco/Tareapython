@@ -282,6 +282,7 @@ pub struct ProductoRow {
     pub pres_nombre: Option<String>,
     pub pres_nombre_plural: Option<String>,
     pub pres_factor: Option<Decimal>,
+    pub control_lote: crate::domain::ControlLote,
 }
 
 /// A secondary barcode alias attached to a product (`producto_codigos_barras`).
@@ -802,6 +803,7 @@ impl ProductoService {
             stock_total: Option<Decimal>,
             imagen_url: Option<String>,
             precio_unidad: Option<Decimal>,
+            control_lote: crate::domain::ControlLote,
         }
 
         // 1. Search by presentation barcode
@@ -815,7 +817,8 @@ impl ProductoService {
                  pr.id as presentacion_id, pr.nombre as presentacion_nombre, pr.factor_conversion,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
                  p.imagen_url AS imagen_url,
-                 p.precio_unidad
+                 p.precio_unidad,
+                 p.control_lote
                FROM presentaciones pr
                JOIN productos p ON p.id = pr.producto_id
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
@@ -841,6 +844,7 @@ impl ProductoService {
                 "stock_total": r.stock_total,
                 "imagen_url": r.imagen_url,
                 "precio_unidad": r.precio_unidad,
+                "control_lote": r.control_lote,
             });
             if let Some(gs1) = gs1 {
                 out["gs1"] = json!({
@@ -868,6 +872,7 @@ impl ProductoService {
             stock_total: Option<Decimal>,
             imagen_url: Option<String>,
             precio_unidad: Option<Decimal>,
+            control_lote: crate::domain::ControlLote,
         }
 
         let alias_row = sqlx::query_as::<_, AliasRow>(
@@ -877,7 +882,8 @@ impl ProductoService {
                  pr.id as presentacion_id, pr.nombre as presentacion_nombre, pr.factor_conversion,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
                  p.imagen_url AS imagen_url,
-                 p.precio_unidad
+                 p.precio_unidad,
+                 p.control_lote
                FROM producto_codigos_barras pcb
                JOIN productos p ON p.id = pcb.producto_id
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
@@ -905,6 +911,7 @@ impl ProductoService {
                 "stock_total": ar.stock_total,
                 "imagen_url": ar.imagen_url,
                 "precio_unidad": ar.precio_unidad,
+                "control_lote": ar.control_lote,
             }));
         }
 
@@ -926,6 +933,7 @@ impl ProductoService {
             stock_total: Option<Decimal>,
             imagen_url: Option<String>,
             precio_unidad: Option<Decimal>,
+            control_lote: crate::domain::ControlLote,
         }
 
         // 2. Search by product internal code
@@ -935,7 +943,8 @@ impl ProductoService {
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
                  p.imagen_url AS imagen_url,
-                 p.precio_unidad
+                 p.precio_unidad,
+                 p.control_lote
                FROM productos p
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
                WHERE UPPER(p.codigo_interno) = UPPER($1) AND p.activo = true
@@ -960,6 +969,7 @@ impl ProductoService {
                 "stock_total": r.stock_total,
                 "imagen_url": r.imagen_url,
                 "precio_unidad": r.precio_unidad,
+                "control_lote": r.control_lote,
             }));
         }
 
@@ -968,7 +978,7 @@ impl ProductoService {
         struct Row3 {
             lote_id: Uuid,
             numero_lote: String,
-            fecha_vencimiento: chrono::NaiveDate,
+            fecha_vencimiento: Option<chrono::NaiveDate>,
             producto_id: Uuid,
             producto_nombre: String,
             proveedor_id: Option<i32>,
@@ -981,6 +991,7 @@ impl ProductoService {
             area_nombre: Option<String>,
             imagen_url: Option<String>,
             precio_unidad: Option<Decimal>,
+            control_lote: crate::domain::ControlLote,
         }
 
         let row3 = sqlx::query_as::<_, Row3>(
@@ -1008,7 +1019,8 @@ impl ProductoService {
                   WHERE s.lote_id = l.id AND s.cantidad > 0
                   ORDER BY s.cantidad DESC LIMIT 1) as area_nombre,
                  p.imagen_url AS imagen_url,
-                 p.precio_unidad
+                 p.precio_unidad,
+                 p.control_lote
                FROM lotes l
                JOIN productos p ON p.id = l.producto_id
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
@@ -1038,6 +1050,7 @@ impl ProductoService {
                 "area_nombre": r.area_nombre,
                 "imagen_url": r.imagen_url,
                 "precio_unidad": r.precio_unidad,
+                "control_lote": r.control_lote,
             }));
         }
 
@@ -1112,7 +1125,8 @@ impl ProductoService {
                       (SELECT id FROM presentaciones WHERE producto_id = p.id AND activa = true ORDER BY factor_conversion DESC LIMIT 1) as pres_id,
                       p.pres_nombre,
                       p.pres_nombre_plural,
-                      p.pres_factor
+                      p.pres_factor,
+                      p.control_lote
                FROM productos p
                LEFT JOIN proveedores pr ON pr.id = p.proveedor_id
                LEFT JOIN categorias c ON c.id = p.categoria_id

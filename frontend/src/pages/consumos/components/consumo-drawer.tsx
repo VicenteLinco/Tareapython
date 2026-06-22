@@ -31,20 +31,24 @@ export function ConsumoDrawer({
   const scrollRef = useRef<HTMLDivElement>(null)
   const [showValidacion, setShowValidacion] = useState(false)
 
-  const hayCargando = items.some(i => i.cargando_lotes)
-  const itemsDesajustados = areaFiltro
-    ? items.filter(i => i.area_id !== 0 && i.area_id !== areaFiltro) : []
-  const hayDesajuste = itemsDesajustados.length > 0
+  const itemsTrazablesSinLote = items.filter(i => i.control_lote === 'trazable' && !i.lote_elegido_id)
+  const hayTrazableSinLote = itemsTrazablesSinLote.length > 0
 
   function stockLoteSeleccionado(item: CartItem): number | null {
     if (!item.lote_elegido_id) return null
     return item.lotes.find(l => l.lote_id === item.lote_elegido_id)?.stock ?? null
   }
   const itemsConExceso = items.filter(i => {
+    if (i.control_lote === 'simple') {
+      return i.cantidad_descontar > i.stock_total
+    }
     const s = stockLoteSeleccionado(i)
     return s !== null && i.cantidad_descontar > s
   })
-  const confirmarBloqueado = hayCargando || hayDesajuste
+  const itemsDesajustados = items.filter(i => areaFiltro !== null && i.area_id !== 0 && i.area_id !== areaFiltro)
+  const hayDesajuste = itemsDesajustados.length > 0
+  const hayCargando = items.some(i => i.cargando_lotes)
+  const confirmarBloqueado = hayCargando || hayDesajuste || hayTrazableSinLote
 
   /* Lanzar validación previa cuando hay ítems problemáticos */
   const handleConfirmClick = () => {
@@ -67,8 +71,10 @@ export function ConsumoDrawer({
           </p>
           <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
             {items.map(item => {
-              const stock = stockLoteSeleccionado(item)
-              const excede = stock !== null && item.cantidad_descontar > stock
+              const stock = item.control_lote === 'simple' ? item.stock_total : stockLoteSeleccionado(item)
+              const excede = item.control_lote === 'simple'
+                ? item.cantidad_descontar > item.stock_total
+                : stock !== null && item.cantidad_descontar > stock
               return (
                 <div key={item.producto_id} className={cn(
                   'flex items-center justify-between rounded-xl px-3 py-2 text-sm',
@@ -129,6 +135,15 @@ export function ConsumoDrawer({
         </div>
       )}
 
+      {hayTrazableSinLote && (
+        <div className="flex items-start gap-2 bg-error/10 border border-error/30 rounded-xl px-3 py-2">
+          <XCircle className="h-4 w-4 text-error shrink-0 mt-0.5" />
+          <p className="text-xs text-error font-medium leading-snug">
+            {itemsTrazablesSinLote.length} {itemsTrazablesSinLote.length === 1 ? 'reactivo crítico requiere' : 'reactivos críticos requieren'} escanear o seleccionar un lote exacto para registrar consumo.
+          </p>
+        </div>
+      )}
+
       {items.map(item => {
         const stockLote = stockLoteSeleccionado(item)
         const excedeLote = stockLote !== null && item.cantidad_descontar > stockLote
@@ -165,14 +180,18 @@ export function ConsumoDrawer({
 
             {/* Fila 2: lote pill (izq) + stepper (der) en la misma fila */}
             <div className="flex items-center justify-between gap-2">
-              <LoteSelector
-                lotes={item.lotes}
-                cargandoLotes={item.cargando_lotes}
-                loteElegidoId={item.lote_elegido_id}
-                unidad={item.unidad}
-                unidad_plural={item.unidad_plural}
-                onChange={id => onUpdateLote(item.producto_id, id)}
-              />
+              {item.control_lote === 'simple' ? (
+                <span className="text-[11px] font-bold uppercase tracking-wider text-base-content/30 py-1">Consumible</span>
+              ) : (
+                <LoteSelector
+                  lotes={item.lotes}
+                  cargandoLotes={item.cargando_lotes}
+                  loteElegidoId={item.lote_elegido_id}
+                  unidad={item.unidad}
+                  unidad_plural={item.unidad_plural}
+                  onChange={id => onUpdateLote(item.producto_id, id)}
+                />
+              )}
 
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 <button
@@ -218,10 +237,16 @@ export function ConsumoDrawer({
             </div>
 
             {/* Fila 3: feedback de stock (solo si aplica) */}
-            {stockLote !== null && (
-              excedeLote
-                ? <p className="text-[11px] text-error font-medium">Excede stock del lote (máx {formatCantidad(stockLote, item.unidad, item.unidad_plural)})</p>
-                : <p className="text-[11px] text-base-content/35">Disponible: {formatCantidad(stockLote, item.unidad, item.unidad_plural)}</p>
+            {item.control_lote === 'simple' ? (
+              item.cantidad_descontar > item.stock_total
+                ? <p className="text-[11px] text-error font-medium">Excede stock disponible (máx {formatCantidad(item.stock_total, item.unidad, item.unidad_plural)})</p>
+                : <p className="text-[11px] text-base-content/35">Disponible total: {formatCantidad(item.stock_total, item.unidad, item.unidad_plural)}</p>
+            ) : (
+              stockLote !== null && (
+                excedeLote
+                  ? <p className="text-[11px] text-error font-medium">Excede stock del lote (máx {formatCantidad(stockLote, item.unidad, item.unidad_plural)})</p>
+                  : <p className="text-[11px] text-base-content/35">Disponible: {formatCantidad(stockLote, item.unidad, item.unidad_plural)}</p>
+              )
             )}
           </div>
         )

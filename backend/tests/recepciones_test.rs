@@ -540,6 +540,136 @@ async fn crear_recepcion_estado_invalido_retorna_422(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
+// ─── Grupo 6: control_lote en recepción ──────────────────────────────────────
+
+/// control_lote = 'trazable' → número de lote OBLIGATORIO. Omitirlo es error.
+#[sqlx::test(migrations = "./migrations")]
+async fn crear_recepcion_trazable_sin_lote_retorna_422(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
+    sqlx::query("UPDATE productos SET control_lote = 'trazable' WHERE id = $1")
+        .bind(producto_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let body = serde_json::json!({
+        "proveedor_id": proveedor_id,
+        "estado": "completa",
+        "fecha_recepcion": "2026-03-15T10:00:00Z",
+        "detalle": [{
+            "producto_id": producto_id,
+            "fecha_vencimiento": "2028-06-30",
+            "presentacion_id": presentacion_id,
+            "cantidad_presentaciones": 5.0,
+            "area_destino_id": 1,
+        }]
+    });
+
+    let (status, _) = common::post_json_idempotent(
+        &app,
+        "/api/v1/recepciones",
+        &token,
+        body,
+        &Uuid::new_v4().to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+/// control_lote = 'trazable' → fecha de vencimiento OBLIGATORIA. Omitirla es error.
+#[sqlx::test(migrations = "./migrations")]
+async fn crear_recepcion_trazable_sin_vto_retorna_422(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
+    sqlx::query("UPDATE productos SET control_lote = 'trazable' WHERE id = $1")
+        .bind(producto_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let body = serde_json::json!({
+        "proveedor_id": proveedor_id,
+        "estado": "completa",
+        "fecha_recepcion": "2026-03-15T10:00:00Z",
+        "detalle": [{
+            "producto_id": producto_id,
+            "numero_lote": "TRZ-001",
+            "presentacion_id": presentacion_id,
+            "cantidad_presentaciones": 5.0,
+            "area_destino_id": 1,
+        }]
+    });
+
+    let (status, _) = common::post_json_idempotent(
+        &app,
+        "/api/v1/recepciones",
+        &token,
+        body,
+        &Uuid::new_v4().to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+/// control_lote = 'simple' → el usuario NO carga lote ni vencimiento. La recepción
+/// crea un lote implícito (numero_lote sentinela 'IMPL-...', vencimiento NULL) y
+/// aplica el stock igual.
+#[sqlx::test(migrations = "./migrations")]
+async fn crear_recepcion_simple_sin_lote_ni_vto_ok(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
+    sqlx::query("UPDATE productos SET control_lote = 'simple' WHERE id = $1")
+        .bind(producto_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let body = serde_json::json!({
+        "proveedor_id": proveedor_id,
+        "estado": "completa",
+        "fecha_recepcion": "2026-03-15T10:00:00Z",
+        "detalle": [{
+            "producto_id": producto_id,
+            "presentacion_id": presentacion_id,
+            "cantidad_presentaciones": 7.0,
+            "area_destino_id": 1,
+        }]
+    });
+
+    let (status, _) = common::post_json_idempotent(
+        &app,
+        "/api/v1/recepciones",
+        &token,
+        body,
+        &Uuid::new_v4().to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "el simple sin lote debe crearse");
+
+    // Stock aplicado.
+    let stock = stock_del_producto(&pool, producto_id, 1).await;
+    assert!(stock > rust_decimal::Decimal::ZERO, "el stock del simple se aplica");
+
+    // Lote implícito: sentinela 'IMPL-' y sin vencimiento.
+    let (numero_lote, fv): (String, Option<chrono::NaiveDate>) = sqlx::query_as(
+        "SELECT numero_lote, fecha_vencimiento FROM lotes WHERE producto_id = $1",
+    )
+    .bind(producto_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(fv.is_none(), "lote simple sin vencimiento");
+    assert!(
+        numero_lote.starts_with("IMPL-"),
+        "lote implícito con sentinela, got {}",
+        numero_lote
+    );
+}
+
 #[sqlx::test(migrations = "./migrations")]
 async fn crear_recepcion_completa_sin_detalle_retorna_422(pool: PgPool) {
     let token = common::admin_access_token(&pool).await;

@@ -17,10 +17,11 @@ interface LoteSelectorProps {
   loteElegidoId: string | null  // null = FEFO automático
   unidad: string
   unidad_plural: string
+  isTrazable?: boolean
   onChange: (loteId: string | null) => void
 }
 
-export function LoteSelector({ lotes, cargandoLotes, loteElegidoId, unidad, unidad_plural, onChange }: LoteSelectorProps) {
+export function LoteSelector({ lotes, cargandoLotes, loteElegidoId, unidad, unidad_plural, isTrazable, onChange }: LoteSelectorProps) {
   const [open, setOpen] = useState(false)
 
   if (cargandoLotes) {
@@ -39,7 +40,7 @@ export function LoteSelector({ lotes, cargandoLotes, loteElegidoId, unidad, unid
   }
 
   const loteActual = lotes.find(l => l.lote_id === loteElegidoId)
-  const label = loteActual ? loteActual.numero_lote : 'FEFO automático'
+  const label = loteActual ? loteActual.numero_lote : (isTrazable ? 'Seleccionar lote *' : 'FEFO automático')
 
   return (
     <div className="relative">
@@ -50,13 +51,15 @@ export function LoteSelector({ lotes, cargandoLotes, loteElegidoId, unidad, unid
           'flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all duration-150',
           loteActual
             ? 'bg-primary/10 text-primary hover:bg-primary/18 border border-primary/20'
-            : 'bg-success/10 text-success hover:bg-success/18 border border-success/20'
+            : isTrazable
+              ? 'bg-warning/10 text-warning hover:bg-warning/18 border border-warning/20'
+              : 'bg-success/10 text-success hover:bg-success/18 border border-success/20'
         )}
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
         onKeyDown={e => { if (e.key === 'Escape') setOpen(false) }}
       >
-        {!loteActual && <Sparkles className="h-3 w-3 flex-shrink-0" />}
+        {!loteActual && !isTrazable && <Sparkles className="h-3 w-3 flex-shrink-0" />}
         <span className="max-w-[110px] truncate">{label}</span>
         <ChevronDown className={cn('h-3 w-3 flex-shrink-0 transition-transform', open && 'rotate-180')} />
       </button>
@@ -65,25 +68,28 @@ export function LoteSelector({ lotes, cargandoLotes, loteElegidoId, unidad, unid
       {open && (
         <div className="app-floating-menu absolute top-full left-0 mt-1.5 rounded-box min-w-[220px] max-h-56 overflow-y-auto">
           {/* FEFO automático */}
-          <button
-            type="button"
-            className={cn(
-              'w-full flex items-center gap-3 px-3 py-2.5 text-xs transition-colors text-left',
-              loteElegidoId === null
-                ? 'bg-success/8 text-success'
-                : 'hover:bg-base-200 text-base-content'
-            )}
-            onClick={() => { onChange(null); setOpen(false) }}
-          >
-            <Sparkles className="h-3.5 w-3.5 flex-shrink-0 text-success" />
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold">FEFO automático</div>
-              <div className="text-base-content/40 font-normal text-[11px]">El sistema elige el lote más próximo a vencer</div>
-            </div>
-            {loteElegidoId === null && <Check className="h-3.5 w-3.5 text-success flex-shrink-0" />}
-          </button>
-
-          <div className="border-t border-base-200 mx-2" />
+          {!isTrazable && (
+            <>
+              <button
+                type="button"
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2.5 text-xs transition-colors text-left',
+                  loteElegidoId === null
+                    ? 'bg-success/8 text-success'
+                    : 'hover:bg-base-200 text-base-content'
+                )}
+                onClick={() => { onChange(null); setOpen(false) }}
+              >
+                <Sparkles className="h-3.5 w-3.5 flex-shrink-0 text-success" />
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold">FEFO automático</div>
+                  <div className="text-base-content/40 font-normal text-[11px]">El sistema elige el lote más próximo a vencer</div>
+                </div>
+                {loteElegidoId === null && <Check className="h-3.5 w-3.5 text-success flex-shrink-0" />}
+              </button>
+              <div className="border-t border-base-200 mx-2" />
+            </>
+          )}
 
           {lotes.map(l => {
             const isSelected = loteElegidoId === l.lote_id

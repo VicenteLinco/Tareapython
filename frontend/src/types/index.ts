@@ -1,5 +1,5 @@
 export * from './generated'
-import type { Presentacion, EstadoSolicitud, EstadoRecepcion, EstadoOrdenCompra, SolicitudResumen as GeneratedSolicitudResumen, SolicitudDetalle as GeneratedSolicitudDetalle, Usuario as GeneratedUsuario } from './generated'
+import type { Presentacion, EstadoSolicitud, EstadoRecepcion, EstadoOrdenCompra, ControlLote, SolicitudResumen as GeneratedSolicitudResumen, SolicitudDetalle as GeneratedSolicitudDetalle, Usuario as GeneratedUsuario } from './generated'
 
 // Usuario extendido con area_ids (viene de /auth/me y se persiste en el store)
 export type Usuario = GeneratedUsuario & { area_ids?: number[] }
@@ -106,6 +106,7 @@ export interface StockItem {
   imagen_url?: string | null
   area_id?: number
   area_nombre?: string
+  control_lote?: ControlLote
 }
 
 export interface StockPorArea {
@@ -253,6 +254,7 @@ export interface CreateProducto {
   requiere_cadena_frio?: boolean
   dias_estabilidad_abierto?: number | null
   clase_riesgo?: string | null
+  control_lote?: ControlLote
   pres_nombre?: string | null
   pres_nombre_plural?: string | null
   pres_factor?: number | null
@@ -276,6 +278,7 @@ export interface UpdateProducto {
   requiere_cadena_frio?: boolean
   dias_estabilidad_abierto?: number | null
   clase_riesgo?: string | null
+  control_lote?: ControlLote
   pres_nombre?: string | null
   pres_nombre_plural?: string | null
   pres_factor?: number | null

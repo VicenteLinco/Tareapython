@@ -70,7 +70,9 @@ pub async fn lotes_fefo(
              AND s.cantidad > 0
              -- No se consume producto vencido: sólo sale por descarte.
              AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
-           ORDER BY l.fecha_vencimiento ASC
+           -- FEFO por vencimiento; los implícitos sin fecha (control_lote='simple')
+           -- caen al final y se drenan FIFO por antigüedad de lote.
+           ORDER BY l.fecha_vencimiento ASC NULLS LAST, l.created_at ASC
            FOR UPDATE OF s"#,
     )
     .bind(producto_id)
@@ -94,7 +96,9 @@ pub async fn lotes_fefo_global(
              AND s.cantidad > 0
              -- No se consume producto vencido: sólo sale por descarte.
              AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
-           ORDER BY l.fecha_vencimiento ASC
+           -- FEFO por vencimiento; los implícitos sin fecha (control_lote='simple')
+           -- caen al final y se drenan FIFO por antigüedad de lote.
+           ORDER BY l.fecha_vencimiento ASC NULLS LAST, l.created_at ASC
            FOR UPDATE OF s"#,
     )
     .bind(producto_id)

@@ -279,6 +279,218 @@ async fn consumo_excluye_lotes_vencidos(pool: PgPool) {
     );
 }
 
+// ─── Grupo control_lote: consumo trazable (lote exacto + aviso FEFO) y simple ───
+
+/// Crea proveedor + producto + presentación SIN stock. Retorna
+/// (proveedor_id, producto_uuid, producto_str, presentacion_id).
+async fn setup_prod_sin_stock(
+    pool: &PgPool,
+    token: &str,
+    app: &axum::Router,
+) -> (i64, Uuid, String, i32) {
+    let (_, prov) = common::post_json(
+        app,
+        "/api/v1/proveedores",
+        token,
+        serde_json::json!({ "nombre": format!("Prov-{}", &Uuid::new_v4().to_string()[..8]) }),
+    )
+    .await;
+    let proveedor_id = prov["id"].as_i64().unwrap();
+
+    let (_, prod) = common::post_json(
+        app,
+        "/api/v1/productos",
+        token,
+        serde_json::json!({
+            "nombre": format!("Prod-{}", Uuid::new_v4()),
+            "unidad_base_id": 1,
+            "stock_minimo": 100,
+            "presentaciones": [{ "nombre": "Unitario", "nombre_plural": "Unitarios", "factor_conversion": 1 }]
+        }),
+    )
+    .await;
+    let producto_str = prod["id"].as_str().unwrap().to_string();
+    let producto_uuid: Uuid = producto_str.parse().unwrap();
+    let pres_id: i32 = sqlx::query_scalar("SELECT id FROM presentaciones WHERE producto_id = $1 LIMIT 1")
+        .bind(producto_uuid)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    (proveedor_id, producto_uuid, producto_str, pres_id)
+}
+
+/// Recibe un lote concreto (numero + vencimiento opcional) y devuelve su lote_id.
+async fn recibir_lote(
+    pool: &PgPool,
+    app: &axum::Router,
+    token: &str,
+    proveedor_id: i64,
+    producto_str: &str,
+    producto_uuid: Uuid,
+    pres_id: i32,
+    numero_lote: &str,
+    fecha_venc: Option<&str>,
+    cantidad: f64,
+    area_id: i32,
+) -> Uuid {
+    let mut detalle = serde_json::json!({
+        "producto_id": producto_str,
+        "presentacion_id": pres_id,
+        "cantidad_presentaciones": cantidad,
+        "area_destino_id": area_id,
+        "numero_lote": numero_lote,
+    });
+    if let Some(fv) = fecha_venc {
+        detalle["fecha_vencimiento"] = serde_json::json!(fv);
+    }
+    let (status, json) = common::post_json_idempotent(
+        app,
+        "/api/v1/recepciones",
+        token,
+        serde_json::json!({
+            "proveedor_id": proveedor_id,
+            "estado": "completa",
+            "fecha_recepcion": "2026-03-15T10:00:00Z",
+            "detalle": [detalle]
+        }),
+        &Uuid::new_v4().to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "recepción del lote {numero_lote}");
+    // El lote_id viene en la respuesta (para 'simple' el numero_lote es sentinela).
+    let _ = (producto_uuid, pool);
+    json["lotes"][0]["lote_id"]
+        .as_str()
+        .expect("lote_id en la respuesta")
+        .parse()
+        .unwrap()
+}
+
+async fn stock_de_lote(pool: &PgPool, lote_id: Uuid, area_id: i32) -> rust_decimal::Decimal {
+    sqlx::query_scalar::<_, Option<rust_decimal::Decimal>>(
+        "SELECT SUM(cantidad) FROM stock WHERE lote_id = $1 AND area_id = $2",
+    )
+    .bind(lote_id)
+    .bind(area_id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+    .unwrap_or(rust_decimal::Decimal::ZERO)
+}
+
+/// control_lote = 'trazable' → el consumo EXIGE lote_id (el escaneado). Sin él, error.
+#[sqlx::test(migrations = "./migrations")]
+async fn consumo_trazable_sin_lote_id_retorna_422(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let (prov, prod_uuid, prod_str, pres) = setup_prod_sin_stock(&pool, &token, &app).await;
+    recibir_lote(&pool, &app, &token, prov, &prod_str, prod_uuid, pres, "TRZ-1", Some("2028-01-01"), 100.0, 1).await;
+    sqlx::query("UPDATE productos SET control_lote = 'trazable' WHERE id = $1")
+        .bind(prod_uuid).execute(&pool).await.unwrap();
+
+    let (status, _) = common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos",
+        &token,
+        serde_json::json!({ "producto_id": prod_str, "area_id": 1, "cantidad": 5, "unidad": "base" }),
+        &Uuid::new_v4().to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+/// Consumo trazable por lote_id descuenta EXACTAMENTE ese lote (no FEFO). Si el lote
+/// elegido NO es el más próximo a vencer, la respuesta trae aviso_fefo + lote_sugerido,
+/// pero el consumo se concreta igual.
+#[sqlx::test(migrations = "./migrations")]
+async fn consumo_trazable_lote_exacto_con_aviso_fefo(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let (prov, prod_uuid, prod_str, pres) = setup_prod_sin_stock(&pool, &token, &app).await;
+    // Lote A vence ANTES; Lote B vence DESPUÉS.
+    let lote_a = recibir_lote(&pool, &app, &token, prov, &prod_str, prod_uuid, pres, "A", Some("2027-01-01"), 100.0, 1).await;
+    let lote_b = recibir_lote(&pool, &app, &token, prov, &prod_str, prod_uuid, pres, "B", Some("2028-01-01"), 100.0, 1).await;
+    sqlx::query("UPDATE productos SET control_lote = 'trazable' WHERE id = $1")
+        .bind(prod_uuid).execute(&pool).await.unwrap();
+
+    // Consumir 10 del lote B (el que vence después): trazabilidad manda.
+    let (status, json) = common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos",
+        &token,
+        serde_json::json!({ "producto_id": prod_str, "area_id": 1, "cantidad": 10, "unidad": "base", "lote_id": lote_b }),
+        &Uuid::new_v4().to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "got {:?}", json);
+
+    // Se descontó B, no A (no se cae al FEFO).
+    assert_eq!(stock_de_lote(&pool, lote_b, 1).await.to_string(), "90.00", "B baja a 90");
+    assert_eq!(stock_de_lote(&pool, lote_a, 1).await.to_string(), "100.00", "A intacto");
+
+    // Aviso no bloqueante: A vence antes que B.
+    assert_eq!(json["aviso_fefo"].as_bool(), Some(true), "debe avisar que A vence antes");
+    assert_eq!(
+        json["lote_sugerido"]["lote_id"].as_str(),
+        Some(lote_a.to_string().as_str()),
+        "el sugerido es el lote A"
+    );
+}
+
+/// Consumir el lote que SÍ es el más próximo a vencer no genera aviso.
+#[sqlx::test(migrations = "./migrations")]
+async fn consumo_trazable_lote_mas_proximo_sin_aviso(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let (prov, prod_uuid, prod_str, pres) = setup_prod_sin_stock(&pool, &token, &app).await;
+    let lote_a = recibir_lote(&pool, &app, &token, prov, &prod_str, prod_uuid, pres, "A", Some("2027-01-01"), 100.0, 1).await;
+    recibir_lote(&pool, &app, &token, prov, &prod_str, prod_uuid, pres, "B", Some("2028-01-01"), 100.0, 1).await;
+    sqlx::query("UPDATE productos SET control_lote = 'trazable' WHERE id = $1")
+        .bind(prod_uuid).execute(&pool).await.unwrap();
+
+    let (status, json) = common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos",
+        &token,
+        serde_json::json!({ "producto_id": prod_str, "area_id": 1, "cantidad": 10, "unidad": "base", "lote_id": lote_a }),
+        &Uuid::new_v4().to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "got {:?}", json);
+    assert_eq!(json["aviso_fefo"].as_bool(), Some(false), "A es el más próximo: sin aviso");
+}
+
+/// control_lote = 'simple' → consumo FEFO sin lote: los lotes implícitos (sin
+/// vencimiento) se drenan en orden FIFO por created_at (el más antiguo primero).
+#[sqlx::test(migrations = "./migrations")]
+async fn consumo_simple_fifo_por_created_at(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let (prov, prod_uuid, prod_str, pres) = setup_prod_sin_stock(&pool, &token, &app).await;
+    sqlx::query("UPDATE productos SET control_lote = 'simple' WHERE id = $1")
+        .bind(prod_uuid).execute(&pool).await.unwrap();
+
+    // Dos lotes implícitos (dos recepciones), ambos sin vencimiento.
+    let lote_viejo = recibir_lote(&pool, &app, &token, prov, &prod_str, prod_uuid, pres, "IMPL-X", None, 50.0, 1).await;
+    let lote_nuevo = recibir_lote(&pool, &app, &token, prov, &prod_str, prod_uuid, pres, "IMPL-Y", None, 50.0, 1).await;
+    // Forzar que "viejo" sea inequívocamente más antiguo.
+    sqlx::query("UPDATE lotes SET created_at = created_at - interval '1 day' WHERE id = $1")
+        .bind(lote_viejo).execute(&pool).await.unwrap();
+
+    // Consumir 30 → debe salir todo del lote más antiguo (FIFO).
+    let (status, _) = common::post_json_idempotent(
+        &app,
+        "/api/v1/consumos",
+        &token,
+        serde_json::json!({ "producto_id": prod_str, "area_id": 1, "cantidad": 30, "unidad": "base" }),
+        &Uuid::new_v4().to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(stock_de_lote(&pool, lote_viejo, 1).await.to_string(), "20.00", "el viejo se drena primero");
+    assert_eq!(stock_de_lote(&pool, lote_nuevo, 1).await.to_string(), "50.00", "el nuevo queda intacto");
+}
+
 // ─── Prueba integral: matriz de estados, alarmas del dashboard y consumo de vacíos ───
 
 async fn mz_set_par(pool: &PgPool, producto: Uuid, min: f64, max: Option<f64>) {

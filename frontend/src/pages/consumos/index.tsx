@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { Search, Camera, Package, CheckCircle2, ShoppingCart, Zap, Trash2, Minus, Plus, X, AlertTriangle, XCircle } from 'lucide-react'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
-import type { ConsumoBatchRequest, StockItem, PaginatedResponse } from '@/types'
+import type { ConsumoBatchRequest, StockItem, PaginatedResponse, ControlLote } from '@/types'
 import { notify } from '@/lib/notify'
 import { useAuthStore } from '@/hooks/use-auth-store'
 import { QrScanner } from '@/components/shared/qr-scanner'
@@ -50,6 +50,7 @@ interface ScanGs1Response {
   stock_total?: string | number | null
   imagen_url?: string | null
   gs1?: { gtin?: string; numero_lote?: string | null; fecha_vencimiento?: string | null } | null
+  control_lote?: ControlLote
 }
 
 interface LoteListItem {
@@ -76,6 +77,7 @@ function buildStockItemFromScan(data: ScanGs1Response, areaFiltro: number | null
     imagen_url: data.imagen_url ?? null,
     area_id: areaFiltro ?? undefined,
     area_nombre: '',
+    control_lote: data.control_lote,
   }
 }
 
@@ -475,6 +477,7 @@ export default function ConsumosPage() {
           cargando_lotes: true,
           lote_elegido_id: preselectLoteId ?? null,
           cantidad_descontar: 1,
+          control_lote: p.control_lote,
         }
       }
     })

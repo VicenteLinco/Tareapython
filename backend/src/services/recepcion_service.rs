@@ -1,3 +1,4 @@
+use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::{HashMap, HashSet};
@@ -329,15 +330,18 @@ pub async fn crear_recepcion(
     // Para rechazada no procesamos ítems
     if estado != "rechazada" {
         for item in &req.detalle {
-            // Obtener nombre del producto y área para el LoteCreado
-            let (producto_nombre, presentacion_nombre, area_nombre): (
+            // Obtener nombre del producto y área para el LoteCreado, más la
+            // política de control de lote del producto.
+            let (producto_nombre, presentacion_nombre, area_nombre, control_lote): (
                 String,
                 Option<String>,
+                String,
                 String,
             ) = sqlx::query_as(
                 r#"SELECT p.nombre,
                           (SELECT pr.nombre FROM presentaciones pr WHERE pr.id = $2),
-                          a.nombre
+                          a.nombre,
+                          p.control_lote
                    FROM productos p, areas a
                    WHERE p.id = $1 AND a.id = $3"#,
             )
@@ -346,6 +350,47 @@ pub async fn crear_recepcion(
             .bind(item.area_destino_id)
             .fetch_one(&mut *tx)
             .await?;
+
+            // Resolver número de lote y vencimiento efectivos según la política:
+            //  - trazable: lote y vencimiento OBLIGATORIOS (trazabilidad clínica).
+            //  - simple:   el usuario no carga nada; lote implícito por recepción
+            //              (sentinela 'IMPL-{recepcion}'), sin vencimiento.
+            //  - con_vto:  comportamiento actual (lote y vencimiento requeridos).
+            let numero_lote_in = item
+                .numero_lote
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let (numero_lote_efectivo, fecha_venc_efectiva): (String, Option<NaiveDate>) =
+                match control_lote.as_str() {
+                    "simple" => (format!("IMPL-{recepcion_id}"), None),
+                    "trazable" => {
+                        let nl = numero_lote_in.ok_or_else(|| {
+                            AppError::Validation(format!(
+                                "El producto '{producto_nombre}' es de control trazable: requiere número de lote"
+                            ))
+                        })?;
+                        let fv = item.fecha_vencimiento.ok_or_else(|| {
+                            AppError::Validation(format!(
+                                "El producto '{producto_nombre}' es de control trazable: requiere fecha de vencimiento"
+                            ))
+                        })?;
+                        (nl.to_string(), Some(fv))
+                    }
+                    _ => {
+                        let nl = numero_lote_in.ok_or_else(|| {
+                            AppError::Validation(format!(
+                                "El producto '{producto_nombre}' requiere número de lote"
+                            ))
+                        })?;
+                        let fv = item.fecha_vencimiento.ok_or_else(|| {
+                            AppError::Validation(format!(
+                                "El producto '{producto_nombre}' requiere fecha de vencimiento"
+                            ))
+                        })?;
+                        (nl.to_string(), Some(fv))
+                    }
+                };
 
             let lote_id: Uuid = sqlx::query_scalar(
                 r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento, costo_unitario, presentacion_id, recepcion_id)
@@ -363,8 +408,8 @@ pub async fn crear_recepcion(
             )
             .bind(item.producto_id)
             .bind(req.proveedor_id)
-            .bind(&item.numero_lote)
-            .bind(item.fecha_vencimiento)
+            .bind(&numero_lote_efectivo)
+            .bind(fecha_venc_efectiva)
             .bind(item.costo_unitario)
             .bind(item.presentacion_id)
             .bind(recepcion_id)
@@ -428,8 +473,8 @@ pub async fn crear_recepcion(
 
             lotes_creados.push(LoteCreado {
                 lote_id,
-                numero_lote: item.numero_lote.clone(),
-                fecha_vencimiento: item.fecha_vencimiento,
+                numero_lote: numero_lote_efectivo.clone(),
+                fecha_vencimiento: fecha_venc_efectiva,
                 producto_id: item.producto_id,
                 producto_nombre,
                 presentacion_nombre,

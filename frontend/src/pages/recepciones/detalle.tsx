@@ -36,7 +36,7 @@ interface DetalleItem {
   id: number
   producto_nombre: string
   numero_lote: string
-  fecha_vencimiento: string
+  fecha_vencimiento: string | null
   presentacion_nombre: string
   cantidad_presentaciones: string
   factor_conversion_usado: string
@@ -125,7 +125,7 @@ export default function RecepcionDetallePage() {
         <tr>
           <td>${item.producto_nombre}</td>
           <td style="font-family:monospace">${item.numero_lote}</td>
-          <td>${formatDate(item.fecha_vencimiento)}</td>
+          <td>${item.fecha_vencimiento ? formatDate(item.fecha_vencimiento) : 'No aplica'}</td>
           <td style="text-align:right">${cantidadCell}</td>
           <td>${item.area_destino}</td>
         </tr>`
@@ -473,7 +473,7 @@ export default function RecepcionDetallePage() {
                       <td>
                         <div className="flex flex-col gap-0.5">
                           <span className={cn('text-xs font-medium', isExpired ? 'text-error' : isSoon ? 'text-warning' : '')}>
-                            {formatDate(item.fecha_vencimiento)}
+                            {item.fecha_vencimiento ? formatDate(item.fecha_vencimiento) : 'No aplica'}
                           </span>
                           {isExpired && <Badge variant="destructive" className="text-[10px] w-fit">Vencido</Badge>}
                           {isSoon && !isExpired && <Badge variant="warning" className="text-[10px] w-fit">{days}d</Badge>}
@@ -527,7 +527,7 @@ export default function RecepcionDetallePage() {
             lotesConfirmados={detalle.map(item => ({
               lote_id: item.lote_id,
               numero_lote: item.numero_lote,
-              fecha_vencimiento: item.fecha_vencimiento,
+              fecha_vencimiento: item.fecha_vencimiento ?? "",
               producto_nombre: item.producto_nombre,
               presentacion_nombre: item.presentacion_nombre,
               area_nombre: item.area_destino,

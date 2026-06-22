@@ -75,7 +75,7 @@ pub struct CreateRecepcion {
 pub struct LoteCreado {
     pub lote_id: Uuid,
     pub numero_lote: String,
-    pub fecha_vencimiento: NaiveDate,
+    pub fecha_vencimiento: Option<NaiveDate>,
     pub producto_id: Uuid,
     pub producto_nombre: String,
     pub presentacion_nombre: Option<String>,
@@ -86,9 +86,12 @@ pub struct LoteCreado {
 #[derive(Debug, Deserialize, Serialize, Validate, Type)]
 pub struct DetalleRecepcionInput {
     pub producto_id: Uuid,
-    #[validate(length(min = 1, max = 100))]
-    pub numero_lote: String,
-    pub fecha_vencimiento: NaiveDate,
+    /// Optional: required for 'trazable'/'con_vto', ignored for 'simple'
+    /// (the service generates an implicit lote). Enforced in recepcion_service.
+    #[validate(length(max = 100))]
+    pub numero_lote: Option<String>,
+    /// Optional: required for 'trazable'/'con_vto', NULL for 'simple'.
+    pub fecha_vencimiento: Option<NaiveDate>,
     pub presentacion_id: Option<i32>,
     pub cantidad_presentaciones: Decimal,
     pub area_destino_id: i32,
@@ -101,7 +104,7 @@ pub struct DetalleRecepcionRow {
     pub id: i32,
     pub producto_nombre: String,
     pub numero_lote: String,
-    pub fecha_vencimiento: NaiveDate,
+    pub fecha_vencimiento: Option<NaiveDate>,
     pub presentacion_nombre: Option<String>,
     pub cantidad_presentaciones: Decimal,
     pub factor_conversion_usado: Decimal,

@@ -48,6 +48,7 @@ struct ProductoListItem {
     pres_nombre: Option<String>,
     pres_nombre_plural: Option<String>,
     pres_factor: Option<Decimal>,
+    control_lote: ControlLote,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow, specta::Type)]
@@ -220,6 +221,7 @@ async fn listar(
             pres_nombre: r.pres_nombre,
             pres_nombre_plural: r.pres_nombre_plural,
             pres_factor: r.pres_factor,
+            control_lote: r.control_lote,
         })
         .collect();
 

@@ -21,6 +21,9 @@ struct ConsumoRequest {
     unidad: String, // "base" o "presentacion"
     presentacion_id: Option<i32>,
     nota: Option<String>,
+    /// Lote exacto a consumir (escaneado por QR). Obligatorio para 'trazable';
+    /// si se omite, FEFO automático ('con_vto' / 'simple').
+    lote_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,6 +74,7 @@ async fn consumo(
         unidad: req.unidad,
         presentacion_id: req.presentacion_id,
         nota: req.nota,
+        lote_id: req.lote_id,
     };
 
     match ConsumoService::registrar_consumo(&state.pool, params, claims.sub).await {

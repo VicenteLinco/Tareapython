@@ -26,7 +26,9 @@ import type {
   Proveedor,
   CreateProducto,
   UpdateProducto,
+  ControlLote,
 } from '@/types'
+import { CONTROL_LOTE_OPTIONS, controlLoteHelp } from '@/lib/control-lote'
 
 // Matches actual backend response for the list endpoint
 interface ProductoListItem {
@@ -80,6 +82,7 @@ interface ProductoDetailResponse {
   requiere_cadena_frio: boolean
   dias_estabilidad_abierto: number | null
   clase_riesgo: string | null
+  control_lote: ControlLote
   activo: boolean
   version: number
   codigos_barras?: { id: number; codigo: string }[]
@@ -826,6 +829,7 @@ function CreateProductoDialog({
     unidad_base_id: '',
     area_id: '',
     ubicacion: '',
+    control_lote: 'con_vto' as ControlLote,
     // flat supplier fields
     proveedor_id: '',
     sku: '',
@@ -858,6 +862,7 @@ function CreateProductoDialog({
       unidad_base_id: duplicateSource.unidad_base?.id ? String(duplicateSource.unidad_base.id) : '',
       area_id: duplicateSource.areas?.[0]?.id ? String(duplicateSource.areas[0].id) : '',
       ubicacion: duplicateSource.ubicacion ?? '',
+      control_lote: duplicateSource.control_lote ?? 'con_vto',
       proveedor_id: duplicateSource.proveedor_id ? String(duplicateSource.proveedor_id) : '',
       sku: duplicateSource.sku ?? '',
       precio_unidad: duplicateSource.precio_unidad ?? '',
@@ -888,7 +893,7 @@ function CreateProductoDialog({
     onClose()
     setForm({
       nombre: '', descripcion: '', categoria_id: '', unidad_base_id: '',
-      area_id: '', ubicacion: '',
+      area_id: '', ubicacion: '', control_lote: 'con_vto' as ControlLote,
       proveedor_id: '', sku: '', precio_unidad: '',
       pres_nombre: '', pres_nombre_plural: '', pres_factor: '', pres_codigo_barras: '',
       imagen_data_url: null,
@@ -918,6 +923,7 @@ function CreateProductoDialog({
       precio_unidad: form.precio_unidad ? Number(form.precio_unidad) : undefined,
       area_ids: [Number(form.area_id)],
       ubicacion: form.ubicacion.trim() || undefined,
+      control_lote: form.control_lote,
       pres_nombre: form.pres_nombre || undefined,
       pres_nombre_plural: form.pres_nombre_plural || undefined,
       pres_factor: form.pres_factor ? Number(form.pres_factor) : undefined,
@@ -1027,6 +1033,23 @@ function CreateProductoDialog({
                 </select>
                 <p className="text-[10px] text-base-content/40 mt-0.5">Sección del laboratorio donde este producto pertenece y se usa</p>
               </div>
+            </div>
+
+            <div className="form-control">
+              <label className="label py-0.5">
+                <span className="label-text text-sm font-medium">Control de lote</span>
+                <span className="label-text-alt text-base-content/40 text-[10px]">requerido</span>
+              </label>
+              <select
+                className="select select-bordered select-sm h-9 text-sm"
+                value={form.control_lote}
+                onChange={(e) => setForm((f) => ({ ...f, control_lote: e.target.value as ControlLote }))}
+              >
+                {CONTROL_LOTE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <p className="text-[10px] text-base-content/40 mt-0.5">{controlLoteHelp(form.control_lote)}</p>
             </div>
 
             <div className="form-control">
@@ -1381,6 +1404,7 @@ function EditProductoDialog({
     categoria_id: '',
     area_id: '',
     ubicacion: '',
+    control_lote: 'con_vto' as ControlLote,
     // flat supplier fields
     proveedor_id: '',
     sku: '',
@@ -1408,6 +1432,7 @@ function EditProductoDialog({
         categoria_id: catId ? String(catId) : '',
         area_id: areaId ? String(areaId) : '',
         ubicacion: producto.ubicacion ?? '',
+        control_lote: producto.control_lote ?? 'con_vto',
         proveedor_id: producto.proveedor_id ? String(producto.proveedor_id) : '',
         sku: producto.sku ?? '',
         precio_unidad: producto.precio_unidad ?? '',
@@ -1452,6 +1477,7 @@ function EditProductoDialog({
       precio_unidad: form.precio_unidad ? Number(form.precio_unidad) : null,
       area_ids: form.area_id ? [Number(form.area_id)] : undefined,
       ubicacion: form.ubicacion.trim() || null,
+      control_lote: form.control_lote,
       pres_nombre: form.pres_nombre || null,
       pres_nombre_plural: form.pres_nombre_plural || null,
       pres_factor: form.pres_factor ? Number(form.pres_factor) : null,
@@ -1544,6 +1570,23 @@ function EditProductoDialog({
                   </select>
                   <p className="text-[10px] text-base-content/40 mt-0.5">Sección del laboratorio donde este producto pertenece y se usa</p>
                 </div>
+              </div>
+
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Control de lote</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">requerido</span>
+                </label>
+                <select
+                  className="select select-bordered select-sm h-9 text-sm"
+                  value={form.control_lote}
+                  onChange={(e) => setForm((f) => ({ ...f, control_lote: e.target.value as ControlLote }))}
+                >
+                  {CONTROL_LOTE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-base-content/40 mt-0.5">{controlLoteHelp(form.control_lote)}</p>
               </div>
 
               <div className="form-control">

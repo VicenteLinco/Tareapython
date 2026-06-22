@@ -5,7 +5,7 @@ import { Plus, Clock } from 'lucide-react'
 import { cn, formatCantidad } from '@/lib/utils'
 import { daysChipColor } from '@/lib/theme'
 import { ProductoImage } from '@/components/ui/producto-image'
-import type { StockItem } from '@/types'
+import type { StockItem, ControlLote } from '@/types'
 import type { LoteDisponible } from './lote-selector'
 
 export interface CartItem {
@@ -23,6 +23,7 @@ export interface CartItem {
   cargando_lotes: boolean
   lote_elegido_id: string | null
   cantidad_descontar: number
+  control_lote?: ControlLote
 }
 
 interface ProductoCardProps {

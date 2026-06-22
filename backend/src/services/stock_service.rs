@@ -444,6 +444,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                    p.id as producto_id,
                    p.codigo_interno,
                    p.sku,
+                   p.control_lote,
                    p.nombre as producto_nombre,
                    c.nombre as categoria,
                    um.nombre as unidad,
@@ -530,6 +531,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                    fn_estado_vencimiento(
                        tiene_vencido,
                        prox_venc_usable,
+                       control_lote <> 'simple',   -- 'simple' no rastrea vencimiento
                        {},   -- vencimiento_riesgo_dias
                        {}    -- vencimiento_proximo_dias
                    ) AS estado_vencimiento
@@ -1058,6 +1060,7 @@ pub async fn alertas(
                SELECT
                    p.id as producto_id,
                    p.nombre,
+                   p.control_lote,
                    p.lead_time_propio,
                    p.created_at,
                    p.proveedor_id,
@@ -1119,7 +1122,7 @@ pub async fn alertas(
                         stock_usable, consumo_base_estimado, dias_con_consumo::int, dias_despacho::int,
                         {6}, inicializado, min_manual, max_manual, 3
                     ) AS estado_cantidad,
-                    fn_estado_vencimiento(tiene_vencido, prox_venc_usable, {7}, {8}) AS estado_vencimiento
+                    fn_estado_vencimiento(tiene_vencido, prox_venc_usable, control_lote <> 'simple', {7}, {8}) AS estado_vencimiento
                 FROM stats s
            ),
            filtered_alertas AS (

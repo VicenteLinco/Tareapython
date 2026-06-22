@@ -15,6 +15,8 @@ import { ConsumoDrawer } from './components/consumo-drawer'
 import type { CartItem } from './components/producto-card'
 import type { LoteDisponible } from './components/lote-selector'
 import { LoteSelector } from './components/lote-selector'
+import { parseGS1 } from '@/lib/gs1'
+import { classifyConsumoScan, findLoteByNumero } from './consumo-scan'
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut'
 import { KeyboardLegend } from '@/components/ui/keyboard-legend'
 import { cn, formatCantidad } from '@/lib/utils'
@@ -35,6 +37,46 @@ interface ProductoDetalleResponse {
   categoria: { nombre: string } | null
   unidad_base: { nombre: string; nombre_plural: string | null } | null
   imagen_url: string | null
+}
+
+// Subset of `/productos/scan` GS1 response used by the consumption flow.
+interface ScanGs1Response {
+  encontrado?: boolean
+  tipo?: string
+  producto_id: string
+  producto_nombre: string
+  unidad_base_nombre?: string | null
+  unidad_base_nombre_plural?: string | null
+  stock_total?: string | number | null
+  imagen_url?: string | null
+  gs1?: { gtin?: string; numero_lote?: string | null; fecha_vencimiento?: string | null } | null
+}
+
+interface LoteListItem {
+  id: string
+  numero_lote: string
+  stock_total: string | null
+  fecha_vencimiento: string
+}
+
+// Builds a minimal StockItem from a GS1 scan result, for the FEFO fallback path
+// (when the scanned lot is not usable in the active area).
+function buildStockItemFromScan(data: ScanGs1Response, areaFiltro: number | null): StockItem {
+  return {
+    producto_id: String(data.producto_id),
+    codigo_interno: '',
+    producto_nombre: data.producto_nombre,
+    categoria: null,
+    unidad: data.unidad_base_nombre ?? '',
+    unidad_plural: data.unidad_base_nombre_plural ?? null,
+    stock_total: data.stock_total != null ? Number(data.stock_total) : 0,
+    proximo_vencimiento: data.gs1?.fecha_vencimiento ?? null,
+    proveedor_nombre: null,
+    proveedor_icono: null,
+    imagen_url: data.imagen_url ?? null,
+    area_id: areaFiltro ?? undefined,
+    area_nombre: '',
+  }
 }
 
 // ─── Helpers localStorage para productos recientes ───────────────────────────
@@ -333,6 +375,12 @@ export default function ConsumosPage() {
   const [notas, setNotas] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
+  // GS1 scan whose lot can't be used in the active area → offer FEFO or cancel.
+  const [fefoPrompt, setFefoPrompt] = useState<{
+    stockItem: StockItem
+    numeroLote: string
+    motivo: 'sin-stock-en-area' | 'lote-no-encontrado'
+  } | null>(null)
 
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -540,21 +588,88 @@ export default function ConsumosPage() {
     }
   }, [areaFiltro, addToCart])
 
-  const handleScanCode = useCallback(async (code: string) => {
-    const trimmed = code.trim()
-    // Nuestras etiquetas codifican el lote_id (UUID) → resolución por lote exacto.
-    if (UUID_RE.test(trimmed)) { await handleScanLote(trimmed); return }
-    // Otro código (texto, código de barras de proveedor) → búsqueda de producto + FEFO.
+  // Búsqueda por texto/código de barras → primer match + FEFO.
+  const buscarYAgregarFefo = useCallback(async (q: string) => {
     try {
       const res = await api.get<PaginatedResponse<StockItem>>('/stock', {
-        params: { q: trimmed, ...(areaFiltro && { area_id: areaFiltro }) }
+        params: { q, ...(areaFiltro && { area_id: areaFiltro }) }
       })
       const items = res.data.data
       if (items.length === 0) { notify.error('Producto no encontrado'); return }
       addToCart(items[0])
       setIsScannerOpen(false)
     } catch { notify.error('Error al escanear') }
-  }, [areaFiltro, addToCart, handleScanLote])
+  }, [areaFiltro, addToCart])
+
+  // GS1 DataMatrix: el backend resuelve GTIN→producto + lote; respetamos el lote escaneado.
+  const handleScanGs1 = useCallback(async (rawCode: string) => {
+    try {
+      const { data } = await api.get<ScanGs1Response>('/productos/scan', { params: { codigo: rawCode } })
+      if (!data?.encontrado || data.tipo !== 'gs1') {
+        // El backend no lo resolvió como GS1 → caemos a búsqueda por texto.
+        await buscarYAgregarFefo(rawCode)
+        return
+      }
+      const productoId = String(data.producto_id)
+      const numeroLote = data.gs1?.numero_lote ?? null
+
+      // Sin lote en el código → FEFO directo.
+      if (!numeroLote) {
+        const item = buildStockItemFromScan(data, areaFiltro)
+        if ((item.stock_total ?? 0) <= 0) { notify.error('Sin stock disponible'); return }
+        addToCart(item)
+        setIsScannerOpen(false)
+        return
+      }
+
+      // Resolver el lote escaneado contra el stock del producto (en el área y global).
+      const [lotesArea, lotesAll] = await Promise.all([
+        areaFiltro
+          ? api.get<LoteListItem[]>('/lotes', {
+              params: { producto_id: productoId, con_stock: true, vencido: false, area_id: areaFiltro },
+            }).then(r => r.data)
+          : Promise.resolve<LoteListItem[] | null>(null),
+        api.get<LoteListItem[]>('/lotes', {
+          params: { producto_id: productoId, con_stock: true, vencido: false },
+        }).then(r => r.data),
+      ])
+      const matchAll = findLoteByNumero(lotesAll, numeroLote)
+      const loteEnArea = areaFiltro ? findLoteByNumero(lotesArea ?? [], numeroLote) : matchAll
+
+      const outcome = classifyConsumoScan({
+        numeroLote,
+        loteEnArea: loteEnArea ? { lote_id: loteEnArea.id } : null,
+        existeEnStock: !!matchAll,
+      })
+
+      if (outcome.kind === 'lote-exacto') {
+        // Reutilizamos el resolver de lote exacto (arma el StockItem con el área correcta).
+        await handleScanLote(outcome.loteId)
+        return
+      }
+      // sin-stock-en-area | lote-no-encontrado → avisar y ofrecer FEFO/cancelar (nunca a ciegas).
+      if (outcome.kind === 'sin-stock-en-area' || outcome.kind === 'lote-no-encontrado') {
+        setIsScannerOpen(false)
+        setFefoPrompt({
+          stockItem: buildStockItemFromScan(data, areaFiltro),
+          numeroLote: outcome.numeroLote,
+          motivo: outcome.kind,
+        })
+      }
+    } catch {
+      notify.error('Error al escanear')
+    }
+  }, [areaFiltro, addToCart, handleScanLote, buscarYAgregarFefo])
+
+  const handleScanCode = useCallback(async (code: string) => {
+    const trimmed = code.trim()
+    // Nuestras etiquetas codifican el lote_id (UUID) → resolución por lote exacto.
+    if (UUID_RE.test(trimmed)) { await handleScanLote(trimmed); return }
+    // Código GS1 (DataMatrix GTIN+lote+venc) → flujo con lote escaneado.
+    if (parseGS1(trimmed)) { await handleScanGs1(trimmed); return }
+    // Otro código (texto, código de barras de proveedor) → búsqueda de producto + FEFO.
+    await buscarYAgregarFefo(trimmed)
+  }, [handleScanLote, handleScanGs1, buscarYAgregarFefo])
 
   // ── Mutation batch ─────────────────────────────────────────────────────────
 
@@ -817,6 +932,40 @@ export default function ConsumosPage() {
             </button>
             <QrScanner onScan={handleScanCode} active={isScannerOpen} />
           </div>
+        </div>
+      )}
+
+      {/* ── Aviso: lote escaneado no usable en el área → FEFO o cancelar ── */}
+      {fefoPrompt && (
+        <div className="modal modal-open z-[60]">
+          <div className="modal-box max-w-sm">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <h3 className="font-bold text-base leading-snug">{fefoPrompt.stockItem.producto_nombre}</h3>
+                <p className="text-sm text-base-content/70 mt-1">
+                  {fefoPrompt.motivo === 'sin-stock-en-area'
+                    ? <>El lote <span className="font-mono font-semibold">{fefoPrompt.numeroLote}</span> no tiene stock{areaFiltro ? <> en {areas.find(a => a.id === areaFiltro)?.nombre ?? 'el área'}</> : ''}.</>
+                    : <>El lote <span className="font-mono font-semibold">{fefoPrompt.numeroLote}</span> no se encontró en stock.</>}
+                </p>
+                <p className="text-sm text-base-content/50 mt-1">
+                  ¿Descontar por FEFO (vencimiento más próximo) o cancelar?
+                </p>
+              </div>
+            </div>
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" onClick={() => setFefoPrompt(null)}>
+                Cancelar
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => { addToCart(fefoPrompt.stockItem); setFefoPrompt(null) }}
+              >
+                Descontar por FEFO
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => setFefoPrompt(null)} />
         </div>
       )}
     </div>

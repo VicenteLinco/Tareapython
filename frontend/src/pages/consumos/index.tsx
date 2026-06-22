@@ -168,7 +168,7 @@ function CartPanel({
           <div className="flex flex-col items-center justify-center h-32 text-base-content/40 text-center">
             <ShoppingCart className="h-8 w-8 mb-2 opacity-30" />
             <p className="text-sm">El carrito está vacío</p>
-            <p className="text-xs mt-1">Buscá un insumo para agregar</p>
+            <p className="text-xs mt-1">Busca un insumo para agregar</p>
           </div>
         ) : (
           <>

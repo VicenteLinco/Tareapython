@@ -390,7 +390,7 @@ export default function ConteoDetallePage() {
                 autoFocus
                 autoComplete="off"
                 className="input input-xs flex-1 bg-transparent border-0 focus:outline-none font-mono"
-                placeholder="Escaneá un lote con la pistola…"
+                placeholder="Escanea un lote con la pistola…"
               />
               {/* Sub-modo: saltar al lote para tipear, o sumar +1 por escaneo */}
               <div className="join shrink-0" role="group" aria-label="Acción al escanear">

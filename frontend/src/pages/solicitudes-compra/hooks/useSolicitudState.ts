@@ -407,7 +407,7 @@ export function useSolicitudState() {
     if (proveedorId == null) {
       notify.warning(
         'Producto sin proveedor',
-        `"${p.nombre}" no tiene proveedor asignado. Asignáselo en el catálogo antes de guardar la solicitud.`,
+        `"${p.nombre}" no tiene proveedor asignado. Asígnaselo en el catálogo antes de guardar la solicitud.`,
       )
     }
     const horizData = await fetchHorizonte(p.id, proveedorId)

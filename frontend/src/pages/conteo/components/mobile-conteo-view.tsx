@@ -301,7 +301,7 @@ export function MobileConteoView({
         <div className="fixed inset-0 z-40 bg-base-300/95 backdrop-blur flex flex-col p-4">
           <div className="flex items-center justify-between mb-4">
             <span className="font-bold flex items-center gap-2 text-sm">
-              <ScanLine className="h-4 w-4 text-primary" /> Escaneá un lote
+              <ScanLine className="h-4 w-4 text-primary" /> Escanea un lote
             </span>
             <button onClick={() => setScanMode(false)} className="btn btn-ghost btn-sm btn-circle">
               <X className="h-5 w-5" />
@@ -309,7 +309,7 @@ export function MobileConteoView({
           </div>
           <QrScanner active={scanMode} onScan={handleScan} />
           <p className="text-center text-xs opacity-50 mt-4">
-            Apuntá al código del lote o del producto. Se saltará a ese ítem para que cargues la cantidad.
+            Apunta al código del lote o del producto. Se saltará a ese ítem para que cargues la cantidad.
           </p>
         </div>
       )}

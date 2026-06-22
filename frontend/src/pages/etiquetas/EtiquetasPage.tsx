@@ -135,7 +135,7 @@ export function EtiquetasPage() {
         <div>
           <h1 className="text-2xl font-bold">Reimprimir etiquetas</h1>
           <p className="text-sm text-base-content/60">
-            Buscá un producto y elegí los lotes cuya etiqueta querés reponer.
+            Busca un producto y elige los lotes cuya etiqueta quieres reponer.
           </p>
         </div>
       </div>

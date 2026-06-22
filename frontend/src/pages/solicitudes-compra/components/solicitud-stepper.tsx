@@ -92,7 +92,7 @@ export function SolicitudStepper({
               ? 'No aplica en Sugeridos'
               : step2 === 'done'
                 ? `${proveedoresCount} seleccionado${proveedoresCount === 1 ? '' : 's'}`
-                : 'Elegí uno o más'}
+                : 'Elige uno o más'}
           </span>
         </div>
       </div>
@@ -107,7 +107,7 @@ export function SolicitudStepper({
             Paso 3 · Productos
           </span>
           <span className="text-xs text-base-content/70">
-            {itemsCount > 0 ? `${itemsCount} en el pedido` : 'Agregá productos'}
+            {itemsCount > 0 ? `${itemsCount} en el pedido` : 'Agrega productos'}
           </span>
         </div>
       </div>

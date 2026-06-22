@@ -88,7 +88,7 @@ export function AsignarCodigoModal({ codigo, productos, onClose, onAsignado }: A
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedProducto) {
-      notify.error('Seleccioná un producto de la lista')
+      notify.error('Selecciona un producto de la lista')
       inputRef.current?.focus()
       return
     }

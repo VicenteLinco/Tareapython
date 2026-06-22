@@ -108,7 +108,7 @@ function RecepcionDetailPanel({
       <div className="rounded-xl border border-base-200 bg-base-100 flex items-center justify-center h-64 text-base-content/40">
         <div className="text-center space-y-2">
           <Package className="h-8 w-8 mx-auto opacity-30" />
-          <p className="text-sm">{isLoading ? 'Cargando…' : 'Seleccioná una recepción'}</p>
+          <p className="text-sm">{isLoading ? 'Cargando…' : 'Selecciona una recepción'}</p>
         </div>
       </div>
     )

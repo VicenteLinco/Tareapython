@@ -668,7 +668,7 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
           {totalSelected === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center opacity-30 gap-2 py-12">
               <PackageX className="w-10 h-10" />
-              <p className="text-xs">Seleccioná ítems de la lista</p>
+              <p className="text-xs">Selecciona ítems de la lista</p>
             </div>
           ) : (
             selectedItems.map((item) => {

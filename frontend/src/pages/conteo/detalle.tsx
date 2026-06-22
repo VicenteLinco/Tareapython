@@ -76,21 +76,19 @@ export default function ConteoDetallePage() {
   const [colapsados, setColapsados] = useState<Record<string, boolean>>({})
   const [pdfLoading, setPdfLoading] = useState<'area' | 'global' | null>(null)
   const [scanMode, setScanMode] = useState(false)
+  // Sub-modo del escaneo: 'saltar' ubica el lote para tipear; 'sumar' acumula +1 por escaneo.
+  const [scanAccion, setScanAccion] = useState<'saltar' | 'sumar'>('saltar')
   const [scanFocusId, setScanFocusId] = useState<string | null>(null)
+  // GTIN ambiguo (varios lotes del mismo producto) → pedir elegir cuál.
+  const [scanElegir, setScanElegir] = useState<ConteoItem[] | null>(null)
   const scanInputRef = useRef<HTMLInputElement>(null)
 
   const focusScannerSoon = useCallback(() => {
     setTimeout(() => scanInputRef.current?.focus(), 60)
   }, [])
 
-  const handleScan = useCallback((code: string) => {
-    const item = resolverScanConteo(code, items, presentaciones)
-    if (!item) {
-      notify.warning(`El código "${code.trim()}" no corresponde a ningún lote de esta área`)
-      focusScannerSoon()
-      return
-    }
-    // Expandir el grupo del producto, saltar al lote y enfocar su cantidad
+  // Modo 'saltar': expandir el grupo, saltar al lote y enfocar su cantidad para tipear.
+  const saltarAItem = useCallback((item: ConteoItem) => {
     setColapsados((prev) => ({ ...prev, [item.producto_id]: false }))
     setScanFocusId(item.id)
     setTimeout(() => {
@@ -101,7 +99,40 @@ export default function ConteoDetallePage() {
       input?.select()
     }, 80)
     setTimeout(() => setScanFocusId((cur) => (cur === item.id ? null : cur)), 2500)
-  }, [items, presentaciones, focusScannerSoon])
+  }, [])
+
+  // Modo 'sumar': cada escaneo acumula +1 en la cantidad contada de ese lote.
+  const sumarUnoAItem = useCallback((item: ConteoItem) => {
+    const nuevo = Number(item.cantidad_contada ?? 0) + 1
+    actions.updateItem(item, String(nuevo))
+    setColapsados((prev) => ({ ...prev, [item.producto_id]: false }))
+    setScanFocusId(item.id)
+    setTimeout(() => {
+      document.getElementById(`conteo-row-${item.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 80)
+    setTimeout(() => setScanFocusId((cur) => (cur === item.id ? null : cur)), 1500)
+    notify.success(`+1 ${item.numero_lote || item.producto_nombre} (${nuevo})`)
+    focusScannerSoon()
+  }, [actions, focusScannerSoon])
+
+  const aplicarScan = useCallback((item: ConteoItem) => {
+    if (scanAccion === 'sumar') sumarUnoAItem(item)
+    else saltarAItem(item)
+  }, [scanAccion, sumarUnoAItem, saltarAItem])
+
+  const handleScan = useCallback((code: string) => {
+    const res = resolverScanConteo(code, items, presentaciones)
+    if (res.kind === 'no-match') {
+      notify.warning(`El código "${code.trim()}" no corresponde a ningún lote de esta área`)
+      focusScannerSoon()
+      return
+    }
+    if (res.kind === 'elegir') {
+      setScanElegir(res.items)
+      return
+    }
+    aplicarScan(res.item)
+  }, [items, presentaciones, focusScannerSoon, aplicarScan])
 
   // Detección de mobile
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
@@ -301,10 +332,10 @@ export default function ConteoDetallePage() {
                 className="btn btn-ghost btn-sm"
                 onClick={exportarPdfArea}
                 disabled={pdfLoading !== null}
-                title="PDF del conteo de esta area"
+                title="PDF del conteo de esta área"
               >
                 {pdfLoading === 'area' ? <span className="loading loading-spinner loading-xs" /> : <FileText className="h-4 w-4" />}
-                <span className="hidden sm:inline">Area</span>
+                <span className="hidden sm:inline">Área</span>
               </button>
               <button
                 className="btn btn-ghost btn-sm"
@@ -361,7 +392,25 @@ export default function ConteoDetallePage() {
                 className="input input-xs flex-1 bg-transparent border-0 focus:outline-none font-mono"
                 placeholder="Escaneá un lote con la pistola…"
               />
-              <span className="text-[10px] opacity-50 hidden sm:inline shrink-0">Enter en la cantidad vuelve al escáner</span>
+              {/* Sub-modo: saltar al lote para tipear, o sumar +1 por escaneo */}
+              <div className="join shrink-0" role="group" aria-label="Acción al escanear">
+                <button
+                  type="button"
+                  className={cn('btn btn-xs join-item', scanAccion === 'saltar' ? 'btn-primary' : 'btn-ghost')}
+                  onClick={() => { setScanAccion('saltar'); focusScannerSoon() }}
+                  title="Ubica el lote y enfoca la cantidad para escribirla"
+                >
+                  Saltar
+                </button>
+                <button
+                  type="button"
+                  className={cn('btn btn-xs join-item', scanAccion === 'sumar' ? 'btn-primary' : 'btn-ghost')}
+                  onClick={() => { setScanAccion('sumar'); focusScannerSoon() }}
+                  title="Cada escaneo suma 1 a la cantidad contada del lote"
+                >
+                  +1
+                </button>
+              </div>
             </div>
           </form>
         )}
@@ -497,6 +546,38 @@ export default function ConteoDetallePage() {
             </div>
           </div>
           <div className="modal-backdrop" onClick={() => setShowConfirmar(false)} />
+        </div>
+      )}
+
+      {/* Elegir lote cuando el GTIN escaneado tiene varios lotes del producto */}
+      {scanElegir && (
+        <div className="modal modal-open z-[60]">
+          <div className="modal-box max-w-sm">
+            <h3 className="font-bold text-base mb-1">¿Qué lote contaste?</h3>
+            <p className="text-sm text-base-content/50 mb-3">
+              El código tiene varios lotes de {scanElegir[0]?.producto_nombre} en esta área.
+            </p>
+            <div className="space-y-1.5 max-h-72 overflow-y-auto">
+              {scanElegir.map((it) => (
+                <button
+                  key={it.id}
+                  className="w-full flex items-center justify-between gap-3 rounded-xl border border-base-300 hover:border-primary hover:bg-primary/5 px-3 py-2 text-left transition-colors"
+                  onClick={() => { aplicarScan(it); setScanElegir(null) }}
+                >
+                  <span className="font-mono text-sm font-semibold truncate">{it.numero_lote || '—'}</span>
+                  <span className="text-xs text-base-content/40 shrink-0">
+                    Contado: {it.cantidad_contada ?? '—'}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" onClick={() => { setScanElegir(null); focusScannerSoon() }}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+          <div className="modal-backdrop" onClick={() => { setScanElegir(null); focusScannerSoon() }} />
         </div>
       )}
     </div>

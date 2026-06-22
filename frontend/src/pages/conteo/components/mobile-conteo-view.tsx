@@ -43,11 +43,13 @@ export function MobileConteoView({
   const inputRef = useRef<HTMLInputElement>(null)
 
   const handleScan = (code: string) => {
-    const target = resolverScanConteo(code, items, presentaciones)
-    if (!target) {
+    const res = resolverScanConteo(code, items, presentaciones)
+    if (res.kind === 'no-match') {
       notify.warning(`El código "${code.trim()}" no corresponde a ningún lote de esta área`)
       return
     }
+    // Wizard móvil: saltamos al ítem (al primero del grupo si el GTIN es ambiguo).
+    const target = res.kind === 'lote' ? res.item : res.items[0]
     const idx = items.findIndex((i) => i.id === target.id)
     if (idx >= 0) setCurrentIdx(idx)
     setScanMode(false)

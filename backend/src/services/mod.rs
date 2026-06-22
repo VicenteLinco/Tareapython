@@ -2,6 +2,7 @@ pub mod area_service;
 pub mod audit;
 pub mod auth_service;
 pub mod categoria_service;
+pub mod configuracion_service;
 pub mod consumo_service;
 pub mod conteo_service;
 pub mod descarte_service;

@@ -1,5 +1,6 @@
 pub mod area;
 pub mod categoria;
+pub mod configuracion;
 pub mod descarte;
 pub mod etiqueta;
 pub mod pagination;

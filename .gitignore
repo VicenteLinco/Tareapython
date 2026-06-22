@@ -52,3 +52,6 @@ openspec/
 
 # Database backups
 backup_db.sql
+
+# Exports generados por la app (PDFs de inventario, etc.)
+*.pdf

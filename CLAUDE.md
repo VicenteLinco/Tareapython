@@ -135,8 +135,8 @@ Regla de capas para el backend. El objetivo es coherencia: el mismo tipo de oper
 
 ## Estado actual del proyecto
 
-- Backend: ~97% implementado. Falta: módulo Setup (importar CSV, finalizar carga inicial). Tests: 0%.
-- Frontend: implementación activa. Módulos completos: descartes (tabs), solicitudes-compra (multi-proveedor con envios granulares).
+- Backend: implementado (incluye módulo Setup: `handlers/setup.rs` + smart-importer en el frontend). Tests: suite de integración con `#[sqlx::test]` (handlers migrados a services, parser GS1, valorización de stock, etc.) — toda verde.
+- Frontend: implementación activa. Módulos completos: descartes (tabs), solicitudes-compra (multi-proveedor con envios granulares), escaneo GS1 end-to-end (recepción/consumo/conteo). Tests: vitest (utilidades de escaneo GS1 y reducers de recepción/consumo/conteo).
 - Migraciones: 049 en total, aplicadas automáticamente.
 
 ## Convenciones

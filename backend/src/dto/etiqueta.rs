@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use uuid::Uuid;
 use chrono::NaiveDate;
 
@@ -23,10 +23,4 @@ pub struct EtiquetaLote {
     pub producto_nombre: String,
     pub presentacion_nombre: Option<String>,
     pub proveedor_nombre: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct BulkEtiquetasRequest {
-    pub tipo: String, // "presentacion" | "lote"
-    pub ids: Vec<String>,
 }

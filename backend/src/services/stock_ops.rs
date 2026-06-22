@@ -1,6 +1,5 @@
 use rust_decimal::Decimal;
 use specta::Type;
-use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::errors::AppError;

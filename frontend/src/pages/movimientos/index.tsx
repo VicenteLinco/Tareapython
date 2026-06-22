@@ -391,7 +391,7 @@ export default function MovimientosPage() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="t-h1 tracking-tight">Movimientos</h1>
-          <p className="text-sm opacity-50 mt-0.5">Historial y analisis de consumo</p>
+          <p className="text-sm opacity-50 mt-0.5">Historial y análisis de consumo</p>
         </div>
       </div>
 
@@ -484,7 +484,7 @@ export default function MovimientosPage() {
                   )}
                   <select className="select select-bordered select-sm h-9 w-32" value={agruparPor} onChange={(e) => setAgruparPor(e.target.value as AgruparPor)}>
                     <option value="global">Global</option>
-                    <option value="area">Por area</option>
+                    <option value="area">Por área</option>
                     <option value="producto">Por producto</option>
                   </select>
                   <label className="label h-9 cursor-pointer gap-2 py-0">

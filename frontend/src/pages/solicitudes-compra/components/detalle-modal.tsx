@@ -554,7 +554,7 @@ export function DetalleModal({
               className="select select-bordered select-sm rounded-xl w-full"
             >
               <option value="email">Email</option>
-              <option value="telefono">Telefono</option>
+              <option value="telefono">Teléfono</option>
               <option value="whatsapp">WhatsApp</option>
               <option value="presencial">Presencial</option>
               <option value="otro">Otro</option>

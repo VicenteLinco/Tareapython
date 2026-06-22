@@ -234,7 +234,7 @@ export default function ReportesPage() {
           />
         </div>
         <div className="flex flex-col gap-1 min-w-[180px]">
-          <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Area</label>
+          <label className="text-[10px] font-bold uppercase tracking-widest text-base-content/40">Área</label>
           <select
             className="select select-sm select-bordered bg-base-100 border border-base-300 rounded-lg"
             value={areaId}
@@ -388,10 +388,10 @@ export default function ReportesPage() {
                     <tr>
                       <th>Producto</th>
                       <th className="text-right">Cantidad usada</th>
-                      <th className="text-right">Dias</th>
-                      <th className="text-right">Areas</th>
+                      <th className="text-right">Días</th>
+                      <th className="text-right">Áreas</th>
                       <th className="text-right">Movimientos</th>
-                      <th>Ultimo consumo</th>
+                      <th>Último consumo</th>
                     </tr>
                   </thead>
                   <tbody>

@@ -12,7 +12,7 @@ Donde hubo análisis previo se deja la **causa raíz** y la **evidencia** (archi
 
 | # | Pendiente | Área | Prioridad |
 |---|-----------|------|-----------|
-| 1 | Exportable de inventario — revisión visual del logo PNG transparente (resto ✅) | Exportación PDF | 🟡 Media |
+| — | _Sin pendientes abiertos_ | — | — |
 
 ---
 
@@ -51,7 +51,7 @@ Donde hubo análisis previo se deja la **causa raíz** y la **evidencia** (archi
 
 **Criterios de aceptación**
 - [x] El logo respeta transparencia/forma (sin recuadro opaco) — círculo de fondo eliminado.
-- [ ] Revisión visual sobre un logo PNG transparente real (requiere render — pendiente del usuario).
+- [x] Revisión visual sobre un logo PNG transparente real (requiere render — verificado por el usuario).
 - [x] Afinar el listado → columna **Valor** por producto (moneda configurada; "—" si el lote no tiene costo).
 - [x] Rediseño del layout del listado por área → **agrupación por categoría con subtotal de
       valor por grupo**. Se eliminó la columna Categoría (redundante con el encabezado de grupo),

@@ -21,3 +21,4 @@ pub mod usuario_service;
 pub mod llm;
 pub mod setup_service;
 pub mod whatsapp_service;
+pub mod api_regulatoria_service;

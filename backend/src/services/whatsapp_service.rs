@@ -347,7 +347,7 @@ pub async fn buscar_stock_tool(
            FROM productos p
            JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
            LEFT JOIN v_stock_por_producto_area v ON v.producto_id = p.id
-           WHERE p.activo = true AND p.deleted_at IS NULL
+           WHERE p.activo = true AND p.deleted_at IS NULL AND p.estado_catalogo = 'aprobado'
              AND (
                  p.codigo_interno ILIKE $1 
                  OR p.nombre ILIKE $1

@@ -103,3 +103,23 @@ pub enum ControlLote {
     ConVto,
     Simple,
 }
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, SqlxType)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum EstadoCatalogo {
+    PendienteAprobacion,
+    Aprobado,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, SqlxType)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum OrigenRegistro {
+    Manual,
+    ApiRegulatoria,
+    GuiaPdf,
+}
+

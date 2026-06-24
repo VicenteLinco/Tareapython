@@ -134,6 +134,10 @@ pub enum AppError {
     /// Conflicto de versión en optimistic locking
     #[error("Conflicto de versión: esperada {esperada}, actual {actual}")]
     VersionConflict { esperada: i64, actual: i64 },
+
+    /// El producto está en cuarentena
+    #[error("El producto {producto_id} se encuentra en cuarentena.")]
+    ProductInQuarantine { producto_id: Uuid },
 }
 
 #[cfg(test)]
@@ -319,6 +323,12 @@ impl IntoResponse for AppError {
                     esperada, actual
                 ),
                 Some(json!({ "esperada": esperada, "actual": actual })),
+            ),
+            AppError::ProductInQuarantine { producto_id } => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "PRODUCT_IN_QUARANTINE",
+                format!("El producto {} se encuentra en cuarentena", producto_id),
+                Some(json!({ "producto_id": producto_id })),
             ),
         };
 

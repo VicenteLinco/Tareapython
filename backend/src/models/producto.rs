@@ -3,7 +3,7 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::domain::ControlLote;
+use crate::domain::{ControlLote, EstadoCatalogo, OrigenRegistro};
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow, specta::Type)]
 pub struct Producto {
@@ -21,6 +21,8 @@ pub struct Producto {
     pub deleted_at: Option<DateTime<Utc>>,
     pub activo: bool,
     pub control_lote: ControlLote,
+    pub estado_catalogo: EstadoCatalogo,
+    pub origen_registro: OrigenRegistro,
     pub version: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

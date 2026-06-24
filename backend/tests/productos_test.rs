@@ -366,3 +366,28 @@ async fn listar_ordena_por_codigo_desc(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["data"][0]["codigo_interno"], "PRD-S0003");
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_migration_catalogacion_defaults(pool: PgPool) {
+    let _token = common::admin_access_token(&pool).await; // trigger seed loading
+    use inventario_lab_backend::domain::{EstadoCatalogo, OrigenRegistro};
+    use inventario_lab_backend::models::producto::Producto;
+
+    // 1. Insert product without specifying estado_catalogo or origen_registro
+    sqlx::query(
+        "INSERT INTO productos (codigo_interno, nombre, unidad_base_id) VALUES ('PRD-TEST-CAT', 'Test Catalogacion Defaults', 1)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // 2. Query product and check fields using sqlx FromRow mapping
+    let prod: Producto = sqlx::query_as("SELECT * FROM productos WHERE codigo_interno = 'PRD-TEST-CAT'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(prod.estado_catalogo, EstadoCatalogo::Aprobado);
+    assert_eq!(prod.origen_registro, OrigenRegistro::Manual);
+}
+

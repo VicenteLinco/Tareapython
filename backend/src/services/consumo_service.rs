@@ -90,12 +90,15 @@ impl ConsumoService {
         }
 
         // Política de control de lote: 'trazable' exige consumir el lote escaneado.
-        let control_lote: String =
-            sqlx::query_scalar("SELECT control_lote FROM productos WHERE id = $1")
+        let (control_lote, estado_catalogo): (String, String) =
+            sqlx::query_as("SELECT control_lote, estado_catalogo FROM productos WHERE id = $1")
                 .bind(params.producto_id)
                 .fetch_optional(pool)
                 .await?
                 .ok_or_else(|| AppError::NotFound("Producto no encontrado".into()))?;
+        if estado_catalogo == "pendiente_aprobacion" {
+            return Err(AppError::ProductInQuarantine { producto_id: params.producto_id });
+        }
         if control_lote == "trazable" && params.lote_id.is_none() {
             return Err(AppError::Validation(
                 "El producto es de control trazable: se requiere el lote escaneado".into(),
@@ -267,6 +270,19 @@ impl ConsumoService {
         let mut lotes_por_item = Vec::new();
 
         for (item, cantidad) in &item_pairs {
+            // Check catalog state
+            let estado_catalogo: String = sqlx::query_scalar(
+                "SELECT estado_catalogo FROM productos WHERE id = $1"
+            )
+            .bind(item.producto_id)
+            .fetch_one(&mut *tx)
+            .await?;
+
+            if estado_catalogo == "pendiente_aprobacion" {
+                tx.rollback().await?;
+                return Err(AppError::ProductInQuarantine { producto_id: item.producto_id });
+            }
+
             let effective_area_id = item.area_id.or(params.area_id);
 
             let lotes = if let Some(lote_id) = item.lote_id {

@@ -492,7 +492,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                LEFT JOIN fefo_prov fp ON fp.producto_id = p.id
                LEFT JOIN series sr ON sr.producto_id = p.id
                LEFT JOIN par_levels pl ON pl.producto_id = p.id
-               WHERE p.activo = true {} {} {}
+               WHERE p.activo = true AND p.estado_catalogo = 'aprobado' {} {} {}
            ),
            enriched AS (
                SELECT
@@ -984,12 +984,12 @@ pub async fn alertas(
            ),"#;
 
     let sql = format!(
-        r#"WITH stock_stats AS (
+r#"WITH stock_stats AS (
                SELECT
                    p.id as producto_id,
                    COALESCE(SUM(s.cantidad), 0) AS total,
                    -- Modelo de dos ejes (migration 002): usable vs vencido, igual que /stock listar.
-                   COALESCE(SUM(s.cantidad) FILTER (WHERE s.cantidad > 0 AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)), 0) AS stock_usable,
+                   COALESCE(SUM(s.cantidad) FILTER (WHERE s.cantidad > 0 AND p.estado_catalogo = 'aprobado' AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)), 0) AS stock_usable,
                    COALESCE(SUM(s.cantidad) FILTER (WHERE s.cantidad > 0 AND l.fecha_vencimiento IS NOT NULL AND l.fecha_vencimiento < CURRENT_DATE), 0) AS stock_vencido,
                    MIN(l.fecha_vencimiento) FILTER (WHERE s.cantidad > 0 AND l.fecha_vencimiento IS NOT NULL AND l.fecha_vencimiento >= CURRENT_DATE) AS prox_venc_usable,
                    COALESCE(bool_or(s.cantidad > 0 AND l.fecha_vencimiento IS NOT NULL AND l.fecha_vencimiento < CURRENT_DATE), false) AS tiene_vencido,
@@ -1008,7 +1008,7 @@ pub async fn alertas(
                FROM productos p
                LEFT JOIN lotes l ON l.producto_id = p.id
                LEFT JOIN stock s ON s.lote_id = l.id {2}
-               WHERE p.activo = true
+               WHERE p.activo = true AND p.estado_catalogo = 'aprobado'
                GROUP BY p.id
            ),
            par_levels AS (

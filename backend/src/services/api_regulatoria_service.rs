@@ -53,7 +53,7 @@ pub async fn lookup_dispositivo(
 
     // 1. FDA AccessGUDID lookup
     let fda_url_base = std::env::var("FDA_API_URL")
-        .unwrap_or_else(|_| "https://accessgudid.nlm.nih.gov/api/v1/devices/lookup.json".to_string());
+        .unwrap_or_else(|_| "https://accessgudid.nlm.nih.gov/api/v2/devices/lookup.json".to_string());
 
     let fda_url = if fda_url_base.contains("{code}") {
         fda_url_base.replace("{code}", code)

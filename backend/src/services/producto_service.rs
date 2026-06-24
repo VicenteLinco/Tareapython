@@ -15,7 +15,7 @@ struct Gs1Parsed {
 }
 
 fn parse_gs1(codigo: &str) -> Option<Gs1Parsed> {
-    let trimmed = codigo.trim();
+    let trimmed = codigo.trim().trim_start_matches(|c: char| c.is_control() || c.is_whitespace());
     if trimmed.is_empty() {
         return None;
     }
@@ -74,12 +74,11 @@ fn parse_gs1_bracketed(input: &str) -> Option<Vec<(String, String)>> {
 /// Fixed-length AIs (01, 11, 17) consume a known width; variable-length AIs run
 /// until the FNC1 group separator (0x1d) or the end of the string.
 fn parse_gs1_plain(input: &str) -> Option<Vec<(String, String)>> {
-    const GS: u8 = 0x1d;
     let bytes = input.as_bytes();
     let mut pairs = Vec::new();
     let mut i = 0usize;
     while i + 2 <= input.len() {
-        if bytes[i] == GS {
+        if bytes[i] < 32 || bytes[i] == 127 {
             i += 1;
             continue;
         }
@@ -103,7 +102,7 @@ fn parse_gs1_plain(input: &str) -> Option<Vec<(String, String)>> {
             }
             None => {
                 let start = i;
-                while i < input.len() && bytes[i] != GS {
+                while i < input.len() && bytes[i] >= 32 && bytes[i] != 127 {
                     i += 1;
                 }
                 pairs.push((ai.to_string(), input[start..i].to_string()));

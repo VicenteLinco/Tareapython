@@ -90,7 +90,7 @@ export interface ParsedGs1 {
 }
 
 export function parseGs1Client(code: string): ParsedGs1 | null {
-  const clean = code.trim().replace(/[()]/g, '')
+  const clean = code.trim().replace(/^[\x00-\x1F\x7F\s]+/, '').replace(/[()]/g, '')
   
   if (!clean.startsWith('01') || clean.length < 16) {
     return null
@@ -106,6 +106,12 @@ export function parseGs1Client(code: string): ParsedGs1 | null {
   
   let i = 0
   while (i < remaining.length) {
+    const charCode = remaining.charCodeAt(i)
+    if (charCode < 32 || charCode === 127) {
+      i++
+      continue
+    }
+
     if (remaining.substring(i, i + 2) === '17') {
       const dateStr = remaining.substring(i + 2, i + 8)
       if (dateStr.length === 6 && /^\d+$/.test(dateStr)) {
@@ -125,6 +131,11 @@ export function parseGs1Client(code: string): ParsedGs1 | null {
     if (remaining.substring(i, i + 2) === '10') {
       let lotEnd = remaining.length
       for (let j = i + 2; j < remaining.length; j++) {
+        const charCodeJ = remaining.charCodeAt(j)
+        if (charCodeJ < 32 || charCodeJ === 127) {
+          lotEnd = j
+          break
+        }
         const next2 = remaining.substring(j, j + 2)
         const next3 = remaining.substring(j, j + 3)
         if (next2 === '17' && /^\d{6}/.test(remaining.substring(j + 2, j + 8))) {
@@ -147,6 +158,11 @@ export function parseGs1Client(code: string): ParsedGs1 | null {
     if (remaining.substring(i, i + 3) === '240') {
       let refEnd = remaining.length
       for (let j = i + 3; j < remaining.length; j++) {
+        const charCodeJ = remaining.charCodeAt(j)
+        if (charCodeJ < 32 || charCodeJ === 127) {
+          refEnd = j
+          break
+        }
         const next2 = remaining.substring(j, j + 2)
         if (next2 === '17' && /^\d{6}/.test(remaining.substring(j + 2, j + 8))) {
           refEnd = j

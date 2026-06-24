@@ -1,80 +1,85 @@
-# Plan de Implementación: Catalogación de Insumos con Fricción Cero (Modelo Híbrido)
+# Plan de Implementación: Catalogación de Insumos con Fricción Cero (Modelo Híbrido Avanzado)
 
-Este documento detalla las especificaciones de arquitectura y las etapas para implementar el **flujo de catalogación silenciosa** integrado con consultas a **APIs regulatorias de marcas globales** y un **importador de guías de despacho (PDF / Texto)** para distribuidores locales.
+Este documento detalla las especificaciones de arquitectura, seguridad y las etapas para implementar el **flujo de catalogación silenciosa** integrado con consultas a **APIs regulatorias internacionales** y un **importador inteligente de guías de despacho (PDF / Texto)** con mitigaciones contra errores físicos y digitales.
 
 ---
 
-## 1. Flujo General del Sistema (Modelo Híbrido)
+## 1. Arquitectura y Flujo de Datos
 
-El sistema resolverá el ingreso de mercadería mediante dos canales complementarios para asegurar cero fricción:
+El sistema resolverá el ingreso de mercadería mediante dos canales automatizados, separando la figura del **Fabricante (Marca)** de la del **Proveedor (Distribuidor)** para permitir compras multi-canal.
 
 ```mermaid
 graph TD
     A[Escaneo físico o Recepción] --> B{¿Insumo de Marca Global?}
-    B -- Sí (Roche, BD, Mindray, Seegene) --> C[Resolución Automática vía API FDA/UDI]
+    B -- Sí (Roche, BD, Mindray, Seegene) --> C[Resolución en Cascada: API FDA / EUDAMED]
     B -- No (Valtek, Alatheia, Distribuidores locales) --> D[Importador de Guía de Despacho]
     
     C --> E[Creación e inserción directa en segundo plano]
     D --> F[Pegar texto del PDF de la Guía]
-    F --> G[Procesamiento inteligente del texto]
-    G --> H[Carga masiva de ítems, lotes y vencimientos]
+    F --> G[Validador Híbrido: Regex + LLM]
+    G --> H[Doble Panel: Verificación Manual en Pantalla]
+    H --> I[Carga masiva de ítems, lotes y vencimientos]
     
-    E & H --> I[Stock listo con validación diferida]
+    E & I --> J[Ingreso físico: Etiqueta de Cuarentena]
+    J --> K[Ingreso digital: Stock bloqueado para consumo]
+    K --> L[Diferido: Aprobación por supervisor en Bandeja de Catalogación]
 ```
 
 ---
 
-## 2. Especificación Técnica por Componente
+## 2. Mitigación de Debilidades y Especificaciones Técnicas
 
-### 2.1 Módulo API de Marcas Globales (FDA AccessGUDID API)
-Para marcas internacionales (**Roche, BD, Mindray, Seegene**), el backend implementará un servicio que consulta directamente la API pública de la FDA cuando se escanee un GTIN nuevo:
+### 2.1 Módulo API Internacional (FDA + EUDAMED)
+Para marcas internacionales (**Roche, BD, Mindray, Seegene**), el backend implementará una consulta en cascada para evitar la limitación geográfica de la FDA:
 
-* **Servicio:** `backend/src/services/fda_service.rs`
-* **API Endpoint Utilizada:** `https://accessgudid.nlm.nih.gov/api/v2/devices/lookup.json?di={GTIN}`
-* **Comportamiento:** Si la API devuelve un resultado exitoso, el sistema extrae el `brandName` y crea el producto con `estado_catalogo = 'activo'`. El escaneo del usuario nunca se detiene.
+* **Servicio:** `backend/src/services/api_regulatoria_service.rs`
+* **Flujo de consulta:**
+  1. Intentar consultar **FDA AccessGUDID API** (`https://accessgudid.nlm.nih.gov/api/v2/devices/lookup.json?di={GTIN}`).
+  2. Si no hay coincidencia (debido a regionalización de códigos), consultar la API de **EUDAMED** (Unión Europea).
+  3. Si falla la búsqueda por GTIN, buscar en el catálogo histórico local por coincidencia exacta del código **REF** (independiente del código de barras).
 
-### 2.2 Importador de Guías de Despacho (PDF / Texto)
-Para marcas locales que no tienen API (**Valtek, Alatheia**), la recepción se facilitará mediante un cuadro de texto inteligente en el frontend:
+### 2.2 Importador de Guías (Validador Híbrido y Doble Panel)
+Para evitar los riesgos de alucinación de datos críticos (como números de lote o fechas de vencimiento erróneas) provocado por procesar texto libre únicamente con IA, se utilizará una estrategia híbrida:
 
-* **Componente Frontend:** `ImportadorGuiaModal.tsx`
-* **Flujo del Usuario:**
-  1. El usuario hace clic en **"Importar Guía de Despacho (PDF)"**.
-  2. Abre el PDF de la guía enviado por el proveedor, selecciona todo el texto (`Ctrl+A`), lo copia (`Ctrl+C`) y lo pega en el modal del sistema (`Ctrl+V`).
-  3. El sistema envía este texto bruto a un endpoint del backend: `POST /api/v1/recepciones/parse-guia`.
-* **Procesamiento en Backend:**
-  El backend utiliza un servicio de análisis sintáctico inteligente (o una llamada ligera al LLM integrado en el sistema) para parsear el texto y extraer una estructura JSON:
-  ```json
-  [
-    { "ref": "10300", "lote": "84171201", "vencimiento": "2026-05-31", "cantidad": 10 },
-    { "ref": "98124", "lote": "9921AA", "vencimiento": "2025-12-31", "cantidad": 5 }
-  ]
-  ```
-  El sistema valida los códigos REF contra la base de datos local y carga todos los registros en la lista de recepción con un solo clic.
+1. **Parser Híbrido (Backend):**
+   * **Nivel 1 (Regex & Plantillas):** Si el texto proviene de un proveedor conocido (ej: *Valtek*), el sistema utiliza expresiones regulares rígidas para estructurar las columnas de forma matemática y 100% exacta.
+   * **Nivel 2 (LLM Fallback):** Si el formato es desconocido, se utiliza un modelo de lenguaje para identificar y estructurar las columnas.
+2. **Doble Panel de Verificación (Frontend):**
+   * El modal `ImportadorGuiaModal.tsx` se divide en dos paneles: a la izquierda el texto bruto que pegó el usuario, y a la derecha la tabla de ítems parseada.
+   * El sistema resalta en rojo/alerta si detecta fechas con formato inválido o lotes con caracteres sospechosos, obligando al usuario a validar visualmente antes de confirmar la carga masiva.
 
-### 2.3 Safeguard (El Resguardo de Calidad)
-Si un producto se crea automáticamente durante el escaneo o la importación y no se encuentra su nombre formal:
-* Se guarda con un nombre temporal: `[PENDIENTE] REF: {ref_code}`.
-* Su propiedad `activo` se establece en `false` o `estado_catalogo = 'pendiente_aprobacion'`.
-* **Bloqueo de Stock:** El stock físico ingresa al sistema, pero **queda bloqueado para consumo**. Los tecnólogos no pueden descontarlo en las pantallas de consumos diarios hasta que un supervisor valide la ficha técnica desde la **Bandeja de Catalogación**.
+### 2.3 Separación de Entidades (Fabricante vs. Proveedor)
+Para evitar que un insumo quede atado a un único canal de compra:
+* **Entidad `Fabricante` (Marca original):** ej. *Roche, Valtek, BD, Mindray*.
+* **Entidad `Proveedor` (Distribuidor que vende el insumo):** ej. *Alatheia, Roche Chile, Valtek Diagnostics*.
+* El código **REF** de catálogo se asocia a la combinación de `Producto` + `Fabricante`. El mismo producto puede ser cotizado y comprado a diferentes distribuidores con precios unitarios distintos.
+
+### 2.4 Resguardo de Stock en Cuarentena (Físico vs. Digital)
+Para evitar que un operario almacene un insumo físicamente en las repisas y que los tecnólogos lo consuman antes de que el supervisor lo catalogue correctamente en el software:
+
+* **Bloqueo en Base de Datos:** Los productos creados en caliente se registran con `estado_catalogo = 'pendiente_aprobacion'`. Las queries de consumo clínico filtran y ocultan este stock automáticamente.
+* **Flujo Físico y Etiqueta de Alerta:**
+  1. Al recibir un producto "Pendiente", el sistema genera de forma obligatoria una etiqueta con un código de barra de alerta que dice **"BLOQUEADO - EN CUARENTENA"**.
+  2. El operario debe pegar la etiqueta sobre la caja y ubicarla físicamente en una zona delimitada del laboratorio (repisa de cuarentena).
+  3. Una vez que el administrador valida el producto en el software, se imprime la etiqueta definitiva y el insumo se traslada a la estantería de uso diario.
 
 ---
 
-## 3. Plan de Trabajo e Hitos
+## 3. Plan de Trabajo y Hitos de Desarrollo
 
-### Hito 1: Base de Datos y Servicio FDA en Backend
-* Crear las migraciones para añadir `estado_catalogo` y `origen_registro` a `productos`.
-* Escribir el servicio `fda_service.rs` para consultas HTTP a la base de datos de la FDA.
-* Modificar el endpoint `GET /api/v1/productos/scan` para integrar la búsqueda automática y creación en cascada.
+### Hito 1: Modificaciones en Base de Datos y API en Cascada
+* Agregar `estado_catalogo` y `origen_registro` a la tabla `productos`.
+* Implementar `api_regulatoria_service.rs` en Rust con búsqueda secuencial FDA $\rightarrow$ EUDAMED $\rightarrow$ REF Histórico.
+* Modificar el endpoint de escaneo para crear borradores con estado `pendiente_aprobacion`.
 
-### Hito 2: Parser de Guías de Despacho
-* Crear el endpoint `POST /api/v1/recepciones/parse-guia` en Rust.
-* Diseñar el algoritmo de extracción (o prompt del LLM) para procesar el texto bruto de la guía de despacho y devolver los campos clave (REF, lote, vencimiento, cantidad).
+### Hito 2: Parser Híbrido de Guías de Despacho
+* Crear el endpoint `POST /api/v1/recepciones/parse-guia`.
+* Escribir las expresiones regulares para los principales proveedores locales y la lógica de procesamiento de texto bruto.
 
-### Hito 3: Interfaz de Recepción e Importación en Frontend
-* Crear el modal `ImportadorGuiaModal.tsx` en el módulo de recepciones.
-* Integrar la importación por texto en el wizard de nueva recepción.
-* Agregar indicadores visuales de "Producto Pendiente de Catalogación" en la lista de ítems.
+### Hito 3: Interfaz de Recepción y Panel de Verificación
+* Crear el modal `ImportadorGuiaModal.tsx` con el diseño de doble panel (texto vs. tabla).
+* Implementar la impresión de etiquetas temporales de cuarentena.
 
-### Hito 4: Bandeja de Catalogación y Reglas de Bloqueo
-* Modificar el filtro de consumo de stock para ocultar los ítems con `estado_catalogo = 'pendiente_aprobacion'`.
-* Construir la vista de administración para la aprobación masiva y actualización de fichas de productos pendientes.
+### Hito 4: Módulo de Aprobación y Reglas de Bloqueo
+* Asegurar que el stock en cuarentena esté oculto en el flujo de consumos.
+* Crear la bandeja de catalogación para la aprobación de insumos pendientes.

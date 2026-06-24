@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Link, Check, AlertCircle, Sparkles, Box, Info } from 'lucide-react'
+import { Plus, Link, Check, Sparkles, Info } from 'lucide-react'
 import { Dialog } from '@/components/ui/dialog'
 import api from '@/lib/api'
 import { parseApiError } from '@/lib/api-error'
@@ -14,7 +14,7 @@ interface AsignarCodigoModalProps {
   productos: { id: string; nombre: string; codigo_interno: string | null; sku: string | null }[]
   onClose: () => void
   onAsignado: () => void
-  onCreadoYAsignado: (prodId: string, lote: string, vencimiento: string) => void
+  onCreadoYAsignado?: (prodId: string, lote: string, vencimiento: string) => void
   proveedorId?: number | null
 }
 
@@ -191,7 +191,7 @@ export function AsignarCodigoModal({
       api.post('/productos/scan/asignar', { codigo, producto_id: existingProductWithRef!.id }),
     onSuccess: () => {
       notify.success('Código vinculado y producto añadido a la recepción')
-      onCreadoYAsignado(
+      onCreadoYAsignado?.(
         existingProductWithRef!.id,
         loteValue.trim(),
         vencimientoValue
@@ -209,7 +209,7 @@ export function AsignarCodigoModal({
       queryClient.invalidateQueries({ queryKey: ['productos'] })
       
       const newProduct = res.data
-      onCreadoYAsignado(
+      onCreadoYAsignado?.(
         String(newProduct.id),
         loteValue.trim(),
         vencimientoValue

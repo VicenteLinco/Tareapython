@@ -28,7 +28,7 @@ export function QrScannerSession({ onItemsScanned, onClose }: QrScannerSessionPr
   const { data: productos = [] } = useQuery({
     queryKey: ['productos-scan-list'],
     queryFn: () =>
-      api.get<{ data: { id: string; nombre: string; codigo_interno: string | null }[] }>(
+      api.get<{ data: { id: string; nombre: string; codigo_interno: string | null; sku: string | null }[] }>(
         '/productos',
         { params: { per_page: 2000, activo: true } }
       ).then(r => r.data.data),

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { X, Sparkles, AlertTriangle, Trash2, Loader2 } from 'lucide-react'
+import { X, Sparkles, AlertTriangle, Trash2, Loader2, FileText } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { v4 as uuidv4 } from 'uuid'
 import api from '@/lib/api'
@@ -21,6 +21,7 @@ interface ImportadorGuiaModalProps {
   open: boolean
   onClose: () => void
   proveedorId: number | null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onImport: (itemsToAdd: any[]) => void
 }
 
@@ -85,8 +86,6 @@ export default function ImportadorGuiaModal({
     }
   }, [areas, categorias, unidades, defaultAreaId, defaultCategoriaId, defaultUnidadId])
 
-  if (!open) return null
-
   const handleParse = async () => {
     if (!rawText.trim()) {
       notify.error('Por favor, pega el texto de la guía de despacho')
@@ -131,6 +130,7 @@ export default function ImportadorGuiaModal({
     })
   }, [items])
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleUpdateItem = (index: number, field: keyof ParsedItem, value: any) => {
     const updated = [...items]
     updated[index] = { ...updated[index], [field]: value }
@@ -159,6 +159,7 @@ export default function ImportadorGuiaModal({
 
     setIsParsing(true) // show loading state on import
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const finalItemsList: any[] = []
 
       for (const item of items) {
@@ -243,6 +244,8 @@ export default function ImportadorGuiaModal({
       setIsParsing(false)
     }
   }
+
+  if (!open) return null
 
   return (
     <div className="modal modal-open">

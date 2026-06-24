@@ -212,7 +212,7 @@ export default function BandejaCatalogacionTab() {
                 <select
                   className="select select-bordered select-sm w-full"
                   value={selectedControlLote}
-                  onChange={(e) => setSelectedControlLote(e.target.value as any)}
+                  onChange={(e) => setSelectedControlLote(e.target.value as 'simple' | 'con_vto' | 'trazable')}
                 >
                   <option value="con_vto">Con Vencimiento (Recomendado reactivos)</option>
                   <option value="simple">Simple (Cantidad sin lotes detallados)</option>

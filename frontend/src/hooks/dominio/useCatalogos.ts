@@ -26,6 +26,9 @@ import {
   crearPresentacion,
   actualizarPresentacion,
   eliminarPresentacion,
+  listarProductosQuarantine,
+  aprobarProductoQuarantine,
+  rechazarProductoQuarantine,
 } from '@/api'
 import type {
   CreateArea,
@@ -40,7 +43,7 @@ import type {
   CreateProducto,
   UpdateProducto,
 } from '@/types'
-import type { ProductosQuery, CreatePresentacion, UpdatePresentacion } from '@/api'
+import type { ProductosQuery, CreatePresentacion, UpdatePresentacion, ApproveProductPayload } from '@/api'
 import { notify } from '@/lib/notify'
 import { parseApiError } from '@/lib/api-error'
 import { catalogosKeys } from '@/lib/queryKeys'
@@ -354,3 +357,39 @@ export function useEliminarPresentacion() {
     onError: (err) => notify.error(parseApiError(err)),
   })
 }
+
+// ─── Productos en Cuarentena ──────────────────────────────────────────────────
+
+export function useProductosQuarantine() {
+  return useQuery({
+    queryKey: ['productos', 'quarantine'],
+    queryFn: () => listarProductosQuarantine(),
+    staleTime: 60 * 1000,
+  })
+}
+
+export function useAprobarProductoQuarantine() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: ApproveProductPayload }) =>
+      aprobarProductoQuarantine(id, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['productos'] }) // Invalidate list & quarantine
+      notify.success('Producto aprobado y liberado de cuarentena')
+    },
+    onError: (err) => notify.error(parseApiError(err)),
+  })
+}
+
+export function useRechazarProductoQuarantine() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => rechazarProductoQuarantine(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['productos'] }) // Invalidate list & quarantine
+      notify.success('Producto rechazado y eliminado')
+    },
+    onError: (err) => notify.error(parseApiError(err)),
+  })
+}
+

@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::auth::models::Claims;
 use crate::db::AppState;
-use crate::domain::ControlLote;
+use crate::domain::{ControlLote, EstadoCatalogo, OrigenRegistro};
 use crate::dto::pagination::{PaginatedResponse, PaginationParams};
 use crate::errors::{AppError, validate_text_length};
 use crate::models::producto::Producto;
@@ -114,6 +114,8 @@ struct CreateProducto {
     // Extra presentations still supported
     presentaciones: Option<Vec<CreatePresentacionInline>>,
     area_ids: Option<Vec<i32>>,
+    estado_catalogo: Option<EstadoCatalogo>,
+    origen_registro: Option<OrigenRegistro>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -294,6 +296,8 @@ async fn crear(
             control_lote: req.control_lote.unwrap_or(ControlLote::ConVto),
             area_ids: req.area_ids,
             usuario_id: claims.sub,
+            estado_catalogo: req.estado_catalogo,
+            origen_registro: req.origen_registro,
         },
     )
     .await?;

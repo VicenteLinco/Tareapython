@@ -218,6 +218,8 @@ pub struct CrearProductoParams {
     pub presentaciones: Option<Vec<crate::handlers::productos::CreatePresentacionInline>>,
     pub area_ids: Option<Vec<i32>>,
     pub usuario_id: Uuid,
+    pub estado_catalogo: Option<crate::domain::EstadoCatalogo>,
+    pub origen_registro: Option<crate::domain::OrigenRegistro>,
 }
 
 pub struct ActualizarProductoParams {
@@ -313,8 +315,8 @@ impl ProductoService {
                 ubicacion,
                 temperatura_almacenamiento, requiere_cadena_frio, dias_estabilidad_abierto, clase_riesgo,
                 pres_nombre, pres_nombre_plural, pres_factor, pres_codigo_barras, pres_gtin, pres_gs1_habilitado,
-                control_lote)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+                control_lote, estado_catalogo, origen_registro)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
                RETURNING *"#,
         )
         .bind(&codigo)
@@ -337,6 +339,8 @@ impl ProductoService {
         .bind(&params.pres_gtin)
         .bind(params.pres_gs1_habilitado)
         .bind(&params.control_lote)
+        .bind(params.estado_catalogo.unwrap_or(crate::domain::EstadoCatalogo::Aprobado))
+        .bind(params.origen_registro.unwrap_or(crate::domain::OrigenRegistro::Manual))
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| match &e {

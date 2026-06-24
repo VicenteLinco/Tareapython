@@ -68,3 +68,24 @@ export async function eliminarBorrador(id: string): Promise<void> {
 export async function subirFoto(id: string, payload: SubirFotoInput): Promise<void> {
   await api.put(`/recepciones/${id}/foto`, payload)
 }
+
+export interface ParsedItem {
+  nombre_producto: string
+  sku_ref: string
+  lote: string | null
+  fecha_vencimiento: string | null
+  cantidad: number
+  precio_unitario: number | null
+}
+
+export interface ParseGuiaResponse {
+  proveedor: string
+  items: ParsedItem[]
+}
+
+/** POST /recepciones/parse-guia — Parsear texto de guía de despacho */
+export async function parseGuia(raw_text: string): Promise<ParseGuiaResponse> {
+  const { data } = await api.post<ParseGuiaResponse>('/recepciones/parse-guia', { raw_text })
+  return data
+}
+

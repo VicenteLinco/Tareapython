@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom'
-import { Tag, Layers, MapPin, Truck, LayoutList, Package, Barcode } from 'lucide-react'
+import { Tag, Layers, MapPin, Truck, LayoutList, Package, Barcode, ShieldAlert } from 'lucide-react'
 import { useFullWidthPage } from '@/components/layout/page-width'
 import { cn } from '@/lib/utils'
 import CategoriasTab from './categorias-tab'
@@ -9,11 +9,13 @@ import ProveedoresTab from './proveedores-tab'
 import ProductosTab from './productos-tab'
 import PresentacionesFormatosTab from './presentaciones-formatos-tab'
 import GtinsTab from './gtins-tab'
+import BandejaCatalogacionTab from './BandejaCatalogacionTab'
 
-type TabId = 'productos' | 'categorias' | 'unidades' | 'areas' | 'proveedores' | 'presentaciones' | 'gtins'
+type TabId = 'productos' | 'categorias' | 'unidades' | 'areas' | 'proveedores' | 'presentaciones' | 'gtins' | 'catalogacion'
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'productos',      label: 'Productos',      icon: Package   },
+  { id: 'catalogacion',   label: 'Catalogación',   icon: ShieldAlert },
   { id: 'categorias',     label: 'Categorías',     icon: Tag       },
   { id: 'unidades',       label: 'Unidades',       icon: Layers    },
   { id: 'proveedores',    label: 'Proveedores',    icon: Truck     },
@@ -64,6 +66,7 @@ export default function CreadorProductosPage() {
       {/* Contenido del tab activo */}
       <div className="pt-5">
         {tabActivo === 'productos'      && <ProductosTab />}
+        {tabActivo === 'catalogacion'   && <BandejaCatalogacionTab />}
         {tabActivo === 'categorias'     && <CategoriasTab />}
         {tabActivo === 'unidades'       && <UnidadesTab />}
         {tabActivo === 'proveedores'    && <ProveedoresTab />}

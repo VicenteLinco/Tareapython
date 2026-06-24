@@ -1,8 +1,8 @@
 // frontend/src/pages/recepciones/nueva.tsx
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { useRef, useEffect } from 'react'
-import { ArrowLeft, Check } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { ArrowLeft, Check, Sparkles } from 'lucide-react'
 import api from '@/lib/api'
 import { cn, APP_LOCALE } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,7 @@ import { ProveedorStep } from './steps/ProveedorStep'
 import { ItemsStep } from './steps/ItemsStep'
 import { isCardComplete } from './components/item-card-utils'
 import type { Producto } from '@/types'
+import ImportadorGuiaModal from '@/components/shared/ImportadorGuiaModal'
 
 interface SolicitudItemVinculada {
   proveedor_id?: number | null
@@ -84,6 +85,8 @@ export default function NuevaRecepcionPage() {
 
   // ─── Items hook ───────────────────────────────────────────────────────────────
 
+  const [importModalOpen, setImportModalOpen] = useState(false)
+
   const items = useRecepcionItems({
     proveedorId,
     proveedores,
@@ -105,6 +108,7 @@ export default function NuevaRecepcionPage() {
 
   const {
     detalles,
+    setDetalles,
     pendingScan,
     handleConfirmLote,
     handleCancelLote,
@@ -263,7 +267,20 @@ export default function NuevaRecepcionPage() {
         </section>
 
         <section className="space-y-3">
-          <SectionTitle n={2} title="Ítems y lotes" done={detalles.length > 0 && itemsCompletos === detalles.length} />
+          <div className="flex items-center justify-between">
+            <SectionTitle n={2} title="Ítems y lotes" done={detalles.length > 0 && itemsCompletos === detalles.length} />
+            {proveedorId && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs font-semibold"
+                onClick={() => setImportModalOpen(true)}
+              >
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                Importar Guía (PDF)
+              </Button>
+            )}
+          </div>
           <ItemsStep wizard={wizard} items={items} productos={productos} areas={areas} monedaSimbolo={monedaSimbolo} />
         </section>
 
@@ -346,6 +363,15 @@ export default function NuevaRecepcionPage() {
           </Button>
         </div>
       </Dialog>
+
+      <ImportadorGuiaModal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        proveedorId={proveedorId}
+        onImport={(importedItems) => {
+          setDetalles(prev => [...importedItems, ...prev])
+        }}
+      />
     </div>
   )
 }

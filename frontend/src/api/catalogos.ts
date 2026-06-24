@@ -235,3 +235,26 @@ export async function actualizarProveedor(id: number, payload: UpdateProveedor):
 export async function eliminarProveedor(id: number): Promise<void> {
   await api.delete(`/proveedores/${id}`)
 }
+
+/** GET /productos/quarantine — Listar productos en cuarentena */
+export async function listarProductosQuarantine(): Promise<Producto[]> {
+  const { data } = await api.get<Producto[]>('/productos/quarantine')
+  return data
+}
+
+export interface ApproveProductPayload {
+  categoria_id: number
+  control_lote: 'simple' | 'con_vto' | 'trazable'
+}
+
+/** POST /productos/:id/approve — Aprobar producto en cuarentena */
+export async function aprobarProductoQuarantine(id: string, payload: ApproveProductPayload): Promise<ProductoDetalle> {
+  const { data } = await api.post<ProductoDetalle>(`/productos/${id}/approve`, payload)
+  return data
+}
+
+/** POST /productos/:id/reject — Rechazar producto en cuarentena */
+export async function rechazarProductoQuarantine(id: string): Promise<void> {
+  await api.post(`/productos/${id}/reject`, {})
+}
+

@@ -387,10 +387,11 @@ async fn reactivar(
 /// Looks up a product by presentation barcode or internal code
 async fn scan_barcode(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Query(params): Query<ScanQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let codigo = params.codigo.as_deref().unwrap_or("");
-    let resultado = ProductoService::buscar_por_codigo(&state.pool, codigo).await?;
+    let resultado = ProductoService::buscar_por_codigo(&state.pool, codigo, claims.sub).await?;
     Ok(Json(resultado))
 }
 

@@ -786,6 +786,7 @@ impl ProductoService {
     pub async fn buscar_por_codigo(
         pool: &PgPool,
         codigo: &str,
+        usuario_id: Uuid,
     ) -> Result<serde_json::Value, AppError> {
         let codigo = codigo.trim();
         if codigo.is_empty() {
@@ -919,13 +920,7 @@ impl ProductoService {
             }));
         }
 
-        if parse_gs1(codigo).is_some() {
-            return Ok(json!({
-                "encontrado": false,
-                "tipo": "gs1",
-                "motivo": "GTIN no registrado",
-            }));
-        }
+        // GS1 check is deferred to the end if not found locally
 
         #[derive(sqlx::FromRow)]
         struct Row2 {
@@ -1058,7 +1053,90 @@ impl ProductoService {
             }));
         }
 
-        Ok(json!({ "encontrado": false, "codigo": codigo }))
+        // If not found locally, attempt cascade lookup in regulatory APIs
+        match crate::services::api_regulatoria_service::lookup_dispositivo(pool, codigo_presentacion).await {
+            Ok(dispositivo) => {
+                let base_unit: (i32, String, String) = sqlx::query_as(
+                    "SELECT id, nombre, nombre_plural FROM unidades_basicas ORDER BY id ASC LIMIT 1"
+                )
+                .fetch_one(pool)
+                .await
+                .unwrap_or((1, "unidad".to_string(), "unidades".to_string()));
+
+                let params = CrearProductoParams {
+                    nombre: dispositivo.nombre,
+                    descripcion: Some("Importado automáticamente mediante API regulatoria".to_string()),
+                    categoria_id: None,
+                    unidad_base_id: base_unit.0,
+                    proveedor_id: None,
+                    sku: dispositivo.sku_ref.clone(),
+                    precio_unidad: None,
+                    ubicacion: Some("Estantería de cuarentena".to_string()),
+                    temperatura_almacenamiento: None,
+                    requiere_cadena_frio: false,
+                    dias_estabilidad_abierto: None,
+                    clase_riesgo: dispositivo.clase_riesgo,
+                    pres_nombre: Some("Unidad".to_string()),
+                    pres_nombre_plural: Some("Unidades".to_string()),
+                    pres_factor: Some(Decimal::ONE),
+                    pres_codigo_barras: Some(codigo_presentacion.to_string()),
+                    pres_gtin: Some(codigo_presentacion.to_string()),
+                    pres_gs1_habilitado: gs1.is_some(),
+                    control_lote: crate::domain::ControlLote::ConVto,
+                    presentaciones: None,
+                    area_ids: None,
+                    usuario_id,
+                    estado_catalogo: Some(crate::domain::EstadoCatalogo::PendienteAprobacion),
+                    origen_registro: Some(crate::domain::OrigenRegistro::ApiRegulatoria),
+                };
+
+                let prod = Self::crear_producto(pool, params).await?;
+
+                let pres: (i32, String) = sqlx::query_as(
+                    "SELECT id, nombre FROM presentaciones WHERE producto_id = $1 LIMIT 1"
+                )
+                .bind(prod.id)
+                .fetch_one(pool)
+                .await
+                .unwrap_or((0, "Unidad".to_string()));
+
+                let mut out = json!({
+                    "encontrado": true,
+                    "tipo": if gs1.is_some() { "gs1" } else { "presentacion" },
+                    "producto_id": prod.id,
+                    "producto_nombre": prod.nombre,
+                    "proveedor_id": prod.proveedor_id,
+                    "unidad_base_nombre": base_unit.1,
+                    "unidad_base_nombre_plural": base_unit.2,
+                    "presentacion_id": pres.0,
+                    "presentacion_nombre": pres.1,
+                    "factor_conversion": 1.0,
+                    "stock_total": 0.0,
+                    "imagen_url": prod.imagen_url,
+                    "precio_unidad": prod.precio_unidad,
+                    "control_lote": prod.control_lote,
+                });
+                if let Some(ref gs1_val) = gs1 {
+                    out["gs1"] = json!({
+                        "gtin": gs1_val.gtin,
+                        "numero_lote": gs1_val.lote,
+                        "fecha_vencimiento": gs1_val.vencimiento,
+                    });
+                }
+                Ok(out)
+            }
+            Err(_) => {
+                if gs1.is_some() {
+                    Ok(json!({
+                        "encontrado": false,
+                        "tipo": "gs1",
+                        "motivo": "GTIN no registrado",
+                    }))
+                } else {
+                    Ok(json!({ "encontrado": false, "codigo": codigo }))
+                }
+            }
+        }
     }
 
     /// Lists products with dynamic filtering (search, category, area, supplier),

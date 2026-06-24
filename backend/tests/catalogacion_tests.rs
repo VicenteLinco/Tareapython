@@ -106,6 +106,38 @@ async fn test_api_regulatoria_cascada_y_timeout(pool: PgPool) {
     assert_eq!(res3.nombre, "Local Product");
     assert_eq!(res3.fabricante, "Histórico Local");
     assert_eq!(res3.sku_ref.unwrap(), "SKU-LOCAL");
+
+    // Test case 4: Scan barcode endpoint auto-creation (quarantine)
+    use axum::http::StatusCode;
+    let app_client = common::test_app(pool.clone());
+    let token = common::admin_access_token(&pool).await;
+
+    // Call GET /api/v1/productos/scan?codigo=fda_success
+    let (status, scan_res) = common::get_json(
+        &app_client,
+        "/api/v1/productos/scan?codigo=fda_success",
+        &token
+    ).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(scan_res.get("encontrado").and_then(|e| e.as_bool()), Some(true));
+    assert_eq!(scan_res.get("producto_nombre").and_then(|n| n.as_str()), Some("FDA Brand Name - FDA Device Description"));
+    assert_eq!(scan_res.get("tipo").and_then(|t| t.as_str()), Some("presentacion"));
+    
+    let prod_id_str = scan_res.get("producto_id").and_then(|id| id.as_str()).unwrap();
+    let prod_id = uuid::Uuid::parse_str(prod_id_str).unwrap();
+
+    // Verify in DB that the product was created in quarantine
+    let row: (String, String) = sqlx::query_as(
+        "SELECT estado_catalogo::text, origen_registro::text FROM productos WHERE id = $1"
+    )
+    .bind(prod_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(row.0, "pendiente_aprobacion");
+    assert_eq!(row.1, "api_regulatoria");
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -424,3 +456,5 @@ async fn test_supervisor_catalogacion_inbox_endpoints(pool: PgPool) {
     assert_eq!(items_parse.len(), 1);
     assert_eq!(items_parse[0].get("sku_ref").and_then(|s| s.as_str()), Some("V-1234"));
 }
+
+

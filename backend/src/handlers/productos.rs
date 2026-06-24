@@ -513,14 +513,96 @@ async fn asignar_codigo(
     })))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ApproveProductInput {
+    pub categoria_id: i32,
+    pub control_lote: ControlLote,
+}
+
+async fn list_quarantine(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Vec<Producto>>, AppError> {
+    crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
+
+    let rows = sqlx::query_as::<_, Producto>(
+        "SELECT * FROM productos WHERE estado_catalogo = 'pendiente_aprobacion' AND activo = true ORDER BY created_at DESC"
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(rows))
+}
+
+async fn approve_product(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<ApproveProductInput>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    crate::auth::middleware::require_role(&["admin"])(&claims)?;
+
+    let mut tx = state.pool.begin().await?;
+
+    let exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1 AND estado_catalogo = 'pendiente_aprobacion')"
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if !exists {
+        return Err(AppError::NotFound("Producto no encontrado o no está en cuarentena".to_string()));
+    }
+
+    sqlx::query(
+        "UPDATE productos SET estado_catalogo = 'aprobado', categoria_id = $1, control_lote = $2, updated_at = NOW() WHERE id = $3"
+    )
+    .bind(input.categoria_id)
+    .bind(input.control_lote)
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(Json(json!({ "success": true, "message": "Producto aprobado con éxito" })))
+}
+
+async fn reject_product(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(id): Path<Uuid>,
+) -> Result<axum::http::StatusCode, AppError> {
+    crate::auth::middleware::require_role(&["admin"])(&claims)?;
+
+    let exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1 AND estado_catalogo = 'pendiente_aprobacion')"
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    if !exists {
+        return Err(AppError::NotFound("Producto no encontrado o no está en cuarentena".to_string()));
+    }
+
+    ProductoService::eliminar_producto(&state.pool, id, claims.sub).await?;
+
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
+        .route("/quarantine", get(list_quarantine))
         .route("/scan", get(scan_barcode))
         .route("/scan/asignar", post(asignar_codigo))
         .route("/{id}/precios", get(historial_precios))
         .route("/{id}/codigos", get(listar_codigos).post(agregar_codigo))
         .route("/{id}/codigos/{codigo_id}", axum::routing::delete(eliminar_codigo))
+        .route("/{id}/approve", post(approve_product))
+        .route("/{id}/reject", post(reject_product))
         .route("/{id}", get(obtener).put(actualizar).delete(eliminar))
         .route("/{id}/reactivar", axum::routing::post(reactivar))
         .route(

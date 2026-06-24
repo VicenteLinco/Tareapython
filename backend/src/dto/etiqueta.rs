@@ -18,7 +18,7 @@ pub struct EtiquetaLote {
     pub lote_id: Uuid,
     pub gtin: Option<String>,
     pub numero_lote: String,
-    pub fecha_vencimiento: NaiveDate,
+    pub fecha_vencimiento: Option<NaiveDate>,
     pub fecha_fabricacion: Option<NaiveDate>,
     pub producto_nombre: String,
     pub presentacion_nombre: Option<String>,

@@ -262,9 +262,117 @@ async fn eliminar_borrador_handler(
     Ok(StatusCode::NO_CONTENT)
 }
 
+fn normalize_date(date_str: &str) -> Option<String> {
+    let trimmed = date_str.trim();
+    let yyyy_mm_dd = regex::Regex::new(r"^(\d{4})[-/](\d{2})[-/](\d{2})$").ok()?;
+    if let Some(caps) = yyyy_mm_dd.captures(trimmed) {
+        return Some(format!("{}-{}-{}", &caps[1], &caps[2], &caps[3]));
+    }
+    let dd_mm_yyyy = regex::Regex::new(r"^(\d{2})[-/](\d{2})[-/](\d{4})$").ok()?;
+    if let Some(caps) = dd_mm_yyyy.captures(trimmed) {
+        return Some(format!("{}-{}-{}", &caps[3], &caps[2], &caps[1]));
+    }
+    None
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ParseGuiaInput {
+    pub raw_text: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ItemGuiaParseado {
+    pub nombre_producto: String,
+    pub sku_ref: String,
+    pub lote: Option<String>,
+    pub fecha_vencimiento: Option<String>,
+    pub cantidad: f64,
+    pub precio_unitario: Option<f64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GuiaParseada {
+    pub proveedor: String,
+    pub items: Vec<ItemGuiaParseado>,
+}
+
+pub fn parse_guia_regex(raw_text: &str) -> Option<GuiaParseada> {
+    let lower_text = raw_text.to_lowercase();
+    let proveedor = if lower_text.contains("valtek") {
+        "Valtek SA".to_string()
+    } else if lower_text.contains("roche") {
+        "Roche Diagnostics".to_string()
+    } else if lower_text.contains("abbott") {
+        "Abbott Laboratories".to_string()
+    } else if lower_text.contains("bd ") || lower_text.contains("becton") {
+        "BD".to_string()
+    } else {
+        "Proveedor Genérico".to_string()
+    };
+
+    let mut items = Vec::new();
+    let re = regex::Regex::new(
+        r"(?i)\b(?P<sku>[a-z0-9\-]{3,20})\b\s+(?P<desc>.+?)\s+(?P<qty>\d+(?:\.\d+)?)\s+(?:lote:?\s*)?(?P<lote>[a-z0-9\-]+)\s+(?:vence:?\s*)?(?P<vto>\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4}|\d{2}-\d{2}-\d{4})(?:\s+(?P<price>\d+(?:\.\d+)?))?"
+    ).ok()?;
+
+    for line in raw_text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(caps) = re.captures(line) {
+            let sku = caps.name("sku").map(|m| m.as_str().to_string()).unwrap_or_default();
+            let desc = caps.name("desc").map(|m| m.as_str().trim().to_string()).unwrap_or_default();
+            let qty_str = caps.name("qty").map(|m| m.as_str()).unwrap_or("0");
+            let qty = qty_str.parse::<f64>().unwrap_or(0.0);
+            let lote = caps.name("lote").map(|m| m.as_str().to_string());
+            let vto_raw = caps.name("vto").map(|m| m.as_str());
+            let fecha_vencimiento = vto_raw.and_then(|v| normalize_date(v));
+            let price = caps.name("price").and_then(|m| m.as_str().parse::<f64>().ok());
+
+            items.push(ItemGuiaParseado {
+                nombre_producto: desc,
+                sku_ref: sku,
+                lote,
+                fecha_vencimiento,
+                cantidad: qty,
+                precio_unitario: price,
+            });
+        }
+    }
+
+    if items.is_empty() {
+        None
+    } else {
+        Some(GuiaParseada {
+            proveedor,
+            items,
+        })
+    }
+}
+
+async fn parse_guia(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(payload): Json<ParseGuiaInput>,
+) -> Result<Json<GuiaParseada>, AppError> {
+    crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
+
+    if let Some(parsed) = parse_guia_regex(&payload.raw_text) {
+        return Ok(Json(parsed));
+    }
+
+    let llm_json = crate::services::llm::parse_guia_con_llm(&state.pool, &payload.raw_text).await?;
+    let parsed_guia: GuiaParseada = serde_json::from_value(llm_json)
+        .map_err(|e| AppError::Internal(format!("LLM response did not match GuiaParseada schema: {}", e)))?;
+
+    Ok(Json(parsed_guia))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
+        .route("/parse-guia", post(parse_guia))
         .route("/{id}", get(obtener).delete(eliminar_borrador_handler))
         .route("/{id}/confirmar", post(confirmar))
         .route("/{id}/foto", post(subir_foto).put(subir_foto))

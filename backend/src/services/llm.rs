@@ -950,6 +950,182 @@ REGLAS PARA EL CONSUMO DE INVENTARIO ('registrar_consumo'):
 6. Si el usuario responde de manera negativa, rechaza o indica que no desea proceder (ej. diciendo "No", "Cancelar", "No iniciar de nuevo", "Volver a empezar"), NO invoques la herramienta de consumo. Responde confirmando que el consumo no ha sido registrado (ej. "Entendido, he cancelado el registro del consumo. ¿Qué deseas hacer ahora?")."#.to_string()
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeminiParseGenerationConfig {
+    pub response_mime_type: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeminiParseRequest {
+    pub contents: Vec<GeminiContent>,
+    pub system_instruction: GeminiSystemInstruction,
+    pub generation_config: GeminiParseGenerationConfig,
+}
+
+pub async fn parse_guia_con_llm(pool: &sqlx::PgPool, raw_text: &str) -> Result<serde_json::Value, AppError> {
+    let db_config = load_llm_config(pool).await?;
+    let client = reqwest::Client::new();
+
+    let system_prompt = r#"Eres un asistente experto en extracción de datos. Tu tarea es extraer la información de una guía de despacho o factura pegada como texto plano.
+Debes identificar el proveedor y cada uno de los ítems recibidos.
+Para cada ítem, extrae:
+- nombre_producto (Nombre descriptivo del producto)
+- sku_ref (Código SKU o código de referencia de catálogo del producto/REF)
+- lote (Número de lote si está presente; de lo contrario null)
+- fecha_vencimiento (Fecha de vencimiento en formato YYYY-MM-DD si está presente; de lo contrario null)
+- cantidad (Cantidad física recibida, número positivo)
+- precio_unitario (Precio unitario si está presente; de lo contrario null)
+
+Debes retornar obligatoriamente un objeto JSON que cumpla con el siguiente esquema:
+{
+  "proveedor": "Nombre del Proveedor",
+  "items": [
+    {
+      "nombre_producto": "Reactivo PCR",
+      "sku_ref": "V-1234",
+      "lote": "L88291",
+      "fecha_vencimiento": "2027-12-31",
+      "cantidad": 10.0,
+      "precio_unitario": 25000.0
+    }
+  ]
+}
+
+Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni bloques de código de markdown."#;
+
+    if db_config.provider.to_lowercase() == "gemini" {
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            db_config.model, db_config.api_key
+        );
+
+        let contents = vec![GeminiContent {
+            role: "user".to_string(),
+            parts: vec![GeminiContentPart {
+                text: Some(raw_text.to_string()),
+                function_call: None,
+                function_response: None,
+                thought_signature: None,
+            }],
+        }];
+
+        let request_payload = GeminiParseRequest {
+            contents,
+            system_instruction: GeminiSystemInstruction {
+                parts: vec![GeminiSystemInstructionPart {
+                    text: system_prompt.to_string(),
+                }],
+            },
+            generation_config: GeminiParseGenerationConfig {
+                response_mime_type: "application/json".to_string(),
+            },
+        };
+
+        let response = client
+            .post(&url)
+            .json(&request_payload)
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(format!("Gemini request failed: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status_code = response.status();
+            let err_text = response.text().await.unwrap_or_default();
+            return Err(AppError::Internal(format!(
+                "Gemini API returned error code {}: {}",
+                status_code, err_text
+            )));
+        }
+
+        let gemini_resp: GeminiResponse = response
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to parse Gemini response: {}", e)))?;
+
+        let candidates = gemini_resp.candidates.ok_or_else(|| {
+            AppError::Internal("Gemini response returned no candidates".to_string())
+        })?;
+
+        if candidates.is_empty() {
+            return Err(AppError::Internal("Gemini response candidates list is empty".to_string()));
+        }
+
+        let text = candidates[0].content.parts[0].text.as_deref().ok_or_else(|| {
+            AppError::Internal("Gemini candidate has no text content".to_string())
+        })?;
+
+        let parsed_json: serde_json::Value = serde_json::from_str(text)
+            .map_err(|e| AppError::Internal(format!("Failed to parse LLM text to JSON: {}. Text: {}", e, text)))?;
+
+        Ok(parsed_json)
+    } else {
+        // Ollama / OpenAI fallback
+        let base_url = if db_config.api_url.is_empty() {
+            "http://localhost:11434".to_string()
+        } else {
+            db_config.api_url.trim_end_matches('/').to_string()
+        };
+        let url = format!("{}/v1/chat/completions", base_url);
+
+        let messages = vec![
+            OpenAiMessage {
+                role: "system".to_string(),
+                content: Some(system_prompt.to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            OpenAiMessage {
+                role: "user".to_string(),
+                content: Some(raw_text.to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+        ];
+
+        let request_payload = serde_json::json!({
+            "model": db_config.model,
+            "messages": messages,
+            "response_format": { "type": "json_object" }
+        });
+
+        let response = client
+            .post(&url)
+            .json(&request_payload)
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(format!("Ollama request failed: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status_code = response.status();
+            let err_text = response.text().await.unwrap_or_default();
+            return Err(AppError::Internal(format!(
+                "Ollama API returned error code {}: {}",
+                status_code, err_text
+            )));
+        }
+
+        let openai_resp: OpenAiResponse = response
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to parse Ollama response: {}", e)))?;
+
+        if openai_resp.choices.is_empty() {
+            return Err(AppError::Internal("Ollama response choices list is empty".to_string()));
+        }
+
+        let content = openai_resp.choices[0].message.content.as_deref().ok_or_else(|| {
+            AppError::Internal("Ollama choice has no message content".to_string())
+        })?;
+
+        let parsed_json: serde_json::Value = serde_json::from_str(content)
+            .map_err(|e| AppError::Internal(format!("Failed to parse LLM text to JSON: {}. Text: {}", e, content)))?;
+
+        Ok(parsed_json)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

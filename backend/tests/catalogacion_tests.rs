@@ -259,3 +259,168 @@ async fn test_bloqueo_consumo_cuarentena(pool: PgPool) {
         .unwrap();
     assert_eq!(qty, dec!(10.0), "Stock should not be decremented for blocked quarantine consumption");
 }
+
+async fn mock_ollama_chat(axum::Json(req): axum::Json<serde_json::Value>) -> impl axum::response::IntoResponse {
+    let _prompt = req.get("messages").and_then(|m| m.as_array()).and_then(|a| a.last()).and_then(|o| o.get("content")).and_then(|s| s.as_str()).unwrap_or_default();
+    
+    axum::response::Response::builder()
+        .status(200)
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(r#"{
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "{\"proveedor\": \"Roche Diagnostics\", \"items\": [{\"nombre_producto\": \"PCR Roche\", \"sku_ref\": \"R-5678\", \"lote\": \"L9999\", \"fecha_vencimiento\": \"2028-06-30\", \"cantidad\": 5.0, \"precio_unitario\": 50000.0}]}"
+                    }
+                }
+            ]
+        }"#))
+        .unwrap()
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_parse_guia_regex_y_llm_fallback(pool: PgPool) {
+    use inventario_lab_backend::handlers::recepciones::{parse_guia_regex, GuiaParseada};
+    use inventario_lab_backend::services::llm::parse_guia_con_llm;
+
+    // Test Regex Parsing
+    let valtek_text = "VALTEK SA\nGuia Despacho N 123456\nItem Detalle:\nV-1234  Reactivo PCR Valtek  10  L88291  2027-12-31  25000\nOTR-456  Reactivo Covid  5.5  L7771  31/12/2026";
+    let parsed_regex = parse_guia_regex(valtek_text).unwrap();
+    assert_eq!(parsed_regex.proveedor, "Valtek SA");
+    assert_eq!(parsed_regex.items.len(), 2);
+    assert_eq!(parsed_regex.items[0].sku_ref, "V-1234");
+    assert_eq!(parsed_regex.items[0].nombre_producto, "Reactivo PCR Valtek");
+    assert_eq!(parsed_regex.items[0].cantidad, 10.0);
+    assert_eq!(parsed_regex.items[0].lote.as_deref(), Some("L88291"));
+    assert_eq!(parsed_regex.items[0].fecha_vencimiento.as_deref(), Some("2027-12-31"));
+    assert_eq!(parsed_regex.items[0].precio_unitario, Some(25000.0));
+
+    assert_eq!(parsed_regex.items[1].sku_ref, "OTR-456");
+    assert_eq!(parsed_regex.items[1].nombre_producto, "Reactivo Covid");
+    assert_eq!(parsed_regex.items[1].cantidad, 5.5);
+    assert_eq!(parsed_regex.items[1].lote.as_deref(), Some("L7771"));
+    assert_eq!(parsed_regex.items[1].fecha_vencimiento.as_deref(), Some("2026-12-31"));
+
+    // Test LLM Fallback (Ollama Mock)
+    let app = Router::new().route("/v1/chat/completions", axum::routing::post(mock_ollama_chat));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    unsafe {
+        std::env::set_var("IA_PROVEEDOR", "ollama");
+        std::env::set_var("IA_MODELO", "mock-llama");
+        std::env::set_var("IA_API_URL", format!("http://{}", addr));
+    }
+
+    let unstructured_text = "Proveedor: Roche Diagnostics\nFactura 9876\nTenemos PCR Roche con SKU R-5678 recibidos 5 unidades, lote L9999 y expira en 2028-06-30 con precio 50000";
+    let parsed_llm = parse_guia_con_llm(&pool, unstructured_text).await.unwrap();
+    
+    let guia: GuiaParseada = serde_json::from_value(parsed_llm).unwrap();
+    assert_eq!(guia.proveedor, "Roche Diagnostics");
+    assert_eq!(guia.items.len(), 1);
+    assert_eq!(guia.items[0].sku_ref, "R-5678");
+    assert_eq!(guia.items[0].nombre_producto, "PCR Roche");
+    assert_eq!(guia.items[0].cantidad, 5.0);
+    assert_eq!(guia.items[0].lote.as_deref(), Some("L9999"));
+    assert_eq!(guia.items[0].fecha_vencimiento.as_deref(), Some("2028-06-30"));
+    assert_eq!(guia.items[0].precio_unitario, Some(50000.0));
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_supervisor_catalogacion_inbox_endpoints(pool: PgPool) {
+    use axum::http::StatusCode;
+
+    let app = common::test_app(pool.clone());
+    let token = common::admin_access_token(&pool).await;
+
+    // 1. Create a quarantined product to test list_quarantine
+    let prod_pendiente_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO productos (id, codigo_interno, nombre, unidad_base_id, estado_catalogo, origen_registro, control_lote) \
+         VALUES ($1, 'TEST-QUAR-INBOX', 'Producto Cuarentena Inbox', 1, 'pendiente_aprobacion', 'api_regulatoria', 'con_vto')"
+    )
+    .bind(prod_pendiente_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // 2. Call GET /api/v1/productos/quarantine
+    let (status, list_val) = common::get_json(&app, "/api/v1/productos/quarantine", &token).await;
+    assert_eq!(status, StatusCode::OK);
+    let items = list_val.as_array().unwrap();
+    let has_item = items.iter().any(|item| item.get("codigo_interno").and_then(|c| c.as_str()) == Some("TEST-QUAR-INBOX"));
+    assert!(has_item, "List should include the quarantined product");
+
+    // 3. Call POST /api/v1/productos/{id}/approve
+    let approve_body = serde_json::json!({
+        "categoria_id": 1,
+        "control_lote": "simple"
+    });
+    let (status_approve, resp_approve) = common::post_json(
+        &app,
+        &format!("/api/v1/productos/{}/approve", prod_pendiente_id),
+        &token,
+        approve_body
+    ).await;
+    assert_eq!(status_approve, StatusCode::OK);
+    assert_eq!(resp_approve.get("success").and_then(|b| b.as_bool()), Some(true));
+
+    // Verify it is approved in DB
+    let estado: String = sqlx::query_scalar("SELECT estado_catalogo::text FROM productos WHERE id = $1")
+        .bind(prod_pendiente_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(estado, "aprobado");
+
+    // 4. Create another quarantined product to test reject_product
+    let prod_pendiente_id2 = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO productos (id, codigo_interno, nombre, unidad_base_id, estado_catalogo, origen_registro, control_lote) \
+         VALUES ($1, 'TEST-QUAR-INBOX2', 'Producto Cuarentena Inbox 2', 1, 'pendiente_aprobacion', 'api_regulatoria', 'con_vto')"
+    )
+    .bind(prod_pendiente_id2)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Call POST /api/v1/productos/{id}/reject
+    let (status_reject, _) = common::post_json(
+        &app,
+        &format!("/api/v1/productos/{}/reject", prod_pendiente_id2),
+        &token,
+        serde_json::Value::Null
+    ).await;
+    // reject_product returns NO_CONTENT (204)
+    assert_eq!(status_reject, StatusCode::NO_CONTENT);
+
+    // Verify it is inactive in DB
+    let activo: bool = sqlx::query_scalar("SELECT activo FROM productos WHERE id = $1")
+        .bind(prod_pendiente_id2)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(!activo, "Rejected product should be soft-deleted");
+
+    // 5. Test parse-guia endpoint via HTTP POST /api/v1/recepciones/parse-guia
+    let valtek_text = "VALTEK SA\nGuia Despacho N 123456\nItem Detalle:\nV-1234  Reactivo PCR Valtek  10  L88291  2027-12-31  25000";
+    let parse_body = serde_json::json!({
+        "raw_text": valtek_text
+    });
+    let (status_parse, resp_parse) = common::post_json(
+        &app,
+        "/api/v1/recepciones/parse-guia",
+        &token,
+        parse_body
+    ).await;
+    assert_eq!(status_parse, StatusCode::OK);
+    assert_eq!(resp_parse.get("proveedor").and_then(|p| p.as_str()), Some("Valtek SA"));
+    let items_parse = resp_parse.get("items").unwrap().as_array().unwrap();
+    assert_eq!(items_parse.len(), 1);
+    assert_eq!(items_parse[0].get("sku_ref").and_then(|s| s.as_str()), Some("V-1234"));
+}

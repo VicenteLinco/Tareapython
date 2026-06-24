@@ -356,6 +356,59 @@ export function useRecepcionItems({
     }
   }, [proveedorId, proveedores, fetchSupplierPresentaciones])
 
+  const addProductoConLote = useCallback(async (
+    prodId: string | number,
+    loteParams: { codigo_lote: string; fecha_vencimiento: string; cantidad: number }
+  ) => {
+    try {
+      const res = await api.get(`/productos/${prodId}`)
+      const full = res.data
+      const allPresentaciones = full.presentaciones || []
+      const pres = allPresentaciones[0] || null
+      const catalogoArea = full.areas?.[0]
+      const line: DetalleLineUI = {
+        id: uuidv4(),
+        producto_id: String(prodId),
+        producto_nombre: full.nombre,
+        codigo_interno: full.codigo_interno ?? '',
+        presentacion_id: pres?.id || null,
+        presentacion_nombre: pres?.nombre || '',
+        presentacion_nombre_plural: pres?.nombre_plural || '',
+        cantidad_solicitada: null,
+        factor_conversion: toNum(pres?.factor_conversion || 1),
+        unidad_base_nombre: full.unidad_base?.nombre || '',
+        unidad_base_nombre_plural: full.unidad_base?.nombre_plural || '',
+        area_destino_id: catalogoArea?.id ?? null,
+        area_destino_nombre: catalogoArea?.nombre ?? '',
+        presentaciones: allPresentaciones,
+        precio_unitario: full.precio_unidad
+          ? mulDecimal(full.precio_unidad, pres?.factor_conversion || 1).toDecimalPlaces(0).toString()
+          : '',
+        precio_anterior: full.precio_unidad
+          ? mulDecimal(full.precio_unidad, pres?.factor_conversion || 1).toDecimalPlaces(0).toString()
+          : '',
+        precio_base: full.precio_unidad ? String(full.precio_unidad) : '',
+        imagen_url: full.imagen_url,
+        lotes: [{
+          id: uuidv4(),
+          codigo_lote: loteParams.codigo_lote,
+          fecha_vencimiento: loteParams.fecha_vencimiento,
+          cantidad_presentacion: loteParams.cantidad,
+          incluir_etiqueta: false,
+          cantidad_etiquetas: loteParams.cantidad,
+        }],
+        collapsed: false,
+        control_lote: full.control_lote as ControlLote,
+      }
+      setDetalles(prev => [line, ...prev])
+      setScanCount(prev => prev + 1)
+      notify.success(`${full.nombre} añadido`)
+    } catch {
+      notify.error('Error al cargar producto')
+    }
+  }, [])
+
+
   // ─── Búsqueda manual ────────────────────────────────────────────────────────
 
   const handleSearch = useCallback(async (valor: string) => {
@@ -849,6 +902,7 @@ export function useRecepcionItems({
 
     // handlers - items
     addProducto,
+    addProductoConLote,
     handleSearch,
     handleScanDetected,
     handleConfirmLote,

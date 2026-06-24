@@ -27,6 +27,7 @@ export function ItemsStep({ wizard, items, productos, areas, monedaSimbolo }: Pr
     pendingUnknownCode,
     clearPendingUnknownCode,
     addProducto,
+    addProductoConLote,
     handleSearch,
     handleScanDetected,
     handleChange,
@@ -58,13 +59,18 @@ export function ItemsStep({ wizard, items, productos, areas, monedaSimbolo }: Pr
       {pendingUnknownCode && (
         <AsignarCodigoModal
           codigo={pendingUnknownCode}
-          productos={productos?.map(p => ({ id: String(p.id), nombre: p.nombre, codigo_interno: p.codigo_interno ?? null })) ?? []}
+          productos={productos?.map(p => ({ id: String(p.id), nombre: p.nombre, codigo_interno: p.codigo_interno ?? null, sku: p.sku ?? null })) ?? []}
           onClose={clearPendingUnknownCode}
           onAsignado={() => {
             const code = pendingUnknownCode
             clearPendingUnknownCode()
             handleSearch(code)
           }}
+          onCreadoYAsignado={(prodId, lote, vencimiento) => {
+            clearPendingUnknownCode()
+            addProductoConLote(prodId, { codigo_lote: lote, fecha_vencimiento: vencimiento, cantidad: 1 })
+          }}
+          proveedorId={proveedorId}
         />
       )}
 

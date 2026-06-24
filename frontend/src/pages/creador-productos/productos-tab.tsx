@@ -1141,7 +1141,7 @@ function CreateProductoDialog({
                 </div>
                 <div className="form-control">
                   <label className="label py-0.5">
-                    <span className="label-text text-sm font-medium">SKU / Cód. catálogo</span>
+                    <span className="label-text text-sm font-medium">REF / Cód. catálogo</span>
                     <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
                   </label>
                   <input
@@ -1682,7 +1682,7 @@ function EditProductoDialog({
                   </div>
                   <div className="form-control">
                     <label className="label py-0.5">
-                      <span className="label-text text-sm font-medium">SKU / Cód. catálogo</span>
+                      <span className="label-text text-sm font-medium">REF / Cód. catálogo</span>
                       <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
                     </label>
                     <input
@@ -2035,7 +2035,7 @@ function ProductoDetail({ id }: { id: string }) {
               </div>
               <div className="flex flex-col items-end gap-0.5">
                 {producto.sku && (
-                  <span className="text-[10px] font-mono opacity-50">SKU: {producto.sku}</span>
+                  <span className="text-[10px] font-mono opacity-50">REF: {producto.sku}</span>
                 )}
                 {producto.precio_unidad && (
                   <span className="text-[10px] font-mono opacity-50">${producto.precio_unidad}/u</span>

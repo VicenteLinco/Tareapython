@@ -40,6 +40,7 @@ export interface DetalleLineUI {
   lotes: LoteLineUI[]
   collapsed: boolean
   control_lote: ControlLote
+  estado_catalogo?: 'pendiente_aprobacion' | 'aprobado'
 }
 
 interface Props {
@@ -226,7 +227,14 @@ export function ReceptionItemCard({
         <ProductoImage src={d.imagen_url} size="md" className="shrink-0" />
 
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm truncate">{d.producto_nombre}</p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="font-semibold text-sm truncate">{d.producto_nombre}</p>
+            {d.estado_catalogo === 'pendiente_aprobacion' && (
+              <span className="badge badge-sm badge-warning font-semibold gap-1 text-[10px]">
+                ⚠️ En cuarentena (Pendiente de aprobación)
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2 flex-wrap mt-0.5">
             {d.codigo_interno && (
               <span className="text-xs opacity-50 font-mono">{d.codigo_interno}</span>

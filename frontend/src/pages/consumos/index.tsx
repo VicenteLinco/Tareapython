@@ -564,7 +564,11 @@ export default function ConsumosPage() {
   const handleScanLote = useCallback(async (loteId: string) => {
     try {
       const { data: lote } = await api.get<LoteDetalleResponse>(`/lotes/${loteId}`)
-      const { data: prod } = await api.get<ProductoDetalleResponse>(`/productos/${lote.producto_id}`)
+      const { data: prod } = await api.get<ProductoDetalleResponse & { estado_catalogo?: string }>(`/productos/${lote.producto_id}`)
+      if (prod.estado_catalogo === 'pendiente_aprobacion') {
+        notify.error('Producto en cuarentena (Pendiente de aprobación)')
+        return
+      }
       const areasConStock = lote.stock_por_area ?? []
       const areaSel = (areaFiltro && areasConStock.find(a => a.area_id === areaFiltro)) || areasConStock[0]
       const stockTotal = areasConStock.reduce((s, a) => s + Number(a.cantidad), 0)
@@ -607,7 +611,11 @@ export default function ConsumosPage() {
   // GS1 DataMatrix: el backend resuelve GTIN→producto + lote; respetamos el lote escaneado.
   const handleScanGs1 = useCallback(async (rawCode: string) => {
     try {
-      const { data } = await api.get<ScanGs1Response>('/productos/scan', { params: { codigo: rawCode } })
+      const { data } = await api.get<ScanGs1Response & { estado_catalogo?: string }>('/productos/scan', { params: { codigo: rawCode } })
+      if (data?.estado_catalogo === 'pendiente_aprobacion') {
+        notify.error('Producto en cuarentena (Pendiente de aprobación)')
+        return
+      }
       if (!data?.encontrado || data.tipo !== 'gs1') {
         // El backend no lo resolvió como GS1 → caemos a búsqueda por texto.
         await buscarYAgregarFefo(rawCode)
@@ -668,6 +676,18 @@ export default function ConsumosPage() {
     const trimmed = code.trim()
     // Nuestras etiquetas codifican el lote_id (UUID) → resolución por lote exacto.
     if (UUID_RE.test(trimmed)) { await handleScanLote(trimmed); return }
+
+    // Precheck if the product is in quarantine
+    try {
+      const scanRes = await api.get<{ encontrado?: boolean; estado_catalogo?: string }>('/productos/scan', { params: { codigo: trimmed } })
+      if (scanRes.data?.encontrado && scanRes.data?.estado_catalogo === 'pendiente_aprobacion') {
+        notify.error('Producto en cuarentena (Pendiente de aprobación)')
+        return
+      }
+    } catch {
+      // Ignorar error de scan previo para no romper el flujo principal
+    }
+
     // Código GS1 (DataMatrix GTIN+lote+venc) → flujo con lote escaneado.
     if (parseGS1(trimmed)) { await handleScanGs1(trimmed); return }
     // Otro código (texto, código de barras de proveedor) → búsqueda de producto + FEFO.

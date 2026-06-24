@@ -207,6 +207,7 @@ pub struct CrearProductoParams {
     pub requiere_cadena_frio: bool,
     pub dias_estabilidad_abierto: Option<i32>,
     pub clase_riesgo: Option<String>,
+    pub fabricante: Option<String>,
     pub pres_nombre: Option<String>,
     pub pres_nombre_plural: Option<String>,
     pub pres_factor: Option<Decimal>,
@@ -234,6 +235,7 @@ pub struct ActualizarProductoParams {
     pub requiere_cadena_frio: Option<bool>,
     pub dias_estabilidad_abierto: Option<i32>,
     pub clase_riesgo: Option<String>,
+    pub fabricante: Option<String>,
     pub pres_nombre: Option<String>,
     pub pres_nombre_plural: Option<String>,
     pub pres_factor: Option<Decimal>,
@@ -312,10 +314,10 @@ impl ProductoService {
                (codigo_interno, nombre, descripcion, categoria_id, unidad_base_id,
                 proveedor_id, sku, precio_unidad,
                 ubicacion,
-                temperatura_almacenamiento, requiere_cadena_frio, dias_estabilidad_abierto, clase_riesgo,
+                temperatura_almacenamiento, requiere_cadena_frio, dias_estabilidad_abierto, clase_riesgo, fabricante,
                 pres_nombre, pres_nombre_plural, pres_factor, pres_codigo_barras, pres_gtin, pres_gs1_habilitado,
                 control_lote, estado_catalogo, origen_registro)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
                RETURNING *"#,
         )
         .bind(&codigo)
@@ -331,6 +333,7 @@ impl ProductoService {
         .bind(params.requiere_cadena_frio)
         .bind(params.dias_estabilidad_abierto)
         .bind(&params.clase_riesgo)
+        .bind(&params.fabricante)
         .bind(&params.pres_nombre)
         .bind(&params.pres_nombre_plural)
         .bind(params.pres_factor)
@@ -585,6 +588,7 @@ impl ProductoService {
                    pres_gtin = COALESCE($16, pres_gtin),
                    pres_gs1_habilitado = COALESCE($17, pres_gs1_habilitado),
                    control_lote = COALESCE($20, control_lote),
+                   fabricante = $21,
                    version = version + 1, updated_at = NOW()
                WHERE id = $18 AND version = $19
                RETURNING *"#,
@@ -613,6 +617,7 @@ impl ProductoService {
         .bind(params.id)
         .bind(params.version_esperada)
         .bind(&params.control_lote)
+        .bind(&params.fabricante)
         .fetch_optional(&mut *tx)
         .await?
         .ok_or(AppError::VersionConflict {
@@ -808,6 +813,7 @@ impl ProductoService {
             imagen_url: Option<String>,
             precio_unidad: Option<Decimal>,
             control_lote: crate::domain::ControlLote,
+            estado_catalogo: crate::domain::EstadoCatalogo,
         }
 
         // 1. Search by presentation barcode
@@ -822,7 +828,8 @@ impl ProductoService {
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
                  p.imagen_url AS imagen_url,
                  p.precio_unidad,
-                 p.control_lote
+                 p.control_lote,
+                 p.estado_catalogo
                FROM presentaciones pr
                JOIN productos p ON p.id = pr.producto_id
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
@@ -849,6 +856,7 @@ impl ProductoService {
                 "imagen_url": r.imagen_url,
                 "precio_unidad": r.precio_unidad,
                 "control_lote": r.control_lote,
+                "estado_catalogo": r.estado_catalogo,
             });
             if let Some(gs1) = gs1 {
                 out["gs1"] = json!({
@@ -877,6 +885,7 @@ impl ProductoService {
             imagen_url: Option<String>,
             precio_unidad: Option<Decimal>,
             control_lote: crate::domain::ControlLote,
+            estado_catalogo: crate::domain::EstadoCatalogo,
         }
 
         let alias_row = sqlx::query_as::<_, AliasRow>(
@@ -887,7 +896,8 @@ impl ProductoService {
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
                  p.imagen_url AS imagen_url,
                  p.precio_unidad,
-                 p.control_lote
+                 p.control_lote,
+                 p.estado_catalogo
                FROM producto_codigos_barras pcb
                JOIN productos p ON p.id = pcb.producto_id
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
@@ -916,6 +926,7 @@ impl ProductoService {
                 "imagen_url": ar.imagen_url,
                 "precio_unidad": ar.precio_unidad,
                 "control_lote": ar.control_lote,
+                "estado_catalogo": ar.estado_catalogo,
             }));
         }
 
@@ -932,6 +943,7 @@ impl ProductoService {
             imagen_url: Option<String>,
             precio_unidad: Option<Decimal>,
             control_lote: crate::domain::ControlLote,
+            estado_catalogo: crate::domain::EstadoCatalogo,
         }
 
         // 2. Search by product internal code
@@ -942,7 +954,8 @@ impl ProductoService {
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
                  p.imagen_url AS imagen_url,
                  p.precio_unidad,
-                 p.control_lote
+                 p.control_lote,
+                 p.estado_catalogo
                FROM productos p
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
                WHERE UPPER(p.codigo_interno) = UPPER($1) AND p.activo = true
@@ -968,6 +981,7 @@ impl ProductoService {
                 "imagen_url": r.imagen_url,
                 "precio_unidad": r.precio_unidad,
                 "control_lote": r.control_lote,
+                "estado_catalogo": r.estado_catalogo,
             }));
         }
 
@@ -990,6 +1004,7 @@ impl ProductoService {
             imagen_url: Option<String>,
             precio_unidad: Option<Decimal>,
             control_lote: crate::domain::ControlLote,
+            estado_catalogo: crate::domain::EstadoCatalogo,
         }
 
         let row3 = sqlx::query_as::<_, Row3>(
@@ -1018,7 +1033,8 @@ impl ProductoService {
                   ORDER BY s.cantidad DESC LIMIT 1) as area_nombre,
                  p.imagen_url AS imagen_url,
                  p.precio_unidad,
-                 p.control_lote
+                 p.control_lote,
+                 p.estado_catalogo
                FROM lotes l
                JOIN productos p ON p.id = l.producto_id
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
@@ -1049,6 +1065,7 @@ impl ProductoService {
                 "imagen_url": r.imagen_url,
                 "precio_unidad": r.precio_unidad,
                 "control_lote": r.control_lote,
+                "estado_catalogo": r.estado_catalogo,
             }));
         }
 
@@ -1076,7 +1093,7 @@ impl ProductoService {
 
                 let params = CrearProductoParams {
                     nombre: dispositivo.nombre,
-                    descripcion: Some("Importado automáticamente mediante API regulatoria".to_string()),
+                    descripcion: dispositivo.descripcion,
                     categoria_id: None,
                     unidad_base_id: base_unit.0,
                     proveedor_id: None,
@@ -1087,6 +1104,7 @@ impl ProductoService {
                     requiere_cadena_frio: false,
                     dias_estabilidad_abierto: None,
                     clase_riesgo: dispositivo.clase_riesgo,
+                    fabricante: dispositivo.fabricante,
                     pres_nombre: Some("Unidad".to_string()),
                     pres_nombre_plural: Some("Unidades".to_string()),
                     pres_factor: Some(Decimal::ONE),
@@ -1126,6 +1144,7 @@ impl ProductoService {
                     "imagen_url": prod.imagen_url,
                     "precio_unidad": prod.precio_unidad,
                     "control_lote": prod.control_lote,
+                    "estado_catalogo": prod.estado_catalogo,
                 });
                 if let Some(ref gs1_val) = gs1 {
                     out["gs1"] = json!({
@@ -1147,6 +1166,87 @@ impl ProductoService {
                     Ok(json!({ "encontrado": false, "codigo": codigo }))
                 }
             }
+        }
+    }
+
+    pub async fn lookup_gtin(
+        pool: &PgPool,
+        code: &str,
+    ) -> Result<serde_json::Value, AppError> {
+        let code = code.trim();
+        if code.is_empty() {
+            return Err(AppError::Validation(
+                "Se requiere un código para la búsqueda".into(),
+            ));
+        }
+
+        // 1. Check local DB
+        #[derive(sqlx::FromRow)]
+        struct LocalFoundRow {
+            id: Uuid,
+            nombre: String,
+            codigo_interno: String,
+            estado_catalogo: crate::domain::EstadoCatalogo,
+        }
+
+        let local_match = sqlx::query_as::<_, LocalFoundRow>(
+            r#"SELECT id, nombre, codigo_interno, estado_catalogo
+               FROM productos
+               WHERE (
+                   sku = $1
+                   OR pres_gtin = $1
+                   OR pres_codigo_barras = $1
+                   OR id IN (SELECT producto_id FROM presentaciones WHERE (codigo_barras = $1 OR gtin = $1) AND activa = true)
+                   OR id IN (SELECT producto_id FROM producto_codigos_barras WHERE codigo = $1 AND activo = true)
+               )
+               AND deleted_at IS NULL
+               LIMIT 1"#
+        )
+        .bind(code)
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some(p) = local_match {
+            return Ok(json!({
+                "found": true,
+                "source": "local",
+                "existing_product": {
+                    "id": p.id,
+                    "nombre": p.nombre,
+                    "codigo_interno": p.codigo_interno,
+                    "estado_catalogo": p.estado_catalogo,
+                },
+                "data": null,
+                "message": "Este producto ya existe en el catálogo"
+            }));
+        }
+
+        // 2. Check external APIs via lookup_dispositivo
+        match crate::services::api_regulatoria_service::lookup_dispositivo(pool, code).await {
+            Ok(disp) => {
+                Ok(json!({
+                    "found": true,
+                    "source": "api_regulatoria",
+                    "existing_product": null,
+                    "data": {
+                        "nombre": disp.nombre,
+                        "fabricante": disp.fabricante,
+                        "sku_ref": disp.sku_ref,
+                        "clase_riesgo": disp.clase_riesgo,
+                        "descripcion": disp.descripcion,
+                    }
+                }))
+            }
+            Err(AppError::NotFound(_)) => {
+                Ok(json!({
+                    "found": false,
+                    "source": null,
+                    "existing_product": null,
+                    "data": null,
+                    "message": "No se encontró información regulatoria para el código proporcionado"
+                }))
+            }
+            Err(e) => Err(e),
         }
     }
 

@@ -1,5 +1,5 @@
 // frontend/src/pages/recepciones/hooks/useRecepcionItems.ts
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
@@ -91,6 +91,7 @@ interface ScanProductData {
   precio_unidad?: number | string | null
   imagen_url?: string | null
   control_lote?: ControlLote
+  estado_catalogo?: 'pendiente_aprobacion' | 'aprobado'
 }
 
 /**
@@ -142,6 +143,7 @@ function buildDetalleLineFromScan(
     }],
     collapsed: false,
     control_lote: data.control_lote || 'con_vto',
+    estado_catalogo: data.estado_catalogo || 'aprobado',
   }
 }
 
@@ -197,6 +199,7 @@ export function useRecepcionItems({
   const [detalles, setDetalles] = useState<DetalleLineUI[]>([])
   const [scannerPaused, setScannerPaused] = useState(false)
   const [scanCount, setScanCount] = useState(0)
+  const isProcessingScan = useRef(false)
   const [pendingScan, setPendingScan] = useState<PendingScan | null>(null)
   const [pendingUnknownCode, setPendingUnknownCode] = useState<string | null>(null)
 
@@ -348,6 +351,7 @@ export function useRecepcionItems({
         }],
         collapsed: false,
         control_lote: full.control_lote as ControlLote,
+        estado_catalogo: full.estado_catalogo,
       }
       setDetalles(prev => [line, ...prev])
       notify.success(`${prod.nombre} añadido`)
@@ -399,6 +403,7 @@ export function useRecepcionItems({
         }],
         collapsed: false,
         control_lote: full.control_lote as ControlLote,
+        estado_catalogo: full.estado_catalogo,
       }
       setDetalles(prev => [line, ...prev])
       setScanCount(prev => prev + 1)
@@ -412,9 +417,11 @@ export function useRecepcionItems({
   // ─── Búsqueda manual ────────────────────────────────────────────────────────
 
   const handleSearch = useCallback(async (valor: string) => {
+    if (scannerPaused || isProcessingScan.current) return
     const q = valor.trim()
     if (q.length < 2) return
 
+    isProcessingScan.current = true
     try {
       const res = await api.get('/productos/scan', { params: { codigo: q } })
       const data = res.data
@@ -481,6 +488,7 @@ export function useRecepcionItems({
           lotes: [nuevoLote],
           collapsed: false,
           control_lote: data.control_lote || 'con_vto',
+          estado_catalogo: data.estado_catalogo || 'aprobado',
         }
         setDetalles(prev => [line, ...prev])
         notify.success(`Lote ${data.numero_lote} añadido`)
@@ -493,15 +501,19 @@ export function useRecepcionItems({
       }
     } catch {
       notify.error('Error en la búsqueda')
+    } finally {
+      isProcessingScan.current = false
     }
-  }, [detalles, productos, validarProveedorEscaneado, addProducto])
+  }, [scannerPaused, detalles, productos, validarProveedorEscaneado, addProducto])
 
   // ─── Scanner inline ──────────────────────────────────────────────────────────
 
   const handleScanDetected = useCallback(async (code: string) => {
+    if (scannerPaused || isProcessingScan.current) return
     const q = code.trim()
     if (!q) return
 
+    isProcessingScan.current = true
     try {
       const res = await api.get('/productos/scan', { params: { codigo: q } })
       const data = res.data
@@ -625,8 +637,10 @@ export function useRecepcionItems({
       })
     } catch {
       notify.error('Error al buscar producto')
+    } finally {
+      isProcessingScan.current = false
     }
-  }, [detalles, validarProveedorEscaneado])
+  }, [scannerPaused, detalles, validarProveedorEscaneado])
 
   // ─── Confirmar lote desde bottom sheet ──────────────────────────────────────
 
@@ -675,6 +689,7 @@ export function useRecepcionItems({
         }],
         collapsed: false,
         control_lote: full.control_lote as ControlLote,
+        estado_catalogo: full.estado_catalogo || 'aprobado',
       }
       setDetalles(prev => [line, ...prev])
       setScanCount(prev => prev + 1)

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Html5Qrcode } from 'html5-qrcode'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Search, Eye, Tag, FileText, RotateCcw, Copy, Download, LayoutGrid, Table2, PackagePlus, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Eye, Tag, FileText, RotateCcw, Copy, Download, LayoutGrid, Table2, PackagePlus, X, AlertCircle } from 'lucide-react'
 import { comprimirImagen } from '@/lib/image-utils'
 import { ProductoImage } from '@/components/ui/producto-image'
 import { DataTable } from '@/components/ui/data-table'
@@ -83,6 +83,7 @@ interface ProductoDetailResponse {
   dias_estabilidad_abierto: number | null
   clase_riesgo: string | null
   control_lote: ControlLote
+  fabricante: string | null
   activo: boolean
   version: number
   codigos_barras?: { id: number; codigo: string }[]
@@ -584,6 +585,10 @@ export default function ProductosTab() {
         areas={areas ?? []}
         proveedores={proveedores ?? []}
         duplicateSource={duplicateSource}
+        onViewDetail={(id) => {
+          setDetailId(id)
+          setCreateOpen(false)
+        }}
       />
 
       {editId && (
@@ -806,7 +811,7 @@ function BarcodeScanner({ onScan, onClose }: { onScan: (code: string) => void; o
 // ── Create Dialog ────────────────────────────────────────────
 
 function CreateProductoDialog({
-  open, onClose, categorias, unidades, areas, proveedores, duplicateSource,
+  open, onClose, categorias, unidades, areas, proveedores, duplicateSource, onViewDetail,
 }: {
   open: boolean
   onClose: () => void
@@ -815,8 +820,10 @@ function CreateProductoDialog({
   areas: Area[]
   proveedores: Proveedor[]
   duplicateSource?: ProductoDetailResponse | null
+  onViewDetail?: (id: string) => void
 }) {
   const queryClient = useQueryClient()
+  const [, setSearchParams] = useSearchParams()
   const { data: presFormatos = [] } = useQuery({
     queryKey: ['presentacion-formatos'],
     queryFn: () => api.get<PresFormatoRow[]>('/presentacion-formatos').then((r) => r.data),
@@ -830,6 +837,7 @@ function CreateProductoDialog({
     area_id: '',
     ubicacion: '',
     control_lote: 'con_vto' as ControlLote,
+    fabricante: '',
     // flat supplier fields
     proveedor_id: '',
     sku: '',
@@ -853,6 +861,73 @@ function CreateProductoDialog({
   const [newUnidadOpen, setNewUnidadOpen] = useState(false)
   const [newAreaOpen, setNewAreaOpen] = useState(false)
 
+  // Autocomplete and duplicate warning states
+  const [lookupLoading, setLookupLoading] = useState(false)
+  const [duplicateWarning, setDuplicateWarning] = useState<{
+    id: string
+    nombre: string
+    codigo_interno: string
+    estado_catalogo: 'pendiente_aprobacion' | 'aprobado'
+  } | null>(null)
+
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  const performGtinLookup = async (code: string) => {
+    if (!code) return
+    setLookupLoading(true)
+    setDuplicateWarning(null)
+    try {
+      const { data: res } = await api.get<any>('/productos/scan/lookup', { params: { codigo: code } })
+      if (res.found) {
+        if (res.existing_product) {
+          setDuplicateWarning(res.existing_product)
+          notify.warning('Código de barras ya registrado en el catálogo')
+        } else if (res.data) {
+          setForm((f) => ({
+            ...f,
+            nombre: res.data.nombre || f.nombre,
+            fabricante: res.data.fabricante || f.fabricante,
+            sku: res.data.sku_ref || f.sku,
+            descripcion: res.data.descripcion || f.descripcion,
+          }))
+          if (res.data.clase_riesgo) {
+            setClaseRiesgo(res.data.clase_riesgo)
+          }
+          notify.success('Información autocompletada desde registro regulatorio')
+        }
+      } else {
+        notify.info('El código no se encuentra en el registro regulatorio')
+      }
+    } catch (err) {
+      console.error(err)
+      notify.error('Error al realizar la consulta del código')
+    } finally {
+      setLookupLoading(false)
+    }
+  }
+
+  const handleGtinLookup = () => {
+    const code = form.pres_codigo_barras.trim()
+    if (!code) {
+      notify.error('Ingresa un código de barras para buscar')
+      return
+    }
+    performGtinLookup(code)
+  }
+
+  useEffect(() => {
+    const code = form.pres_codigo_barras.trim()
+    if (/^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(code)) {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+      debounceTimerRef.current = setTimeout(() => {
+        performGtinLookup(code)
+      }, 500)
+    }
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+    }
+  }, [form.pres_codigo_barras])
+
   useEffect(() => {
     if (!open || !duplicateSource) return
     setForm({
@@ -863,6 +938,7 @@ function CreateProductoDialog({
       area_id: duplicateSource.areas?.[0]?.id ? String(duplicateSource.areas[0].id) : '',
       ubicacion: duplicateSource.ubicacion ?? '',
       control_lote: duplicateSource.control_lote ?? 'con_vto',
+      fabricante: duplicateSource.fabricante ?? '',
       proveedor_id: duplicateSource.proveedor_id ? String(duplicateSource.proveedor_id) : '',
       sku: duplicateSource.sku ?? '',
       precio_unidad: duplicateSource.precio_unidad ?? '',
@@ -894,6 +970,7 @@ function CreateProductoDialog({
     setForm({
       nombre: '', descripcion: '', categoria_id: '', unidad_base_id: '',
       area_id: '', ubicacion: '', control_lote: 'con_vto' as ControlLote,
+      fabricante: '',
       proveedor_id: '', sku: '', precio_unidad: '',
       pres_nombre: '', pres_nombre_plural: '', pres_factor: '', pres_codigo_barras: '',
       imagen_data_url: null,
@@ -903,6 +980,7 @@ function CreateProductoDialog({
     setRequiereCadenaFrio(false)
     setDiasEstabilidadAbierto(null)
     setClaseRiesgo(null)
+    setDuplicateWarning(null)
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -924,6 +1002,7 @@ function CreateProductoDialog({
       area_ids: [Number(form.area_id)],
       ubicacion: form.ubicacion.trim() || undefined,
       control_lote: form.control_lote,
+      fabricante: form.fabricante.trim() || undefined,
       pres_nombre: form.pres_nombre || undefined,
       pres_nombre_plural: form.pres_nombre_plural || undefined,
       pres_factor: form.pres_factor ? Number(form.pres_factor) : undefined,
@@ -956,6 +1035,52 @@ function CreateProductoDialog({
       <Dialog open={open} onClose={handleClose} title="Nuevo producto" className="max-w-2xl" closeOnBackdrop={false}>
         <form onSubmit={handleSubmit} className="space-y-4">
 
+          {/* Warning Banner for Duplicates */}
+          {duplicateWarning && (
+            <div className="alert alert-warning text-xs flex flex-col items-start gap-2 bg-warning/15 border-warning p-3 rounded-lg">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 text-warning" />
+                <div>
+                  <span className="font-semibold">Código duplicado detectado: </span>
+                  {duplicateWarning.estado_catalogo === 'aprobado' ? (
+                    <span>El producto ya existe en el catálogo aprobado con código <strong className="font-mono">{duplicateWarning.codigo_interno}</strong> ("{duplicateWarning.nombre}").</span>
+                  ) : (
+                    <span>El producto está registrado en cuarentena ("{duplicateWarning.nombre}").</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-2 mt-2 w-full justify-end">
+                {duplicateWarning.estado_catalogo === 'aprobado' ? (
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-primary font-semibold text-primary-content"
+                    onClick={() => onViewDetail?.(duplicateWarning.id)}
+                  >
+                    Ver detalle del producto
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-warning font-semibold text-warning-content"
+                    onClick={() => {
+                      setSearchParams({ tab: 'catalogacion' })
+                      handleClose()
+                    }}
+                  >
+                    Ir a Bandeja de Catalogación
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-xs btn-ghost btn-outline border-base-300"
+                  onClick={() => setDuplicateWarning(null)}
+                >
+                  Omitir advertencia
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* ── Identificación ── */}
           <div className="space-y-3">
             <div className="flex items-center gap-1.5">
@@ -971,7 +1096,7 @@ function CreateProductoDialog({
                 </label>
                 <input
                   type="text"
-                  className="input input-bordered input-sm h-9"
+                  className="input input-bordered input-sm h-9 bg-base-100 border-base-300"
                   value={form.nombre}
                   onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
                   placeholder="Nombre del producto"
@@ -984,7 +1109,7 @@ function CreateProductoDialog({
                   <span className="label-text-alt text-error text-[10px]">requerido</span>
                 </label>
                 <select
-                  className="select select-bordered select-sm h-9 text-sm"
+                  className="select select-bordered select-sm h-9 text-sm bg-base-100 border-base-300"
                   value={form.unidad_base_id}
                   onChange={(e) => handleUnidadChange(e.target.value)}
                 >
@@ -1004,7 +1129,7 @@ function CreateProductoDialog({
                   <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
                 </label>
                 <select
-                  className="select select-bordered select-sm h-9 text-sm"
+                  className="select select-bordered select-sm h-9 text-sm bg-base-100 border-base-300"
                   value={form.categoria_id}
                   onChange={(e) => handleCategoriaChange(e.target.value)}
                 >
@@ -1017,11 +1142,27 @@ function CreateProductoDialog({
               </div>
               <div className="form-control">
                 <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Fabricante</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                </label>
+                <input
+                  type="text"
+                  className="input input-bordered input-sm h-9 bg-base-100 border-base-300"
+                  value={form.fabricante}
+                  onChange={(e) => setForm((f) => ({ ...f, fabricante: e.target.value }))}
+                  placeholder="Ej: Roche, Siemens"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="form-control">
+                <label className="label py-0.5">
                   <span className="label-text text-sm font-medium">Área</span>
                   <span className="label-text-alt text-error text-[10px]">requerido</span>
                 </label>
                 <select
-                  className={cn("select select-bordered select-sm h-9 text-sm", !form.area_id && "select-error")}
+                  className={cn("select select-bordered select-sm h-9 text-sm bg-base-100 border-base-300", !form.area_id && "select-error")}
                   value={form.area_id}
                   onChange={(e) => handleAreaChange(e.target.value)}
                 >
@@ -1033,23 +1174,22 @@ function CreateProductoDialog({
                 </select>
                 <p className="text-[10px] text-base-content/40 mt-0.5">Sección del laboratorio donde este producto pertenece y se usa</p>
               </div>
-            </div>
-
-            <div className="form-control">
-              <label className="label py-0.5">
-                <span className="label-text text-sm font-medium">Control de lote</span>
-                <span className="label-text-alt text-base-content/40 text-[10px]">requerido</span>
-              </label>
-              <select
-                className="select select-bordered select-sm h-9 text-sm"
-                value={form.control_lote}
-                onChange={(e) => setForm((f) => ({ ...f, control_lote: e.target.value as ControlLote }))}
-              >
-                {CONTROL_LOTE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-              <p className="text-[10px] text-base-content/40 mt-0.5">{controlLoteHelp(form.control_lote)}</p>
+              <div className="form-control">
+                <label className="label py-0.5">
+                  <span className="label-text text-sm font-medium">Control de lote</span>
+                  <span className="label-text-alt text-base-content/40 text-[10px]">requerido</span>
+                </label>
+                <select
+                  className="select select-bordered select-sm h-9 text-sm bg-base-100 border-base-300"
+                  value={form.control_lote}
+                  onChange={(e) => setForm((f) => ({ ...f, control_lote: e.target.value as ControlLote }))}
+                >
+                  {CONTROL_LOTE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-base-content/40 mt-0.5">{controlLoteHelp(form.control_lote)}</p>
+              </div>
             </div>
 
             <div className="form-control">
@@ -1057,24 +1197,37 @@ function CreateProductoDialog({
                 <span className="label-text text-sm font-medium">Código de barras</span>
                 <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
               </label>
-              <div className="flex gap-1">
+              <div className="flex gap-1.5">
                 <input
                   type="text"
-                  className="input input-bordered input-sm h-9 flex-1 font-mono"
+                  className="input input-bordered input-sm h-9 flex-1 font-mono bg-base-100 border-base-300"
                   value={form.pres_codigo_barras}
                   onChange={(e) => setForm((f) => ({ ...f, pres_codigo_barras: e.target.value }))}
                   placeholder="EAN-13, Code-128..."
                 />
                 <button
                   type="button"
-                  className="btn btn-sm btn-ghost px-2"
+                  className="btn btn-sm btn-ghost border border-base-300 px-2"
                   onClick={() => setScannerOpen(true)}
                   title="Escanear código de barras"
                 >
                   📷
                 </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary h-9 font-semibold text-xs gap-1"
+                  onClick={handleGtinLookup}
+                  disabled={lookupLoading || !form.pres_codigo_barras.trim()}
+                  title="Buscar/Autocompletar con GTIN"
+                >
+                  {lookupLoading ? (
+                    <span className="loading loading-spinner loading-xs" />
+                  ) : (
+                    "Buscar GTIN"
+                  )}
+                </button>
               </div>
-              <p className="text-[10px] text-base-content/40 mt-0.5">Código para escanear en recepción y consumos</p>
+              <p className="text-[10px] text-base-content/40 mt-0.5">Código para escanear. Al ingresar 8, 12, 13 o 14 dígitos, se consultará automáticamente el registro regulatorio.</p>
             </div>
 
             <div className="form-control">
@@ -1084,7 +1237,7 @@ function CreateProductoDialog({
               </label>
               <input
                 type="text"
-                className="input input-bordered input-sm h-9"
+                className="input input-bordered input-sm h-9 bg-base-100 border-base-300"
                 value={form.ubicacion}
                 onChange={(e) => setForm((f) => ({ ...f, ubicacion: e.target.value }))}
                 placeholder="Ej: Refrigerador 2, estante superior"
@@ -1405,6 +1558,7 @@ function EditProductoDialog({
     area_id: '',
     ubicacion: '',
     control_lote: 'con_vto' as ControlLote,
+    fabricante: '',
     // flat supplier fields
     proveedor_id: '',
     sku: '',
@@ -1433,6 +1587,7 @@ function EditProductoDialog({
         area_id: areaId ? String(areaId) : '',
         ubicacion: producto.ubicacion ?? '',
         control_lote: producto.control_lote ?? 'con_vto',
+        fabricante: producto.fabricante ?? '',
         proveedor_id: producto.proveedor_id ? String(producto.proveedor_id) : '',
         sku: producto.sku ?? '',
         precio_unidad: producto.precio_unidad ?? '',
@@ -1478,6 +1633,7 @@ function EditProductoDialog({
       area_ids: form.area_id ? [Number(form.area_id)] : undefined,
       ubicacion: form.ubicacion.trim() || null,
       control_lote: form.control_lote,
+      fabricante: form.fabricante.trim() || null,
       pres_nombre: form.pres_nombre || null,
       pres_nombre_plural: form.pres_nombre_plural || null,
       pres_factor: form.pres_factor ? Number(form.pres_factor) : null,
@@ -1542,7 +1698,7 @@ function EditProductoDialog({
                     <span className="label-text text-sm font-medium">Tipo / Categoría</span>
                   </label>
                   <select
-                    className="select select-bordered select-sm h-9 text-sm"
+                    className="select select-bordered select-sm h-9 text-sm bg-base-100 border-base-300"
                     value={form.categoria_id}
                     onChange={(e) => setForm((f) => ({ ...f, categoria_id: e.target.value }))}
                   >
@@ -1554,11 +1710,27 @@ function EditProductoDialog({
                 </div>
                 <div className="form-control">
                   <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Fabricante</span>
+                    <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="input input-bordered input-sm h-9 bg-base-100 border-base-300"
+                    value={form.fabricante}
+                    onChange={(e) => setForm((f) => ({ ...f, fabricante: e.target.value }))}
+                    placeholder="Ej: Roche, Siemens"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-control">
+                  <label className="label py-0.5">
                     <span className="label-text text-sm font-medium">Área</span>
                     <span className="label-text-alt text-error text-[10px]">requerido</span>
                   </label>
                   <select
-                    className={cn("select select-bordered select-sm h-9 text-sm", !form.area_id && "select-error")}
+                    className={cn("select select-bordered select-sm h-9 text-sm bg-base-100 border-base-300", !form.area_id && "select-error")}
                     value={form.area_id}
                     onChange={(e) => handleAreaChange(e.target.value)}
                   >
@@ -1570,23 +1742,22 @@ function EditProductoDialog({
                   </select>
                   <p className="text-[10px] text-base-content/40 mt-0.5">Sección del laboratorio donde este producto pertenece y se usa</p>
                 </div>
-              </div>
-
-              <div className="form-control">
-                <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">Control de lote</span>
-                  <span className="label-text-alt text-base-content/40 text-[10px]">requerido</span>
-                </label>
-                <select
-                  className="select select-bordered select-sm h-9 text-sm"
-                  value={form.control_lote}
-                  onChange={(e) => setForm((f) => ({ ...f, control_lote: e.target.value as ControlLote }))}
-                >
-                  {CONTROL_LOTE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-                <p className="text-[10px] text-base-content/40 mt-0.5">{controlLoteHelp(form.control_lote)}</p>
+                <div className="form-control">
+                  <label className="label py-0.5">
+                    <span className="label-text text-sm font-medium">Control de lote</span>
+                    <span className="label-text-alt text-base-content/40 text-[10px]">requerido</span>
+                  </label>
+                  <select
+                    className="select select-bordered select-sm h-9 text-sm bg-base-100 border-base-300"
+                    value={form.control_lote}
+                    onChange={(e) => setForm((f) => ({ ...f, control_lote: e.target.value as ControlLote }))}
+                  >
+                    {CONTROL_LOTE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-base-content/40 mt-0.5">{controlLoteHelp(form.control_lote)}</p>
+                </div>
               </div>
 
               <div className="form-control">

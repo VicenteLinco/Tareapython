@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Check, X, ShieldAlert, Sparkles, Tag, Layers, RefreshCw, AlertCircle } from 'lucide-react'
+import { Check, X, ShieldAlert, Sparkles, Tag, Layers, RefreshCw, AlertCircle, FileText } from 'lucide-react'
 import {
   useProductosQuarantine,
   useAprobarProductoQuarantine,
   useRechazarProductoQuarantine,
   useCategorias,
+  useUnidadesBasicas,
 } from '@/hooks/dominio'
 import { notify } from '@/lib/notify'
 import type { Producto } from '@/types'
@@ -12,6 +13,7 @@ import type { Producto } from '@/types'
 export default function BandejaCatalogacionTab() {
   const { data: quarantinedProducts, isLoading, refetch, isFetching } = useProductosQuarantine()
   const { data: categorias } = useCategorias()
+  const { data: unidades } = useUnidadesBasicas()
 
   const aprobarMutation = useAprobarProductoQuarantine()
   const rechazarMutation = useRechazarProductoQuarantine()
@@ -21,30 +23,85 @@ export default function BandejaCatalogacionTab() {
   const [selectedCategoriaId, setSelectedCategoriaId] = useState<string>('')
   const [selectedControlLote, setSelectedControlLote] = useState<'simple' | 'con_vto' | 'trazable'>('con_vto')
 
+  // New editable metadata fields
+  const [nombre, setNombre] = useState<string>('')
+  const [descripcion, setDescripcion] = useState<string>('')
+  const [fabricante, setFabricante] = useState<string>('')
+  const [unidadBaseId, setUnidadBaseId] = useState<string>('')
+  const [presNombre, setPresNombre] = useState<string>('')
+  const [presNombrePlural, setPresNombrePlural] = useState<string>('')
+  const [presFactor, setPresFactor] = useState<string>('')
+  const [ubicacion, setUbicacion] = useState<string>('')
+
   const handleOpenApproveModal = (product: Producto) => {
     setSelectedProduct(product)
     setSelectedCategoriaId(product.categoria_id ? String(product.categoria_id) : '')
     setSelectedControlLote((product.control_lote as 'simple' | 'con_vto' | 'trazable') || 'con_vto')
+    setNombre(product.nombre || '')
+    setDescripcion(product.descripcion || '')
+    setFabricante(product.fabricante || '')
+    setUnidadBaseId(product.unidad_base_id ? String(product.unidad_base_id) : '')
+    setPresNombre(product.pres_nombre || '')
+    setPresNombrePlural(product.pres_nombre_plural || '')
+    setPresFactor(product.pres_factor ? String(product.pres_factor) : '')
+    setUbicacion(product.ubicacion || '')
   }
 
   const handleConfirmApprove = () => {
     if (!selectedProduct) return
+    if (!nombre.trim()) {
+      notify.error('El nombre del producto no puede estar vacío')
+      return
+    }
     if (!selectedCategoriaId) {
       notify.error('Selecciona una categoría antes de aprobar')
       return
+    }
+    if (!unidadBaseId) {
+      notify.error('Selecciona una unidad de medida básica')
+      return
+    }
+
+    const payload: any = {
+      nombre: nombre.trim(),
+      descripcion: descripcion.trim() || null,
+      categoria_id: Number(selectedCategoriaId),
+      unidad_base_id: Number(unidadBaseId),
+      control_lote: selectedControlLote,
+      fabricante: fabricante.trim() || null,
+      ubicacion: ubicacion.trim() || null,
+    }
+
+    // Presentation logic
+    if (presNombre.trim() || presNombrePlural.trim() || presFactor.trim()) {
+      payload.pres_nombre = presNombre.trim() || null
+      payload.pres_nombre_plural = presNombrePlural.trim() || null
+      if (presFactor.trim()) {
+        const factor = Number(presFactor)
+        if (isNaN(factor) || factor <= 0) {
+          notify.error('El factor de conversión debe ser un número mayor a 0')
+          return
+        }
+        payload.pres_factor = factor
+      } else {
+        notify.error('Debes indicar el factor de conversión si defines una presentación')
+        return
+      }
+    } else {
+      payload.pres_nombre = null
+      payload.pres_nombre_plural = null
+      payload.pres_factor = null
     }
 
     aprobarMutation.mutate(
       {
         id: selectedProduct.id,
-        payload: {
-          categoria_id: Number(selectedCategoriaId),
-          control_lote: selectedControlLote,
-        },
+        payload,
       },
       {
         onSuccess: () => {
           setSelectedProduct(null)
+          refetch()
         },
       }
     )
@@ -157,7 +214,7 @@ export default function BandejaCatalogacionTab() {
       {/* Approve and Configure Dialog Modal */}
       {selectedProduct && (
         <div className="modal modal-open">
-          <div className="modal-box max-w-md">
+          <div className="modal-box max-w-2xl bg-base-100 border border-base-300">
             <h3 className="font-bold text-base flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-success" />
               Aprobar Producto en Catalogación
@@ -168,7 +225,7 @@ export default function BandejaCatalogacionTab() {
 
             <div className="space-y-4 py-4">
               {/* Product summary info */}
-              <div className="bg-base-200/50 p-3 rounded-lg border text-xs space-y-1.5">
+              <div className="bg-base-200 p-3 rounded-lg border border-base-300 text-xs space-y-1.5">
                 <div>
                   <span className="opacity-50">SKU/REF:</span>{' '}
                   <strong className="font-mono">{selectedProduct.sku || '—'}</strong>
@@ -179,54 +236,191 @@ export default function BandejaCatalogacionTab() {
                 </div>
               </div>
 
-              {/* Category Select */}
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text font-semibold flex items-center gap-1">
-                    <Tag className="h-3.5 w-3.5" />
-                    Categoría
-                  </span>
-                </label>
-                <select
-                  className="select select-bordered select-sm w-full"
-                  value={selectedCategoriaId}
-                  onChange={(e) => setSelectedCategoriaId(e.target.value)}
-                >
-                  <option value="" disabled>Selecciona una categoría...</option>
-                  {categorias?.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nombre}
-                    </option>
-                  ))}
-                </select>
+              {/* Editable Fields Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Left Column */}
+                <div className="space-y-4">
+                  <h4 className="font-bold text-xs opacity-70 uppercase tracking-wider">Información del Producto</h4>
+
+                  {/* Nombre */}
+                  <div className="form-control">
+                    <label className="label py-1">
+                      <span className="label-text font-semibold">Nombre</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="input input-bordered input-sm w-full bg-base-100 border-base-300 focus:border-primary"
+                      value={nombre}
+                      onChange={(e) => setNombre(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Fabricante */}
+                  <div className="form-control">
+                    <label className="label py-1">
+                      <span className="label-text font-semibold">Fabricante</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="input input-bordered input-sm w-full bg-base-100 border-base-300 focus:border-primary"
+                      placeholder="e.g. Roche, Siemens"
+                      value={fabricante}
+                      onChange={(e) => setFabricante(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Categoría */}
+                  <div className="form-control">
+                    <label className="label py-1">
+                      <span className="label-text font-semibold flex items-center gap-1">
+                        <Tag className="h-3.5 w-3.5" />
+                        Categoría
+                      </span>
+                    </label>
+                    <select
+                      className="select select-bordered select-sm w-full bg-base-100 border-base-300 focus:border-primary"
+                      value={selectedCategoriaId}
+                      onChange={(e) => setSelectedCategoriaId(e.target.value)}
+                    >
+                      <option value="" disabled>Selecciona una categoría...</option>
+                      {categorias?.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Ubicación */}
+                  <div className="form-control">
+                    <label className="label py-1">
+                      <span className="label-text font-semibold">Ubicación</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="input input-bordered input-sm w-full bg-base-100 border-base-300 focus:border-primary"
+                      placeholder="e.g. Estante B3"
+                      value={ubicacion}
+                      onChange={(e) => setUbicacion(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Right Column */}
+                <div className="space-y-4">
+                  <h4 className="font-bold text-xs opacity-70 uppercase tracking-wider">Control y Presentación</h4>
+
+                  {/* Unidad Base */}
+                  <div className="form-control">
+                    <label className="label py-1">
+                      <span className="label-text font-semibold">Unidad Base</span>
+                    </label>
+                    <select
+                      className="select select-bordered select-sm w-full bg-base-100 border-base-300 focus:border-primary"
+                      value={unidadBaseId}
+                      onChange={(e) => setUnidadBaseId(e.target.value)}
+                    >
+                      <option value="" disabled>Selecciona una unidad...</option>
+                      {unidades?.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.nombre} ({u.nombre_plural})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Control Lote */}
+                  <div className="form-control">
+                    <label className="label py-1">
+                      <span className="label-text font-semibold flex items-center gap-1">
+                        <Layers className="h-3.5 w-3.5" />
+                        Control de Lotes
+                      </span>
+                    </label>
+                    <select
+                      className="select select-bordered select-sm w-full bg-base-100 border-base-300 focus:border-primary"
+                      value={selectedControlLote}
+                      onChange={(e) => setSelectedControlLote(e.target.value as 'simple' | 'con_vto' | 'trazable')}
+                    >
+                      <option value="con_vto">Con Vencimiento (Recomendado reactivos)</option>
+                      <option value="simple">Simple (Cantidad sin lotes detallados)</option>
+                      <option value="trazable">Trazable completo (Serie y lotes estrictos)</option>
+                    </select>
+                  </div>
+
+                  {/* Presentation Subform */}
+                  <div className="p-3 bg-base-200 border border-base-300 rounded-lg space-y-3">
+                    <h5 className="font-bold text-[11px] opacity-70 flex items-center gap-1">
+                      <Layers className="h-3.5 w-3.5 text-primary" />
+                      Presentación de Compra (Opcional)
+                    </h5>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="form-control col-span-2">
+                        <label className="label py-0.5">
+                          <span className="text-[10px] font-semibold">Nombre Presentación</span>
+                        </label>
+                        <input
+                          type="text"
+                          className="input input-bordered input-xs w-full bg-base-100 border-base-300"
+                          placeholder="e.g. Caja, Kit, Frasco"
+                          value={presNombre}
+                          onChange={(e) => setPresNombre(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="form-control">
+                        <label className="label py-0.5">
+                          <span className="text-[10px] font-semibold">Plural</span>
+                        </label>
+                        <input
+                          type="text"
+                          className="input input-bordered input-xs w-full bg-base-100 border-base-300"
+                          placeholder="e.g. Cajas"
+                          value={presNombrePlural}
+                          onChange={(e) => setPresNombrePlural(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="form-control">
+                        <label className="label py-0.5">
+                          <span className="text-[10px] font-semibold">Factor</span>
+                        </label>
+                        <input
+                          type="number"
+                          step="any"
+                          className="input input-bordered input-xs w-full bg-base-100 border-base-300"
+                          placeholder="e.g. 10"
+                          value={presFactor}
+                          onChange={(e) => setPresFactor(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              {/* Control Lote Select */}
+              {/* Descripción */}
               <div className="form-control">
-                <label className="label">
+                <label className="label py-1">
                   <span className="label-text font-semibold flex items-center gap-1">
-                    <Layers className="h-3.5 w-3.5" />
-                    Política de Control de Lotes
+                    <FileText className="h-3.5 w-3.5" />
+                    Descripción del Producto
                   </span>
                 </label>
-                <select
-                  className="select select-bordered select-sm w-full"
-                  value={selectedControlLote}
-                  onChange={(e) => setSelectedControlLote(e.target.value as 'simple' | 'con_vto' | 'trazable')}
-                >
-                  <option value="con_vto">Con Vencimiento (Recomendado reactivos)</option>
-                  <option value="simple">Simple (Cantidad sin lotes detallados)</option>
-                  <option value="trazable">Trazable completo (Serie y lotes estrictos)</option>
-                </select>
-                <p className="text-[10px] opacity-50 mt-1">
-                  Define cómo se registrará el stock y consumos de este insumo.
-                </p>
+                <textarea
+                  className="textarea textarea-bordered textarea-sm w-full bg-base-100 border-base-300 focus:border-primary"
+                  rows={2}
+                  placeholder="Descripción o detalles del insumo"
+                  value={descripcion}
+                  onChange={(e) => setDescripcion(e.target.value)}
+                />
               </div>
 
               <div className="alert alert-warning text-xs mt-3 flex items-start gap-2 bg-warning/10 border-warning">
                 <AlertCircle className="h-4 w-4 shrink-0 text-warning" />
                 <span>
-                  Al aprobar este producto, todo el stock cargado en cuarentena se liberará inmediatamente para consumo.
+                  Al aprobar este producto, todo el stock cargado en cuarentena se liberará inmediatamente para consumo. Si modifica el factor de conversión, las existencias cargadas se escalarán proporcionalmente.
                 </span>
               </div>
             </div>

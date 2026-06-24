@@ -448,3 +448,8 @@ Convention files under the agent's global skills directory (global) or `.agent/s
 <!-- gentle-ai:strict-tdd-mode -->
 Strict TDD Mode: enabled
 <!-- /gentle-ai:strict-tdd-mode -->
+
+## Reglas del Proyecto (Workspace Rules)
+
+- **Fase de Desarrollo Activo**: El proyecto está en fase de desarrollo. No es necesario preocuparse por conservar o migrar datos de producción de la base de datos de desarrollo. Las tablas pueden ser modificadas, eliminadas o recreadas por completo para implementar y limpiar el catálogo según sea necesario.
+

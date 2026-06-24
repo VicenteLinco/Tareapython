@@ -18,6 +18,7 @@ pub struct Producto {
     pub requiere_cadena_frio: bool,
     pub dias_estabilidad_abierto: Option<i32>,
     pub clase_riesgo: Option<String>,
+    pub fabricante: Option<String>,
     pub deleted_at: Option<DateTime<Utc>>,
     pub activo: bool,
     pub control_lote: ControlLote,

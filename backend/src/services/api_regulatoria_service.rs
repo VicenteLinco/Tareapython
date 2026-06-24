@@ -7,9 +7,10 @@ use crate::errors::AppError;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DispositivoMapeado {
     pub nombre: String,
-    pub fabricante: String,
+    pub fabricante: Option<String>,
     pub sku_ref: Option<String>,
     pub clase_riesgo: Option<String>,
+    pub descripcion: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -22,6 +23,8 @@ struct FdaGudidDevice {
     version_model_number: Option<String>,
     #[serde(rename = "deviceDescription")]
     device_description: Option<String>,
+    #[serde(rename = "catalogNumber")]
+    catalog_number: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -72,23 +75,32 @@ pub async fn lookup_dispositivo(
                         if let Some(device) = gudid.device {
                             let brand = device.brand_name.clone().unwrap_or_default();
                             let desc = device.device_description.clone().unwrap_or_default();
-                            let name = if !brand.is_empty() && !desc.is_empty() {
-                                format!("{} - {}", brand, desc)
+                            let (name, final_desc) = if brand.is_empty() && desc.is_empty() {
+                                (format!("Dispositivo sin nombre (GTIN: {})", code), None)
+                            } else if !brand.is_empty() && !desc.is_empty() {
+                                (format!("{} - {}", brand, desc), Some(desc))
                             } else if !brand.is_empty() {
-                                brand
+                                (brand, None)
                             } else {
-                                desc
+                                (desc.clone(), Some(desc))
                             };
 
-                            if !name.is_empty() {
-                                let fabricante = device.company_name.unwrap_or_else(|| "FDA Manufacturer".to_string());
-                                return Ok(DispositivoMapeado {
-                                    nombre: name,
-                                    fabricante,
-                                    sku_ref: device.version_model_number,
-                                    clase_riesgo: None,
-                                });
-                            }
+                            let fabricante = device.company_name.clone()
+                                .map(|s| s.trim().to_string())
+                                .filter(|s| !s.is_empty());
+
+                            let sku_ref = device.catalog_number.clone()
+                                .map(|s| s.trim().to_string())
+                                .filter(|s| !s.is_empty())
+                                .or_else(|| device.version_model_number.clone());
+
+                            return Ok(DispositivoMapeado {
+                                nombre: name,
+                                fabricante,
+                                sku_ref,
+                                clase_riesgo: None,
+                                descripcion: final_desc,
+                            });
                         }
                     }
                 }
@@ -124,11 +136,16 @@ pub async fn lookup_dispositivo(
                 Ok(eudamed_res) => {
                     let name = eudamed_res.name.clone().unwrap_or_default();
                     if !name.is_empty() {
+                        let fabricante = eudamed_res.manufacturer.clone()
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .or_else(|| Some("EUDAMED Manufacturer".to_string()));
                         return Ok(DispositivoMapeado {
                             nombre: name,
-                            fabricante: eudamed_res.manufacturer.unwrap_or_else(|| "EUDAMED Manufacturer".to_string()),
-                            sku_ref: eudamed_res.sku_ref,
-                            clase_riesgo: eudamed_res.clase_riesgo,
+                            fabricante,
+                            sku_ref: eudamed_res.sku_ref.clone(),
+                            clase_riesgo: eudamed_res.clase_riesgo.clone(),
+                            descripcion: None,
                         });
                     }
                 }
@@ -152,10 +169,12 @@ pub async fn lookup_dispositivo(
         nombre: String,
         clase_riesgo: Option<String>,
         sku: Option<String>,
+        fabricante: Option<String>,
+        descripcion: Option<String>,
     }
 
     let local_prod = sqlx::query_as::<_, LocalProductRow>(
-        r#"SELECT nombre, clase_riesgo, sku FROM productos
+        r#"SELECT nombre, clase_riesgo, sku, fabricante, descripcion FROM productos
            WHERE (pres_gtin = $1 OR sku = $1 OR pres_codigo_barras = $1)
              AND deleted_at IS NULL
            LIMIT 1"#
@@ -167,9 +186,10 @@ pub async fn lookup_dispositivo(
     if let Some(prod) = local_prod {
         return Ok(DispositivoMapeado {
             nombre: prod.nombre,
-            fabricante: "Histórico Local".to_string(),
+            fabricante: prod.fabricante.or_else(|| Some("Histórico Local".to_string())),
             sku_ref: prod.sku,
             clase_riesgo: prod.clase_riesgo,
+            descripcion: prod.descripcion,
         });
     }
 

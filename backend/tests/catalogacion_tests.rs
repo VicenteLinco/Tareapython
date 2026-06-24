@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use tokio::time::sleep;
 use sqlx::PgPool;
 use uuid::Uuid;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use inventario_lab_backend::services::api_regulatoria_service;
@@ -27,6 +28,7 @@ async fn mock_fda(Query(params): Query<HashMap<String, String>>) -> impl axum::r
                     "device": {
                         "brandName": "FDA Brand Name",
                         "companyName": "FDA Manufacturer",
+                        "catalogNumber": "FDA-CAT-123",
                         "versionModelNumber": "FDA-REF-123",
                         "deviceDescription": "FDA Device Description"
                     }
@@ -77,8 +79,9 @@ async fn test_api_regulatoria_cascada_y_timeout(pool: PgPool) {
     // Test case 1: FDA Success
     let res = api_regulatoria_service::lookup_dispositivo(&pool, "fda_success").await.unwrap();
     assert_eq!(res.nombre, "FDA Brand Name - FDA Device Description");
-    assert_eq!(res.fabricante, "FDA Manufacturer");
-    assert_eq!(res.sku_ref.unwrap(), "FDA-REF-123");
+    assert_eq!(res.fabricante.as_deref(), Some("FDA Manufacturer"));
+    assert_eq!(res.sku_ref.unwrap(), "FDA-CAT-123");
+    assert_eq!(res.descripcion.unwrap(), "FDA Device Description");
 
     // Test case 2: FDA Timeout, EUDAMED Success
     // FDA will sleep for 4 seconds, reqwest timeout is 3 seconds, so it will abort and hit EUDAMED
@@ -88,7 +91,7 @@ async fn test_api_regulatoria_cascada_y_timeout(pool: PgPool) {
     assert!(elapsed >= Duration::from_secs(3), "Should take at least 3 seconds (FDA timeout)");
     assert!(elapsed < Duration::from_secs(4), "Should take less than 4 seconds");
     assert_eq!(res2.nombre, "Eudamed Device Name");
-    assert_eq!(res2.fabricante, "Eudamed Manufacturer");
+    assert_eq!(res2.fabricante.as_deref(), Some("Eudamed Manufacturer"));
 
     // Test case 3: Local Historical Fallback
     // Insert a product with pres_gtin = "local_gtin"
@@ -104,7 +107,7 @@ async fn test_api_regulatoria_cascada_y_timeout(pool: PgPool) {
 
     let res3 = api_regulatoria_service::lookup_dispositivo(&pool, "local_gtin").await.unwrap();
     assert_eq!(res3.nombre, "Local Product");
-    assert_eq!(res3.fabricante, "Histórico Local");
+    assert_eq!(res3.fabricante.as_deref(), Some("Histórico Local"));
     assert_eq!(res3.sku_ref.unwrap(), "SKU-LOCAL");
 
     // Test case 4: Scan barcode endpoint auto-creation (quarantine)
@@ -390,7 +393,9 @@ async fn test_supervisor_catalogacion_inbox_endpoints(pool: PgPool) {
 
     // 3. Call POST /api/v1/productos/{id}/approve
     let approve_body = serde_json::json!({
+        "nombre": "Producto Cuarentena Inbox Aprobado",
         "categoria_id": 1,
+        "unidad_base_id": 1,
         "control_lote": "simple"
     });
     let (status_approve, resp_approve) = common::post_json(
@@ -455,6 +460,137 @@ async fn test_supervisor_catalogacion_inbox_endpoints(pool: PgPool) {
     let items_parse = resp_parse.get("items").unwrap().as_array().unwrap();
     assert_eq!(items_parse.len(), 1);
     assert_eq!(items_parse[0].get("sku_ref").and_then(|s| s.as_str()), Some("V-1234"));
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_stock_scaling_on_approval_and_lookup(pool: PgPool) {
+    use axum::http::StatusCode;
+
+    common::seed_base_data(&pool).await;
+    let app = common::test_app(pool.clone());
+    let token = common::admin_access_token(&pool).await;
+
+    // 1. Create a quarantined product with pres_factor = 1.0
+    let prod_id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO productos 
+           (id, codigo_interno, nombre, unidad_base_id, estado_catalogo, origen_registro, control_lote, pres_factor, pres_nombre, sku) 
+           VALUES ($1, 'TEST-SCALE-VAL', 'Producto Escalar', 1, 'pendiente_aprobacion', 'api_regulatoria', 'con_vto', 1.00, 'Unidad', 'TEST-SCALE-VAL')"#
+    )
+    .bind(prod_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Create a presentation
+    sqlx::query(
+        r#"INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, activa) VALUES ($1, 'Unidad', 'Unidades', 1.00, true)"#
+    )
+    .bind(prod_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Create a lot
+    let lote_id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO lotes (id, producto_id, numero_lote, fecha_vencimiento) VALUES ($1, $2, 'LOTE-SCALE', NULL)"#
+    )
+    .bind(lote_id)
+    .bind(prod_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Add stock and movement directly (simulating history via trigger)
+
+    sqlx::query(
+        r#"INSERT INTO movimientos (id, lote_id, area_id, tipo, cantidad, cantidad_resultante, usuario_id) 
+           VALUES ($1, $2, 1, 'INGRESO', 5.00, 5.00, (SELECT id FROM usuarios LIMIT 1))"#
+    )
+    .bind(Uuid::new_v4())
+    .bind(lote_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // 2. Call lookup endpoint
+    let (status_look, res_look) = common::get_json(
+        &app,
+        &format!("/api/v1/productos/scan/lookup?codigo=TEST-SCALE-VAL"),
+        &token
+    ).await;
+    assert_eq!(status_look, StatusCode::OK);
+    assert_eq!(res_look.get("found").and_then(|b| b.as_bool()), Some(true));
+    assert_eq!(res_look.get("source").and_then(|s| s.as_str()), Some("local"));
+    assert_eq!(
+        res_look.get("existing_product").and_then(|p| p.get("estado_catalogo")).and_then(|e| e.as_str()), 
+        Some("pendiente_aprobacion")
+    );
+
+    // 3. Call approve with pres_factor = 10.00
+    let approve_payload = serde_json::json!({
+        "nombre": "Producto Escalar Cambiado",
+        "categoria_id": 1,
+        "unidad_base_id": 1,
+        "control_lote": "con_vto",
+        "fabricante": "Escala Inc.",
+        "ubicacion": "Caja 4",
+        "pres_nombre": "Caja",
+        "pres_nombre_plural": "Cajas",
+        "pres_factor": 10.00
+    });
+
+    let (status_app, res_app) = common::post_json(
+        &app,
+        &format!("/api/v1/productos/{}/approve", prod_id),
+        &token,
+        approve_payload
+    ).await;
+    assert_eq!(status_app, StatusCode::OK);
+    assert_eq!(res_app.get("success").and_then(|b| b.as_bool()), Some(true));
+
+    // 4. Verify DB changes: stock scaled, product approved, fabricante stored, presentation updated
+    let prod_db: (String, Option<String>, Option<String>, Decimal) = sqlx::query_as(
+        "SELECT estado_catalogo::text, fabricante, ubicacion, pres_factor FROM productos WHERE id = $1"
+    )
+    .bind(prod_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(prod_db.0, "aprobado");
+    assert_eq!(prod_db.1.as_deref(), Some("Escala Inc."));
+    assert_eq!(prod_db.2.as_deref(), Some("Caja 4"));
+    assert_eq!(prod_db.3, dec!(10.00));
+
+    let pres_factor: Decimal = sqlx::query_scalar(
+        "SELECT factor_conversion FROM presentaciones WHERE producto_id = $1"
+    )
+    .bind(prod_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(pres_factor, dec!(10.00));
+
+    let stock_qty: Decimal = sqlx::query_scalar(
+        "SELECT cantidad FROM stock WHERE lote_id = $1"
+    )
+    .bind(lote_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // 5 * 10 = 50
+    assert_eq!(stock_qty, dec!(50.00));
+
+    let mov: (Decimal, Decimal) = sqlx::query_as(
+        "SELECT cantidad, cantidad_resultante FROM movimientos WHERE lote_id = $1"
+    )
+    .bind(lote_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(mov.0, dec!(50.00));
+    assert_eq!(mov.1, dec!(50.00));
 }
 
 

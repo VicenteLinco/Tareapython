@@ -254,6 +254,7 @@ export interface CreateProducto {
   requiere_cadena_frio?: boolean
   dias_estabilidad_abierto?: number | null
   clase_riesgo?: string | null
+  fabricante?: string | null
   control_lote?: ControlLote
   pres_nombre?: string | null
   pres_nombre_plural?: string | null
@@ -278,6 +279,7 @@ export interface UpdateProducto {
   requiere_cadena_frio?: boolean
   dias_estabilidad_abierto?: number | null
   clase_riesgo?: string | null
+  fabricante?: string | null
   control_lote?: ControlLote
   pres_nombre?: string | null
   pres_nombre_plural?: string | null

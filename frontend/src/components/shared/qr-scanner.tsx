@@ -21,6 +21,17 @@ export function QrScanner({ onScan, active, paused, className }: QrScannerProps)
   const lastScan = useRef<string | null>(null)
   const lastScanTime = useRef<number>(0)
 
+  const onScanRef = useRef(onScan)
+  const pausedRef = useRef(paused)
+
+  useEffect(() => {
+    onScanRef.current = onScan
+  }, [onScan])
+
+  useEffect(() => {
+    pausedRef.current = paused
+  }, [paused])
+
   const stopScanner = useCallback(async () => {
     if (scannerRef.current && scannerRef.current.isScanning) {
       try {
@@ -54,7 +65,7 @@ export function QrScanner({ onScan, active, paused, className }: QrScannerProps)
           { facingMode: 'environment' },
           config,
           (decodedText) => {
-            if (paused) return
+            if (pausedRef.current) return
             
             const now = Date.now()
             if (decodedText === lastScan.current && now - lastScanTime.current < 2000) {
@@ -63,7 +74,7 @@ export function QrScanner({ onScan, active, paused, className }: QrScannerProps)
 
             lastScan.current = decodedText
             lastScanTime.current = now
-            onScan(decodedText)
+            onScanRef.current(decodedText)
           },
           () => { /* Ignorar errores de frame vacío */ }
         )
@@ -80,7 +91,8 @@ export function QrScanner({ onScan, active, paused, className }: QrScannerProps)
     return () => {
       stopScanner()
     }
-  }, [active, divId, onScan, paused, stopScanner])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, divId])
 
   if (!active) return null
 

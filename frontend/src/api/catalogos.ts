@@ -243,8 +243,41 @@ export async function listarProductosQuarantine(): Promise<Producto[]> {
 }
 
 export interface ApproveProductPayload {
+  nombre: string
+  descripcion?: string | null
   categoria_id: number
+  unidad_base_id: number
   control_lote: 'simple' | 'con_vto' | 'trazable'
+  pres_nombre?: string
+  pres_nombre_plural?: string
+  pres_factor?: number
+  fabricante?: string
+  ubicacion?: string
+}
+
+export interface ScanLookupResponse {
+  found: boolean
+  source: 'local' | 'api_regulatoria' | null
+  existing_product: {
+    id: string
+    nombre: string
+    codigo_interno: string
+    estado_catalogo: 'pendiente_aprobacion' | 'aprobado'
+  } | null
+  data: {
+    nombre: string
+    fabricante: string | null
+    sku_ref: string | null
+    clase_riesgo: string | null
+    descripcion: string | null
+  } | null
+  message?: string
+}
+
+/** GET /productos/scan/lookup?codigo=:codigo — Consultar información del GTIN */
+export async function buscarGtinLookup(codigo: string): Promise<ScanLookupResponse> {
+  const { data } = await api.get<ScanLookupResponse>('/productos/scan/lookup', { params: { codigo } })
+  return data
 }
 
 /** POST /productos/:id/approve — Aprobar producto en cuarentena */

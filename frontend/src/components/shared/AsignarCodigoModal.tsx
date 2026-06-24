@@ -46,6 +46,7 @@ export function AsignarCodigoModal({
   const [unidadBaseId, setUnidadBaseId] = useState('')
   const [areaId, setAreaId] = useState('')
   const [localProveedorId, setLocalProveedorId] = useState(proveedorId ? String(proveedorId) : '')
+  const [fabricante, setFabricante] = useState('')
   
   const [refValue, setRefValue] = useState('')
   const [gtinValue, setGtinValue] = useState('')
@@ -62,19 +63,42 @@ export function AsignarCodigoModal({
     ? productos.find(p => p.sku && p.sku.toLowerCase().trim() === refValueFromScan.toLowerCase().trim())
     : null
 
+  const fetchFabricante = useCallback(async (code: string) => {
+    try {
+      const { data: res } = await api.get<any>('/productos/scan/lookup', { params: { codigo: code } })
+      if (res.found && res.data) {
+        if (res.data.fabricante) {
+          setFabricante(res.data.fabricante)
+        }
+        if (res.data.nombre) {
+          setNombre((prev) => prev || res.data.nombre)
+        }
+        if (res.data.sku_ref) {
+          setRefValue((prev) => prev || res.data.sku_ref || '')
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching manufacturer for code:', err)
+    }
+  }, [])
+
   useEffect(() => {
     if (parsedCode) {
       setGtinValue(parsedCode.gtin || '')
       setRefValue(parsedCode.ref || '')
       setLoteValue(parsedCode.lote || '')
       setVencimientoValue(parsedCode.vencimiento || '')
+      if (parsedCode.gtin) {
+        fetchFabricante(parsedCode.gtin)
+      }
     } else {
       setGtinValue(codigo)
       setRefValue('')
       setLoteValue('')
       setVencimientoValue('')
+      fetchFabricante(codigo)
     }
-  }, [codigo])
+  }, [codigo, fetchFabricante])
 
   // Queries for selectors
   const { data: categorias } = useQuery<Categoria[]>({
@@ -243,6 +267,7 @@ export function AsignarCodigoModal({
       sku: refValue.trim() || undefined, // Store REF in SKU field
       area_ids: [Number(areaId)],
       control_lote: 'con_vto', // Always require lot/vto for clinical lab scans
+      fabricante: fabricante.trim() || undefined,
       pres_nombre: 'Unidad',
       pres_nombre_plural: 'Unidades',
       pres_factor: 1,
@@ -433,6 +458,21 @@ export function AsignarCodigoModal({
                     />
                   </div>
 
+                  {/* Fabricante */}
+                  <div className="form-control">
+                    <label className="label py-0.5">
+                      <span className="label-text text-xs font-semibold">Fabricante</span>
+                      <span className="label-text-alt text-base-content/40 text-[10px]">opcional</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="input input-bordered input-sm h-9 w-full bg-base-100"
+                      placeholder="Ej: Roche, Siemens"
+                      value={fabricante}
+                      onChange={(e) => setFabricante(e.target.value)}
+                    />
+                  </div>
+
                   {/* Categoría */}
                   <div className="form-control">
                     <label className="label py-0.5">
@@ -490,7 +530,7 @@ export function AsignarCodigoModal({
                   </div>
 
                   {/* Proveedor */}
-                  <div className="form-control">
+                  <div className="form-control col-span-2">
                     <label className="label py-0.5">
                       <span className="label-text text-xs font-semibold">Proveedor</span>
                       {proveedorId && <span className="label-text-alt text-primary text-[10px]">asociado de la recepción</span>}

@@ -102,6 +102,7 @@ struct CreateProducto {
     requiere_cadena_frio: Option<bool>,
     dias_estabilidad_abierto: Option<i32>,
     clase_riesgo: Option<String>,
+    fabricante: Option<String>,
     // Flat presentation
     pres_nombre: Option<String>,
     pres_nombre_plural: Option<String>,
@@ -131,6 +132,7 @@ struct UpdateProducto {
     requiere_cadena_frio: Option<bool>,
     dias_estabilidad_abierto: Option<i32>,
     clase_riesgo: Option<String>,
+    fabricante: Option<String>,
     // Flat presentation
     pres_nombre: Option<String>,
     pres_nombre_plural: Option<String>,
@@ -286,6 +288,7 @@ async fn crear(
             requiere_cadena_frio: req.requiere_cadena_frio.unwrap_or(false),
             dias_estabilidad_abierto: req.dias_estabilidad_abierto,
             clase_riesgo: req.clase_riesgo,
+            fabricante: req.fabricante,
             pres_nombre: req.pres_nombre,
             pres_nombre_plural: req.pres_nombre_plural,
             pres_factor: req.pres_factor,
@@ -342,6 +345,7 @@ async fn actualizar(
             requiere_cadena_frio: req.requiere_cadena_frio,
             dias_estabilidad_abierto: req.dias_estabilidad_abierto,
             clase_riesgo: req.clase_riesgo,
+            fabricante: req.fabricante,
             pres_nombre: req.pres_nombre,
             pres_nombre_plural: req.pres_nombre_plural,
             pres_factor: req.pres_factor,
@@ -392,6 +396,18 @@ async fn scan_barcode(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let codigo = params.codigo.as_deref().unwrap_or("");
     let resultado = ProductoService::buscar_por_codigo(&state.pool, codigo, claims.sub).await?;
+    Ok(Json(resultado))
+}
+
+/// GET /api/v1/productos/scan/lookup?codigo=<barcode>
+/// Read-only lookup check for manual dialogs
+async fn scan_lookup(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Query(params): Query<ScanQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let codigo = params.codigo.as_deref().unwrap_or("");
+    let resultado = ProductoService::lookup_gtin(&state.pool, codigo).await?;
     Ok(Json(resultado))
 }
 
@@ -520,8 +536,16 @@ async fn asignar_codigo(
 
 #[derive(Debug, Deserialize)]
 pub struct ApproveProductInput {
+    pub nombre: String,
+    pub descripcion: Option<String>,
     pub categoria_id: i32,
+    pub unidad_base_id: i32,
     pub control_lote: ControlLote,
+    pub pres_nombre: Option<String>,
+    pub pres_nombre_plural: Option<String>,
+    pub pres_factor: Option<Decimal>,
+    pub fabricante: Option<String>,
+    pub ubicacion: Option<String>,
 }
 
 async fn list_quarantine(
@@ -547,27 +571,169 @@ async fn approve_product(
 ) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
-    let mut tx = state.pool.begin().await?;
-
-    let exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1 AND estado_catalogo = 'pendiente_aprobacion')"
-    )
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await?;
-
-    if !exists {
-        return Err(AppError::NotFound("Producto no encontrado o no está en cuarentena".to_string()));
+    // Validation
+    if input.nombre.trim().is_empty() {
+        return Err(AppError::Validation("El campo nombre es requerido".to_string()));
+    }
+    if input.nombre.chars().count() > 300 {
+        return Err(AppError::Validation("El nombre no puede superar los 300 caracteres".to_string()));
+    }
+    if let Some(ref desc) = input.descripcion {
+        if desc.chars().count() > 2000 {
+            return Err(AppError::Validation("La descripción no puede superar los 2000 caracteres".to_string()));
+        }
+    }
+    if let Some(ref fab) = input.fabricante {
+        if fab.chars().count() > 300 {
+            return Err(AppError::Validation("El fabricante no puede superar los 300 caracteres".to_string()));
+        }
+    }
+    if let Some(ref ubi) = input.ubicacion {
+        if ubi.chars().count() > 200 {
+            return Err(AppError::Validation("La ubicación no puede superar los 200 caracteres".to_string()));
+        }
     }
 
-    sqlx::query(
-        "UPDATE productos SET estado_catalogo = 'aprobado', categoria_id = $1, control_lote = $2, updated_at = NOW() WHERE id = $3"
+    // Co-dependency for presentation name and conversion factor
+    if input.pres_factor.is_some() && input.pres_nombre.is_none() {
+        return Err(AppError::Validation("Se requiere nombre de presentación cuando se especifica el factor".to_string()));
+    }
+    if input.pres_nombre.is_some() && input.pres_factor.is_none() {
+        return Err(AppError::Validation("Se requiere factor de conversión cuando se especifica la presentación".to_string()));
+    }
+
+    if let Some(factor) = input.pres_factor {
+        if factor <= Decimal::ZERO {
+            return Err(AppError::Validation("El factor de conversión debe ser mayor a 0".to_string()));
+        }
+    }
+
+    let mut tx = state.pool.begin().await?;
+
+    let prod_opt = sqlx::query_as::<_, Producto>(
+        "SELECT * FROM productos WHERE id = $1"
     )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let prod = match prod_opt {
+        Some(p) => p,
+        None => return Err(AppError::NotFound("Producto no encontrado".to_string())),
+    };
+
+    if prod.estado_catalogo != crate::domain::EstadoCatalogo::PendienteAprobacion {
+        return Err(AppError::Validation("El producto ya está aprobado".to_string()));
+    }
+
+    // Stock scaling logic
+    let old_factor = prod.pres_factor.unwrap_or(Decimal::ONE);
+    let old_factor = if old_factor.is_zero() { Decimal::ONE } else { old_factor };
+
+    if let Some(new_factor) = input.pres_factor {
+        if new_factor != old_factor {
+            let multiplier = new_factor / old_factor;
+
+            // Update stock
+            sqlx::query(
+                r#"UPDATE stock 
+                   SET cantidad = (cantidad * $1)::NUMERIC(12,2)
+                   WHERE lote_id IN (SELECT id FROM lotes WHERE producto_id = $2)"#
+            )
+            .bind(multiplier)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::Internal(format!("Error al escalar stock: {}", e)))?;
+
+            // Update movements
+            sqlx::query(
+                r#"UPDATE movimientos
+                   SET cantidad = (cantidad * $1)::NUMERIC(12,2),
+                       cantidad_resultante = (cantidad_resultante * $1)::NUMERIC(12,2)
+                   WHERE lote_id IN (SELECT id FROM lotes WHERE producto_id = $2)"#
+            )
+            .bind(multiplier)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::Internal(format!("Error al escalar stock: {}", e)))?;
+        }
+    }
+
+    // Update product metadata in single update
+    sqlx::query(
+        r#"UPDATE productos 
+           SET nombre = $1, descripcion = $2, categoria_id = $3, unidad_base_id = $4,
+               control_lote = $5, fabricante = $6, ubicacion = $7,
+               pres_nombre = COALESCE($8, pres_nombre),
+               pres_nombre_plural = COALESCE($9, pres_nombre_plural),
+               pres_factor = COALESCE($10, pres_factor),
+               estado_catalogo = 'aprobado', updated_at = NOW()
+           WHERE id = $11"#
+    )
+    .bind(&input.nombre)
+    .bind(&input.descripcion)
     .bind(input.categoria_id)
-    .bind(input.control_lote)
+    .bind(input.unidad_base_id)
+    .bind(&input.control_lote)
+    .bind(&input.fabricante)
+    .bind(&input.ubicacion)
+    .bind(&input.pres_nombre)
+    .bind(&input.pres_nombre_plural)
+    .bind(input.pres_factor)
     .bind(id)
     .execute(&mut *tx)
-    .await?;
+    .await
+    .map_err(|e| match &e {
+        sqlx::Error::Database(db_err) if db_err.is_foreign_key_violation() => {
+            let msg = db_err.message();
+            if msg.contains("categoria_id") {
+                AppError::Validation("Categoría no válida".into())
+            } else if msg.contains("unidad_base_id") {
+                AppError::Validation("Unidad base no válida".into())
+            } else {
+                AppError::Validation("Categoría o unidad base no válida".into())
+            }
+        }
+        _ => e.into()
+    })?;
+
+    // Presentations sync
+    if let (Some(pres_nombre), Some(pres_factor)) = (&input.pres_nombre, input.pres_factor) {
+        let pres_exists = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM presentaciones WHERE producto_id = $1)"
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        if pres_exists {
+            sqlx::query(
+                r#"UPDATE presentaciones 
+                   SET nombre = $1, nombre_plural = $2, factor_conversion = $3
+                   WHERE producto_id = $4"#
+            )
+            .bind(pres_nombre.trim())
+            .bind(input.pres_nombre_plural.as_deref().unwrap_or(pres_nombre.as_str()).trim())
+            .bind(pres_factor)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        } else {
+            sqlx::query(
+                r#"INSERT INTO presentaciones
+                   (producto_id, nombre, nombre_plural, factor_conversion, activa)
+                   VALUES ($1, $2, $3, $4, true)"#
+            )
+            .bind(id)
+            .bind(pres_nombre.trim())
+            .bind(input.pres_nombre_plural.as_deref().unwrap_or(pres_nombre.as_str()).trim())
+            .bind(pres_factor)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
 
     tx.commit().await?;
 
@@ -602,6 +768,7 @@ pub fn routes() -> Router<AppState> {
         .route("/", get(listar).post(crear))
         .route("/quarantine", get(list_quarantine))
         .route("/scan", get(scan_barcode))
+        .route("/scan/lookup", get(scan_lookup))
         .route("/scan/asignar", post(asignar_codigo))
         .route("/{id}/precios", get(historial_precios))
         .route("/{id}/codigos", get(listar_codigos).post(agregar_codigo))

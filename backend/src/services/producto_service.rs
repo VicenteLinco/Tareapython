@@ -1055,12 +1055,24 @@ impl ProductoService {
         // If not found locally, attempt cascade lookup in regulatory APIs
         match crate::services::api_regulatoria_service::lookup_dispositivo(pool, codigo_presentacion).await {
             Ok(dispositivo) => {
-                let base_unit: (i32, String, String) = sqlx::query_as(
+                let base_unit_opt: Option<(i32, String, String)> = sqlx::query_as(
                     "SELECT id, nombre, nombre_plural FROM unidades_basicas ORDER BY id ASC LIMIT 1"
                 )
-                .fetch_one(pool)
-                .await
-                .unwrap_or((1, "unidad".to_string(), "unidades".to_string()));
+                .fetch_optional(pool)
+                .await?;
+
+                let base_unit = match base_unit_opt {
+                    Some(u) => u,
+                    None => {
+                        sqlx::query_as(
+                            "INSERT INTO unidades_basicas (nombre, nombre_plural, categoria) \
+                             VALUES ('unidad', 'unidades', 'count') \
+                             RETURNING id, nombre, nombre_plural"
+                        )
+                        .fetch_one(pool)
+                        .await?
+                    }
+                };
 
                 let params = CrearProductoParams {
                     nombre: dispositivo.nombre,

@@ -282,11 +282,15 @@ pub struct ParseGuiaInput {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ItemGuiaParseado {
+    #[serde(alias = "nombreProducto", alias = "nombre")]
     pub nombre_producto: String,
+    #[serde(alias = "skuRef", alias = "sku", alias = "referencia")]
     pub sku_ref: String,
     pub lote: Option<String>,
+    #[serde(alias = "fechaVencimiento", alias = "fechaVto", alias = "vencimiento", alias = "fecha_vencimiento")]
     pub fecha_vencimiento: Option<String>,
     pub cantidad: f64,
+    #[serde(alias = "precioUnitario", alias = "precio", alias = "precio_unitario")]
     pub precio_unitario: Option<f64>,
 }
 

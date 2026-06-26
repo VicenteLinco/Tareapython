@@ -75,6 +75,8 @@ export default function ConfiguracionPage() {
   const [whatsappWebhookSecret, setWhatsappWebhookSecret] = useState('')
   const [whatsappBotPhone, setWhatsappBotPhone] = useState('')
 
+  const [isCustomModel, setIsCustomModel] = useState(false)
+
   useEffect(() => {
     if (!data) return
     setNombre(data.nombre_laboratorio)
@@ -92,7 +94,13 @@ export default function ConfiguracionPage() {
     if (data.ventana_consumo_dias != null) setVentanaConsumoDias(data.ventana_consumo_dias)
     if (data.periodo_revision_dias != null) setPeriodoRevisionDias(data.periodo_revision_dias)
     setIaProveedor(data.ia_proveedor || 'gemini')
-    setIaModelo(data.ia_modelo || 'gemini-1.5-flash')
+    const currentModel = data.ia_modelo || 'gemini-1.5-flash'
+    setIaModelo(currentModel)
+    if ((data.ia_proveedor || 'gemini') === 'gemini') {
+      setIsCustomModel(!['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'].includes(currentModel))
+    } else {
+      setIsCustomModel(true)
+    }
     setIaApiUrl(data.ia_api_url || '')
     setIaApiKey(data.ia_api_key || '')
     setWhatsappApiUrl(data.whatsapp_api_url || '')
@@ -552,22 +560,67 @@ export default function ConfiguracionPage() {
               <select
                 className="select select-bordered w-full"
                 value={iaProveedor}
-                onChange={(e) => setIaProveedor(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setIaProveedor(val)
+                  if (val === 'gemini') {
+                    setIsCustomModel(false)
+                    setIaModelo('gemini-2.5-flash')
+                  } else {
+                    setIsCustomModel(true)
+                    setIaModelo('llama3')
+                  }
+                }}
               >
                 <option value="gemini">Google Gemini</option>
                 <option value="ollama">Ollama (Local)</option>
               </select>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Modelo de IA</label>
-              <input
-                type="text"
-                className="input input-bordered w-full"
-                value={iaModelo}
-                onChange={(e) => setIaModelo(e.target.value)}
-                placeholder="Ej: gemini-1.5-flash"
-              />
+            <div className="space-y-1.5 flex flex-col justify-end">
+              <label className="text-sm font-medium mb-1.5">Modelo de IA</label>
+              {iaProveedor === 'gemini' ? (
+                <div className="flex flex-col gap-2">
+                  <select
+                    className="select select-bordered w-full"
+                    value={isCustomModel ? 'custom' : iaModelo}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      if (val === 'custom') {
+                        setIsCustomModel(true)
+                        setIaModelo('')
+                      } else {
+                        setIsCustomModel(false)
+                        setIaModelo(val)
+                      }
+                    }}
+                  >
+                    <option value="gemini-2.5-flash">gemini-2.5-flash (Recomendado - Rápido)</option>
+                    <option value="gemini-2.5-pro">gemini-2.5-pro (Avanzado - Razonamiento)</option>
+                    <option value="gemini-1.5-flash">gemini-1.5-flash (Básico)</option>
+                    <option value="gemini-1.5-pro">gemini-1.5-pro (Básico - Avanzado)</option>
+                    <option value="gemini-1.0-pro">gemini-1.0-pro (Legacy)</option>
+                    <option value="custom">Otro (ingresar manualmente)</option>
+                  </select>
+                  {isCustomModel && (
+                    <input
+                      type="text"
+                      className="input input-bordered w-full text-sm"
+                      value={iaModelo}
+                      onChange={(e) => setIaModelo(e.target.value)}
+                      placeholder="Ej: gemini-2.0-flash-exp"
+                    />
+                  )}
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  className="input input-bordered w-full"
+                  value={iaModelo}
+                  onChange={(e) => setIaModelo(e.target.value)}
+                  placeholder="Ej: llama3"
+                />
+              )}
             </div>
           </div>
 

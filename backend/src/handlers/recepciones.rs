@@ -384,6 +384,7 @@ pub fn routes() -> Router<AppState> {
         .route("/scanner-session", post(crear_scanner_session))
         .route("/scanner-session/{token}/scan", post(scan_codigo))
         .route("/scanner-session/{token}/items", get(get_scanner_items))
+        .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
 }
 
 #[derive(Debug, Serialize)]

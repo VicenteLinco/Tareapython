@@ -119,6 +119,37 @@ pub async fn save_image_bytes(
     Ok(format!("{}/{}", directory, filename))
 }
 
+const MAX_FILE_BYTES: usize = 10 * 1024 * 1024; // 10 MB
+
+pub async fn save_file_bytes(
+    bytes: &[u8],
+    extension: &str,
+    directory: &str,
+    prefix: &str,
+) -> Result<String, AppError> {
+    if bytes.len() > MAX_FILE_BYTES {
+        return Err(AppError::Validation(
+            "El archivo no puede superar 10 MB".into(),
+        ));
+    }
+
+    let ext = extension.trim_start_matches('.');
+    let filename = format!("{}_{}.{}", prefix, Uuid::new_v4(), ext);
+    let upload_dir = PathBuf::from("uploads").join(directory);
+    if !upload_dir.exists() {
+        fs::create_dir_all(&upload_dir).await.map_err(|e| {
+            AppError::Internal(format!("Error creando directorio de subida: {}", e))
+        })?;
+    }
+
+    let file_path = upload_dir.join(&filename);
+    fs::write(&file_path, bytes)
+        .await
+        .map_err(|e| AppError::Internal(format!("Error guardando archivo en disco: {}", e)))?;
+
+    Ok(format!("{}/{}", directory, filename))
+}
+
 pub async fn delete_image(path: &str) -> Result<(), AppError> {
     let full_path = PathBuf::from("uploads").join(path);
     if full_path.exists() {

@@ -1,3 +1,4 @@
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use crate::errors::AppError;
 use crate::handlers::whatsapp::{ActiveUser, execute_tool, log_webhook_transaction, send_whatsapp_reply};
@@ -44,6 +45,15 @@ pub struct GeminiContentPart {
     pub function_response: Option<GeminiFunctionResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thought_signature: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inline_data: Option<GeminiInlineData>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GeminiInlineData {
+    pub mime_type: String,
+    pub data: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -268,6 +278,7 @@ impl LlmClient for GeminiClient {
                     function_call: None,
                     function_response: None,
                     thought_signature: None,
+                    inline_data: None,
                 }],
             });
             if let Some(resp) = row.response_body {
@@ -278,6 +289,7 @@ impl LlmClient for GeminiClient {
                         function_call: None,
                         function_response: None,
                         thought_signature: None,
+                        inline_data: None,
                     }],
                 });
             }
@@ -291,6 +303,7 @@ impl LlmClient for GeminiClient {
                 function_call: None,
                 function_response: None,
                 thought_signature: None,
+                inline_data: None,
             }],
         });
 
@@ -421,6 +434,7 @@ impl LlmClient for GeminiClient {
                             id: call.id.clone(),
                         }),
                         thought_signature: None,
+                        inline_data: None,
                     });
                 }
             }
@@ -1008,6 +1022,7 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
                 function_call: None,
                 function_response: None,
                 thought_signature: None,
+                inline_data: None,
             }],
         }];
 
@@ -1124,6 +1139,135 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
 
         Ok(parsed_json)
     }
+}
+
+pub async fn parse_guia_con_vision(
+    pool: &sqlx::PgPool,
+    image_bytes: &[u8],
+    mime_type: &str,
+) -> Result<serde_json::Value, AppError> {
+    let db_config = load_llm_config(pool).await?;
+
+    if db_config.provider.to_lowercase() != "gemini" {
+        return Err(AppError::Validation(
+            "La extracción por imagen (Vision) solo está soportada con el proveedor Gemini".into(),
+        ));
+    }
+
+    let client = reqwest::Client::new();
+
+    let system_prompt = r#"Eres un asistente experto en extracción de datos desde imágenes de documentos logísticos.
+Tu tarea es analizar la imagen de una guía de despacho, factura o documento de entrega y extraer la información de los productos recibidos.
+Para cada ítem, extrae:
+- nombre_producto (Nombre descriptivo del producto)
+- sku_ref (Código SKU o código de referencia de catálogo del producto/REF)
+- lote (Número de lote si está presente; de lo contrario null)
+- fecha_vencimiento (Fecha de vencimiento en formato YYYY-MM-DD si está presente; de lo contrario null)
+- cantidad (Cantidad física recibida, número positivo)
+- precio_unitario (Precio unitario si está presente; de lo contrario null)
+
+Debes retornar obligatoriamente un objeto JSON que cumpla con el siguiente esquema:
+{
+  "proveedor": "Nombre del Proveedor",
+  "items": [
+    {
+      "nombre_producto": "Reactivo PCR",
+      "sku_ref": "V-1234",
+      "lote": "L88291",
+      "fecha_vencimiento": "2027-12-31",
+      "cantidad": 10.0,
+      "precio_unitario": 25000.0
+    }
+  ]
+}
+
+Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni bloques de código de markdown."#;
+
+    let base64_data = base64::engine::general_purpose::STANDARD.encode(image_bytes);
+
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+        db_config.model, db_config.api_key
+    );
+
+    let contents = vec![GeminiContent {
+        role: "user".to_string(),
+        parts: vec![
+            GeminiContentPart {
+                text: Some("Analiza esta imagen de guía de despacho y extrae los datos de los productos.".to_string()),
+                function_call: None,
+                function_response: None,
+                thought_signature: None,
+                inline_data: None,
+            },
+            GeminiContentPart {
+                text: None,
+                function_call: None,
+                function_response: None,
+                thought_signature: None,
+                inline_data: Some(GeminiInlineData {
+                    mime_type: mime_type.to_string(),
+                    data: base64_data,
+                }),
+            },
+        ],
+    }];
+
+    let request_payload = GeminiParseRequest {
+        contents,
+        system_instruction: GeminiSystemInstruction {
+            parts: vec![GeminiSystemInstructionPart {
+                text: system_prompt.to_string(),
+            }],
+        },
+        generation_config: GeminiParseGenerationConfig {
+            response_mime_type: "application/json".to_string(),
+        },
+    };
+
+    tracing::info!("Sending Vision request to Gemini for dispatch guide image ({} bytes, {})", image_bytes.len(), mime_type);
+
+    let response = client
+        .post(&url)
+        .json(&request_payload)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("Gemini Vision request failed: {}", e)))?;
+
+    if !response.status().is_success() {
+        let status_code = response.status();
+        let err_text = response.text().await.unwrap_or_default();
+        return Err(AppError::Internal(format!(
+            "Gemini Vision API returned error code {}: {}",
+            status_code, err_text
+        )));
+    }
+
+    let gemini_resp: GeminiResponse = response
+        .json()
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to parse Gemini Vision response: {}", e)))?;
+
+    let candidates = gemini_resp.candidates.ok_or_else(|| {
+        AppError::Internal("Gemini Vision response returned no candidates".to_string())
+    })?;
+
+    if candidates.is_empty() {
+        return Err(AppError::Internal("Gemini Vision response candidates list is empty".to_string()));
+    }
+
+    let text = candidates[0].content.parts[0].text.as_deref().ok_or_else(|| {
+        AppError::Internal("Gemini Vision candidate has no text content".to_string())
+    })?;
+
+    let parsed_json: serde_json::Value = serde_json::from_str(text)
+        .map_err(|e| AppError::Internal(format!("Failed to parse Vision LLM text to JSON: {}. Text: {}", e, text)))?;
+
+    tracing::info!("Vision parse successful: found {} items",
+        parsed_json.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0)
+    );
+
+    Ok(parsed_json)
 }
 
 #[cfg(test)]

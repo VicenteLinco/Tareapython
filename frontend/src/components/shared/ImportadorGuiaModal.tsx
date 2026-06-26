@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
-import { X, Sparkles, AlertTriangle, Trash2, Loader2, FileText } from 'lucide-react'
+import { X, Sparkles, AlertTriangle, Trash2, Loader2, FileText, Upload, Camera, Image as ImageIcon, Eye } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { v4 as uuidv4 } from 'uuid'
 import api from '@/lib/api'
 import { notify } from '@/lib/notify'
 import { parseApiError } from '@/lib/api-error'
 import { useAreas, useCategorias, useUnidadesBasicas } from '@/hooks/dominio'
+import { parseGuiaImagen } from '@/api/recepciones'
 import type { Producto } from '@/types'
 
 export interface ParsedItem {
@@ -40,6 +41,13 @@ export default function ImportadorGuiaModal({
   const [isParsing, setIsParsing] = useState(false)
   const [proveedorDetectado, setProveedorDetectado] = useState('')
   const [items, setItems] = useState<ParsedItem[]>([])
+
+  // Tab y upload de imagen
+  const [activeTab, setActiveTab] = useState<'text' | 'image'>('text')
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [archivoUrl, setArchivoUrl] = useState<string | null>(null)
 
   // Defaults for new product creation
   const [defaultAreaId, setDefaultAreaId] = useState<string>('')
@@ -86,6 +94,12 @@ export default function ImportadorGuiaModal({
     }
   }, [areas, categorias, unidades, defaultAreaId, defaultCategoriaId, defaultUnidadId])
 
+  useEffect(() => {
+    return () => {
+      if (filePreviewUrl) URL.revokeObjectURL(filePreviewUrl)
+    }
+  }, [filePreviewUrl])
+
   const handleParse = async () => {
     if (!rawText.trim()) {
       notify.error('Por favor, pega el texto de la guía de despacho')
@@ -97,6 +111,63 @@ export default function ImportadorGuiaModal({
       setProveedorDetectado(res.data.proveedor)
       setItems(res.data.items || [])
       notify.success('Guía parseada con éxito')
+    } catch (err) {
+      notify.error(parseApiError(err))
+    } finally {
+      setIsParsing(false)
+    }
+  }
+
+  const handleFileSelect = (file: File) => {
+    const maxSize = 10 * 1024 * 1024
+    if (file.size > maxSize) {
+      notify.error('El archivo no puede superar 10 MB')
+      return
+    }
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf']
+    if (!allowedTypes.includes(file.type)) {
+      notify.error('Solo se aceptan archivos JPG, PNG, WEBP o PDF')
+      return
+    }
+    setSelectedFile(file)
+    if (file.type.startsWith('image/')) {
+      setFilePreviewUrl(URL.createObjectURL(file))
+    } else {
+      setFilePreviewUrl(null)
+    }
+    setItems([])
+    setArchivoUrl(null)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const file = e.dataTransfer.files[0]
+    if (file) handleFileSelect(file)
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+  }
+
+  const handleParseImage = async () => {
+    if (!selectedFile) {
+      notify.error('Por favor, selecciona un archivo')
+      return
+    }
+    setIsParsing(true)
+    try {
+      const res = await parseGuiaImagen(selectedFile)
+      setProveedorDetectado(res.proveedor)
+      setItems(res.items || [])
+      setArchivoUrl(res.archivo_url)
+      notify.success(`Guía analizada con IA (${res.source})`)
     } catch (err) {
       notify.error(parseApiError(err))
     } finally {
@@ -258,7 +329,7 @@ export default function ImportadorGuiaModal({
               Importar Guía de Despacho (Zero-Friction)
             </h3>
             <p className="text-xs opacity-60">
-              Pega el texto del PDF de la guía para extraer automáticamente productos, lotes y vencimientos.
+              Pega el texto o sube una imagen/PDF de la guía para extraer automáticamente productos, lotes y vencimientos.
             </p>
           </div>
           <button className="btn btn-sm btn-circle btn-ghost" onClick={onClose}>
@@ -266,56 +337,230 @@ export default function ImportadorGuiaModal({
           </button>
         </div>
 
+        {/* Tab Bar */}
+        <div className="flex border-b px-6 bg-base-100 shrink-0">
+          <button
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'text' ? 'border-primary text-primary' : 'border-transparent text-base-content/50 hover:text-base-content/80'}`}
+            onClick={() => setActiveTab('text')}
+          >
+            <FileText className="h-4 w-4 inline-block mr-1.5 -mt-0.5" />
+            Pegar Texto
+          </button>
+          <button
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'image' ? 'border-primary text-primary' : 'border-transparent text-base-content/50 hover:text-base-content/80'}`}
+            onClick={() => setActiveTab('image')}
+          >
+            <ImageIcon className="h-4 w-4 inline-block mr-1.5 -mt-0.5" />
+            Subir Imagen / PDF
+          </button>
+        </div>
+
         {/* Content Container (Double Panel) */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Left Panel: Paste Text */}
+          {/* Left Panel */}
           <div className="w-1/3 border-r p-4 flex flex-col gap-4 overflow-y-auto">
-            <div className="form-control flex-1">
-              <label className="label">
-                <span className="label-text font-semibold">Pegar texto de la Guía:</span>
-              </label>
-              <textarea
-                className="textarea textarea-bordered font-mono text-xs flex-1 min-h-[300px] resize-none"
-                placeholder="VALTEK S.A.&#10;Factura: 123456&#10;REF: V-1234  Reactivo PCR  10 unidades  Lote: L88291  Vence: 2027-12-31  Precio: 25000"
-                value={rawText}
-                onChange={(e) => setRawText(e.target.value)}
-              />
-            </div>
+            {activeTab === 'text' ? (
+              /* ── TEXT TAB ── */
+              <>
+                <div className="form-control flex-1">
+                  <label className="label">
+                    <span className="label-text font-semibold">Pegar texto de la Guía:</span>
+                  </label>
+                  <textarea
+                    className="textarea textarea-bordered font-mono text-xs flex-1 min-h-[300px] resize-none"
+                    placeholder="VALTEK S.A.&#10;Factura: 123456&#10;REF: V-1234  Reactivo PCR  10 unidades  Lote: L88291  Vence: 2027-12-31  Precio: 25000"
+                    value={rawText}
+                    onChange={(e) => setRawText(e.target.value)}
+                  />
+                </div>
 
-            <button
-              onClick={handleParse}
-              disabled={isParsing || !rawText.trim()}
-              className="btn btn-primary w-full"
-            >
-              {isParsing ? (
-                <>
-                  <Loader2 className="animate-spin h-4 w-4" />
-                  Procesando con IA...
-                </>
-              ) : (
-                'Parsear Guía'
-              )}
-            </button>
+                <button
+                  onClick={handleParse}
+                  disabled={isParsing || !rawText.trim()}
+                  className="btn btn-primary w-full"
+                >
+                  {isParsing ? (
+                    <>
+                      <Loader2 className="animate-spin h-4 w-4" />
+                      Procesando con IA...
+                    </>
+                  ) : (
+                    'Parsear Guía'
+                  )}
+                </button>
+              </>
+            ) : (
+              /* ── IMAGE TAB ── */
+              <>
+                {!selectedFile ? (
+                  <div
+                    className={`flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-6 transition-colors cursor-pointer ${
+                      isDragging
+                        ? 'border-primary bg-primary/5'
+                        : 'border-base-content/20 hover:border-primary/50'
+                    }`}
+                    onDrop={handleDrop}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onClick={() => document.getElementById('guia-file-input')?.click()}
+                  >
+                    <Upload className="h-12 w-12 text-base-content/30 mb-3" />
+                    <p className="text-sm font-semibold text-base-content/60 mb-1">
+                      Arrastra y suelta aquí
+                    </p>
+                    <p className="text-xs text-base-content/40 mb-4">
+                      JPG, PNG, WEBP o PDF — máx. 10 MB
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm gap-1.5"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          document.getElementById('guia-file-input')?.click()
+                        }}
+                      >
+                        <Upload className="h-3.5 w-3.5" />
+                        Seleccionar archivo
+                      </button>
+                      <label
+                        className="btn btn-outline btn-sm gap-1.5 cursor-pointer"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Camera className="h-3.5 w-3.5" />
+                        Cámara
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) handleFileSelect(file)
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <input
+                      id="guia-file-input"
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,application/pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) handleFileSelect(file)
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col gap-3">
+                    {/* Preview */}
+                    <div className="flex-1 flex items-center justify-center bg-base-200/50 rounded-lg border overflow-hidden min-h-0">
+                      {filePreviewUrl ? (
+                        <img
+                          src={filePreviewUrl}
+                          alt="Preview de la guía"
+                          className="max-w-full max-h-full object-contain"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center gap-2 text-base-content/40">
+                          <FileText className="h-16 w-16" />
+                          <p className="text-sm font-semibold">{selectedFile.name}</p>
+                          <p className="text-xs">PDF — {(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* File info & actions */}
+                    <div className="flex items-center justify-between bg-base-200/30 rounded-lg p-2 border">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <ImageIcon className="h-4 w-4 text-primary shrink-0" />
+                        <span className="text-xs font-medium truncate">{selectedFile.name}</span>
+                        <span className="text-[10px] text-base-content/40">
+                          {(selectedFile.size / 1024).toFixed(0)} KB
+                        </span>
+                      </div>
+                      <button
+                        className="btn btn-ghost btn-xs text-error"
+                        onClick={() => {
+                          setSelectedFile(null)
+                          setFilePreviewUrl(null)
+                          setItems([])
+                          setArchivoUrl(null)
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleParseImage}
+                  disabled={isParsing || !selectedFile}
+                  className="btn btn-primary w-full"
+                >
+                  {isParsing ? (
+                    <>
+                      <Loader2 className="animate-spin h-4 w-4" />
+                      Analizando con IA...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4" />
+                      Analizar con IA
+                    </>
+                  )}
+                </button>
+              </>
+            )}
           </div>
 
           {/* Right Panel: Parsed Grid */}
           <div className="w-2/3 p-4 flex flex-col overflow-hidden">
             {items.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center text-base-content/40 gap-3">
-                <FileText className="h-16 w-16 opacity-30" />
-                <p className="text-sm font-semibold">
-                  Aún no se ha cargado información de guía.
-                </p>
-                <p className="text-xs max-w-sm text-center">
-                  Copia el texto del PDF y haz clic en "Parsear Guía" para ver los resultados aquí.
-                </p>
+                {activeTab === 'text' ? (
+                  <>
+                    <FileText className="h-16 w-16 opacity-30" />
+                    <p className="text-sm font-semibold">
+                      Aún no se ha cargado información de guía.
+                    </p>
+                    <p className="text-xs max-w-sm text-center">
+                      Copia el texto del PDF y haz clic en "Parsear Guía" para ver los resultados aquí.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <ImageIcon className="h-16 w-16 opacity-30" />
+                    <p className="text-sm font-semibold">
+                      Aún no se ha analizado ninguna imagen.
+                    </p>
+                    <p className="text-xs max-w-sm text-center">
+                      Sube una foto o PDF de la guía de despacho y haz clic en "Analizar con IA" para ver los resultados aquí.
+                    </p>
+                  </>
+                )}
               </div>
             ) : (
               <div className="flex-1 flex flex-col overflow-hidden gap-4">
                 <div className="flex items-center justify-between shrink-0 bg-base-200/50 p-3 rounded-lg border">
-                  <div>
-                    <span className="text-xs opacity-50">Proveedor detectado:</span>
-                    <h4 className="font-bold text-sm text-primary">{proveedorDetectado}</h4>
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <span className="text-xs opacity-50">Proveedor detectado:</span>
+                      <h4 className="font-bold text-sm text-primary">{proveedorDetectado}</h4>
+                    </div>
+                    {archivoUrl && (
+                      <a
+                        href={`${import.meta.env.VITE_API_URL || ''}/uploads/${archivoUrl}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-ghost btn-xs gap-1"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Ver original
+                      </a>
+                    )}
                   </div>
                   <span className="badge badge-outline">{items.length} ítems encontrados</span>
                 </div>

@@ -89,3 +89,21 @@ export async function parseGuia(raw_text: string): Promise<ParseGuiaResponse> {
   return data
 }
 
+export interface ParseGuiaImagenResponse {
+  proveedor: string
+  items: ParsedItem[]
+  archivo_url: string
+  source: string
+}
+
+/** POST /recepciones/parse-guia-imagen — Parsear imagen/PDF de guía de despacho */
+export async function parseGuiaImagen(file: File): Promise<ParseGuiaImagenResponse> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const { data } = await api.post<ParseGuiaImagenResponse>('/recepciones/parse-guia-imagen', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000,
+  })
+  return data
+}
+

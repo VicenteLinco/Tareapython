@@ -1,4 +1,4 @@
-use axum::extract::{Path, Query, State};
+use axum::extract::{Multipart, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
@@ -11,7 +11,7 @@ use crate::db::AppState;
 use crate::domain::EstadoRecepcion;
 use crate::dto::recepcion::{CreateRecepcion, RecepcionQuery, SubirFotoInput};
 use crate::errors::AppError;
-use crate::services::{idempotency, recepcion_service, storage};
+use crate::services::{idempotency, llm, recepcion_service, storage};
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct RecepcionConProveedor {
@@ -373,10 +373,116 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
         .route("/parse-guia", post(parse_guia))
+        .route("/parse-guia-imagen", post(parse_guia_imagen))
         .route("/{id}", get(obtener).delete(eliminar_borrador_handler))
         .route("/{id}/confirmar", post(confirmar))
         .route("/{id}/foto", post(subir_foto).put(subir_foto))
         .route("/scanner-session", post(crear_scanner_session))
         .route("/scanner-session/{token}/scan", post(scan_codigo))
         .route("/scanner-session/{token}/items", get(get_scanner_items))
+}
+
+#[derive(Debug, Serialize)]
+pub struct GuiaParseadaConArchivo {
+    pub proveedor: String,
+    pub items: Vec<ItemGuiaParseado>,
+    pub archivo_url: String,
+    pub source: String,
+}
+
+async fn parse_guia_imagen(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    mut multipart: Multipart,
+) -> Result<Json<GuiaParseadaConArchivo>, AppError> {
+    crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
+
+    let mut file_bytes: Option<Vec<u8>> = None;
+    let mut file_mime: Option<String> = None;
+    let mut file_name: Option<String> = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::Validation(format!("Error leyendo multipart: {}", e)))?
+    {
+        let name = field.name().unwrap_or_default().to_string();
+        if name == "file" {
+            file_mime = field.content_type().map(|s| s.to_string());
+            file_name = field.file_name().map(|s| s.to_string());
+            file_bytes = Some(
+                field
+                    .bytes()
+                    .await
+                    .map_err(|e| AppError::Validation(format!("Error leyendo archivo: {}", e)))?
+                    .to_vec(),
+            );
+        }
+    }
+
+    let bytes = file_bytes.ok_or_else(|| {
+        AppError::Validation("No se encontró el campo 'file' en el formulario".into())
+    })?;
+
+    let mime = file_mime.unwrap_or_default();
+    let allowed_mimes = [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "application/pdf",
+    ];
+    if !allowed_mimes.contains(&mime.as_str()) {
+        return Err(AppError::Validation(format!(
+            "Tipo de archivo no soportado: {}. Se aceptan: JPEG, PNG, WebP y PDF",
+            mime
+        )));
+    }
+
+    let extension = match mime.as_str() {
+        "image/jpeg" => "jpg",
+        "image/png" => "png",
+        "image/webp" => "webp",
+        "application/pdf" => "pdf",
+        _ => "bin",
+    };
+
+    let archivo_url = storage::save_file_bytes(
+        &bytes,
+        extension,
+        "guias",
+        &format!("guia_{}", claims.sub),
+    )
+    .await?;
+
+    let vision_result = llm::parse_guia_con_vision(&state.pool, &bytes, &mime).await;
+
+    match vision_result {
+        Ok(parsed_json) => {
+            let parsed_guia: GuiaParseada = serde_json::from_value(parsed_json).map_err(|e| {
+                AppError::Internal(format!(
+                    "La respuesta de Vision no coincide con el esquema GuiaParseada: {}",
+                    e
+                ))
+            })?;
+
+            Ok(Json(GuiaParseadaConArchivo {
+                proveedor: parsed_guia.proveedor,
+                items: parsed_guia.items,
+                archivo_url,
+                source: "vision".to_string(),
+            }))
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Vision parse failed for file {:?}: {}. File saved at {}",
+                file_name,
+                e,
+                archivo_url
+            );
+            Err(AppError::Internal(format!(
+                "No se pudo extraer datos de la imagen. El archivo fue guardado en {}. Error: {}",
+                archivo_url, e
+            )))
+        }
+    }
 }

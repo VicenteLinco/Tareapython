@@ -431,6 +431,7 @@ async fn parse_guia_imagen(
     let mime = file_mime.unwrap_or_default();
     let allowed_mimes = [
         "image/jpeg",
+        "image/jpg",
         "image/png",
         "image/webp",
         "application/pdf",
@@ -443,7 +444,7 @@ async fn parse_guia_imagen(
     }
 
     let extension = match mime.as_str() {
-        "image/jpeg" => "jpg",
+        "image/jpeg" | "image/jpg" => "jpg",
         "image/png" => "png",
         "image/webp" => "webp",
         "application/pdf" => "pdf",

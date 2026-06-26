@@ -101,7 +101,6 @@ export async function parseGuiaImagen(file: File): Promise<ParseGuiaImagenRespon
   const formData = new FormData()
   formData.append('file', file)
   const { data } = await api.post<ParseGuiaImagenResponse>('/recepciones/parse-guia-imagen', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 60000,
   })
   return data

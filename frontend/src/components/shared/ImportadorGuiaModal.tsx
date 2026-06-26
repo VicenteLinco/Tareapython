@@ -364,7 +364,7 @@ export default function ImportadorGuiaModal({
 
   return (
     <div className="modal modal-open">
-      <div className="modal-box w-11/12 max-w-7xl h-[85vh] flex flex-col p-0 overflow-hidden">
+      <div className="modal-box w-[96vw] max-w-[98%] h-[90vh] flex flex-col p-0 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between border-b px-6 py-4 shrink-0 bg-base-100">
           <div>
@@ -402,7 +402,7 @@ export default function ImportadorGuiaModal({
         {/* Content Container (Double Panel) */}
         <div className="flex flex-1 overflow-hidden">
           {/* Left Panel */}
-          <div className="w-1/3 border-r p-4 flex flex-col gap-4 overflow-y-auto">
+          <div className="w-1/4 min-w-[280px] max-w-[340px] border-r p-4 flex flex-col gap-4 overflow-y-auto">
             {activeTab === 'text' ? (
               /* ── TEXT TAB ── */
               <>
@@ -616,7 +616,7 @@ export default function ImportadorGuiaModal({
                       <span className="label-text text-[10px] uppercase font-semibold">Área por defecto</span>
                     </label>
                     <select
-                      className="select select-bordered select-xs w-full"
+                      className="select select-bordered select-sm w-full"
                       value={defaultAreaId}
                       onChange={(e) => setDefaultAreaId(e.target.value)}
                     >
@@ -630,7 +630,7 @@ export default function ImportadorGuiaModal({
                       <span className="label-text text-[10px] uppercase font-semibold">Categoría por defecto</span>
                     </label>
                     <select
-                      className="select select-bordered select-xs w-full"
+                      className="select select-bordered select-sm w-full"
                       value={defaultCategoriaId}
                       onChange={(e) => setDefaultCategoriaId(e.target.value)}
                     >
@@ -644,7 +644,7 @@ export default function ImportadorGuiaModal({
                       <span className="label-text text-[10px] uppercase font-semibold">Unidad base por defecto</span>
                     </label>
                     <select
-                      className="select select-bordered select-xs w-full"
+                      className="select select-bordered select-sm w-full"
                       value={defaultUnidadId}
                       onChange={(e) => setDefaultUnidadId(e.target.value)}
                     >
@@ -683,7 +683,7 @@ export default function ImportadorGuiaModal({
                               <div className="flex flex-col gap-1">
                                 <input
                                   type="text"
-                                  className="input input-bordered input-xs font-semibold w-full"
+                                  className="input input-bordered input-sm font-semibold w-full"
                                   value={item.nombre_producto}
                                   onChange={(e) => handleUpdateItem(index, 'nombre_producto', e.target.value)}
                                 />
@@ -698,7 +698,7 @@ export default function ImportadorGuiaModal({
                             <td>
                               <input
                                 type="text"
-                                className="input input-bordered input-xs w-full"
+                                className="input input-bordered input-sm w-full"
                                 value={item.sku_ref}
                                 onChange={(e) => handleUpdateItem(index, 'sku_ref', e.target.value)}
                               />
@@ -706,7 +706,7 @@ export default function ImportadorGuiaModal({
                             <td>
                               {isNewProduct ? (
                                 <select
-                                  className="select select-bordered select-xs w-full bg-base-100 border-base-300 font-semibold"
+                                  className="select select-bordered select-sm w-full bg-base-100 border-base-300 font-semibold"
                                   value={item.control_lote || 'con_vto'}
                                   onChange={(e) => handleUpdateItem(index, 'control_lote', e.target.value)}
                                 >
@@ -723,7 +723,7 @@ export default function ImportadorGuiaModal({
                             <td>
                               <input
                                 type="text"
-                                className={`input input-bordered input-xs w-full ${itemErrors.lote ? 'input-error border-error border-2' : ''}`}
+                                className={`input input-bordered input-sm w-full ${itemErrors.lote ? 'input-error border-error border-2' : ''}`}
                                 value={isSimple ? '' : (item.lote || '')}
                                 onChange={(e) => handleUpdateItem(index, 'lote', e.target.value)}
                                 placeholder={isSimple ? 'No requerido' : 'Requerido'}
@@ -733,7 +733,7 @@ export default function ImportadorGuiaModal({
                             <td>
                               <input
                                 type="text"
-                                className={`input input-bordered input-xs w-full font-mono ${itemErrors.fecha_vencimiento ? 'input-error border-error border-2' : ''}`}
+                                className={`input input-bordered input-sm w-full font-mono ${itemErrors.fecha_vencimiento ? 'input-error border-error border-2' : ''}`}
                                 value={isSimple ? '' : (item.fecha_vencimiento || '')}
                                 onChange={(e) => handleUpdateItem(index, 'fecha_vencimiento', e.target.value)}
                                 placeholder={isSimple ? 'No requerido' : 'YYYY-MM-DD'}
@@ -743,7 +743,7 @@ export default function ImportadorGuiaModal({
                             <td>
                               <input
                                 type="number"
-                                className="input input-bordered input-xs w-full text-right"
+                                className="input input-bordered input-sm w-full text-right"
                                 value={item.cantidad}
                                 onChange={(e) => handleUpdateItem(index, 'cantidad', Number(e.target.value))}
                               />
@@ -751,7 +751,7 @@ export default function ImportadorGuiaModal({
                             <td>
                               <input
                                 type="number"
-                                className="input input-bordered input-xs w-full text-right"
+                                className="input input-bordered input-sm w-full text-right"
                                 value={item.precio_unitario || ''}
                                 onChange={(e) => handleUpdateItem(index, 'precio_unitario', e.target.value ? Number(e.target.value) : null)}
                               />

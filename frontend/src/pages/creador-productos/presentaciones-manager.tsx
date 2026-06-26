@@ -13,12 +13,11 @@ import { DataTable } from "@/components/ui/data-table";
 import { PageLoading } from "@/components/ui/page-state";
 import {
   ProveedorSelect,
-  ProveedorIcon,
 } from "@/components/ui/proveedor-select";
+import { useProveedores } from "@/hooks/dominio";
 import { Dialog } from "@/components/ui/dialog";
 import { notify } from "@/lib/notify";
 import api from "@/lib/api";
-import type { Proveedor } from "@/types";
 
 export interface Presentacion {
   id: number;
@@ -38,6 +37,7 @@ export interface Presentacion {
 
 export function PresentacionesManager({ productoId }: { productoId: string }) {
   const queryClient = useQueryClient();
+  const { data: proveedores = [] } = useProveedores();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<Partial<Presentacion>>({
@@ -245,13 +245,13 @@ export function PresentacionesManager({ productoId }: { productoId: string }) {
         emptyMessage="Este producto aún no tiene presentaciones logísticas registradas."
       />
 
-      <Dialog open={modalOpen} onOpenChange={setModalOpen} className="max-w-xl">
-        <div className="p-6">
-          <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-            <Package className="w-6 h-6 text-primary" />
-            {editingId ? "Editar Presentación" : "Nueva Presentación"}
-          </h2>
-
+      <Dialog
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editingId ? "Editar Presentación" : "Nueva Presentación"}
+        className="max-w-xl"
+      >
+        <div>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div className="form-control">
@@ -334,6 +334,7 @@ export function PresentacionesManager({ productoId }: { productoId: string }) {
                   </span>
                 </label>
                 <ProveedorSelect
+                  proveedores={proveedores}
                   value={form.proveedor_id ? form.proveedor_id.toString() : ""}
                   onChange={(v) =>
                     setForm({ ...form, proveedor_id: v ? parseInt(v) : null })

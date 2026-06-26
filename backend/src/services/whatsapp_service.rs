@@ -524,10 +524,11 @@ pub async fn registrar_recepcion_tool(
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let mut provider_id: Option<i32> = sqlx::query_scalar::<_, i32>(
-        r#"SELECT p.proveedor_id
-           FROM productos p
-           JOIN proveedores prov ON prov.id = p.proveedor_id
-           WHERE p.id = $1 AND prov.activa = true"#,
+        r#"SELECT pres.proveedor_id
+           FROM presentaciones pres
+           JOIN proveedores prov ON prov.id = pres.proveedor_id
+           WHERE pres.producto_id = $1 AND prov.activa = true
+           LIMIT 1"#,
     )
     .bind(resolved.producto_id)
     .fetch_optional(&mut *tx)

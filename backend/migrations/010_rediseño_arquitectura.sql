@@ -5,6 +5,9 @@
 -- 1. LIMPIEZA DEL MODELO CORE (IDENTIDAD CLÍNICA)
 -- Eliminación de columnas comerciales y logísticas incrustadas erróneamente en productos.
 -- ==============================================================================
+-- Drop trigger first to avoid dependency blocks when dropping columns
+DROP TRIGGER IF EXISTS trg_productos_search_vector ON public.productos;
+
 ALTER TABLE public.productos
     DROP COLUMN IF EXISTS proveedor_id,
     DROP COLUMN IF EXISTS precio_unidad,
@@ -15,6 +18,27 @@ ALTER TABLE public.productos
     DROP COLUMN IF EXISTS pres_codigo_barras,
     DROP COLUMN IF EXISTS pres_gtin,
     DROP COLUMN IF EXISTS pres_gs1_habilitado;
+
+-- Recreate search vector update function without sku
+CREATE OR REPLACE FUNCTION public.productos_search_vector_update() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.search_vector :=
+        setweight(to_tsvector('simple', COALESCE(NEW.nombre, '')), 'A') ||
+        setweight(to_tsvector('simple', COALESCE(NEW.codigo_interno, '')), 'A') ||
+        setweight(to_tsvector('simple', COALESCE(NEW.descripcion, '')), 'C') ||
+        setweight(to_tsvector('simple', COALESCE(NEW.fabricante, '')), 'C');
+    RETURN NEW;
+END;
+$$;
+
+-- Recreate trigger without sku
+CREATE TRIGGER trg_productos_search_vector
+    BEFORE INSERT OR UPDATE OF nombre, codigo_interno, descripcion, fabricante
+    ON public.productos
+    FOR EACH ROW
+    EXECUTE FUNCTION public.productos_search_vector_update();
 
 
 -- ==============================================================================

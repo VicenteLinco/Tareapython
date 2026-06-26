@@ -32,14 +32,12 @@ import api from "@/lib/api";
 import { parseApiError } from "@/lib/api-error";
 import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
-import type { PresFormato } from "@/lib/pres-formatos";
 import { PresentacionesManager } from "./presentaciones-manager";
 import type {
   PaginatedResponse,
   Categoria,
   UnidadBasica,
   Area,
-  Proveedor,
   CreateProducto,
   UpdateProducto,
   ControlLote,
@@ -95,7 +93,6 @@ interface ProductoDetailResponse {
   codigos_barras?: { id: number; codigo: string }[];
 }
 
-type PresFormatoRow = PresFormato & { id: number };
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -120,19 +117,6 @@ function productoEstadoTexto(item: ProductoListItem) {
   return item.activo ? "Activo" : "Inactivo";
 }
 
-interface PrecioHistorialItem {
-  id: number;
-  proveedor_id: number | null;
-  proveedor_nombre: string | null;
-  precio_unidad: string;
-  presentacion_id: number | null;
-  presentacion_nombre: string | null;
-  precio_presentacion: string | null;
-  vigente_desde: string;
-  fuente: string;
-  nota: string | null;
-  created_at: string;
-}
 
 function isValidEan13(value: string) {
   if (!/^\d{13}$/.test(value)) return false;
@@ -221,11 +205,6 @@ export default function ProductosTab() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: proveedores } = useQuery({
-    queryKey: ["proveedores"],
-    queryFn: () => api.get<Proveedor[]>("/proveedores").then((r) => r.data),
-    staleTime: 5 * 60 * 1000,
-  });
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.delete(`/productos/${id}`),
@@ -2753,13 +2732,6 @@ function ProductoDetail({ id }: { id: string }) {
     queryKey: ["producto-detail", id],
     queryFn: () =>
       api.get<ProductoDetailResponse>(`/productos/${id}`).then((r) => r.data),
-  });
-  const { data: historialPrecios = [] } = useQuery({
-    queryKey: ["producto-precios", id],
-    queryFn: () =>
-      api
-        .get<PrecioHistorialItem[]>(`/productos/${id}/precios`)
-        .then((r) => r.data),
   });
 
   if (isLoading) {

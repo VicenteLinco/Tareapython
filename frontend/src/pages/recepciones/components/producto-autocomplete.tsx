@@ -16,7 +16,7 @@ interface Props {
 export function ProductoAutocomplete({
   productos,
   excluidos,
-  proveedorId,
+  proveedorId: _proveedorId,
   onSelect,
   onScan,
   onScannerOpen,
@@ -43,7 +43,6 @@ export function ProductoAutocomplete({
     canShowInitialList || canSearch
       ? productos
           .filter((p) => !excluidos.includes(String(p.id)))
-          .filter((p) => proveedorId == null || p.proveedor_id === proveedorId)
           .filter((p) => {
             if (canShowInitialList) return true;
             const normalizedNombre = normalizeText(p.nombre);

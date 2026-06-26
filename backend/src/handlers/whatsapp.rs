@@ -685,12 +685,15 @@ mod tests {
         .await
         .unwrap();
 
-        sqlx::query("UPDATE productos SET proveedor_id = $2 WHERE id = $1")
-            .bind(product_id)
-            .bind(provider_id)
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, activa, proveedor_id) \
+             VALUES ($1, 'Unidad', 'Unidades', 1.0, true, $2)",
+        )
+        .bind(product_id)
+        .bind(provider_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
         let area_exists =
             sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM areas WHERE id = 1)")
@@ -820,19 +823,25 @@ mod tests {
         .await
         .unwrap();
 
-        sqlx::query("UPDATE productos SET proveedor_id = $2 WHERE id = $1")
-            .bind(p1_id)
-            .bind(provider_id)
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, activa, proveedor_id) \
+             VALUES ($1, 'Unidad', 'Unidades', 1.0, true, $2)",
+        )
+        .bind(p1_id)
+        .bind(provider_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
-        sqlx::query("UPDATE productos SET proveedor_id = $2 WHERE id = $1")
-            .bind(p2_id)
-            .bind(provider_id)
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, activa, proveedor_id) \
+             VALUES ($1, 'Unidad', 'Unidades', 1.0, true, $2)",
+        )
+        .bind(p2_id)
+        .bind(provider_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
         let area_exists =
             sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM areas WHERE id = 1)")
@@ -1126,6 +1135,16 @@ mod tests {
         )
         .bind(l1_id)
         .bind(l2_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO stock_snapshot (lote_id, producto_id, stock_actual) VALUES ($1, $3, 10.0), ($2, $3, 15.0)",
+        )
+        .bind(l1_id)
+        .bind(l2_id)
+        .bind(p_id)
         .execute(&pool)
         .await
         .unwrap();

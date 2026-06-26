@@ -242,6 +242,7 @@ pub struct ListarProductosParams {
     pub q: Option<String>,
     pub categoria_id: Option<i32>,
     pub area_id: Option<i32>,
+    pub proveedor_id: Option<i32>,
     pub activo: bool,
     pub sort_by: Option<String>,
     pub sort_dir: Option<String>,
@@ -686,12 +687,12 @@ impl ProductoService {
 
         let row = sqlx::query_as::<_, Row1>(
             r#"SELECT
-                 p.id as producto_id, p.nombre as producto_nombre, p.proveedor_id,
+                 p.id as producto_id, p.nombre as producto_nombre, pr.proveedor_id,
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
                  pr.id as presentacion_id, pr.nombre as presentacion_nombre, pr.factor_conversion,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
                  p.imagen_url AS imagen_url,
-                 p.precio_unidad,
+                 pr.precio_adquisicion as precio_unidad,
                  p.control_lote,
                  p.estado_catalogo
                FROM presentaciones pr
@@ -754,12 +755,12 @@ impl ProductoService {
 
         let alias_row = sqlx::query_as::<_, AliasRow>(
             r#"SELECT
-                 p.id as producto_id, p.nombre as producto_nombre, p.proveedor_id,
+                 p.id as producto_id, p.nombre as producto_nombre, pr.proveedor_id,
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
                  pr.id as presentacion_id, pr.nombre as presentacion_nombre, pr.factor_conversion,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
                  p.imagen_url AS imagen_url,
-                 p.precio_unidad,
+                 pr.precio_adquisicion as precio_unidad,
                  p.control_lote,
                  p.estado_catalogo
                FROM producto_codigos_barras pcb
@@ -813,11 +814,12 @@ impl ProductoService {
         // 2. Search by product internal code
         let row2 = sqlx::query_as::<_, Row2>(
             r#"SELECT
-                 p.id as producto_id, p.nombre as producto_nombre, p.proveedor_id,
+                 p.id as producto_id, p.nombre as producto_nombre,
+                 (SELECT pr.proveedor_id FROM presentaciones pr WHERE pr.producto_id = p.id AND pr.activa = true ORDER BY pr.id ASC LIMIT 1) as proveedor_id,
                  ub.nombre as unidad_base_nombre, ub.nombre_plural as unidad_base_nombre_plural,
                  (SELECT SUM(s.cantidad) FROM stock s WHERE s.lote_id IN (SELECT l.id FROM lotes l WHERE l.producto_id = p.id)) as stock_total,
                  p.imagen_url AS imagen_url,
-                 p.precio_unidad,
+                 (SELECT pr.precio_adquisicion FROM presentaciones pr WHERE pr.producto_id = p.id AND pr.activa = true ORDER BY pr.id ASC LIMIT 1) as precio_unidad,
                  p.control_lote,
                  p.estado_catalogo
                FROM productos p
@@ -878,7 +880,7 @@ impl ProductoService {
                  l.fecha_vencimiento,
                  p.id as producto_id,
                  p.nombre as producto_nombre,
-                 p.proveedor_id,
+                 (SELECT pr.proveedor_id FROM presentaciones pr WHERE pr.producto_id = p.id AND pr.activa = true ORDER BY pr.id ASC LIMIT 1) as proveedor_id,
                  ub.nombre as unidad_base_nombre,
                  ub.nombre_plural as unidad_base_nombre_plural,
                  (SELECT pr.id FROM presentaciones pr
@@ -896,7 +898,7 @@ impl ProductoService {
                   WHERE s.lote_id = l.id AND s.cantidad > 0
                   ORDER BY s.cantidad DESC LIMIT 1) as area_nombre,
                  p.imagen_url AS imagen_url,
-                 p.precio_unidad,
+                 (SELECT pr.precio_adquisicion FROM presentaciones pr WHERE pr.producto_id = p.id AND pr.activa = true ORDER BY pr.id ASC LIMIT 1) as precio_unidad,
                  p.control_lote,
                  p.estado_catalogo
                FROM lotes l
@@ -1053,10 +1055,7 @@ impl ProductoService {
             r#"SELECT id, nombre, codigo_interno, estado_catalogo
                FROM productos
                WHERE (
-                   sku = $1
-                   OR pres_gtin = $1
-                   OR pres_codigo_barras = $1
-                   OR id IN (SELECT producto_id FROM presentaciones WHERE (codigo_barras = $1 OR gtin = $1) AND activa = true)
+                   id IN (SELECT producto_id FROM presentaciones WHERE (codigo_barras = $1 OR gtin = $1 OR sku = $1) AND activa = true)
                    OR id IN (SELECT producto_id FROM producto_codigos_barras WHERE codigo = $1 AND activo = true)
                )
                AND deleted_at IS NULL
@@ -1118,7 +1117,7 @@ impl ProductoService {
 
         if params.q.is_some() {
             conditions.push(format!(
-                "(p.search_vector @@ plainto_tsquery('simple', ${0}) OR p.nombre ILIKE '%' || ${0} || '%' OR p.codigo_interno ILIKE '%' || ${0} || '%' OR p.sku ILIKE '%' || ${0} || '%')",
+                "(p.search_vector @@ plainto_tsquery('simple', ${0}) OR p.nombre ILIKE '%' || ${0} || '%' OR p.codigo_interno ILIKE '%' || ${0} || '%' OR EXISTS (SELECT 1 FROM presentaciones pres WHERE pres.producto_id = p.id AND pres.sku ILIKE '%' || ${0} || '%'))",
                 param_idx
             ));
             param_idx += 1;
@@ -1130,6 +1129,13 @@ impl ProductoService {
         if params.area_id.is_some() {
             conditions.push(format!(
                 "EXISTS (SELECT 1 FROM producto_area pa WHERE pa.producto_id = p.id AND pa.area_id = ${})",
+                param_idx
+            ));
+            param_idx += 1;
+        }
+        if params.proveedor_id.is_some() {
+            conditions.push(format!(
+                "EXISTS (SELECT 1 FROM presentaciones pres WHERE pres.producto_id = p.id AND pres.proveedor_id = ${})",
                 param_idx
             ));
             param_idx += 1;
@@ -1199,6 +1205,10 @@ impl ProductoService {
         if let Some(area_id) = params.area_id {
             count_query = count_query.bind(area_id);
             data_query = data_query.bind(area_id);
+        }
+        if let Some(proveedor_id) = params.proveedor_id {
+            count_query = count_query.bind(proveedor_id);
+            data_query = data_query.bind(proveedor_id);
         }
 
         data_query = data_query.bind(params.limit).bind(params.offset);

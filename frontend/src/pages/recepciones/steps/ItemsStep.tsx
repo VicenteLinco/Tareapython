@@ -72,7 +72,7 @@ export function ItemsStep({
               id: String(p.id),
               nombre: p.nombre,
               codigo_interno: p.codigo_interno ?? null,
-              sku: p.sku ?? null,
+              sku: null,
             })) ?? []
           }
           onClose={clearPendingUnknownCode}

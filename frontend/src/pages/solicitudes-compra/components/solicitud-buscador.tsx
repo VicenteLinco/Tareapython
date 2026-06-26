@@ -4,7 +4,6 @@ import { Search, X } from "lucide-react";
 import api from "@/lib/api";
 import type { Producto, PaginatedResponse } from "@/types";
 import { ProductoImage } from "@/components/ui/producto-image";
-import { APP_LOCALE } from "@/lib/utils";
 
 interface Props {
   proveedorId: number | null;
@@ -13,19 +12,9 @@ interface Props {
   onAdd: (p: Producto) => void;
 }
 
-function fmt(v: string | number | null, monedaCodigo = "CLP") {
-  if (v === null || v === undefined) return null;
-  const n = typeof v === "string" ? parseFloat(v) : v;
-  if (isNaN(n)) return null;
-  return new Intl.NumberFormat(APP_LOCALE, {
-    style: "currency",
-    currency: monedaCodigo,
-  }).format(n);
-}
-
 export function SolicitudBuscador({
   proveedorId,
-  monedaCodigo = "CLP",
+  monedaCodigo: _monedaCodigo = "CLP",
   excluidos,
   onAdd,
 }: Props) {
@@ -177,16 +166,6 @@ export function SolicitudBuscador({
                   pres_factor?: string | null;
                 };
                 const px = p as PExt;
-                const precioBase =
-                  p.precio_unidad != null
-                    ? parseFloat(String(p.precio_unidad))
-                    : null;
-                const precioDisplay =
-                  precioBase != null && precioBase > 0
-                    ? px.pres_factor && px.pres_nombre
-                      ? `${fmt(precioBase * parseFloat(String(px.pres_factor)), monedaCodigo)} / ${px.pres_nombre}`
-                      : `${fmt(precioBase, monedaCodigo)} / ${px.unidad_base?.nombre ?? "u"}`
-                    : null;
                 return (
                   <div
                     key={p.id}
@@ -213,11 +192,6 @@ export function SolicitudBuscador({
                         #{p.codigo_interno}
                       </p>
                     </div>
-                    {precioDisplay && (
-                      <span className="text-[10px] font-bold text-success opacity-70 flex-shrink-0 text-right max-w-[90px] truncate">
-                        {precioDisplay}
-                      </span>
-                    )}
                     <div
                       className={`h-6 w-6 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${
                         i === activeIndex

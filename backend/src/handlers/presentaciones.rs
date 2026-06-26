@@ -269,7 +269,7 @@ pub async fn clear_gtin(
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, sqlx::FromRow, specta::Type)]
 pub struct PresentacionConProducto {
     pub id: i32,
     pub producto_id: Uuid,
@@ -280,6 +280,8 @@ pub struct PresentacionConProducto {
     pub gs1_habilitado: bool,
     pub gtin_interno: bool,
     pub activa: bool,
+    pub sku: Option<String>,
+    pub control_lote: String,
 }
 
 /// GET /api/v1/presentaciones
@@ -293,7 +295,8 @@ pub async fn listar_todas(
 
     let rows: Vec<PresentacionConProducto> = sqlx::query_as(
         "SELECT p.id, p.producto_id, pr.nombre AS producto_nombre, \
-                p.nombre, p.nombre_plural, p.gtin, p.gs1_habilitado, p.gtin_interno, p.activa \
+                p.nombre, p.nombre_plural, p.gtin, p.gs1_habilitado, p.gtin_interno, p.activa, p.sku, \
+                pr.control_lote::text AS control_lote \
          FROM presentaciones p \
          JOIN productos pr ON pr.id = p.producto_id \
          WHERE p.deleted_at IS NULL AND pr.deleted_at IS NULL \

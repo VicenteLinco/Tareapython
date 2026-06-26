@@ -274,7 +274,10 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
     let prov_filter = if let Some(prov_id) = params.proveedor_id {
         param_idx += 1;
         binds.push(prov_id.to_string());
-        format!("AND p.proveedor_id = ${}::integer", param_idx)
+        format!(
+            "AND EXISTS (SELECT 1 FROM presentaciones pres WHERE pres.producto_id = p.id AND pres.proveedor_id = ${}::integer)",
+            param_idx
+        )
     } else {
         "".to_string()
     };
@@ -318,7 +321,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
         (
             "s.cantidad",
             "stock",
-            format!("AND s2.area_id = ANY(ARRAY[{}]::integer[])", area_ids),
+            format!("AND s.area_id = ANY(ARRAY[{}]::integer[])", area_ids),
         )
     } else {
         ("s.stock_actual", "stock_snapshot", "".to_string())
@@ -441,7 +444,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                SELECT DISTINCT ON (l2.producto_id)
                    l2.producto_id, pv.nombre, pv.icono
                FROM lotes l2
-               JOIN {} s2 ON s2.lote_id = l2.id
+               JOIN {} s ON s.lote_id = l2.id
                JOIN proveedores pv ON pv.id = l2.proveedor_id
                WHERE {} > 0 {}
                ORDER BY l2.producto_id, l2.fecha_vencimiento ASC
@@ -450,7 +453,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                SELECT
                    p.id as producto_id,
                    p.codigo_interno,
-                   p.sku,
+                   (SELECT pres.sku FROM presentaciones pres WHERE pres.producto_id = p.id AND pres.sku IS NOT NULL LIMIT 1) AS sku,
                    p.control_lote,
                    p.nombre as producto_nombre,
                    c.nombre as categoria,
@@ -493,7 +496,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                FROM productos p
                JOIN unidades_basicas um ON um.id = p.unidad_base_id
                LEFT JOIN categorias c ON c.id = p.categoria_id
-               LEFT JOIN proveedores pv2 ON pv2.id = p.proveedor_id
+               LEFT JOIN proveedores pv2 ON pv2.id = (SELECT pres.proveedor_id FROM presentaciones pres WHERE pres.producto_id = p.id AND pres.proveedor_id IS NOT NULL LIMIT 1)
                LEFT JOIN stock_stats ss ON ss.producto_id = p.id
                LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
                LEFT JOIN fefo_prov fp ON fp.producto_id = p.id
@@ -721,7 +724,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                 {3}, true, par.min_manual, par.max_manual, 3
             ) AS est
             FROM productos p
-            LEFT JOIN proveedores pv ON pv.id = p.proveedor_id
+            LEFT JOIN proveedores pv ON pv.id = (SELECT pres.proveedor_id FROM presentaciones pres WHERE pres.producto_id = p.id AND pres.proveedor_id IS NOT NULL LIMIT 1)
             LEFT JOIN stock_stats ss ON ss.producto_id = p.id
             LEFT JOIN par ON par.producto_id = p.id
             LEFT JOIN mov mv ON mv.producto_id = p.id
@@ -1086,7 +1089,7 @@ pub async fn alertas(
                    p.control_lote,
                    p.lead_time_propio,
                    p.created_at,
-                   p.proveedor_id,
+                   (SELECT pres.proveedor_id FROM presentaciones pres WHERE pres.producto_id = p.id AND pres.proveedor_id IS NOT NULL LIMIT 1) AS proveedor_id,
                    pv.nombre AS proveedor_nombre,
                    COALESCE(p.lead_time_propio, pv.dias_despacho_tierra, pv.dias_despacho_aereo, 7) AS dias_despacho,
                    ub.nombre AS unidad,
@@ -1118,7 +1121,7 @@ pub async fn alertas(
                    (ms.consumo_7d > ms.consumo_diario_ponderado * 3 AND ms.dias_con_consumo > 5) AS es_anomalia
                FROM productos p
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-               LEFT JOIN proveedores pv ON pv.id = p.proveedor_id
+               LEFT JOIN proveedores pv ON pv.id = (SELECT pres.proveedor_id FROM presentaciones pres WHERE pres.producto_id = p.id AND pres.proveedor_id IS NOT NULL LIMIT 1)
                LEFT JOIN stock_stats ss ON ss.producto_id = p.id
                LEFT JOIN par_levels pl ON pl.producto_id = p.id
                LEFT JOIN prox_venc pvenc ON pvenc.producto_id = p.id

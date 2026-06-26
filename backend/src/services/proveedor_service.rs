@@ -14,9 +14,10 @@ pub async fn listar(pool: &PgPool, params: ProveedorQuery) -> Result<Vec<Proveed
         sqlx::query_as::<_, Proveedor>(
             "SELECT p.id, p.nombre, p.contacto, p.telefono, p.email, p.icono, p.activa, \
              p.dias_despacho_aereo, p.dias_despacho_tierra, p.version, p.created_at, \
-             COUNT(pr.id)::int AS total_productos \
+             COUNT(DISTINCT pres.producto_id)::int AS total_productos \
              FROM proveedores p \
-             LEFT JOIN productos pr ON pr.proveedor_id = p.id AND pr.activo = true \
+             LEFT JOIN presentaciones pres ON pres.proveedor_id = p.id AND pres.activa = true \
+             LEFT JOIN productos pr ON pr.id = pres.producto_id AND pr.activo = true \
              WHERE p.activa = $1 AND p.nombre ILIKE $2 \
              GROUP BY p.id ORDER BY p.nombre",
         )
@@ -29,9 +30,10 @@ pub async fn listar(pool: &PgPool, params: ProveedorQuery) -> Result<Vec<Proveed
         sqlx::query_as::<_, Proveedor>(
             "SELECT p.id, p.nombre, p.contacto, p.telefono, p.email, p.icono, p.activa, \
              p.dias_despacho_aereo, p.dias_despacho_tierra, p.version, p.created_at, \
-             COUNT(pr.id)::int AS total_productos \
+             COUNT(DISTINCT pres.producto_id)::int AS total_productos \
              FROM proveedores p \
-             LEFT JOIN productos pr ON pr.proveedor_id = p.id AND pr.activo = true \
+             LEFT JOIN presentaciones pres ON pres.proveedor_id = p.id AND pres.activa = true \
+             LEFT JOIN productos pr ON pr.id = pres.producto_id AND pr.activo = true \
              WHERE p.activa = $1 \
              GROUP BY p.id ORDER BY p.nombre",
         )

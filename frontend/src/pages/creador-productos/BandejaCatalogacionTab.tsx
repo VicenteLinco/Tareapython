@@ -16,9 +16,21 @@ import {
   useRechazarProductoQuarantine,
   useCategorias,
   useUnidadesBasicas,
+  usePresentaciones,
 } from "@/hooks/dominio";
 import { notify } from "@/lib/notify";
+import api from "@/lib/api";
 import type { Producto } from "@/types";
+
+function ProductSku({ productoId }: { productoId: string }) {
+  const { data: presentaciones = [], isLoading } = usePresentaciones(productoId);
+  if (isLoading) {
+    return <span className="loading loading-spinner loading-xs opacity-30" />;
+  }
+  const activePres = presentaciones.find((p) => p.activa);
+  const sku = activePres?.sku ?? "—";
+  return <span className="font-mono">{sku}</span>;
+}
 
 export default function BandejaCatalogacionTab() {
   const {
@@ -50,7 +62,9 @@ export default function BandejaCatalogacionTab() {
   const [presFactor, setPresFactor] = useState<string>("");
   const [ubicacion, setUbicacion] = useState<string>("");
 
-  const handleOpenApproveModal = (product: Producto) => {
+  const [sku, setSku] = useState<string>("");
+
+  const handleOpenApproveModal = async (product: Producto) => {
     setSelectedProduct(product);
     setSelectedCategoriaId(
       product.categoria_id ? String(product.categoria_id) : "",
@@ -64,10 +78,24 @@ export default function BandejaCatalogacionTab() {
     setUnidadBaseId(
       product.unidad_base_id ? String(product.unidad_base_id) : "",
     );
-    setPresNombre(product.pres_nombre || "");
-    setPresNombrePlural(product.pres_nombre_plural || "");
-    setPresFactor(product.pres_factor ? String(product.pres_factor) : "");
     setUbicacion(product.ubicacion || "");
+    setSku("");
+    setPresNombre("");
+    setPresNombrePlural("");
+    setPresFactor("");
+
+    try {
+      const res = await api.get<any[]>(`/productos/${product.id}/presentaciones`);
+      const activePres = res.data.find((p) => p.activa) || res.data[0] || null;
+      if (activePres) {
+        setSku(activePres.sku || "");
+        setPresNombre(activePres.nombre || "");
+        setPresNombrePlural(activePres.nombre_plural || "");
+        setPresFactor(activePres.factor_conversion ? String(activePres.factor_conversion) : "");
+      }
+    } catch (err) {
+      console.error("Error loading presentations for approval config:", err);
+    }
   };
 
   const handleConfirmApprove = () => {
@@ -225,7 +253,7 @@ export default function BandejaCatalogacionTab() {
                 <tr key={product.id} className="hover">
                   <td className="font-semibold">{product.nombre}</td>
                   <td>
-                    <span className="font-mono">{product.sku || "—"}</span>
+                    <ProductSku productoId={product.id} />
                   </td>
                   <td>
                     <span className="font-mono">
@@ -279,7 +307,7 @@ export default function BandejaCatalogacionTab() {
                 <div>
                   <span className="opacity-50">SKU/REF:</span>{" "}
                   <strong className="font-mono">
-                    {selectedProduct.sku || "—"}
+                    {sku || "—"}
                   </strong>
                 </div>
                 <div>

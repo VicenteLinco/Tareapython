@@ -21,20 +21,6 @@ import type {
 } from "@/types";
 import { calcularCantidad, fetchHorizonte } from "../solicitud-utils";
 
-type ProductoExt = Producto & {
-  imagen_url?: string | null;
-  // Campos que el endpoint de listado de productos devuelve pero que no viven
-  // en el modelo Producto base (la relación producto↔proveedor está normalizada).
-  codigo_proveedor?: string | null;
-  codigo_maestro?: string | null;
-  lead_time_propio?: number | null;
-  unidad_base?: { id: number; nombre: string; nombre_plural: string };
-  proveedor?: { id: number; nombre: string; icono?: string | null };
-  pres_id?: number | null;
-  pres_nombre?: string | null;
-  pres_nombre_plural?: string | null;
-  pres_factor?: string | null;
-};
 
 export function useSolicitudState() {
   useAuthStore();
@@ -527,50 +513,73 @@ export function useSolicitudState() {
       notify.error("Producto ya está en la lista");
       return;
     }
-    const px = p as ProductoExt;
-    const proveedorId = px.proveedor?.id ?? selectedProveedor?.id ?? null;
-    if (proveedorId == null) {
+
+    // Fetch product detail and its presentations inline
+    const [detailRes, presRes] = await Promise.all([
+      api.get<any>(`/productos/${p.id}`),
+      api.get<any[]>(`/productos/${p.id}/presentaciones`),
+    ]);
+    const detail = detailRes.data;
+    const presentaciones = presRes.data;
+
+    // Find the active presentation matching the provider, or default to the first active presentation
+    const activePres =
+      presentaciones.find(
+        (pr: any) =>
+          pr.activa &&
+          (selectedProveedor === null ||
+            pr.proveedor_id === selectedProveedor?.id),
+      ) || presentaciones.find((pr: any) => pr.activa);
+
+    const resolvedProveedorId = activePres?.proveedor_id ?? selectedProveedor?.id ?? null;
+    if (resolvedProveedorId == null) {
       notify.warning(
         "Producto sin proveedor",
         `"${p.nombre}" no tiene proveedor asignado. Asígnaselo en el catálogo antes de guardar la solicitud.`,
       );
     }
-    const horizData = await fetchHorizonte(p.id, proveedorId);
-    const factorConvSearch = px.pres_factor ? toNum(px.pres_factor) : null;
+
+    const provMatch = proveedores?.find((prov) => prov.id === resolvedProveedorId);
+    const resolvedProveedorNombre = provMatch?.nombre ?? selectedProveedor?.nombre ?? "Manual";
+
+    const factorConvSearch = activePres?.factor_conversion ? parseFloat(activePres.factor_conversion) : null;
+    const leadTime = detail.lead_time_propio || 0;
+
+    const horizData = await fetchHorizonte(p.id, resolvedProveedorId);
     const cantidad = calcularCantidad(
       horizonteGlobal,
       horizData.consumo_diario,
-      px.lead_time_propio || 0,
+      leadTime,
       horizData.stock_minimo,
       horizData.stock_actual,
       factorConvSearch,
     );
+
     setItems((prev) => [
       ...prev,
       {
         producto_id: p.id,
         producto_nombre: p.nombre,
-        codigo_proveedor: px.codigo_proveedor ?? null,
-        codigo_maestro: px.codigo_maestro ?? null,
-        proveedor_id: proveedorId,
-        proveedor_nombre:
-          px.proveedor?.nombre ?? selectedProveedor?.nombre ?? "Manual",
-        lead_time: px.lead_time_propio || 0,
-        presentacion_id: px.pres_id ?? null,
-        presentacion_nombre: px.pres_nombre ?? null,
-        presentacion_nombre_plural: px.pres_nombre_plural ?? null,
+        codigo_proveedor: activePres?.sku ?? null,
+        codigo_maestro: detail.codigo_maestro ?? null,
+        proveedor_id: resolvedProveedorId,
+        proveedor_nombre: resolvedProveedorNombre,
+        lead_time: leadTime,
+        presentacion_id: activePres?.id ?? null,
+        presentacion_nombre: activePres?.nombre ?? null,
+        presentacion_nombre_plural: activePres?.nombre_plural ?? null,
         factor_conversion: factorConvSearch,
-        unidad_base: px.unidad_base?.nombre ?? "u",
-        unidad_base_plural: px.unidad_base?.nombre_plural ?? "u",
-        unidad_basica_id: px.unidad_base?.id ?? null,
+        unidad_base: detail.unidad_base?.nombre ?? "u",
+        unidad_base_plural: detail.unidad_base?.nombre_plural ?? "u",
+        unidad_basica_id: detail.unidad_base?.id ?? null,
         cantidad,
         precio_unitario:
           horizData.precio_ultimo != null
             ? horizData.precio_ultimo
-            : p.precio_unidad
-              ? toNum(p.precio_unidad)
+            : activePres?.precio_adquisicion
+              ? parseFloat(activePres.precio_adquisicion)
               : 0,
-        imagen_url: px.imagen_url ?? null,
+        imagen_url: detail.imagen_url ?? null,
         consumo_diario: horizData.consumo_diario,
         stock_actual: horizData.stock_actual,
         stock_minimo: horizData.stock_minimo,

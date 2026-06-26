@@ -20,6 +20,7 @@ struct ProductoQuery {
     q: Option<String>,
     categoria_id: Option<i32>,
     area_id: Option<i32>,
+    proveedor_id: Option<i32>,
     activo: Option<bool>,
     sort_by: Option<String>,
     sort_dir: Option<String>,
@@ -159,6 +160,7 @@ async fn listar(
             q: params.q,
             categoria_id: params.categoria_id,
             area_id: params.area_id,
+            proveedor_id: params.proveedor_id,
             activo: params.activo.unwrap_or(true),
             sort_by: params.sort_by,
             sort_dir: params.sort_dir,
@@ -517,6 +519,9 @@ pub struct ApproveProductInput {
     pub es_kit: Option<bool>,
     pub stock_minimo_global: Option<Decimal>,
     pub codigo_loinc_cpt: Option<String>,
+    pub pres_nombre: Option<String>,
+    pub pres_nombre_plural: Option<String>,
+    pub pres_factor: Option<Decimal>,
 }
 
 async fn list_quarantine(
@@ -575,6 +580,26 @@ async fn approve_product(
         }
     }
 
+    // Co-dependency for presentation name and conversion factor
+    if input.pres_factor.is_some() && input.pres_nombre.is_none() {
+        return Err(AppError::Validation(
+            "Se requiere nombre de presentación cuando se especifica el factor".to_string(),
+        ));
+    }
+    if input.pres_nombre.is_some() && input.pres_factor.is_none() {
+        return Err(AppError::Validation(
+            "Se requiere factor de conversión cuando se especifica la presentación".to_string(),
+        ));
+    }
+
+    if let Some(factor) = input.pres_factor {
+        if factor <= Decimal::ZERO {
+            return Err(AppError::Validation(
+                "El factor de conversión debe ser mayor a 0".to_string(),
+            ));
+        }
+    }
+
     let mut tx = state.pool.begin().await?;
 
     let prod_opt = sqlx::query_as::<_, Producto>("SELECT * FROM productos WHERE id = $1")
@@ -591,6 +616,47 @@ async fn approve_product(
         return Err(AppError::Validation(
             "El producto ya está aprobado".to_string(),
         ));
+    }
+
+    // Stock scaling logic based on the existing presentation factor conversion
+    let old_factor = sqlx::query_scalar::<_, Decimal>(
+        "SELECT factor_conversion FROM presentaciones WHERE producto_id = $1 LIMIT 1"
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .unwrap_or(Decimal::ONE);
+    let old_factor = if old_factor.is_zero() { Decimal::ONE } else { old_factor };
+
+    if let Some(new_factor) = input.pres_factor {
+        if new_factor != old_factor {
+            let multiplier = new_factor / old_factor;
+
+            // Update stock
+            sqlx::query(
+                r#"UPDATE stock 
+                   SET cantidad = (cantidad * $1)::NUMERIC(12,2)
+                   WHERE lote_id IN (SELECT id FROM lotes WHERE producto_id = $2)"#
+            )
+            .bind(multiplier)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::Internal(format!("Error al escalar stock: {}", e)))?;
+
+            // Update movements
+            sqlx::query(
+                r#"UPDATE movimientos
+                   SET cantidad = (cantidad * $1)::NUMERIC(12,2),
+                       cantidad_resultante = (cantidad_resultante * $1)::NUMERIC(12,2)
+                   WHERE lote_id IN (SELECT id FROM lotes WHERE producto_id = $2)"#
+            )
+            .bind(multiplier)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::Internal(format!("Error al escalar stock: {}", e)))?;
+        }
     }
 
     // Update product metadata in single update
@@ -634,6 +700,42 @@ async fn approve_product(
         }
         _ => e.into(),
     })?;
+
+    // Presentations sync
+    if let (Some(pres_nombre), Some(pres_factor)) = (&input.pres_nombre, input.pres_factor) {
+        let pres_exists = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM presentaciones WHERE producto_id = $1)"
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        if pres_exists {
+            sqlx::query(
+                r#"UPDATE presentaciones 
+                   SET nombre = $1, nombre_plural = $2, factor_conversion = $3
+                   WHERE producto_id = $4"#
+            )
+            .bind(pres_nombre.trim())
+            .bind(input.pres_nombre_plural.as_deref().unwrap_or(pres_nombre.as_str()).trim())
+            .bind(pres_factor)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        } else {
+            sqlx::query(
+                r#"INSERT INTO presentaciones
+                   (producto_id, nombre, nombre_plural, factor_conversion, activa)
+                   VALUES ($1, $2, $3, $4, true)"#
+            )
+            .bind(id)
+            .bind(pres_nombre.trim())
+            .bind(input.pres_nombre_plural.as_deref().unwrap_or(pres_nombre.as_str()).trim())
+            .bind(pres_factor)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
 
     tx.commit().await?;
 

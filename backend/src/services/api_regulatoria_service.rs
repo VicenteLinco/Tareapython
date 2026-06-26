@@ -188,9 +188,11 @@ pub async fn lookup_dispositivo(pool: &PgPool, code: &str) -> Result<Dispositivo
     }
 
     let local_prod = sqlx::query_as::<_, LocalProductRow>(
-        r#"SELECT nombre, clase_riesgo, sku, fabricante, descripcion FROM productos
-           WHERE (pres_gtin = $1 OR sku = $1 OR pres_codigo_barras = $1)
-             AND deleted_at IS NULL
+        r#"SELECT p.nombre, p.clase_riesgo, pres.sku, p.fabricante, p.descripcion 
+           FROM productos p
+           JOIN presentaciones pres ON pres.producto_id = p.id
+           WHERE (pres.gtin = $1 OR pres.sku = $1 OR pres.codigo_barras = $1)
+             AND p.deleted_at IS NULL
            LIMIT 1"#,
     )
     .bind(code)

@@ -289,15 +289,16 @@ pub async fn importar_catalogo(
 
         if let Some(proveedor_id) = prov_id {
             sqlx::query(
-                "UPDATE productos SET proveedor_id = $2, sku = $3, precio_unidad = $4 WHERE id = $1",
+                "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, sku, proveedor_id, precio_adquisicion, activa) \
+                 VALUES ($1, 'Unidad', 'Unidades', 1.0, $2, $3, $4, true)",
             )
             .bind(p_id)
-            .bind(proveedor_id)
             .bind(if cod_proveedor.is_empty() {
                 None
             } else {
                 Some(cod_proveedor)
             })
+            .bind(proveedor_id)
             .bind(precio)
             .execute(pool)
             .await?;

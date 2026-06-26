@@ -73,6 +73,8 @@ function buildScannedPresentacion(data: ScannedPresentacionData) {
     gtin_interno: false,
     sku: null,
     activa: true,
+    proveedor_id: null,
+    precio_adquisicion: null,
     version: 1,
     created_at: "",
   };

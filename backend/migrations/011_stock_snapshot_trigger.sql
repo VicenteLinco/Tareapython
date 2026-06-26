@@ -43,12 +43,17 @@ BEGIN
         cantidad = EXCLUDED.cantidad,
         updated_at = EXCLUDED.updated_at;
 
+    -- Calcular el stock global resultante de todas las áreas para este lote
+    SELECT COALESCE(SUM(cantidad), 0) INTO v_stock_actual
+    FROM public.stock
+    WHERE lote_id = NEW.lote_id;
+
     -- Actualizar o Insertar en la tabla stock_snapshot (granularidad por lote global - CQRS)
     INSERT INTO public.stock_snapshot (lote_id, producto_id, stock_actual, ultima_actualizacion)
-    VALUES (NEW.lote_id, v_producto_id, (NEW.cantidad * v_signo), NOW())
+    VALUES (NEW.lote_id, v_producto_id, v_stock_actual, NOW())
     ON CONFLICT (lote_id) 
     DO UPDATE SET 
-        stock_actual = stock_snapshot.stock_actual + EXCLUDED.stock_actual,
+        stock_actual = EXCLUDED.stock_actual,
         ultima_actualizacion = EXCLUDED.ultima_actualizacion;
 
     RETURN NEW;

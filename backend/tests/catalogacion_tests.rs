@@ -126,8 +126,17 @@ async fn test_api_regulatoria_cascada_y_timeout(pool: PgPool) {
     // Insert a product with pres_gtin = "local_gtin"
     let prod_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO productos (id, codigo_interno, nombre, unidad_base_id, pres_gtin, sku, estado_catalogo, origen_registro, control_lote) \
-         VALUES ($1, 'TEST-LOCAL-HIST', 'Local Product', 1, 'local_gtin', 'SKU-LOCAL', 'aprobado', 'manual', 'con_vto')"
+        "INSERT INTO productos (id, codigo_interno, nombre, unidad_base_id, estado_catalogo, origen_registro, control_lote) \
+         VALUES ($1, 'TEST-LOCAL-HIST', 'Local Product', 1, 'aprobado', 'manual', 'con_vto')"
+    )
+    .bind(prod_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, activa, gtin, sku) \
+         VALUES ($1, 'Unidad', 'Unidades', 1.0, true, 'local_gtin', 'SKU-LOCAL')"
     )
     .bind(prod_id)
     .execute(&pool)
@@ -326,6 +335,7 @@ async fn test_bloqueo_consumo_cuarentena(pool: PgPool) {
         lote_id: Some(lote_pend_id),
         presentacion_id: None,
         nota: None,
+        permitir_vencidos: false,
     };
 
     let res = ConsumoService::registrar_consumo(&pool, consume_params, admin_id).await;
@@ -563,8 +573,8 @@ async fn test_stock_scaling_on_approval_and_lookup(pool: PgPool) {
     let prod_id = Uuid::new_v4();
     sqlx::query(
         r#"INSERT INTO productos 
-           (id, codigo_interno, nombre, unidad_base_id, estado_catalogo, origen_registro, control_lote, pres_factor, pres_nombre, sku) 
-           VALUES ($1, 'TEST-SCALE-VAL', 'Producto Escalar', 1, 'pendiente_aprobacion', 'api_regulatoria', 'con_vto', 1.00, 'Unidad', 'TEST-SCALE-VAL')"#
+           (id, codigo_interno, nombre, unidad_base_id, estado_catalogo, origen_registro, control_lote) 
+           VALUES ($1, 'TEST-SCALE-VAL', 'Producto Escalar', 1, 'pendiente_aprobacion', 'api_regulatoria', 'con_vto')"#
     )
     .bind(prod_id)
     .execute(&pool)
@@ -573,7 +583,7 @@ async fn test_stock_scaling_on_approval_and_lookup(pool: PgPool) {
 
     // Create a presentation
     sqlx::query(
-        r#"INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, activa) VALUES ($1, 'Unidad', 'Unidades', 1.00, true)"#
+        r#"INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, activa, gtin, sku) VALUES ($1, 'Unidad', 'Unidades', 1.00, true, 'TEST-SCALE-VAL', 'TEST-SCALE-VAL')"#
     )
     .bind(prod_id)
     .execute(&pool)
@@ -648,8 +658,8 @@ async fn test_stock_scaling_on_approval_and_lookup(pool: PgPool) {
     assert_eq!(res_app.get("success").and_then(|b| b.as_bool()), Some(true));
 
     // 4. Verify DB changes: stock scaled, product approved, fabricante stored, presentation updated
-    let prod_db: (String, Option<String>, Option<String>, Decimal) = sqlx::query_as(
-        "SELECT estado_catalogo::text, fabricante, ubicacion, pres_factor FROM productos WHERE id = $1"
+    let prod_db: (String, Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT estado_catalogo::text, fabricante, ubicacion FROM productos WHERE id = $1"
     )
     .bind(prod_id)
     .fetch_one(&pool)
@@ -658,7 +668,6 @@ async fn test_stock_scaling_on_approval_and_lookup(pool: PgPool) {
     assert_eq!(prod_db.0, "aprobado");
     assert_eq!(prod_db.1.as_deref(), Some("Escala Inc."));
     assert_eq!(prod_db.2.as_deref(), Some("Caja 4"));
-    assert_eq!(prod_db.3, dec!(10.00));
 
     let pres_factor: Decimal =
         sqlx::query_scalar("SELECT factor_conversion FROM presentaciones WHERE producto_id = $1")

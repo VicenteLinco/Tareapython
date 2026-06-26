@@ -18,7 +18,6 @@ import { notify } from "@/lib/notify";
 import { parseApiError } from "@/lib/api-error";
 import { useAreas, useCategorias, useUnidadesBasicas } from "@/hooks/dominio";
 import { parseGuiaImagen } from "@/api/recepciones";
-import type { Producto } from "@/types";
 
 export interface ParsedItem {
   nombre_producto: string;
@@ -68,30 +67,30 @@ export default function ImportadorGuiaModal({
 
   // Load existing products to check for catalog matches
   const [existingSkus, setExistingSkus] = useState<Set<string>>(new Set());
-  const [skuToProductMap, setSkuToProductMap] = useState<Map<string, Producto>>(
+  const [skuToPresentationMap, setSkuToPresentationMap] = useState<Map<string, any>>(
     new Map(),
   );
 
   useEffect(() => {
     if (open) {
-      // Fetch products to build the SKU match set
+      // Fetch presentations to build the SKU match set
       api
-        .get<{ data: Producto[] }>("/productos", { params: { per_page: 1000 } })
+        .get<any[]>("/presentaciones")
         .then((res) => {
           const skus = new Set<string>();
-          const map = new Map<string, Producto>();
-          res.data.data.forEach((p) => {
-            if (p.sku) {
-              const cleaned = p.sku.trim().toLowerCase();
+          const map = new Map<string, any>();
+          res.data.forEach((pres) => {
+            if (pres.sku) {
+              const cleaned = pres.sku.trim().toLowerCase();
               skus.add(cleaned);
-              map.set(cleaned, p);
+              map.set(cleaned, pres);
             }
           });
           setExistingSkus(skus);
-          setSkuToProductMap(map);
+          setSkuToPresentationMap(map);
         })
         .catch((err) => {
-          console.error("Error fetching products catalog for validation:", err);
+          console.error("Error fetching presentations catalog for validation:", err);
         });
     }
   }, [open]);
@@ -124,18 +123,8 @@ export default function ImportadorGuiaModal({
 
   const initializeParsedItems = (parsedItems: ParsedItem[]): ParsedItem[] => {
     return parsedItems.map((item) => {
-      const cleanedSku = (item.sku_ref || "").trim().toLowerCase();
-      const product = skuToProductMap.get(cleanedSku);
-
       let control_lote: "trazable" | "con_vto" | "simple" = "con_vto";
-      if (product) {
-        control_lote = product.control_lote as
-          | "trazable"
-          | "con_vto"
-          | "simple";
-      } else {
-        control_lote = item.fecha_vencimiento ? "con_vto" : "simple";
-      }
+      control_lote = item.fecha_vencimiento ? "con_vto" : "simple";
 
       let lote = item.lote;
       let fecha_vencimiento = item.fecha_vencimiento;
@@ -320,16 +309,21 @@ export default function ImportadorGuiaModal({
 
       for (const item of items) {
         const cleanedSku = item.sku_ref.trim().toLowerCase();
-        let product: Producto;
+        let product: any;
+        let selectedPres: any = null;
 
         if (doesSkuExist(item.sku_ref)) {
-          product = skuToProductMap.get(cleanedSku)!;
+          const presMatch = skuToPresentationMap.get(cleanedSku)!;
+          const fullProductRes = await api.get(`/productos/${presMatch.producto_id}`);
+          product = fullProductRes.data;
+          
+          const activePresentaciones = product.presentaciones || [];
+          selectedPres = activePresentaciones.find((p: any) => p.id === presMatch.id) || activePresentaciones[0] || null;
         } else {
           // ─── Pre-crear producto en cuarentena ───
           // Call API to create a new quarantined product
           const createPayload = {
             nombre: item.nombre_producto.trim(),
-            sku: item.sku_ref.trim(),
             unidad_base_id: Number(defaultUnidadId),
             categoria_id: defaultCategoriaId
               ? Number(defaultCategoriaId)
@@ -339,24 +333,38 @@ export default function ImportadorGuiaModal({
             control_lote: item.control_lote || "con_vto",
             estado_catalogo: "pendiente_aprobacion", // QUARANTINE STATE
             origen_registro: "guia_pdf",
-            pres_nombre: "Unidad",
-            pres_nombre_plural: "Unidades",
-            pres_factor: 1,
+            presentaciones: [
+              {
+                nombre: "Unidad",
+                nombre_plural: "Unidades",
+                factor_conversion: 1,
+                sku: item.sku_ref.trim(),
+              }
+            ],
           };
 
           const res = await api.post("/productos", createPayload);
-          product = res.data;
-          // Update local sets to avoid duplicate creations
+          const rawProduct = res.data;
+          
+          const fullProductRes = await api.get(`/productos/${rawProduct.id}`);
+          product = fullProductRes.data;
+          
+          const activePresentaciones = product.presentaciones || [];
+          selectedPres = activePresentaciones[0] || null;
+          
           existingSkus.add(cleanedSku);
-          skuToProductMap.set(cleanedSku, product);
+          skuToPresentationMap.set(cleanedSku, {
+            id: selectedPres?.id,
+            producto_id: product.id,
+            producto_nombre: product.nombre,
+          });
         }
 
-        // Map to reception line format
-        // Fetch full product detail if presentaciones are missing
-        const fullProductRes = await api.get(`/productos/${product.id}`);
-        const fullProduct = fullProductRes.data;
-        const activePresentaciones = fullProduct.presentaciones || [];
-        const pres = activePresentaciones[0] || null;
+        const activePresentaciones = product.presentaciones || [];
+        const pres = selectedPres || activePresentaciones[0] || null;
+        const resolvedPrice = String(
+          item.precio_unitario || pres?.precio_adquisicion || "",
+        );
 
         const line = {
           id: uuidv4(),
@@ -368,18 +376,16 @@ export default function ImportadorGuiaModal({
           presentacion_nombre_plural: pres?.nombre_plural || "Unidades",
           cantidad_solicitada: null,
           factor_conversion: pres ? Number(pres.factor_conversion) : 1,
-          unidad_base_nombre: fullProduct.unidad_base?.nombre || "Unidad",
+          unidad_base_nombre: product.unidad_base?.nombre || "Unidad",
           unidad_base_nombre_plural:
-            fullProduct.unidad_base?.nombre_plural || "Unidades",
+            product.unidad_base?.nombre_plural || "Unidades",
           area_destino_id: Number(defaultAreaId),
           area_destino_nombre:
             areas?.find((a) => a.id === Number(defaultAreaId))?.nombre || "",
           presentaciones: activePresentaciones,
-          precio_unitario: String(
-            item.precio_unitario || product.precio_unidad || "",
-          ),
-          precio_anterior: String(product.precio_unidad || ""),
-          precio_base: String(product.precio_unidad || ""),
+          precio_unitario: resolvedPrice,
+          precio_anterior: String(pres?.precio_adquisicion || ""),
+          precio_base: String(pres?.precio_adquisicion || ""),
           imagen_url: product.imagen_url,
           lotes: [
             {
@@ -742,7 +748,7 @@ export default function ImportadorGuiaModal({
                     const itemErrors = validateItem(item);
                     const isNewProduct = !doesSkuExist(item.sku_ref);
                     const cleanedSku = item.sku_ref?.trim().toLowerCase();
-                    const product = skuToProductMap.get(cleanedSku);
+                    const product = skuToPresentationMap.get(cleanedSku);
                     const isSimple = item.control_lote === "simple";
                     return (
                       <div

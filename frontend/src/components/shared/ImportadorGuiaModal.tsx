@@ -561,7 +561,7 @@ export default function ImportadorGuiaModal({
           </div>
 
           {/* Right Panel: Parsed Grid */}
-          <div className="w-2/3 p-4 flex flex-col overflow-hidden">
+          <div className="flex-1 p-4 flex flex-col overflow-hidden">
             {items.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center text-base-content/40 gap-3">
                 {activeTab === 'text' ? (
@@ -655,120 +655,142 @@ export default function ImportadorGuiaModal({
                   </div>
                 </div>
 
-                {/* Table */}
-                <div className="flex-1 overflow-auto border rounded-lg">
-                  <table className="table table-compact table-zebra w-full text-xs min-w-[1000px]">
-                    <thead>
-                      <tr>
-                        <th>Producto</th>
-                        <th className="w-24">REF/SKU</th>
-                        <th className="w-28">Control Lote</th>
-                        <th className="w-24">Lote</th>
-                        <th className="w-32">Vencimiento (YYYY-MM-DD)</th>
-                        <th className="w-16">Cant.</th>
-                        <th className="w-20">P. Unitario</th>
-                        <th className="w-10"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((item, index) => {
-                        const itemErrors = validateItem(item)
-                        const isNewProduct = !doesSkuExist(item.sku_ref)
-                        const cleanedSku = item.sku_ref?.trim().toLowerCase()
-                        const product = skuToProductMap.get(cleanedSku)
-                        const isSimple = item.control_lote === 'simple'
-                        return (
-                          <tr key={index}>
-                            <td>
-                              <div className="flex flex-col gap-1">
-                                <input
-                                  type="text"
-                                  className="input input-bordered input-sm font-semibold w-full"
-                                  value={item.nombre_producto}
-                                  onChange={(e) => handleUpdateItem(index, 'nombre_producto', e.target.value)}
-                                />
-                                {isNewProduct && (
-                                  <span className="badge badge-warning badge-xs self-start gap-1">
-                                    <AlertTriangle className="h-2.5 w-2.5" />
-                                    Creará en cuarentena
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td>
-                              <input
-                                type="text"
-                                className="input input-bordered input-sm w-full"
-                                value={item.sku_ref}
-                                onChange={(e) => handleUpdateItem(index, 'sku_ref', e.target.value)}
-                              />
-                            </td>
-                            <td>
-                              {isNewProduct ? (
-                                <select
-                                  className="select select-bordered select-sm w-full bg-base-100 border-base-300 font-semibold"
-                                  value={item.control_lote || 'con_vto'}
-                                  onChange={(e) => handleUpdateItem(index, 'control_lote', e.target.value)}
-                                >
-                                  <option value="con_vto">Con Vto</option>
-                                  <option value="trazable">Trazable</option>
-                                  <option value="simple">Simple</option>
-                                </select>
-                              ) : (
-                                <span className="text-xs font-semibold text-base-content/50 capitalize px-2">
-                                  {product?.control_lote === 'con_vto' ? 'Con Vto' : product?.control_lote === 'trazable' ? 'Trazable' : product?.control_lote === 'simple' ? 'Simple' : 'Con Vto'}
-                                </span>
-                              )}
-                            </td>
-                            <td>
-                              <input
-                                type="text"
-                                className={`input input-bordered input-sm w-full ${itemErrors.lote ? 'input-error border-error border-2' : ''}`}
-                                value={isSimple ? '' : (item.lote || '')}
-                                onChange={(e) => handleUpdateItem(index, 'lote', e.target.value)}
-                                placeholder={isSimple ? 'No requerido' : 'Requerido'}
-                                disabled={isSimple}
-                              />
-                            </td>
-                            <td>
-                              <input
-                                type="text"
-                                className={`input input-bordered input-sm w-full font-mono ${itemErrors.fecha_vencimiento ? 'input-error border-error border-2' : ''}`}
-                                value={isSimple ? '' : (item.fecha_vencimiento || '')}
-                                onChange={(e) => handleUpdateItem(index, 'fecha_vencimiento', e.target.value)}
-                                placeholder={isSimple ? 'No requerido' : 'YYYY-MM-DD'}
-                                disabled={isSimple}
-                              />
-                            </td>
-                            <td>
-                              <input
-                                type="number"
-                                className="input input-bordered input-sm w-full text-right"
-                                value={item.cantidad}
-                                onChange={(e) => handleUpdateItem(index, 'cantidad', Number(e.target.value))}
-                              />
-                            </td>
-                            <td>
-                              <input
-                                type="number"
-                                className="input input-bordered input-sm w-full text-right"
-                                value={item.precio_unitario || ''}
-                                onChange={(e) => handleUpdateItem(index, 'precio_unitario', e.target.value ? Number(e.target.value) : null)}
-                              />
-                            </td>
-                            <td>
-                              <button
-                                className="btn btn-ghost btn-xs text-error btn-circle"
-                                onClick={() => handleRemoveItem(index)}
+                {/* Scrollable list of items */}
+                <div className="flex-1 overflow-y-auto flex flex-col gap-3 pr-1">
+                  {items.map((item, index) => {
+                    const itemErrors = validateItem(item)
+                    const isNewProduct = !doesSkuExist(item.sku_ref)
+                    const cleanedSku = item.sku_ref?.trim().toLowerCase()
+                    const product = skuToProductMap.get(cleanedSku)
+                    const isSimple = item.control_lote === 'simple'
+                    return (
+                      <div key={index} className="bg-base-200/30 border border-base-300 rounded-lg p-3 flex flex-col gap-3 relative hover:border-primary/40 transition-colors">
+                        {/* Row 1: Index, Nombre Producto, Warning Badge, Delete Button */}
+                        <div className="flex items-center gap-2">
+                          <span className="badge badge-sm badge-neutral font-mono shrink-0">#{index + 1}</span>
+                          <div className="flex-1">
+                            <input
+                              type="text"
+                              className="input input-bordered input-sm font-semibold w-full text-xs px-2"
+                              value={item.nombre_producto}
+                              onChange={(e) => handleUpdateItem(index, 'nombre_producto', e.target.value)}
+                              placeholder="Nombre del producto"
+                            />
+                          </div>
+                          {isNewProduct && (
+                            <span className="badge badge-warning badge-xs gap-1 py-2 px-2 shrink-0 select-none">
+                              <AlertTriangle className="h-3 w-3" />
+                              Nuevo (Cuarentena)
+                            </span>
+                          )}
+                          <button
+                            className="btn btn-ghost btn-xs text-error btn-circle shrink-0"
+                            onClick={() => handleRemoveItem(index)}
+                            title="Eliminar ítem"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Row 2: Grid for inputs */}
+                        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
+                          {/* SKU */}
+                          <div className="form-control w-full">
+                            <label className="label py-0.5">
+                              <span className="label-text text-[10px] uppercase font-bold opacity-60">REF/SKU</span>
+                            </label>
+                            <input
+                              type="text"
+                              className="input input-bordered input-sm text-xs px-2 w-full font-mono"
+                              value={item.sku_ref}
+                              onChange={(e) => handleUpdateItem(index, 'sku_ref', e.target.value)}
+                              placeholder="REF/SKU"
+                            />
+                          </div>
+
+                          {/* Control Lote */}
+                          <div className="form-control w-full">
+                            <label className="label py-0.5">
+                              <span className="label-text text-[10px] uppercase font-bold opacity-60">Control Lote</span>
+                            </label>
+                            {isNewProduct ? (
+                              <select
+                                className="select select-bordered select-sm text-xs px-1.5 w-full bg-base-100 border-base-300 font-semibold"
+                                value={item.control_lote || 'con_vto'}
+                                onChange={(e) => handleUpdateItem(index, 'control_lote', e.target.value)}
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                                <option value="con_vto">Con Vto</option>
+                                <option value="trazable">Trazable</option>
+                                <option value="simple">Simple</option>
+                              </select>
+                            ) : (
+                              <div className="h-8 flex items-center bg-base-200 border border-base-300 rounded px-2 text-xs font-semibold text-base-content/60 capitalize select-none">
+                                {product?.control_lote === 'con_vto' ? 'Con Vto' : product?.control_lote === 'trazable' ? 'Trazable' : product?.control_lote === 'simple' ? 'Simple' : 'Con Vto'}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Lote */}
+                          <div className="form-control w-full">
+                            <label className="label py-0.5">
+                              <span className="label-text text-[10px] uppercase font-bold opacity-60">Lote</span>
+                            </label>
+                            <input
+                              type="text"
+                              className={`input input-bordered input-sm text-xs px-2 w-full ${itemErrors.lote ? 'input-error border-error border-2' : ''}`}
+                              value={isSimple ? '' : (item.lote || '')}
+                              onChange={(e) => handleUpdateItem(index, 'lote', e.target.value)}
+                              placeholder={isSimple ? 'No req.' : 'Requerido'}
+                              disabled={isSimple}
+                            />
+                          </div>
+
+                          {/* Vencimiento */}
+                          <div className="form-control w-full">
+                            <label className="label py-0.5">
+                              <span className="label-text text-[10px] uppercase font-bold opacity-60">Vencimiento</span>
+                            </label>
+                            <input
+                              type="text"
+                              className={`input input-bordered input-sm text-xs px-2 w-full font-mono ${itemErrors.fecha_vencimiento ? 'input-error border-error border-2' : ''}`}
+                              value={isSimple ? '' : (item.fecha_vencimiento || '')}
+                              onChange={(e) => handleUpdateItem(index, 'fecha_vencimiento', e.target.value)}
+                              placeholder={isSimple ? 'No req.' : 'YYYY-MM-DD'}
+                              disabled={isSimple}
+                            />
+                          </div>
+
+                          {/* Cantidad */}
+                          <div className="form-control w-full">
+                            <label className="label py-0.5">
+                              <span className="label-text text-[10px] uppercase font-bold opacity-60">Cant.</span>
+                            </label>
+                            <input
+                              type="number"
+                              className="input input-bordered input-sm text-xs px-2 w-full text-right font-semibold"
+                              value={item.cantidad}
+                              onChange={(e) => handleUpdateItem(index, 'cantidad', Number(e.target.value))}
+                              placeholder="0"
+                            />
+                          </div>
+
+                          {/* P. Unitario */}
+                          <div className="form-control w-full">
+                            <label className="label py-0.5">
+                              <span className="label-text text-[10px] uppercase font-bold opacity-60">P. Unitario</span>
+                            </label>
+                            <input
+                              type="number"
+                              className="input input-bordered input-sm text-xs px-2 w-full text-right"
+                              value={item.precio_unitario || ''}
+                              onChange={(e) => handleUpdateItem(index, 'precio_unitario', e.target.value ? Number(e.target.value) : null)}
+                              placeholder="0"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}

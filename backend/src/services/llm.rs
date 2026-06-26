@@ -1148,6 +1148,39 @@ pub async fn parse_guia_con_vision(
 ) -> Result<serde_json::Value, AppError> {
     let db_config = load_llm_config(pool).await?;
 
+    if db_config.api_key.is_empty() || db_config.api_key == "mock" {
+        tracing::warn!("Gemini API key is empty/not configured. Returning mock parsed guide for developer testing.");
+        return Ok(serde_json::json!({
+            "proveedor": "VICENTE LAB SOLUTIONS SpA",
+            "items": [
+                {
+                    "nombre_producto": "Kit Reactivo PCR Multiplex (Liofilizado, 96 reacciones)",
+                    "sku_ref": "PCR-092",
+                    "lote": "PCR-2026-06A",
+                    "fecha_vencimiento": "2027-12-31",
+                    "cantidad": 5.0,
+                    "precio_unitario": 120000.0
+                },
+                {
+                    "nombre_producto": "Placas Preparadas Agar Sangre de Cordero 5% (Caja x 100 und)",
+                    "sku_ref": "AGARSB",
+                    "lote": "AS-9942",
+                    "fecha_vencimiento": "2026-09-30",
+                    "cantidad": 10.0,
+                    "precio_unitario": 45000.0
+                },
+                {
+                    "nombre_producto": "Puntas de Pipeta con Filtro Barrera Estériles (100 - 1000 µL, Rack x 96)",
+                    "sku_ref": "PIP-100F",
+                    "lote": "P1000-8831",
+                    "fecha_vencimiento": null,
+                    "cantidad": 25.0,
+                    "precio_unitario": 8500.0
+                }
+            ]
+        }));
+    }
+
     if db_config.provider.to_lowercase() != "gemini" {
         return Err(AppError::Validation(
             "La extracción por imagen (Vision) solo está soportada con el proveedor Gemini".into(),

@@ -16,6 +16,7 @@ export interface ParsedItem {
   fecha_vencimiento: string | null
   cantidad: number
   precio_unitario: number | null
+  control_lote?: 'trazable' | 'con_vto' | 'simple'
 }
 
 interface ImportadorGuiaModalProps {
@@ -100,6 +101,34 @@ export default function ImportadorGuiaModal({
     }
   }, [filePreviewUrl])
 
+  const initializeParsedItems = (parsedItems: ParsedItem[]): ParsedItem[] => {
+    return parsedItems.map((item) => {
+      const cleanedSku = (item.sku_ref || '').trim().toLowerCase()
+      const product = skuToProductMap.get(cleanedSku)
+      
+      let control_lote: 'trazable' | 'con_vto' | 'simple' = 'con_vto'
+      if (product) {
+        control_lote = product.control_lote as 'trazable' | 'con_vto' | 'simple'
+      } else {
+        control_lote = item.fecha_vencimiento ? 'con_vto' : 'simple'
+      }
+
+      let lote = item.lote
+      let fecha_vencimiento = item.fecha_vencimiento
+      if (control_lote === 'simple') {
+        lote = null
+        fecha_vencimiento = null
+      }
+
+      return {
+        ...item,
+        control_lote,
+        lote,
+        fecha_vencimiento,
+      }
+    })
+  }
+
   const handleParse = async () => {
     if (!rawText.trim()) {
       notify.error('Por favor, pega el texto de la guía de despacho')
@@ -109,7 +138,7 @@ export default function ImportadorGuiaModal({
     try {
       const res = await api.post('/recepciones/parse-guia', { raw_text: rawText })
       setProveedorDetectado(res.data.proveedor)
-      setItems(res.data.items || [])
+      setItems(initializeParsedItems(res.data.items || []))
       notify.success('Guía parseada con éxito')
     } catch (err) {
       notify.error(parseApiError(err))
@@ -165,7 +194,7 @@ export default function ImportadorGuiaModal({
     try {
       const res = await parseGuiaImagen(selectedFile)
       setProveedorDetectado(res.proveedor)
-      setItems(res.items || [])
+      setItems(initializeParsedItems(res.items || []))
       setArchivoUrl(res.archivo_url)
       notify.success(`Guía analizada con IA (${res.source})`)
     } catch (err) {
@@ -184,11 +213,15 @@ export default function ImportadorGuiaModal({
   // Row validation rules
   const validateItem = (item: ParsedItem) => {
     const errors: Record<string, boolean> = {}
-    if (!item.lote || !item.lote.trim()) {
-      errors.lote = true
-    }
-    if (!item.fecha_vencimiento || !/^\d{4}-\d{2}-\d{2}$/.test(item.fecha_vencimiento)) {
-      errors.fecha_vencimiento = true
+    const isSimple = item.control_lote === 'simple'
+
+    if (!isSimple) {
+      if (!item.lote || !item.lote.trim()) {
+        errors.lote = true
+      }
+      if (!item.fecha_vencimiento || !/^\d{4}-\d{2}-\d{2}$/.test(item.fecha_vencimiento)) {
+        errors.fecha_vencimiento = true
+      }
     }
     return errors
   }
@@ -204,7 +237,18 @@ export default function ImportadorGuiaModal({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleUpdateItem = (index: number, field: keyof ParsedItem, value: any) => {
     const updated = [...items]
-    updated[index] = { ...updated[index], [field]: value }
+    const updatedItem = {
+      ...updated[index],
+      [field]: value,
+    }
+
+    // Clear lote and vencimiento if control_lote is set to simple
+    if (field === 'control_lote' && value === 'simple') {
+      updatedItem.lote = null
+      updatedItem.fecha_vencimiento = null
+    }
+
+    updated[index] = updatedItem
     setItems(updated)
   }
 
@@ -249,7 +293,7 @@ export default function ImportadorGuiaModal({
             categoria_id: defaultCategoriaId ? Number(defaultCategoriaId) : undefined,
             proveedor_id: proveedorId ? Number(proveedorId) : undefined,
             area_ids: [Number(defaultAreaId)],
-            control_lote: 'con_vto', // Always con_vto for clinical guides
+            control_lote: item.control_lote || 'con_vto',
             estado_catalogo: 'pendiente_aprobacion', // QUARANTINE STATE
             origen_registro: 'guia_pdf',
             pres_nombre: 'Unidad',
@@ -618,6 +662,7 @@ export default function ImportadorGuiaModal({
                       <tr>
                         <th>Producto</th>
                         <th className="w-24">REF/SKU</th>
+                        <th className="w-28">Control Lote</th>
                         <th className="w-24">Lote</th>
                         <th className="w-32">Vencimiento (YYYY-MM-DD)</th>
                         <th className="w-16">Cant.</th>
@@ -629,6 +674,9 @@ export default function ImportadorGuiaModal({
                       {items.map((item, index) => {
                         const itemErrors = validateItem(item)
                         const isNewProduct = !doesSkuExist(item.sku_ref)
+                        const cleanedSku = item.sku_ref?.trim().toLowerCase()
+                        const product = skuToProductMap.get(cleanedSku)
+                        const isSimple = item.control_lote === 'simple'
                         return (
                           <tr key={index}>
                             <td>
@@ -656,21 +704,40 @@ export default function ImportadorGuiaModal({
                               />
                             </td>
                             <td>
+                              {isNewProduct ? (
+                                <select
+                                  className="select select-bordered select-xs w-full bg-base-100 border-base-300 font-semibold"
+                                  value={item.control_lote || 'con_vto'}
+                                  onChange={(e) => handleUpdateItem(index, 'control_lote', e.target.value)}
+                                >
+                                  <option value="con_vto">Con Vto</option>
+                                  <option value="trazable">Trazable</option>
+                                  <option value="simple">Simple</option>
+                                </select>
+                              ) : (
+                                <span className="text-xs font-semibold text-base-content/50 capitalize px-2">
+                                  {product?.control_lote === 'con_vto' ? 'Con Vto' : product?.control_lote === 'trazable' ? 'Trazable' : product?.control_lote === 'simple' ? 'Simple' : 'Con Vto'}
+                                </span>
+                              )}
+                            </td>
+                            <td>
                               <input
                                 type="text"
                                 className={`input input-bordered input-xs w-full ${itemErrors.lote ? 'input-error border-error border-2' : ''}`}
-                                value={item.lote || ''}
+                                value={isSimple ? '' : (item.lote || '')}
                                 onChange={(e) => handleUpdateItem(index, 'lote', e.target.value)}
-                                placeholder="Requerido"
+                                placeholder={isSimple ? 'No requerido' : 'Requerido'}
+                                disabled={isSimple}
                               />
                             </td>
                             <td>
                               <input
                                 type="text"
                                 className={`input input-bordered input-xs w-full font-mono ${itemErrors.fecha_vencimiento ? 'input-error border-error border-2' : ''}`}
-                                value={item.fecha_vencimiento || ''}
+                                value={isSimple ? '' : (item.fecha_vencimiento || '')}
                                 onChange={(e) => handleUpdateItem(index, 'fecha_vencimiento', e.target.value)}
-                                placeholder="YYYY-MM-DD"
+                                placeholder={isSimple ? 'No requerido' : 'YYYY-MM-DD'}
+                                disabled={isSimple}
                               />
                             </td>
                             <td>

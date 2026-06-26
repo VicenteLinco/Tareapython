@@ -262,7 +262,13 @@ async fn crear(
     Extension(claims): Extension<Claims>,
     Json(req): Json<CreateProducto>,
 ) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), AppError> {
-    crate::auth::middleware::require_role(&["admin"])(&claims)?;
+    // Si el producto se registra en cuarentena (pendiente_aprobacion), permitimos que un tecnólogo también lo cree.
+    // Esto es necesario para el flujo de recepción automatizada (Zero-Friction).
+    if req.estado_catalogo == Some(crate::domain::EstadoCatalogo::PendienteAprobacion) {
+        crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
+    } else {
+        crate::auth::middleware::require_role(&["admin"])(&claims)?;
+    }
 
     let nombre = req.nombre.trim().to_string();
     if nombre.is_empty() {

@@ -84,7 +84,9 @@ async fn obtener(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<SolicitudDetalle>, AppError> {
-    Ok(Json(SolicitudService::obtener_detalle(&state.pool, id).await?))
+    Ok(Json(
+        SolicitudService::obtener_detalle(&state.pool, id).await?,
+    ))
 }
 
 async fn actualizar(

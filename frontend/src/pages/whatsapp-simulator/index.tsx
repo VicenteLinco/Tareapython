@@ -1,165 +1,186 @@
-import { useState, useEffect, useRef } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
-import { 
-  MessageCircle, 
-  Send, 
-  RefreshCw, 
-  User, 
-  Phone, 
-  FileJson, 
+import { useState, useEffect, useRef } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import {
+  MessageCircle,
+  Send,
+  RefreshCw,
+  User,
+  Phone,
+  FileJson,
   Terminal,
   HelpCircle,
-  Clock
-} from 'lucide-react'
-import api from '@/lib/api'
-import { notify } from '@/lib/notify'
-import { parseApiError } from '@/lib/api-error'
-import type { UsuarioResponse } from '@/types/generated'
+  Clock,
+} from "lucide-react";
+import api from "@/lib/api";
+import { notify } from "@/lib/notify";
+import { parseApiError } from "@/lib/api-error";
+import type { UsuarioResponse } from "@/types/generated";
 
 interface WebhookLogEntry {
-  id: string
-  message_id: string
-  sender_phone: string
-  usuario_id: string | null
-  request_body: string
-  command_type: string | null
-  status: string
-  response_body: string | null
-  created_at: string
+  id: string;
+  message_id: string;
+  sender_phone: string;
+  usuario_id: string | null;
+  request_body: string;
+  command_type: string | null;
+  status: string;
+  response_body: string | null;
+  created_at: string;
 }
 
 // Preset commands for user convenience
 const PRESETS = [
-  { label: '📦 Consultar Stock', text: 'Hola! ¿Qué stock hay de guantes de nitrilo?' },
-  { label: '📥 Registrar Ingreso', text: 'Registrar ingreso de 100 unidades de guantes de nitrilo con lote LN-777 y vencimiento 2028-01-01 en el área 1' },
-  { label: '🛒 Crear Solicitud', text: 'Crear solicitud de compra para guantes de nitrilo' },
-  { label: '❓ Pregunta General', text: 'Hola, ¿cómo puedo registrar una recepción?' }
-]
+  {
+    label: "📦 Consultar Stock",
+    text: "Hola! ¿Qué stock hay de guantes de nitrilo?",
+  },
+  {
+    label: "📥 Registrar Ingreso",
+    text: "Registrar ingreso de 100 unidades de guantes de nitrilo con lote LN-777 y vencimiento 2028-01-01 en el área 1",
+  },
+  {
+    label: "🛒 Crear Solicitud",
+    text: "Crear solicitud de compra para guantes de nitrilo",
+  },
+  {
+    label: "❓ Pregunta General",
+    text: "Hola, ¿cómo puedo registrar una recepción?",
+  },
+];
 
 export default function WhatsappSimulator() {
-  const chatEndRef = useRef<HTMLDivElement>(null)
-  
-  const [selectedPhone, setSelectedPhone] = useState('+56912345678')
-  const [customPhone, setCustomPhone] = useState('')
-  const [useCustomPhone, setUseCustomPhone] = useState(false)
-  const [inputText, setInputText] = useState('')
-  const [selectedLog, setSelectedLog] = useState<WebhookLogEntry | null>(null)
-  const [autoRefresh, setAutoRefresh] = useState(true)
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const [selectedPhone, setSelectedPhone] = useState("+56912345678");
+  const [customPhone, setCustomPhone] = useState("");
+  const [useCustomPhone, setUseCustomPhone] = useState(false);
+  const [inputText, setInputText] = useState("");
+  const [selectedLog, setSelectedLog] = useState<WebhookLogEntry | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
   // Determine actual active phone
-  const activePhone = useCustomPhone ? customPhone : selectedPhone
+  const activePhone = useCustomPhone ? customPhone : selectedPhone;
 
   // 1. Fetch registered users to populate phone selector
-  const { data: usuarios = [], isLoading: loadingUsuarios } = useQuery<UsuarioResponse[]>({
-    queryKey: ['usuarios'],
+  const { data: usuarios = [], isLoading: loadingUsuarios } = useQuery<
+    UsuarioResponse[]
+  >({
+    queryKey: ["usuarios"],
     queryFn: async () => {
-      const res = await api.get('/usuarios')
-      return res.data
-    }
-  })
+      const res = await api.get("/usuarios");
+      return res.data;
+    },
+  });
 
   // Filter users with registered whatsapp phone
-  const whatsappUsers = usuarios.filter(u => u.whatsapp_phone)
+  const whatsappUsers = usuarios.filter((u) => u.whatsapp_phone);
 
   // 2. Fetch webhook logs from our new endpoint
-  const { data: logs = [], isLoading: loadingLogs, refetch: refetchLogs } = useQuery<WebhookLogEntry[]>({
-    queryKey: ['whatsapp-logs'],
+  const {
+    data: logs = [],
+    isLoading: loadingLogs,
+    refetch: refetchLogs,
+  } = useQuery<WebhookLogEntry[]>({
+    queryKey: ["whatsapp-logs"],
     queryFn: async () => {
-      const res = await api.get('/webhooks/whatsapp/logs')
-      return res.data
+      const res = await api.get("/webhooks/whatsapp/logs");
+      return res.data;
     },
     // Refetch periodically if auto-refresh is active
-    refetchInterval: autoRefresh ? 3000 : false
-  })
+    refetchInterval: autoRefresh ? 3000 : false,
+  });
 
   // Scroll chat to bottom when logs or phone selection changes
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [logs, activePhone])
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs, activePhone]);
 
   // 3. Mutation to simulate sending a WhatsApp message
   const sendMutation = useMutation({
     mutationFn: async (messageText: string) => {
-      const msgId = `sim_msg_${Date.now()}`
+      const msgId = `sim_msg_${Date.now()}`;
       const payload = {
-        event: 'onMessage',
+        event: "onMessage",
         data: {
           id: msgId,
           body: messageText,
           from: activePhone,
-          type: 'chat',
-          timestamp: Math.floor(Date.now() / 1000)
-        }
-      }
+          type: "chat",
+          timestamp: Math.floor(Date.now() / 1000),
+        },
+      };
 
       // We call the public webhook endpoint with the mock secret
-      return api.post('/webhooks/whatsapp', payload, {
+      return api.post("/webhooks/whatsapp", payload, {
         headers: {
-          'X-Webhook-Secret': 'mock_webhook_secret_for_dev'
-        }
-      })
+          "X-Webhook-Secret": "mock_webhook_secret_for_dev",
+        },
+      });
     },
     onSuccess: () => {
-      setInputText('')
-      notify.success('Mensaje simulado enviado al webhook')
+      setInputText("");
+      notify.success("Mensaje simulado enviado al webhook");
       // Refresh logs immediately
-      refetchLogs()
+      refetchLogs();
     },
     onError: (err) => {
-      notify.error(parseApiError(err))
-    }
-  })
+      notify.error(parseApiError(err));
+    },
+  });
 
   const handleSend = (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    if (!inputText.trim()) return
+    if (e) e.preventDefault();
+    if (!inputText.trim()) return;
     if (!activePhone.trim()) {
-      notify.warning('Por favor ingresa o selecciona un número de WhatsApp')
-      return
+      notify.warning("Por favor ingresa o selecciona un número de WhatsApp");
+      return;
     }
-    sendMutation.mutate(inputText)
-  }
+    sendMutation.mutate(inputText);
+  };
 
   const handlePresetClick = (text: string) => {
-    setInputText(text)
-  }
+    setInputText(text);
+  };
 
   // Parse user text from raw JSON request body
   const parseUserMessage = (rawJson: string) => {
     try {
-      const parsed = JSON.parse(rawJson)
+      const parsed = JSON.parse(rawJson);
       if (parsed.data && parsed.data.body) {
-        return parsed.data.body
+        return parsed.data.body;
       }
       if (parsed.Body) {
-        return parsed.Body
+        return parsed.Body;
       }
-      return rawJson
+      return rawJson;
     } catch {
-      return rawJson
+      return rawJson;
     }
-  }
+  };
 
   // Generate conversation list for the active phone number from the logs
   const getChatHistory = () => {
     // Filter and sort logs for the selected phone number ascending (oldest first)
     const phoneLogs = logs
-      .filter(l => l.sender_phone === activePhone)
+      .filter((l) => l.sender_phone === activePhone)
       .slice()
-      .reverse()
+      .reverse();
 
-    return phoneLogs.map(log => ({
+    return phoneLogs.map((log) => ({
       id: log.id,
       userMsg: parseUserMessage(log.request_body),
       botMsg: log.response_body,
       status: log.status,
       command: log.command_type,
-      time: new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      originalLog: log
-    }))
-  }
+      time: new Date(log.created_at).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      originalLog: log,
+    }));
+  };
 
-  const chatHistory = getChatHistory()
+  const chatHistory = getChatHistory();
 
   return (
     <div className="flex h-[calc(100vh-120px)] flex-col gap-4 overflow-hidden p-1">
@@ -170,11 +191,16 @@ export default function WhatsappSimulator() {
             <MessageCircle className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-base font-semibold text-base-content">Simulador de Bot de WhatsApp</h1>
-            <p className="text-xs text-base-content/60">Prueba el comportamiento del asistente y la ejecución de comandos IA</p>
+            <h1 className="text-base font-semibold text-base-content">
+              Simulador de Bot de WhatsApp
+            </h1>
+            <p className="text-xs text-base-content/60">
+              Prueba el comportamiento del asistente y la ejecución de comandos
+              IA
+            </p>
           </div>
         </div>
-        
+
         {/* Connection status badge */}
         <div className="flex items-center gap-2 rounded-lg bg-success/10 px-3 py-1 text-xs font-semibold text-success">
           <span className="relative flex h-2 w-2">
@@ -186,10 +212,8 @@ export default function WhatsappSimulator() {
       </div>
 
       <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-10">
-        
         {/* CHAT PANEL (Lg: 6 cols) */}
         <div className="flex flex-col rounded-xl border border-base-200 bg-base-100 shadow-sm lg:col-span-6 overflow-hidden">
-          
           {/* Chat Header / Configuration */}
           <div className="flex flex-col gap-3 border-b border-base-200 p-4 bg-base-50">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -204,7 +228,10 @@ export default function WhatsappSimulator() {
                   onChange={(e) => setUseCustomPhone(e.target.checked)}
                   id="chk-custom-phone"
                 />
-                <label htmlFor="chk-custom-phone" className="text-xs cursor-pointer select-none">
+                <label
+                  htmlFor="chk-custom-phone"
+                  className="text-xs cursor-pointer select-none"
+                >
                   Número personalizado
                 </label>
               </div>
@@ -222,9 +249,9 @@ export default function WhatsappSimulator() {
                     onChange={(e) => setCustomPhone(e.target.value)}
                   />
                 </div>
-                <button 
-                  className="btn btn-sm btn-ghost text-xs" 
-                  onClick={() => setCustomPhone('+56912345678')}
+                <button
+                  className="btn btn-sm btn-ghost text-xs"
+                  onClick={() => setCustomPhone("+56912345678")}
                 >
                   Usar Admin
                 </button>
@@ -238,12 +265,16 @@ export default function WhatsappSimulator() {
                   onChange={(e) => setSelectedPhone(e.target.value)}
                   disabled={loadingUsuarios}
                 >
-                  <option value="">-- Selecciona un Usuario Registrado --</option>
+                  <option value="">
+                    -- Selecciona un Usuario Registrado --
+                  </option>
                   {whatsappUsers.length === 0 ? (
-                    <option value="+56912345678">Administrador (+56912345678)</option>
+                    <option value="+56912345678">
+                      Administrador (+56912345678)
+                    </option>
                   ) : (
                     whatsappUsers.map((u) => (
-                      <option key={u.id} value={u.whatsapp_phone || ''}>
+                      <option key={u.id} value={u.whatsapp_phone || ""}>
                         {u.nombre} ({u.whatsapp_phone}) - {u.rol}
                       </option>
                     ))
@@ -260,15 +291,17 @@ export default function WhatsappSimulator() {
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-base-200 mb-3 text-base-content/40">
                   <HelpCircle className="h-6 w-6" />
                 </div>
-                <p className="text-sm font-semibold">No hay mensajes recientes en esta simulación</p>
+                <p className="text-sm font-semibold">
+                  No hay mensajes recientes en esta simulación
+                </p>
                 <p className="text-xs text-base-content/60 max-w-xs mt-1">
-                  Escribe un mensaje abajo o selecciona un preset para iniciar la conversación con la IA.
+                  Escribe un mensaje abajo o selecciona un preset para iniciar
+                  la conversación con la IA.
                 </p>
               </div>
             ) : (
               chatHistory.map((chat) => (
                 <div key={chat.id} className="space-y-2">
-                  
                   {/* User bubble */}
                   <div className="chat chat-end">
                     <div className="chat-bubble chat-bubble-primary text-sm max-w-[85%] break-words">
@@ -301,11 +334,15 @@ export default function WhatsappSimulator() {
                               Comando: {chat.command}
                             </span>
                           )}
-                          <span className={`badge badge-xs font-semibold border-none ${
-                            chat.status === 'SUCCESS' ? 'bg-success/10 text-success' :
-                            chat.status === 'UNAUTHORIZED' ? 'bg-warning/10 text-warning' :
-                            'bg-error/10 text-error'
-                          }`}>
+                          <span
+                            className={`badge badge-xs font-semibold border-none ${
+                              chat.status === "SUCCESS"
+                                ? "bg-success/10 text-success"
+                                : chat.status === "UNAUTHORIZED"
+                                  ? "bg-warning/10 text-warning"
+                                  : "bg-error/10 text-error"
+                            }`}
+                          >
                             Status: {chat.status}
                           </span>
                         </div>
@@ -316,7 +353,7 @@ export default function WhatsappSimulator() {
                       <span>•</span>
                       <span>{chat.time}</span>
                       <span>•</span>
-                      <button 
+                      <button
                         onClick={() => setSelectedLog(chat.originalLog)}
                         className="link link-hover text-primary font-semibold"
                       >
@@ -324,7 +361,6 @@ export default function WhatsappSimulator() {
                       </button>
                     </div>
                   </div>
-
                 </div>
               ))
             )}
@@ -349,7 +385,10 @@ export default function WhatsappSimulator() {
           </div>
 
           {/* Message Input Box */}
-          <form onSubmit={handleSend} className="p-4 border-t border-base-200 bg-base-100 flex gap-2">
+          <form
+            onSubmit={handleSend}
+            className="p-4 border-t border-base-200 bg-base-100 flex gap-2"
+          >
             <input
               type="text"
               className="input input-bordered w-full flex-1 text-sm"
@@ -370,19 +409,17 @@ export default function WhatsappSimulator() {
               )}
             </button>
           </form>
-
         </div>
 
         {/* DEVELOPER LOG PANEL (Lg: 4 cols) */}
         <div className="flex flex-col rounded-xl border border-base-200 bg-base-100 shadow-sm lg:col-span-4 overflow-hidden">
-          
           {/* Header */}
           <div className="flex items-center justify-between border-b border-base-200 p-4 bg-base-50">
             <div className="flex items-center gap-2">
               <Terminal className="h-4.5 w-4.5 text-primary" />
               <span className="font-semibold text-sm">Consola de Webhooks</span>
             </div>
-            
+
             <div className="flex items-center gap-2.5">
               <div className="flex items-center gap-1.5">
                 <input
@@ -392,18 +429,23 @@ export default function WhatsappSimulator() {
                   onChange={(e) => setAutoRefresh(e.target.checked)}
                   id="chk-auto-refresh"
                 />
-                <label htmlFor="chk-auto-refresh" className="text-[10px] font-semibold cursor-pointer select-none">
+                <label
+                  htmlFor="chk-auto-refresh"
+                  className="text-[10px] font-semibold cursor-pointer select-none"
+                >
                   Auto
                 </label>
               </div>
-              
+
               <button
                 onClick={() => refetchLogs()}
                 className="btn btn-xs btn-ghost btn-circle"
                 disabled={loadingLogs}
                 title="Actualizar Logs"
               >
-                <RefreshCw className={`h-3.5 w-3.5 ${loadingLogs ? 'animate-spin' : ''}`} />
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${loadingLogs ? "animate-spin" : ""}`}
+                />
               </button>
             </div>
           </div>
@@ -416,27 +458,35 @@ export default function WhatsappSimulator() {
               </div>
             ) : (
               logs.map((log) => {
-                const isActiveLog = selectedLog?.id === log.id
-                const isMyPhone = log.sender_phone === activePhone
-                const time = new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                const isActiveLog = selectedLog?.id === log.id;
+                const isMyPhone = log.sender_phone === activePhone;
+                const time = new Date(log.created_at).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                });
 
                 return (
                   <div
                     key={log.id}
                     onClick={() => setSelectedLog(isActiveLog ? null : log)}
                     className={`p-3 rounded-lg border text-xs cursor-pointer transition-all duration-200 ${
-                      isActiveLog 
-                        ? 'bg-base-200 border-primary shadow-sm' 
-                        : 'bg-base-50/50 hover:bg-base-50 border-base-200'
-                    } ${isMyPhone ? 'ring-1 ring-primary/20' : ''}`}
+                      isActiveLog
+                        ? "bg-base-200 border-primary shadow-sm"
+                        : "bg-base-50/50 hover:bg-base-50 border-base-200"
+                    } ${isMyPhone ? "ring-1 ring-primary/20" : ""}`}
                   >
                     <div className="flex items-center justify-between gap-2 mb-1.5">
                       <div className="flex items-center gap-1.5">
-                        <span className={`h-1.5 w-1.5 rounded-full ${
-                          log.status === 'SUCCESS' ? 'bg-success' :
-                          log.status === 'UNAUTHORIZED' ? 'bg-warning' :
-                          'bg-error'
-                        }`} />
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            log.status === "SUCCESS"
+                              ? "bg-success"
+                              : log.status === "UNAUTHORIZED"
+                                ? "bg-warning"
+                                : "bg-error"
+                          }`}
+                        />
                         <span className="font-semibold text-base-content/90 font-mono text-[10px]">
                           {log.sender_phone}
                         </span>
@@ -458,11 +508,15 @@ export default function WhatsappSimulator() {
                             {log.command_type}
                           </span>
                         )}
-                        <span className={`px-1.5 py-0.5 rounded font-mono font-bold uppercase ${
-                          log.status === 'SUCCESS' ? 'bg-success/10 text-success' :
-                          log.status === 'UNAUTHORIZED' ? 'bg-warning/10 text-warning' :
-                          'bg-error/10 text-error'
-                        }`}>
+                        <span
+                          className={`px-1.5 py-0.5 rounded font-mono font-bold uppercase ${
+                            log.status === "SUCCESS"
+                              ? "bg-success/10 text-success"
+                              : log.status === "UNAUTHORIZED"
+                                ? "bg-warning/10 text-warning"
+                                : "bg-error/10 text-error"
+                          }`}
+                        >
                           {log.status}
                         </span>
                       </div>
@@ -471,7 +525,7 @@ export default function WhatsappSimulator() {
                       </span>
                     </div>
                   </div>
-                )
+                );
               })
             )}
           </div>
@@ -484,8 +538,8 @@ export default function WhatsappSimulator() {
                   <FileJson className="h-4 w-4 text-primary" />
                   Detalles del Webhook Log
                 </span>
-                <button 
-                  className="btn btn-xs btn-circle btn-ghost" 
+                <button
+                  className="btn btn-xs btn-circle btn-ghost"
                   onClick={() => setSelectedLog(null)}
                 >
                   ✕
@@ -494,48 +548,78 @@ export default function WhatsappSimulator() {
 
               <div className="space-y-2 font-mono text-[10px] break-all">
                 <div>
-                  <span className="font-bold text-base-content/50">ID Log:</span>
-                  <p className="bg-base-200 p-1 rounded mt-0.5 select-all">{selectedLog.id}</p>
+                  <span className="font-bold text-base-content/50">
+                    ID Log:
+                  </span>
+                  <p className="bg-base-200 p-1 rounded mt-0.5 select-all">
+                    {selectedLog.id}
+                  </p>
                 </div>
                 <div>
-                  <span className="font-bold text-base-content/50">ID Mensaje:</span>
-                  <p className="bg-base-200 p-1 rounded mt-0.5 select-all">{selectedLog.message_id}</p>
+                  <span className="font-bold text-base-content/50">
+                    ID Mensaje:
+                  </span>
+                  <p className="bg-base-200 p-1 rounded mt-0.5 select-all">
+                    {selectedLog.message_id}
+                  </p>
                 </div>
                 <div>
-                  <span className="font-bold text-base-content/50">Teléfono:</span>
-                  <p className="bg-base-200 p-1 rounded mt-0.5">{selectedLog.sender_phone}</p>
+                  <span className="font-bold text-base-content/50">
+                    Teléfono:
+                  </span>
+                  <p className="bg-base-200 p-1 rounded mt-0.5">
+                    {selectedLog.sender_phone}
+                  </p>
                 </div>
                 <div>
-                  <span className="font-bold text-base-content/50">Comando:</span>
-                  <p className="bg-base-200 p-1 rounded mt-0.5">{selectedLog.command_type || 'Ninguno'}</p>
+                  <span className="font-bold text-base-content/50">
+                    Comando:
+                  </span>
+                  <p className="bg-base-200 p-1 rounded mt-0.5">
+                    {selectedLog.command_type || "Ninguno"}
+                  </p>
                 </div>
                 <div>
-                  <span className="font-bold text-base-content/50">Estado:</span>
-                  <p className={`p-1 rounded mt-0.5 font-bold ${
-                    selectedLog.status === 'SUCCESS' ? 'text-success bg-success/5' :
-                    selectedLog.status === 'UNAUTHORIZED' ? 'text-warning bg-warning/5' :
-                    'text-error bg-error/5'
-                  }`}>{selectedLog.status}</p>
+                  <span className="font-bold text-base-content/50">
+                    Estado:
+                  </span>
+                  <p
+                    className={`p-1 rounded mt-0.5 font-bold ${
+                      selectedLog.status === "SUCCESS"
+                        ? "text-success bg-success/5"
+                        : selectedLog.status === "UNAUTHORIZED"
+                          ? "text-warning bg-warning/5"
+                          : "text-error bg-error/5"
+                    }`}
+                  >
+                    {selectedLog.status}
+                  </p>
                 </div>
                 <div>
-                  <span className="font-bold text-base-content/50">Payload Recibido (Request Body):</span>
+                  <span className="font-bold text-base-content/50">
+                    Payload Recibido (Request Body):
+                  </span>
                   <pre className="bg-base-200 p-2 rounded mt-0.5 overflow-x-auto whitespace-pre-wrap max-h-36">
-                    {JSON.stringify(JSON.parse(selectedLog.request_body), null, 2)}
+                    {JSON.stringify(
+                      JSON.parse(selectedLog.request_body),
+                      null,
+                      2,
+                    )}
                   </pre>
                 </div>
                 <div>
-                  <span className="font-bold text-base-content/50">Respuesta Generada (Response Body):</span>
+                  <span className="font-bold text-base-content/50">
+                    Respuesta Generada (Response Body):
+                  </span>
                   <p className="bg-base-200 p-2 rounded mt-0.5 whitespace-pre-wrap max-h-36 overflow-y-auto">
-                    {selectedLog.response_body || '<em>Ninguna o vacía</em>'}
+                    {selectedLog.response_body || "<em>Ninguna o vacía</em>"}
                   </p>
                 </div>
               </div>
             </div>
           )}
-
         </div>
-
       </div>
     </div>
-  )
+  );
 }

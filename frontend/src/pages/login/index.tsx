@@ -1,91 +1,94 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { FlaskConical, ArrowRight } from 'lucide-react'
-import fondoLogin from '@/assets/fondo-login.gif'
-import { useAuthStore } from '@/hooks/use-auth-store'
-import api from '@/lib/api'
-import type { LoginResponse, MeResponse, Usuario } from '@/types'
-import { clearDeviceMode } from '@/lib/device-mode'
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { FlaskConical, ArrowRight } from "lucide-react";
+import fondoLogin from "@/assets/fondo-login.gif";
+import { useAuthStore } from "@/hooks/use-auth-store";
+import api from "@/lib/api";
+import type { LoginResponse, MeResponse, Usuario } from "@/types";
+import { clearDeviceMode } from "@/lib/device-mode";
 
 interface Branding {
-  nombre_laboratorio: string
-  login_imagen_base64: string
+  nombre_laboratorio: string;
+  login_imagen_base64: string;
 }
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [branding, setBranding] = useState<Branding | null>(null)
-  const { login, logout, accessToken } = useAuthStore()
-  const navigate = useNavigate()
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [branding, setBranding] = useState<Branding | null>(null);
+  const { login, logout, accessToken } = useAuthStore();
+  const navigate = useNavigate();
 
   // Si llegamos aquí y hay token, limpiamos para evitar inconsistencias
   useEffect(() => {
     if (accessToken) {
-      logout()
-      clearDeviceMode()
+      logout();
+      clearDeviceMode();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // Solo al montar
+  }, []); // Solo al montar
 
   // Branding público (sin auth): nombre del laboratorio + imagen del login.
   // fetch directo para evitar el interceptor de auth del cliente Axios.
   useEffect(() => {
-    let activo = true
-    fetch('/api/v1/branding')
+    let activo = true;
+    fetch("/api/v1/branding")
       .then((r) => (r.ok ? r.json() : null))
       .then((data: Branding | null) => {
-        if (activo && data) setBranding(data)
+        if (activo && data) setBranding(data);
       })
       .catch(() => {
         /* sin branding: se usan los valores por defecto */
-      })
+      });
     return () => {
-      activo = false
-    }
-  }, [])
+      activo = false;
+    };
+  }, []);
 
-  const nombreLab = branding?.nombre_laboratorio?.trim() || 'Labstock Mini'
-  const loginImagen = branding?.login_imagen_base64?.startsWith('data:image')
+  const nombreLab = branding?.nombre_laboratorio?.trim() || "Labstock Mini";
+  const loginImagen = branding?.login_imagen_base64?.startsWith("data:image")
     ? branding.login_imagen_base64
-    : null
+    : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
+    e.preventDefault();
+    setError("");
+    setLoading(true);
 
     try {
-      const res = await api.post<LoginResponse>('/auth/login', { email, password })
-      const { access_token, refresh_token } = res.data
+      const res = await api.post<LoginResponse>("/auth/login", {
+        email,
+        password,
+      });
+      const { access_token, refresh_token } = res.data;
 
-      const meRes = await api.get<MeResponse>('/auth/me', {
+      const meRes = await api.get<MeResponse>("/auth/me", {
         headers: { Authorization: `Bearer ${access_token}` },
-      })
-      
+      });
+
       const usuarioFull: Usuario = {
         ...meRes.data,
         activo: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         deleted_at: null,
-      }
-      
-      login(access_token, refresh_token, usuarioFull)
-      navigate('/', { replace: true })
+      };
+
+      login(access_token, refresh_token, usuarioFull);
+      navigate("/", { replace: true });
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { status?: number } }
+      const axiosErr = err as { response?: { status?: number } };
       if (axiosErr.response?.status === 401) {
-        setError('Credenciales inválidas')
+        setError("Credenciales inválidas");
       } else {
-        setError('Error de conexión. Intente nuevamente.')
+        setError("Error de conexión. Intente nuevamente.");
       }
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen flex">
@@ -117,12 +120,16 @@ export default function LoginPage() {
 
           <div className="mb-8">
             <h2 className="text-2xl font-bold">Iniciar sesión</h2>
-            <p className="text-sm opacity-50 mt-1">Ingrese sus credenciales para continuar</p>
+            <p className="text-sm opacity-50 mt-1">
+              Ingrese sus credenciales para continuar
+            </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider opacity-50">Email</label>
+              <label className="text-xs font-semibold uppercase tracking-wider opacity-50">
+                Email
+              </label>
               <input
                 type="email"
                 className="input input-bordered w-full h-11"
@@ -135,7 +142,9 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider opacity-50">Contraseña</label>
+              <label className="text-xs font-semibold uppercase tracking-wider opacity-50">
+                Contraseña
+              </label>
               <input
                 type="password"
                 className="input input-bordered w-full h-11"
@@ -170,7 +179,10 @@ export default function LoginPage() {
 
           <div className="mt-8 pt-6 border-t border-base-200/50 text-center">
             <p className="text-xs text-base-content/60">
-              Proyecto realizado por <span className="font-semibold text-base-content/80">Vicente Lincoqueo Roa</span>
+              Proyecto realizado por{" "}
+              <span className="font-semibold text-base-content/80">
+                Vicente Lincoqueo Roa
+              </span>
             </p>
             <a
               href="https://wa.me/56931752970"
@@ -191,5 +203,5 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }

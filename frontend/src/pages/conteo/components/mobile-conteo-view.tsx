@@ -1,30 +1,44 @@
-import { useState, useRef, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, AlertTriangle, CheckCircle2, SkipForward, ScanLine, X } from 'lucide-react'
-import type { ConteoItem, Presentacion } from '@/types'
-import { cn, formatCantidad } from '@/lib/utils'
-import { QrScanner } from '@/components/shared/qr-scanner'
-import { resolverScanConteo } from '../scan-utils'
-import { notify } from '@/lib/notify'
+import { useState, useRef, useEffect } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  AlertTriangle,
+  CheckCircle2,
+  SkipForward,
+  ScanLine,
+  X,
+} from "lucide-react";
+import type { ConteoItem, Presentacion } from "@/types";
+import { cn, formatCantidad } from "@/lib/utils";
+import { QrScanner } from "@/components/shared/qr-scanner";
+import { resolverScanConteo } from "../scan-utils";
+import { notify } from "@/lib/notify";
 
 export interface MobileConteoViewProps {
-  items: ConteoItem[]
-  presentaciones: Presentacion[]
-  stats: { contados: number; total: number }
-  editable: boolean
-  isSaving: boolean
-  conteoCiego?: boolean
+  items: ConteoItem[];
+  presentaciones: Presentacion[];
+  stats: { contados: number; total: number };
+  editable: boolean;
+  isSaving: boolean;
+  conteoCiego?: boolean;
   actions: {
-    updateCantidad(item: ConteoItem, valor: string): void
-    toggleNoContado(item: ConteoItem): void
-    save(): void
-  }
+    updateCantidad(item: ConteoItem, valor: string): void;
+    toggleNoContado(item: ConteoItem): void;
+    save(): void;
+  };
 }
 
 /** Ítems con diferencia significativa (>=20% del stock_sistema o >=10 unidades) */
 function esDifGrande(item: ConteoItem): boolean {
-  if (item.estado_item !== 'contado' || item.cantidad_contada === null) return false
-  const dif = Math.abs(Number(item.cantidad_contada) - Number(item.stock_sistema))
-  return dif >= 10 || (Number(item.stock_sistema) > 0 && dif / Number(item.stock_sistema) >= 0.2)
+  if (item.estado_item !== "contado" || item.cantidad_contada === null)
+    return false;
+  const dif = Math.abs(
+    Number(item.cantidad_contada) - Number(item.stock_sistema),
+  );
+  return (
+    dif >= 10 ||
+    (Number(item.stock_sistema) > 0 && dif / Number(item.stock_sistema) >= 0.2)
+  );
 }
 
 export function MobileConteoView({
@@ -36,88 +50,91 @@ export function MobileConteoView({
   conteoCiego = false,
   actions,
 }: MobileConteoViewProps) {
-  const [currentIdx, setCurrentIdx] = useState(0)
-  const [localValor, setLocalValor] = useState('')
-  const [saveCounter, setSaveCounter] = useState(0)
-  const [scanMode, setScanMode] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [localValor, setLocalValor] = useState("");
+  const [saveCounter, setSaveCounter] = useState(0);
+  const [scanMode, setScanMode] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const handleScan = (code: string) => {
-    const res = resolverScanConteo(code, items, presentaciones)
-    if (res.kind === 'no-match') {
-      notify.warning(`El código "${code.trim()}" no corresponde a ningún lote de esta área`)
-      return
+    const res = resolverScanConteo(code, items, presentaciones);
+    if (res.kind === "no-match") {
+      notify.warning(
+        `El código "${code.trim()}" no corresponde a ningún lote de esta área`,
+      );
+      return;
     }
     // Wizard móvil: saltamos al ítem (al primero del grupo si el GTIN es ambiguo).
-    const target = res.kind === 'lote' ? res.item : res.items[0]
-    const idx = items.findIndex((i) => i.id === target.id)
-    if (idx >= 0) setCurrentIdx(idx)
-    setScanMode(false)
-  }
+    const target = res.kind === "lote" ? res.item : res.items[0];
+    const idx = items.findIndex((i) => i.id === target.id);
+    if (idx >= 0) setCurrentIdx(idx);
+    setScanMode(false);
+  };
 
-  const safeIdx = Math.min(currentIdx, Math.max(0, items.length - 1))
-  const item = items[safeIdx] ?? null
+  const safeIdx = Math.min(currentIdx, Math.max(0, items.length - 1));
+  const item = items[safeIdx] ?? null;
 
   // Sincronizar el valor local cuando cambia el item
   useEffect(() => {
-    if (!item) return
-    if (item.estado_item === 'contado' && item.cantidad_contada !== null) {
-      setLocalValor(String(item.cantidad_contada))
+    if (!item) return;
+    if (item.estado_item === "contado" && item.cantidad_contada !== null) {
+      setLocalValor(String(item.cantidad_contada));
     } else {
-      setLocalValor('')
+      setLocalValor("");
     }
-    inputRef.current?.focus()
-  }, [safeIdx]) // eslint-disable-line react-hooks/exhaustive-deps
+    inputRef.current?.focus();
+  }, [safeIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const avanzar = (skipSave = false) => {
-    if (!skipSave && localValor !== '' && item) {
-      actions.updateCantidad(item, localValor)
+    if (!skipSave && localValor !== "" && item) {
+      actions.updateCantidad(item, localValor);
       // Autoguardado cada 2 ítems avanzados
-      const next = saveCounter + 1
-      setSaveCounter(next)
+      const next = saveCounter + 1;
+      setSaveCounter(next);
       if (next % 2 === 0) {
-        actions.save()
+        actions.save();
       }
     }
-    setCurrentIdx((prev) => Math.min(prev + 1, items.length - 1))
-  }
+    setCurrentIdx((prev) => Math.min(prev + 1, items.length - 1));
+  };
 
   const retroceder = () => {
-    setCurrentIdx((prev) => Math.max(prev - 1, 0))
-  }
+    setCurrentIdx((prev) => Math.max(prev - 1, 0));
+  };
 
   const handleNoDisponible = () => {
     if (item) {
-      actions.toggleNoContado(item)
-      avanzar(true)
+      actions.toggleNoContado(item);
+      avanzar(true);
     }
-  }
+  };
 
   const handleGuardarYAvanzar = () => {
-    if (item && localValor !== '') {
-      actions.updateCantidad(item, localValor)
+    if (item && localValor !== "") {
+      actions.updateCantidad(item, localValor);
     }
-    avanzar(true)
-  }
+    avanzar(true);
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value
-    setLocalValor(val)
-    if (item) actions.updateCantidad(item, val)
-  }
+    const val = e.target.value;
+    setLocalValor(val);
+    if (item) actions.updateCantidad(item, val);
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      handleGuardarYAvanzar()
+    if (e.key === "Enter") {
+      handleGuardarYAvanzar();
     }
-  }
+  };
 
   // Pantalla de resumen cuando todos los ítems han sido procesados
-  const terminados = stats.contados + items.filter(i => i.estado_item === 'no_contado').length
-  const todosProcesados = items.length > 0 && terminados >= stats.total
+  const terminados =
+    stats.contados + items.filter((i) => i.estado_item === "no_contado").length;
+  const todosProcesados = items.length > 0 && terminados >= stats.total;
 
   if (todosProcesados && currentIdx >= items.length) {
-    return <ResumenFinal items={items} stats={stats} />
+    return <ResumenFinal items={items} stats={stats} />;
   }
 
   if (!item) {
@@ -125,32 +142,42 @@ export function MobileConteoView({
       <div className="flex items-center justify-center flex-1 text-base-content/40 text-sm">
         Sin ítems para contar
       </div>
-    )
+    );
   }
 
-  const esNoContado = item.estado_item === 'no_contado'
-  const diferencia = item.estado_item === 'contado' && item.cantidad_contada !== null
-    ? Number(item.cantidad_contada) - Number(item.stock_sistema)
-    : null
+  const esNoContado = item.estado_item === "no_contado";
+  const diferencia =
+    item.estado_item === "contado" && item.cantidad_contada !== null
+      ? Number(item.cantidad_contada) - Number(item.stock_sistema)
+      : null;
 
-  const unitLabel = formatCantidad(
-    parseFloat(localValor) || 0,
-    item.unidad_base_nombre,
-    item.unidad_base_nombre_plural
-  ).replace(/^[\d.,\s]+/, '').trim() || item.unidad_base_nombre
+  const unitLabel =
+    formatCantidad(
+      parseFloat(localValor) || 0,
+      item.unidad_base_nombre,
+      item.unidad_base_nombre_plural,
+    )
+      .replace(/^[\d.,\s]+/, "")
+      .trim() || item.unidad_base_nombre;
 
   return (
     <div className="flex flex-col min-h-0 flex-1 bg-base-200">
       {/* Barra de progreso */}
       <div className="px-4 pt-3 pb-2">
         <div className="flex justify-between text-xs opacity-60 mb-1.5">
-          <span>{stats.contados} de {stats.total} contados</span>
-          <span>{safeIdx + 1} / {items.length}</span>
+          <span>
+            {stats.contados} de {stats.total} contados
+          </span>
+          <span>
+            {safeIdx + 1} / {items.length}
+          </span>
         </div>
         <div className="w-full bg-base-300 rounded-full h-2.5">
           <div
             className="h-2.5 rounded-full bg-primary transition-all duration-300"
-            style={{ width: `${stats.total > 0 ? Math.round((stats.contados / stats.total) * 100) : 0}%` }}
+            style={{
+              width: `${stats.total > 0 ? Math.round((stats.contados / stats.total) * 100) : 0}%`,
+            }}
           />
         </div>
       </div>
@@ -190,23 +217,37 @@ export function MobileConteoView({
 
       {/* Card del ítem actual */}
       <div className="flex-1 px-4 pb-4 flex flex-col">
-        <div className={cn(
-          'bg-base-100 rounded-3xl shadow-lg p-6 flex flex-col gap-4 flex-1',
-          esNoContado && 'opacity-60 border-2 border-warning'
-        )}>
+        <div
+          className={cn(
+            "bg-base-100 rounded-3xl shadow-lg p-6 flex flex-col gap-4 flex-1",
+            esNoContado && "opacity-60 border-2 border-warning",
+          )}
+        >
           {/* Info del producto */}
           <div className="text-center">
-            <p className="text-lg font-bold leading-tight">{item.producto_nombre}</p>
-            <p className="text-xs font-mono opacity-50 mt-1">{item.numero_lote}</p>
-            <p className="text-[10px] opacity-30 mt-0.5">{item.fecha_vencimiento.slice(0, 10)}</p>
+            <p className="text-lg font-bold leading-tight">
+              {item.producto_nombre}
+            </p>
+            <p className="text-xs font-mono opacity-50 mt-1">
+              {item.numero_lote}
+            </p>
+            <p className="text-[10px] opacity-30 mt-0.5">
+              {item.fecha_vencimiento.slice(0, 10)}
+            </p>
           </div>
 
           {/* Stock sistema (si no es ciego) */}
           {!conteoCiego && (
             <div className="text-center">
-              <span className="text-xs opacity-40 uppercase tracking-widest font-bold">Stock sistema</span>
+              <span className="text-xs opacity-40 uppercase tracking-widest font-bold">
+                Stock sistema
+              </span>
               <p className="text-sm font-mono font-bold opacity-60">
-                {formatCantidad(Number(item.stock_sistema), item.unidad_base_nombre, item.unidad_base_nombre_plural)}
+                {formatCantidad(
+                  Number(item.stock_sistema),
+                  item.unidad_base_nombre,
+                  item.unidad_base_nombre_plural,
+                )}
               </p>
             </div>
           )}
@@ -218,7 +259,9 @@ export function MobileConteoView({
               <p className="text-sm font-bold text-warning">No disponible</p>
               <button
                 className="btn btn-ghost btn-sm"
-                onClick={() => { actions.toggleNoContado(item) }}
+                onClick={() => {
+                  actions.toggleNoContado(item);
+                }}
               >
                 Reactivar
               </button>
@@ -239,20 +282,33 @@ export function MobileConteoView({
                 onKeyDown={handleKeyDown}
                 disabled={!editable}
               />
-              <span className="text-sm opacity-60 text-center">{unitLabel}</span>
+              <span className="text-sm opacity-60 text-center">
+                {unitLabel}
+              </span>
 
               {/* Diferencia badge (si no es ciego y ya tiene valor) */}
-              {!conteoCiego && diferencia !== null && Math.abs(diferencia) > 0.001 && (
-                <span className={cn(
-                  'badge badge-sm font-mono',
-                  diferencia > 0 ? 'badge-info' : 'badge-error'
-                )}>
-                  {diferencia > 0 ? '+' : ''}{formatCantidad(diferencia, item.unidad_base_nombre, item.unidad_base_nombre_plural)}
-                </span>
-              )}
-              {!conteoCiego && diferencia !== null && Math.abs(diferencia) <= 0.001 && (
-                <span className="badge badge-success badge-sm">±0</span>
-              )}
+              {!conteoCiego &&
+                diferencia !== null &&
+                Math.abs(diferencia) > 0.001 && (
+                  <span
+                    className={cn(
+                      "badge badge-sm font-mono",
+                      diferencia > 0 ? "badge-info" : "badge-error",
+                    )}
+                  >
+                    {diferencia > 0 ? "+" : ""}
+                    {formatCantidad(
+                      diferencia,
+                      item.unidad_base_nombre,
+                      item.unidad_base_nombre_plural,
+                    )}
+                  </span>
+                )}
+              {!conteoCiego &&
+                diferencia !== null &&
+                Math.abs(diferencia) <= 0.001 && (
+                  <span className="badge badge-success badge-sm">±0</span>
+                )}
             </div>
           )}
         </div>
@@ -266,10 +322,13 @@ export function MobileConteoView({
               onClick={handleGuardarYAvanzar}
               disabled={isSaving || safeIdx >= items.length - 1}
             >
-              {isSaving
-                ? <span className="loading loading-spinner loading-sm" />
-                : <>Siguiente <ChevronRight className="h-4 w-4" /></>
-              }
+              {isSaving ? (
+                <span className="loading loading-spinner loading-sm" />
+              ) : (
+                <>
+                  Siguiente <ChevronRight className="h-4 w-4" />
+                </>
+              )}
             </button>
 
             <div className="flex gap-2">
@@ -285,11 +344,14 @@ export function MobileConteoView({
 
               {/* No disponible */}
               <button
-                className={cn('btn btn-ghost flex-1', esNoContado ? 'text-primary' : 'text-error')}
+                className={cn(
+                  "btn btn-ghost flex-1",
+                  esNoContado ? "text-primary" : "text-error",
+                )}
                 onClick={handleNoDisponible}
               >
                 <AlertTriangle className="h-4 w-4" />
-                {esNoContado ? 'Reactivar' : 'No disponible'}
+                {esNoContado ? "Reactivar" : "No disponible"}
               </button>
             </div>
           </div>
@@ -303,30 +365,34 @@ export function MobileConteoView({
             <span className="font-bold flex items-center gap-2 text-sm">
               <ScanLine className="h-4 w-4 text-primary" /> Escanea un lote
             </span>
-            <button onClick={() => setScanMode(false)} className="btn btn-ghost btn-sm btn-circle">
+            <button
+              onClick={() => setScanMode(false)}
+              className="btn btn-ghost btn-sm btn-circle"
+            >
               <X className="h-5 w-5" />
             </button>
           </div>
           <QrScanner active={scanMode} onScan={handleScan} />
           <p className="text-center text-xs opacity-50 mt-4">
-            Apunta al código del lote o del producto. Se saltará a ese ítem para que cargues la cantidad.
+            Apunta al código del lote o del producto. Se saltará a ese ítem para
+            que cargues la cantidad.
           </p>
         </div>
       )}
     </div>
-  )
+  );
 }
 
 // --- Pantalla de resumen final ---
 
 interface ResumenFinalProps {
-  items: ConteoItem[]
-  stats: { contados: number; total: number }
+  items: ConteoItem[];
+  stats: { contados: number; total: number };
 }
 
 function ResumenFinal({ items, stats }: ResumenFinalProps) {
-  const itemsConDifGrande = items.filter(esDifGrande)
-  const noDisponibles = items.filter(i => i.estado_item === 'no_contado')
+  const itemsConDifGrande = items.filter(esDifGrande);
+  const noDisponibles = items.filter((i) => i.estado_item === "no_contado");
 
   return (
     <div className="flex flex-col flex-1 bg-base-200 px-4 py-6 gap-4 overflow-y-auto">
@@ -334,7 +400,9 @@ function ResumenFinal({ items, stats }: ResumenFinalProps) {
       <div className="text-center">
         <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-2" />
         <p className="text-lg font-bold">Conteo completado</p>
-        <p className="text-sm opacity-50">{stats.contados} de {stats.total} ítems contados</p>
+        <p className="text-sm opacity-50">
+          {stats.contados} de {stats.total} ítems contados
+        </p>
       </div>
 
       {/* Diferencias grandes */}
@@ -345,21 +413,36 @@ function ResumenFinal({ items, stats }: ResumenFinalProps) {
           </p>
           <div className="space-y-2">
             {itemsConDifGrande.map((item) => {
-              const dif = Number(item.cantidad_contada) - Number(item.stock_sistema)
+              const dif =
+                Number(item.cantidad_contada) - Number(item.stock_sistema);
               return (
-                <div key={item.id} className="flex items-center justify-between gap-3">
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between gap-3"
+                >
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold truncate">{item.producto_nombre}</p>
-                    <p className="text-xs font-mono opacity-40">{item.numero_lote}</p>
+                    <p className="text-sm font-semibold truncate">
+                      {item.producto_nombre}
+                    </p>
+                    <p className="text-xs font-mono opacity-40">
+                      {item.numero_lote}
+                    </p>
                   </div>
-                  <span className={cn(
-                    'badge badge-sm font-mono shrink-0',
-                    dif > 0 ? 'badge-info' : 'badge-error'
-                  )}>
-                    {dif > 0 ? '+' : ''}{formatCantidad(dif, item.unidad_base_nombre, item.unidad_base_nombre_plural)}
+                  <span
+                    className={cn(
+                      "badge badge-sm font-mono shrink-0",
+                      dif > 0 ? "badge-info" : "badge-error",
+                    )}
+                  >
+                    {dif > 0 ? "+" : ""}
+                    {formatCantidad(
+                      dif,
+                      item.unidad_base_nombre,
+                      item.unidad_base_nombre_plural,
+                    )}
                   </span>
                 </div>
-              )
+              );
             })}
           </div>
         </div>
@@ -376,8 +459,12 @@ function ResumenFinal({ items, stats }: ResumenFinalProps) {
               <div key={item.id} className="flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold truncate">{item.producto_nombre}</p>
-                  <p className="text-xs font-mono opacity-40">{item.numero_lote}</p>
+                  <p className="text-sm font-semibold truncate">
+                    {item.producto_nombre}
+                  </p>
+                  <p className="text-xs font-mono opacity-40">
+                    {item.numero_lote}
+                  </p>
                 </div>
               </div>
             ))}
@@ -386,8 +473,9 @@ function ResumenFinal({ items, stats }: ResumenFinalProps) {
       )}
 
       <p className="text-center text-xs opacity-40">
-        Pulsa "Revisar y confirmar" en la pantalla anterior para finalizar el conteo.
+        Pulsa "Revisar y confirmar" en la pantalla anterior para finalizar el
+        conteo.
       </p>
     </div>
-  )
+  );
 }

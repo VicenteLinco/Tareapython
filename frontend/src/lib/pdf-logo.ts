@@ -1,4 +1,4 @@
-import type jsPDF from 'jspdf'
+import type jsPDF from "jspdf";
 
 /**
  * Shared logo placement for all exportable PDFs.
@@ -11,18 +11,18 @@ import type jsPDF from 'jspdf'
 
 export interface LogoBox {
   /** Box top-left X (mm) */
-  x: number
+  x: number;
   /** Box top-left Y (mm) */
-  y: number
+  y: number;
   /** Box width (mm) — the logo never exceeds this */
-  maxW: number
+  maxW: number;
   /** Box height (mm) — the logo never exceeds this */
-  maxH: number
+  maxH: number;
 }
 
 /** True when the value is a usable image data URL. */
 export function hasValidLogo(logo?: string | null): logo is string {
-  return !!logo && logo.startsWith('data:image')
+  return !!logo && logo.startsWith("data:image");
 }
 
 /**
@@ -30,28 +30,32 @@ export function hasValidLogo(logo?: string | null): logo is string {
  * Returns the actual width drawn in mm (0 when no/invalid logo), so callers
  * can offset adjacent header text consistently.
  */
-export function drawPdfLogo(doc: jsPDF, logo: string | null | undefined, box: LogoBox): number {
-  if (!hasValidLogo(logo)) return 0
+export function drawPdfLogo(
+  doc: jsPDF,
+  logo: string | null | undefined,
+  box: LogoBox,
+): number {
+  if (!hasValidLogo(logo)) return 0;
   try {
-    const props = doc.getImageProperties(logo)
-    if (!props.width || !props.height) return 0
+    const props = doc.getImageProperties(logo);
+    if (!props.width || !props.height) return 0;
 
-    const ratio = props.width / props.height
-    let w = box.maxW
-    let h = w / ratio
+    const ratio = props.width / props.height;
+    let w = box.maxW;
+    let h = w / ratio;
     if (h > box.maxH) {
-      h = box.maxH
-      w = h * ratio
+      h = box.maxH;
+      w = h * ratio;
     }
 
-    const offX = box.x + (box.maxW - w) / 2
-    const offY = box.y + (box.maxH - h) / 2
-    const fmt = props.fileType || 'PNG'
+    const offX = box.x + (box.maxW - w) / 2;
+    const offY = box.y + (box.maxH - h) / 2;
+    const fmt = props.fileType || "PNG";
 
-    doc.addImage(logo, fmt, offX, offY, w, h)
-    return w
+    doc.addImage(logo, fmt, offX, offY, w, h);
+    return w;
   } catch {
     // Imagen inválida: se omite para no bloquear la exportación.
-    return 0
+    return 0;
   }
 }

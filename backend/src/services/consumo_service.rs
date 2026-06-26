@@ -1,9 +1,9 @@
-use chrono::NaiveDate;
-use rust_decimal::Decimal;
-use uuid::Uuid;
-use sqlx::PgPool;
 use crate::errors::AppError;
 use crate::services::stock_ops;
+use chrono::NaiveDate;
+use rust_decimal::Decimal;
+use sqlx::PgPool;
+use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct ConsumoParams {
@@ -15,6 +15,7 @@ pub struct ConsumoParams {
     pub nota: Option<String>,
     /// Lote exacto a consumir (escaneado). Obligatorio para 'trazable'.
     pub lote_id: Option<Uuid>,
+    pub permitir_vencidos: bool,
 }
 
 #[derive(Debug)]
@@ -32,6 +33,7 @@ pub struct ConsumoBatchItemParams {
     pub presentacion_id: Option<i32>,
     pub area_id: Option<i32>,
     pub lote_id: Option<Uuid>,
+    pub permitir_vencidos: bool,
 }
 
 pub struct ConsumoService;
@@ -97,7 +99,9 @@ impl ConsumoService {
                 .await?
                 .ok_or_else(|| AppError::NotFound("Producto no encontrado".into()))?;
         if estado_catalogo == "pendiente_aprobacion" {
-            return Err(AppError::ProductInQuarantine { producto_id: params.producto_id });
+            return Err(AppError::ProductInQuarantine {
+                producto_id: params.producto_id,
+            });
         }
         if control_lote == "trazable" && params.lote_id.is_none() {
             return Err(AppError::Validation(
@@ -133,7 +137,13 @@ impl ConsumoService {
             }
             pinned
         } else {
-            stock_ops::lotes_fefo(&mut tx, params.producto_id, params.area_id).await?
+            stock_ops::lotes_fefo(
+                &mut tx,
+                params.producto_id,
+                params.area_id,
+                params.permitir_vencidos,
+            )
+            .await?
         };
         let disponible = stock_ops::stock_total(&lotes);
 
@@ -156,8 +166,9 @@ impl ConsumoService {
                     .await?
                     .flatten();
             match fv_elegido {
-                Some(fv) => sqlx::query_as::<_, (Uuid, String, NaiveDate)>(
-                    r#"SELECT l.id, l.numero_lote, l.fecha_vencimiento
+                Some(fv) => {
+                    sqlx::query_as::<_, (Uuid, String, NaiveDate)>(
+                        r#"SELECT l.id, l.numero_lote, l.fecha_vencimiento
                        FROM stock s
                        JOIN lotes l ON l.id = s.lote_id
                        WHERE l.producto_id = $1
@@ -169,24 +180,24 @@ impl ConsumoService {
                          AND l.fecha_vencimiento < $4
                        ORDER BY l.fecha_vencimiento ASC
                        LIMIT 1"#,
-                )
-                .bind(params.producto_id)
-                .bind(params.area_id)
-                .bind(lote_id)
-                .bind(fv)
-                .fetch_optional(&mut *tx)
-                .await?,
+                    )
+                    .bind(params.producto_id)
+                    .bind(params.area_id)
+                    .bind(lote_id)
+                    .bind(fv)
+                    .fetch_optional(&mut *tx)
+                    .await?
+                }
                 None => None,
             }
         } else {
             None
         };
 
-        let virtual_consumed_id: Option<i32> = sqlx::query_scalar(
-            "SELECT id FROM areas WHERE nombre = 'VIRTUAL_CONSUMED'"
-        )
-        .fetch_optional(pool)
-        .await?;
+        let virtual_consumed_id: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM areas WHERE nombre = 'VIRTUAL_CONSUMED'")
+                .fetch_optional(pool)
+                .await?;
 
         let grupo = Uuid::new_v4();
         let movimientos = stock_ops::aplicar_salida_fefo(
@@ -235,7 +246,8 @@ impl ConsumoService {
         usuario_id: Uuid,
     ) -> Result<serde_json::Value, AppError> {
         // Convertir todas las cantidades a base
-        let mut item_pairs: Vec<(&ConsumoBatchItemParams, Decimal)> = Vec::with_capacity(params.items.len());
+        let mut item_pairs: Vec<(&ConsumoBatchItemParams, Decimal)> =
+            Vec::with_capacity(params.items.len());
         for item in &params.items {
             let cantidad = Self::convertir_a_base(
                 pool,
@@ -256,11 +268,10 @@ impl ConsumoService {
         // ORDENAR por producto_id para evitar deadlocks en base de datos al hacer FOR UPDATE
         item_pairs.sort_by_key(|(item, _)| item.producto_id);
 
-        let virtual_consumed_id: Option<i32> = sqlx::query_scalar(
-            "SELECT id FROM areas WHERE nombre = 'VIRTUAL_CONSUMED'"
-        )
-        .fetch_optional(pool)
-        .await?;
+        let virtual_consumed_id: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM areas WHERE nombre = 'VIRTUAL_CONSUMED'")
+                .fetch_optional(pool)
+                .await?;
 
         let mut tx = pool.begin().await?;
         let grupo = Uuid::new_v4();
@@ -271,16 +282,17 @@ impl ConsumoService {
 
         for (item, cantidad) in &item_pairs {
             // Check catalog state
-            let estado_catalogo: String = sqlx::query_scalar(
-                "SELECT estado_catalogo FROM productos WHERE id = $1"
-            )
-            .bind(item.producto_id)
-            .fetch_one(&mut *tx)
-            .await?;
+            let estado_catalogo: String =
+                sqlx::query_scalar("SELECT estado_catalogo FROM productos WHERE id = $1")
+                    .bind(item.producto_id)
+                    .fetch_one(&mut *tx)
+                    .await?;
 
             if estado_catalogo == "pendiente_aprobacion" {
                 tx.rollback().await?;
-                return Err(AppError::ProductInQuarantine { producto_id: item.producto_id });
+                return Err(AppError::ProductInQuarantine {
+                    producto_id: item.producto_id,
+                });
             }
 
             let effective_area_id = item.area_id.or(params.area_id);
@@ -314,8 +326,23 @@ impl ConsumoService {
                 }
             } else {
                 match effective_area_id {
-                    Some(area_id) => stock_ops::lotes_fefo(&mut tx, item.producto_id, area_id).await?,
-                    None => stock_ops::lotes_fefo_global(&mut tx, item.producto_id).await?,
+                    Some(area_id) => {
+                        stock_ops::lotes_fefo(
+                            &mut tx,
+                            item.producto_id,
+                            area_id,
+                            item.permitir_vencidos,
+                        )
+                        .await?
+                    }
+                    None => {
+                        stock_ops::lotes_fefo_global(
+                            &mut tx,
+                            item.producto_id,
+                            item.permitir_vencidos,
+                        )
+                        .await?
+                    }
                 }
             };
 

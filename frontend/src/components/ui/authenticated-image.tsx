@@ -1,55 +1,60 @@
-import { useEffect, useState } from 'react'
-import { ImageOff, RefreshCw } from 'lucide-react'
-import api from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { useEffect, useState } from "react";
+import { ImageOff, RefreshCw } from "lucide-react";
+import api from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 interface AuthenticatedUploadImageProps {
-  path: string
-  alt: string
-  className?: string
+  path: string;
+  alt: string;
+  className?: string;
 }
 
-type LoadStatus = 'loading' | 'ready' | 'error'
+type LoadStatus = "loading" | "ready" | "error";
 
-export function AuthenticatedUploadImage({ path, alt, className }: AuthenticatedUploadImageProps) {
-  const [src, setSrc] = useState<string | null>(null)
-  const [status, setStatus] = useState<LoadStatus>('loading')
-  const [reloadKey, setReloadKey] = useState(0)
+export function AuthenticatedUploadImage({
+  path,
+  alt,
+  className,
+}: AuthenticatedUploadImageProps) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [status, setStatus] = useState<LoadStatus>("loading");
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    if (path.startsWith('data:image')) {
-      setSrc(path)
-      setStatus('ready')
-      return
+    if (path.startsWith("data:image")) {
+      setSrc(path);
+      setStatus("ready");
+      return;
     }
 
-    setSrc(null)
-    setStatus('loading')
-    let objectUrl: string | null = null
-    let cancelled = false
+    setSrc(null);
+    setStatus("loading");
+    let objectUrl: string | null = null;
+    let cancelled = false;
 
-    api.get(`/uploads/${path}`, { responseType: 'blob' })
+    api
+      .get(`/uploads/${path}`, { responseType: "blob" })
       .then((res) => {
-        if (cancelled) return
-        objectUrl = URL.createObjectURL(res.data)
-        setSrc(objectUrl)
-        setStatus('ready')
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(res.data);
+        setSrc(objectUrl);
+        setStatus("ready");
       })
       .catch(() => {
-        if (!cancelled) setStatus('error')
-      })
+        if (!cancelled) setStatus("error");
+      });
 
     return () => {
-      cancelled = true
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
-    }
-  }, [path, reloadKey])
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [path, reloadKey]);
 
-  if (status === 'error') {
+  if (status === "error") {
     return (
       <div
         className={cn(
-          'flex flex-col items-center justify-center gap-2 bg-base-200 text-xs text-base-content/60 rounded-xl p-3 text-center',
+          "flex flex-col items-center justify-center gap-2 bg-base-200 text-xs text-base-content/60 rounded-xl p-3 text-center",
           className,
         )}
       >
@@ -64,16 +69,21 @@ export function AuthenticatedUploadImage({ path, alt, className }: Authenticated
           Reintentar
         </button>
       </div>
-    )
+    );
   }
 
   if (!src) {
     return (
-      <div className={cn('flex items-center justify-center bg-base-200 text-sm opacity-60 rounded-xl', className)}>
+      <div
+        className={cn(
+          "flex items-center justify-center bg-base-200 text-sm opacity-60 rounded-xl",
+          className,
+        )}
+      >
         Cargando foto...
       </div>
-    )
+    );
   }
 
-  return <img src={src} alt={alt} className={className} />
+  return <img src={src} alt={alt} className={className} />;
 }

@@ -1,1 +1,1 @@
-export { EtiquetasPage } from './EtiquetasPage'
+export { EtiquetasPage } from "./EtiquetasPage";

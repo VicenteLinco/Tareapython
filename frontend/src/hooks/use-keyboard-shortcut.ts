@@ -1,13 +1,13 @@
-import { useEffect } from 'react'
+import { useEffect } from "react";
 
-type ModifierKey = 'ctrl' | 'alt' | 'shift' | 'meta'
+type ModifierKey = "ctrl" | "alt" | "shift" | "meta";
 
 interface ShortcutOptions {
-  key: string
-  modifiers?: ModifierKey[]
+  key: string;
+  modifiers?: ModifierKey[];
   /** No disparar si el foco está en un input/textarea/select */
-  ignoreInputs?: boolean
-  onKeyDown: (e: KeyboardEvent) => void
+  ignoreInputs?: boolean;
+  onKeyDown: (e: KeyboardEvent) => void;
 }
 
 /**
@@ -23,23 +23,23 @@ export function useKeyboardShortcut({
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (ignoreInputs) {
-        const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
-        if (tag === 'input' || tag === 'textarea' || tag === 'select') return
-        if ((e.target as HTMLElement)?.isContentEditable) return
+        const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+        if (tag === "input" || tag === "textarea" || tag === "select") return;
+        if ((e.target as HTMLElement)?.isContentEditable) return;
       }
 
-      const keyMatch = e.key.toLowerCase() === key.toLowerCase()
-      const ctrlMatch  = !modifiers.includes('ctrl')  || e.ctrlKey  || e.metaKey
-      const altMatch   = !modifiers.includes('alt')   || e.altKey
-      const shiftMatch = !modifiers.includes('shift') || e.shiftKey
-      const metaMatch  = !modifiers.includes('meta')  || e.metaKey
+      const keyMatch = e.key.toLowerCase() === key.toLowerCase();
+      const ctrlMatch = !modifiers.includes("ctrl") || e.ctrlKey || e.metaKey;
+      const altMatch = !modifiers.includes("alt") || e.altKey;
+      const shiftMatch = !modifiers.includes("shift") || e.shiftKey;
+      const metaMatch = !modifiers.includes("meta") || e.metaKey;
 
       if (keyMatch && ctrlMatch && altMatch && shiftMatch && metaMatch) {
-        onKeyDown(e)
+        onKeyDown(e);
       }
-    }
+    };
 
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [key, modifiers, ignoreInputs, onKeyDown])
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [key, modifiers, ignoreInputs, onKeyDown]);
 }

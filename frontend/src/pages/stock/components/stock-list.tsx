@@ -1,23 +1,31 @@
-import { EmptyState } from '@/components/ui/empty-state'
-import { Skeleton } from '@/components/ui/skeleton'
-import type { StockItem } from '@/types'
-import { StockItemCard } from './stock-item-card'
+import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { StockItem } from "@/types";
+import { StockItemCard } from "./stock-item-card";
 
 interface StockListProps {
-  items: StockItem[]
-  isLoading: boolean
-  view: 'grid' | 'list'
-  selectedId: string | null
-  onSelect: (id: string) => void
+  items: StockItem[];
+  isLoading: boolean;
+  view: "grid" | "list";
+  selectedId: string | null;
+  onSelect: (id: string) => void;
 }
 
-export function StockList({ items, isLoading, view, selectedId, onSelect }: StockListProps) {
+export function StockList({
+  items,
+  isLoading,
+  view,
+  selectedId,
+  onSelect,
+}: StockListProps) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {[1, 2, 3, 4, 5, 6].map(i => <Skeleton key={i} className="h-32 w-full rounded-2xl" />)}
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <Skeleton key={i} className="h-32 w-full rounded-2xl" />
+        ))}
       </div>
-    )
+    );
   }
 
   if (items.length === 0) {
@@ -26,10 +34,10 @@ export function StockList({ items, isLoading, view, selectedId, onSelect }: Stoc
         contexto="sin_resultados"
         descripcion="Ajusta la búsqueda o cambia los filtros para ver más resultados."
       />
-    )
+    );
   }
 
-  if (view === 'list') {
+  if (view === "list") {
     return (
       <div className="bg-base-100 rounded-3xl border border-base-200 overflow-hidden shadow-sm">
         <table className="table table-zebra w-full">
@@ -43,7 +51,7 @@ export function StockList({ items, isLoading, view, selectedId, onSelect }: Stoc
             </tr>
           </thead>
           <tbody className="border-none">
-            {items.map(item => (
+            {items.map((item) => (
               <StockItemCard
                 key={item.producto_id}
                 item={item}
@@ -55,12 +63,12 @@ export function StockList({ items, isLoading, view, selectedId, onSelect }: Stoc
           </tbody>
         </table>
       </div>
-    )
+    );
   }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-      {items.map(item => (
+      {items.map((item) => (
         <StockItemCard
           key={item.producto_id}
           item={item}
@@ -70,5 +78,5 @@ export function StockList({ items, isLoading, view, selectedId, onSelect }: Stoc
         />
       ))}
     </div>
-  )
+  );
 }

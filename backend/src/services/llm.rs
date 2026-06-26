@@ -1,7 +1,9 @@
+use crate::errors::AppError;
+use crate::handlers::whatsapp::{
+    ActiveUser, execute_tool, log_webhook_transaction, send_whatsapp_reply,
+};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
-use crate::errors::AppError;
-use crate::handlers::whatsapp::{ActiveUser, execute_tool, log_webhook_transaction, send_whatsapp_reply};
 
 #[derive(Debug, Clone)]
 pub struct LlmConfig {
@@ -262,7 +264,7 @@ impl LlmClient for GeminiClient {
                FROM whatsapp_webhook_logs 
                WHERE sender_phone = $1 AND response_body IS NOT NULL
                ORDER BY created_at DESC 
-               LIMIT 5"#
+               LIMIT 5"#,
         )
         .bind(sender_phone)
         .fetch_all(pool)
@@ -315,7 +317,9 @@ impl LlmClient for GeminiClient {
         loop {
             loop_count += 1;
             if loop_count > max_loops {
-                return Err(AppError::Internal("Max tool call loop iterations reached".to_string()));
+                return Err(AppError::Internal(
+                    "Max tool call loop iterations reached".to_string(),
+                ));
             }
 
             let request_payload = GeminiRequest {
@@ -344,22 +348,28 @@ impl LlmClient for GeminiClient {
                 )));
             }
 
-            let response_text = response
-                .text()
-                .await
-                .map_err(|e| AppError::Internal(format!("Failed to read Gemini response text: {}", e)))?;
-            
+            let response_text = response.text().await.map_err(|e| {
+                AppError::Internal(format!("Failed to read Gemini response text: {}", e))
+            })?;
+
             tracing::info!("Gemini Raw Response: {}", response_text);
 
-            let gemini_resp: GeminiResponse = serde_json::from_str(&response_text)
-                .map_err(|e| AppError::Internal(format!("Failed to parse Gemini response: {}. Raw: {}", e, response_text)))?;
+            let gemini_resp: GeminiResponse =
+                serde_json::from_str(&response_text).map_err(|e| {
+                    AppError::Internal(format!(
+                        "Failed to parse Gemini response: {}. Raw: {}",
+                        e, response_text
+                    ))
+                })?;
 
             let candidates = gemini_resp.candidates.ok_or_else(|| {
                 AppError::Internal("Gemini response returned no candidates".to_string())
             })?;
 
             if candidates.is_empty() {
-                return Err(AppError::Internal("Gemini response candidates list is empty".to_string()));
+                return Err(AppError::Internal(
+                    "Gemini response candidates list is empty".to_string(),
+                ));
             }
 
             let candidate = &candidates[0];
@@ -389,14 +399,21 @@ impl LlmClient for GeminiClient {
                         status = "SYNTAX_ERROR".to_string();
                     }
 
-                    let tool_result = match execute_tool(pool, user, &call.name, call.args.clone()).await {
+                    let tool_result = match execute_tool(pool, user, &call.name, call.args.clone())
+                        .await
+                    {
                         Ok(val) => {
                             if let Some(status_field) = val.get("status").and_then(|s| s.as_str()) {
                                 if status_field == "error" {
                                     if let Some(msg) = val.get("message").and_then(|m| m.as_str()) {
                                         if msg.contains("autorización") || msg.contains("rol") {
                                             status = "UNAUTHORIZED".to_string();
-                                        } else if msg.contains("no existe") || msg.contains("formato") || msg.contains("futura") || msg.contains("decimales") || msg.contains("cero") {
+                                        } else if msg.contains("no existe")
+                                            || msg.contains("formato")
+                                            || msg.contains("futura")
+                                            || msg.contains("decimales")
+                                            || msg.contains("cero")
+                                        {
                                             status = "SYNTAX_ERROR".to_string();
                                         } else {
                                             status = "DB_ERROR".to_string();
@@ -467,7 +484,8 @@ impl LlmClient for GeminiClient {
                     command_type.as_deref(),
                     &status,
                     Some(&final_text),
-                ).await;
+                )
+                .await;
 
                 let _ = send_whatsapp_reply(pool, config, from_phone, &final_text).await;
                 return Ok(final_text);
@@ -688,7 +706,7 @@ impl LlmClient for OllamaClient {
                FROM whatsapp_webhook_logs 
                WHERE sender_phone = $1 AND response_body IS NOT NULL
                ORDER BY created_at DESC 
-               LIMIT 5"#
+               LIMIT 5"#,
         )
         .bind(sender_phone)
         .fetch_all(pool)
@@ -729,7 +747,9 @@ impl LlmClient for OllamaClient {
         loop {
             loop_count += 1;
             if loop_count > max_loops {
-                return Err(AppError::Internal("Max tool call loop iterations reached".to_string()));
+                return Err(AppError::Internal(
+                    "Max tool call loop iterations reached".to_string(),
+                ));
             }
 
             let request_payload = OpenAiRequest {
@@ -754,13 +774,14 @@ impl LlmClient for OllamaClient {
                 )));
             }
 
-            let openai_resp: OpenAiResponse = response
-                .json()
-                .await
-                .map_err(|e| AppError::Internal(format!("Failed to parse Ollama response: {}", e)))?;
+            let openai_resp: OpenAiResponse = response.json().await.map_err(|e| {
+                AppError::Internal(format!("Failed to parse Ollama response: {}", e))
+            })?;
 
             if openai_resp.choices.is_empty() {
-                return Err(AppError::Internal("Ollama response choices list is empty".to_string()));
+                return Err(AppError::Internal(
+                    "Ollama response choices list is empty".to_string(),
+                ));
             }
 
             let choice = &openai_resp.choices[0];
@@ -773,7 +794,8 @@ impl LlmClient for OllamaClient {
                     let mut command_types = Vec::new();
 
                     for tool_call in tool_calls {
-                        let (cmd_type, current_tool_status) = match tool_call.function.name.as_str() {
+                        let (cmd_type, current_tool_status) = match tool_call.function.name.as_str()
+                        {
                             "buscar_stock" => ("STOCK", "SUCCESS"),
                             "registrar_ingreso" => ("RECIBIR", "SUCCESS"),
                             "registrar_consumo" => ("CONSUMO", "SUCCESS"),
@@ -787,17 +809,35 @@ impl LlmClient for OllamaClient {
                             status = "SYNTAX_ERROR".to_string();
                         }
 
-                        let args_val: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)
-                            .unwrap_or(serde_json::Value::Null);
+                        let args_val: serde_json::Value =
+                            serde_json::from_str(&tool_call.function.arguments)
+                                .unwrap_or(serde_json::Value::Null);
 
-                        let tool_result = match execute_tool(pool, user, &tool_call.function.name, args_val).await {
+                        let tool_result = match execute_tool(
+                            pool,
+                            user,
+                            &tool_call.function.name,
+                            args_val,
+                        )
+                        .await
+                        {
                             Ok(val) => {
-                                if let Some(status_field) = val.get("status").and_then(|s| s.as_str()) {
+                                if let Some(status_field) =
+                                    val.get("status").and_then(|s| s.as_str())
+                                {
                                     if status_field == "error" {
-                                        if let Some(msg) = val.get("message").and_then(|m| m.as_str()) {
-                                            if msg.contains("autorización") || msg.contains("rol") {
+                                        if let Some(msg) =
+                                            val.get("message").and_then(|m| m.as_str())
+                                        {
+                                            if msg.contains("autorización") || msg.contains("rol")
+                                            {
                                                 status = "UNAUTHORIZED".to_string();
-                                            } else if msg.contains("no existe") || msg.contains("formato") || msg.contains("futura") || msg.contains("decimales") || msg.contains("cero") {
+                                            } else if msg.contains("no existe")
+                                                || msg.contains("formato")
+                                                || msg.contains("futura")
+                                                || msg.contains("decimales")
+                                                || msg.contains("cero")
+                                            {
                                                 status = "SYNTAX_ERROR".to_string();
                                             } else {
                                                 status = "DB_ERROR".to_string();
@@ -852,7 +892,8 @@ impl LlmClient for OllamaClient {
                 command_type.as_deref(),
                 &status,
                 Some(&final_text),
-            ).await;
+            )
+            .await;
 
             let _ = send_whatsapp_reply(pool, config, from_phone, &final_text).await;
             return Ok(final_text);
@@ -900,7 +941,10 @@ impl LlmFactory {
         match config.provider.to_lowercase().as_str() {
             "gemini" => Ok(Box::new(GeminiClient::new(config))),
             "ollama" => Ok(Box::new(OllamaClient::new(config))),
-            other => Err(AppError::Internal(format!("Unsupported AI provider: {}", other))),
+            other => Err(AppError::Internal(format!(
+                "Unsupported AI provider: {}",
+                other
+            ))),
         }
     }
 }
@@ -978,7 +1022,10 @@ pub struct GeminiParseRequest {
     pub generation_config: GeminiParseGenerationConfig,
 }
 
-pub async fn parse_guia_con_llm(pool: &sqlx::PgPool, raw_text: &str) -> Result<serde_json::Value, AppError> {
+pub async fn parse_guia_con_llm(
+    pool: &sqlx::PgPool,
+    raw_text: &str,
+) -> Result<serde_json::Value, AppError> {
     let db_config = load_llm_config(pool).await?;
     let client = reqwest::Client::new();
 
@@ -1064,15 +1111,24 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
         })?;
 
         if candidates.is_empty() {
-            return Err(AppError::Internal("Gemini response candidates list is empty".to_string()));
+            return Err(AppError::Internal(
+                "Gemini response candidates list is empty".to_string(),
+            ));
         }
 
-        let text = candidates[0].content.parts[0].text.as_deref().ok_or_else(|| {
-            AppError::Internal("Gemini candidate has no text content".to_string())
-        })?;
+        let text = candidates[0].content.parts[0]
+            .text
+            .as_deref()
+            .ok_or_else(|| {
+                AppError::Internal("Gemini candidate has no text content".to_string())
+            })?;
 
-        let parsed_json: serde_json::Value = serde_json::from_str(text)
-            .map_err(|e| AppError::Internal(format!("Failed to parse LLM text to JSON: {}. Text: {}", e, text)))?;
+        let parsed_json: serde_json::Value = serde_json::from_str(text).map_err(|e| {
+            AppError::Internal(format!(
+                "Failed to parse LLM text to JSON: {}. Text: {}",
+                e, text
+            ))
+        })?;
 
         Ok(parsed_json)
     } else {
@@ -1127,15 +1183,25 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
             .map_err(|e| AppError::Internal(format!("Failed to parse Ollama response: {}", e)))?;
 
         if openai_resp.choices.is_empty() {
-            return Err(AppError::Internal("Ollama response choices list is empty".to_string()));
+            return Err(AppError::Internal(
+                "Ollama response choices list is empty".to_string(),
+            ));
         }
 
-        let content = openai_resp.choices[0].message.content.as_deref().ok_or_else(|| {
-            AppError::Internal("Ollama choice has no message content".to_string())
-        })?;
+        let content = openai_resp.choices[0]
+            .message
+            .content
+            .as_deref()
+            .ok_or_else(|| {
+                AppError::Internal("Ollama choice has no message content".to_string())
+            })?;
 
-        let parsed_json: serde_json::Value = serde_json::from_str(content)
-            .map_err(|e| AppError::Internal(format!("Failed to parse LLM text to JSON: {}. Text: {}", e, content)))?;
+        let parsed_json: serde_json::Value = serde_json::from_str(content).map_err(|e| {
+            AppError::Internal(format!(
+                "Failed to parse LLM text to JSON: {}. Text: {}",
+                e, content
+            ))
+        })?;
 
         Ok(parsed_json)
     }
@@ -1149,7 +1215,9 @@ pub async fn parse_guia_con_vision(
     let db_config = load_llm_config(pool).await?;
 
     if db_config.api_key.is_empty() || db_config.api_key == "mock" {
-        tracing::warn!("Gemini API key is empty/not configured. Returning mock parsed guide for developer testing.");
+        tracing::warn!(
+            "Gemini API key is empty/not configured. Returning mock parsed guide for developer testing."
+        );
         return Ok(serde_json::json!({
             "proveedor": "VICENTE LAB SOLUTIONS SpA",
             "items": [
@@ -1227,7 +1295,10 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
         role: "user".to_string(),
         parts: vec![
             GeminiContentPart {
-                text: Some("Analiza esta imagen de guía de despacho y extrae los datos de los productos.".to_string()),
+                text: Some(
+                    "Analiza esta imagen de guía de despacho y extrae los datos de los productos."
+                        .to_string(),
+                ),
                 function_call: None,
                 function_response: None,
                 thought_signature: None,
@@ -1258,7 +1329,11 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
         },
     };
 
-    tracing::info!("Sending Vision request to Gemini for dispatch guide image ({} bytes, {})", image_bytes.len(), mime_type);
+    tracing::info!(
+        "Sending Vision request to Gemini for dispatch guide image ({} bytes, {})",
+        image_bytes.len(),
+        mime_type
+    );
 
     let response = client
         .post(&url)
@@ -1276,28 +1351,41 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
         )));
     }
 
-    let gemini_resp: GeminiResponse = response
-        .json()
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to parse Gemini Vision response: {}", e)))?;
+    let gemini_resp: GeminiResponse = response.json().await.map_err(|e| {
+        AppError::Internal(format!("Failed to parse Gemini Vision response: {}", e))
+    })?;
 
     let candidates = gemini_resp.candidates.ok_or_else(|| {
         AppError::Internal("Gemini Vision response returned no candidates".to_string())
     })?;
 
     if candidates.is_empty() {
-        return Err(AppError::Internal("Gemini Vision response candidates list is empty".to_string()));
+        return Err(AppError::Internal(
+            "Gemini Vision response candidates list is empty".to_string(),
+        ));
     }
 
-    let text = candidates[0].content.parts[0].text.as_deref().ok_or_else(|| {
-        AppError::Internal("Gemini Vision candidate has no text content".to_string())
+    let text = candidates[0].content.parts[0]
+        .text
+        .as_deref()
+        .ok_or_else(|| {
+            AppError::Internal("Gemini Vision candidate has no text content".to_string())
+        })?;
+
+    let parsed_json: serde_json::Value = serde_json::from_str(text).map_err(|e| {
+        AppError::Internal(format!(
+            "Failed to parse Vision LLM text to JSON: {}. Text: {}",
+            e, text
+        ))
     })?;
 
-    let parsed_json: serde_json::Value = serde_json::from_str(text)
-        .map_err(|e| AppError::Internal(format!("Failed to parse Vision LLM text to JSON: {}. Text: {}", e, text)))?;
-
-    tracing::info!("Vision parse successful: found {} items",
-        parsed_json.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0)
+    tracing::info!(
+        "Vision parse successful: found {} items",
+        parsed_json
+            .get("items")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0)
     );
 
     Ok(parsed_json)

@@ -199,7 +199,10 @@ async fn actualizar_modifica_borrador(pool: PgPool) {
     assert_eq!(det["nota"], "nota corregida");
     let items = det["items"].as_array().unwrap();
     assert_eq!(items.len(), 1, "el detalle se reemplaza, no se acumula");
-    assert_eq!(items[0]["producto_id"].as_str(), Some(prod_b.to_string().as_str()));
+    assert_eq!(
+        items[0]["producto_id"].as_str(),
+        Some(prod_b.to_string().as_str())
+    );
     assert_eq!(items[0]["cantidad_sugerida"].as_str(), Some("25.00"));
 }
 
@@ -301,13 +304,19 @@ async fn flujo_envios_por_proveedor(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(det["envios"][0]["estado"], "enviado");
-    assert_eq!(det["estado"], "enviada", "único proveedor enviado => solicitud enviada");
+    assert_eq!(
+        det["estado"], "enviada",
+        "único proveedor enviado => solicitud enviada"
+    );
 
     // Cancelar el envío (con la version actualizada) lo vuelve a pendiente.
     let nueva_version = det["envios"][0]["version"].as_i64().unwrap();
     let (status, det) = common::delete_json(
         &app,
-        &format!("/api/v1/solicitudes-compra/{}/envios/{}", solicitud_id, proveedor_id),
+        &format!(
+            "/api/v1/solicitudes-compra/{}/envios/{}",
+            solicitud_id, proveedor_id
+        ),
         &admin_token,
         serde_json::json!({ "version": nueva_version }),
     )
@@ -459,9 +468,15 @@ async fn enviar_preserva_envios_granulares_ya_registrados(pool: PgPool) {
         .find(|e| e["proveedor_id"].as_i64() != Some(prov_a as i64))
         .unwrap();
     assert_eq!(envio_a["estado"], "enviado");
-    assert_eq!(envio_a["metodo_envio"], "whatsapp", "el envío granular previo se preserva");
+    assert_eq!(
+        envio_a["metodo_envio"], "whatsapp",
+        "el envío granular previo se preserva"
+    );
     assert_eq!(envio_b["estado"], "enviado");
-    assert_eq!(envio_b["metodo_envio"], "email", "el pendiente se marca con el método del envío masivo");
+    assert_eq!(
+        envio_b["metodo_envio"], "email",
+        "el pendiente se marca con el método del envío masivo"
+    );
 }
 
 // Caracterización de completar: exige una recepción `completa` vinculada; sin ella, 422.
@@ -807,7 +822,10 @@ async fn horizonte_devuelve_ultimo_precio_de_recepcion(pool: PgPool) {
         &idem,
     )
     .await;
-    assert!(rstatus.is_success(), "la recepción debería crearse, fue {rstatus}");
+    assert!(
+        rstatus.is_success(),
+        "la recepción debería crearse, fue {rstatus}"
+    );
 
     // El horizonte debe exponer el último precio de recepción.
     let (status, json) = common::get_json(

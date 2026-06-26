@@ -103,12 +103,8 @@ async fn quitar_gtin_lo_limpia(pool: PgPool) {
     )
     .await;
 
-    let (status, _) = common::delete_req(
-        &app,
-        &format!("/api/v1/presentaciones/{id}/gtin"),
-        &token,
-    )
-    .await;
+    let (status, _) =
+        common::delete_req(&app, &format!("/api/v1/presentaciones/{id}/gtin"), &token).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     let pres = fetch_pres(&app, &token, id).await;

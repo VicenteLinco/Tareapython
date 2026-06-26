@@ -1,34 +1,38 @@
-import { useEffect, useRef } from 'react'
-import { Clock } from 'lucide-react'
+import { useEffect, useRef } from "react";
+import { Clock } from "lucide-react";
 
 interface Props {
-  open: boolean
-  secondsLeft: number
-  onContinue: () => void
+  open: boolean;
+  secondsLeft: number;
+  onContinue: () => void;
 }
 
-export function InactivityWarningDialog({ open, secondsLeft, onContinue }: Props) {
-  const dialogRef = useRef<HTMLDialogElement>(null)
+export function InactivityWarningDialog({
+  open,
+  secondsLeft,
+  onContinue,
+}: Props) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
-    const dialog = dialogRef.current
-    if (!dialog) return
-    if (open && !dialog.open) dialog.showModal()
-    if (!open && dialog.open) dialog.close()
-  }, [open])
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open && !dialog.open) dialog.showModal();
+    if (!open && dialog.open) dialog.close();
+  }, [open]);
 
   // Bloquear cierre con Escape
   useEffect(() => {
-    const dialog = dialogRef.current
-    if (!dialog) return
-    const handleCancel = (e: Event) => e.preventDefault()
-    dialog.addEventListener('cancel', handleCancel)
-    return () => dialog.removeEventListener('cancel', handleCancel)
-  }, [])
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const handleCancel = (e: Event) => e.preventDefault();
+    dialog.addEventListener("cancel", handleCancel);
+    return () => dialog.removeEventListener("cancel", handleCancel);
+  }, []);
 
-  const minutes = Math.floor(secondsLeft / 60)
-  const seconds = secondsLeft % 60
-  const countdown = `${minutes}:${String(seconds).padStart(2, '0')}`
+  const minutes = Math.floor(secondsLeft / 60);
+  const seconds = secondsLeft % 60;
+  const countdown = `${minutes}:${String(seconds).padStart(2, "0")}`;
 
   return (
     <dialog ref={dialogRef} className="modal">
@@ -43,14 +47,13 @@ export function InactivityWarningDialog({ open, secondsLeft, onContinue }: Props
         <p className="text-sm text-base-content/60 mb-1">
           Por seguridad, tu sesión se cerrará automáticamente.
         </p>
-        <p className="text-3xl font-mono font-bold text-warning my-4">{countdown}</p>
-        <button
-          className="btn btn-primary w-full"
-          onClick={onContinue}
-        >
+        <p className="text-3xl font-mono font-bold text-warning my-4">
+          {countdown}
+        </p>
+        <button className="btn btn-primary w-full" onClick={onContinue}>
           Sí, continuar
         </button>
       </div>
     </dialog>
-  )
+  );
 }

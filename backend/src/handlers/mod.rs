@@ -1,12 +1,12 @@
 pub mod areas;
 pub mod audit_log;
 pub mod auth_handler;
-pub mod etiquetas;
 pub mod categorias;
 pub mod configuracion;
 pub mod consumos;
 pub mod conteo;
 pub mod descartes;
+pub mod etiquetas;
 pub mod health;
 pub mod lotes;
 pub mod movimientos;

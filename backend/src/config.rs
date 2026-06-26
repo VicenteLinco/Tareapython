@@ -103,8 +103,8 @@ impl AppConfig {
         let whatsapp_webhook_secret = env::var("WHATSAPP_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "mock_webhook_secret_for_dev".to_string());
 
-        let whatsapp_api_url = env::var("WHATSAPP_API_URL")
-            .unwrap_or_else(|_| "http://localhost:8008".to_string());
+        let whatsapp_api_url =
+            env::var("WHATSAPP_API_URL").unwrap_or_else(|_| "http://localhost:8008".to_string());
 
         let whatsapp_api_key = env::var("WHATSAPP_API_KEY")
             .unwrap_or_else(|_| "mock_whatsapp_api_key_for_dev".to_string());

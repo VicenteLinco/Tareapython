@@ -60,6 +60,7 @@ pub async fn lotes_fefo(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     producto_id: Uuid,
     area_id: i32,
+    permitir_vencidos: bool,
 ) -> Result<Vec<LoteFefo>, AppError> {
     let lotes = sqlx::query_as::<_, LoteFefo>(
         r#"SELECT s.id as stock_id, s.lote_id, s.cantidad, s.area_id
@@ -68,8 +69,8 @@ pub async fn lotes_fefo(
            WHERE l.producto_id = $1
              AND s.area_id = $2
              AND s.cantidad > 0
-             -- No se consume producto vencido: sólo sale por descarte.
-             AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
+             -- Si permitir_vencidos es true ($3), se ignora el filtro de vencimiento
+             AND ($3 OR l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
            -- FEFO por vencimiento; los implícitos sin fecha (control_lote='simple')
            -- caen al final y se drenan FIFO por antigüedad de lote.
            ORDER BY l.fecha_vencimiento ASC NULLS LAST, l.created_at ASC
@@ -77,6 +78,7 @@ pub async fn lotes_fefo(
     )
     .bind(producto_id)
     .bind(area_id)
+    .bind(permitir_vencidos)
     .fetch_all(&mut **tx)
     .await?;
 
@@ -87,6 +89,7 @@ pub async fn lotes_fefo(
 pub async fn lotes_fefo_global(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     producto_id: Uuid,
+    permitir_vencidos: bool,
 ) -> Result<Vec<LoteFefo>, AppError> {
     let lotes = sqlx::query_as::<_, LoteFefo>(
         r#"SELECT s.id as stock_id, s.lote_id, s.cantidad, s.area_id
@@ -94,14 +97,15 @@ pub async fn lotes_fefo_global(
            JOIN lotes l ON l.id = s.lote_id
            WHERE l.producto_id = $1
              AND s.cantidad > 0
-             -- No se consume producto vencido: sólo sale por descarte.
-             AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
+             -- Si permitir_vencidos es true ($2), se ignora el filtro de vencimiento
+             AND ($2 OR l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
            -- FEFO por vencimiento; los implícitos sin fecha (control_lote='simple')
            -- caen al final y se drenan FIFO por antigüedad de lote.
            ORDER BY l.fecha_vencimiento ASC NULLS LAST, l.created_at ASC
            FOR UPDATE OF s"#,
     )
     .bind(producto_id)
+    .bind(permitir_vencidos)
     .fetch_all(&mut **tx)
     .await?;
 

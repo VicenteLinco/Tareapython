@@ -1,6 +1,6 @@
+use chrono::NaiveDate;
 use serde::Serialize;
 use uuid::Uuid;
-use chrono::NaiveDate;
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct EtiquetaPresentacion {

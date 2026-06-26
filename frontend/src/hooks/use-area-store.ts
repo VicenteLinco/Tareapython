@@ -1,9 +1,9 @@
-import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 interface AreaState {
-  selectedAreaId: number | null
-  setSelectedArea: (id: number | null) => void
+  selectedAreaId: number | null;
+  setSelectedArea: (id: number | null) => void;
 }
 
 export const useAreaStore = create<AreaState>()(
@@ -12,6 +12,6 @@ export const useAreaStore = create<AreaState>()(
       selectedAreaId: null,
       setSelectedArea: (id) => set({ selectedAreaId: id }),
     }),
-    { name: 'lab-area' }
-  )
-)
+    { name: "lab-area" },
+  ),
+);

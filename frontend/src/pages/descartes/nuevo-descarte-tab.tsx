@@ -1,209 +1,245 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
-import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { v4 as uuidv4 } from 'uuid'
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { v4 as uuidv4 } from "uuid";
 import {
-  Trash2, Search, Calendar, PackageX, AlertTriangle,
-  ShieldCheck, CheckCircle2, Download,
-} from 'lucide-react'
-import api from '@/lib/api'
-import { parseApiError } from '@/lib/api-error'
-import type { Area, Proveedor, DescarteVencidoItem, DescarteSession } from '@/types'
-import type { DescarteRequest } from '@/types/generated'
-import { notify } from '@/lib/notify'
-import { cn, formatCantidad, daysUntil, formatDate } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { useDescartesStock } from './use-descartes-stock'
-import { exportarDescartePDF } from '@/lib/descarte-pdf'
-import { useAuthStore } from '@/hooks/use-auth-store'
+  Trash2,
+  Search,
+  Calendar,
+  PackageX,
+  AlertTriangle,
+  ShieldCheck,
+  CheckCircle2,
+  Download,
+} from "lucide-react";
+import api from "@/lib/api";
+import { parseApiError } from "@/lib/api-error";
+import type {
+  Area,
+  Proveedor,
+  DescarteVencidoItem,
+  DescarteSession,
+} from "@/types";
+import type { DescarteRequest } from "@/types/generated";
+import { notify } from "@/lib/notify";
+import { cn, formatCantidad, daysUntil, formatDate } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useDescartesStock } from "./use-descartes-stock";
+import { exportarDescartePDF } from "@/lib/descarte-pdf";
+import { useAuthStore } from "@/hooks/use-auth-store";
 
 interface DescarteItemLocal extends DescarteVencidoItem {
-  cantidad_descartar: number
-  motivo: 'vencido' | 'dañado' | 'contaminado' | 'otro'
+  cantidad_descartar: number;
+  motivo: "vencido" | "dañado" | "contaminado" | "otro";
 }
 
-const stockKey = (item: Pick<DescarteVencidoItem, 'lote_id' | 'area_id'>) =>
-  `${item.lote_id}:${item.area_id}`
-const MIN_SEARCH_CHARS = 2
+const stockKey = (item: Pick<DescarteVencidoItem, "lote_id" | "area_id">) =>
+  `${item.lote_id}:${item.area_id}`;
+const MIN_SEARCH_CHARS = 2;
 
-const normalizeSearch = (value: string) =>
-  value.trim().toLowerCase()
+const normalizeSearch = (value: string) => value.trim().toLowerCase();
 
 const searchRank = (item: DescarteVencidoItem, query: string) => {
-  const product = normalizeSearch(item.producto_nombre)
-  const lote = normalizeSearch(item.codigo_lote)
+  const product = normalizeSearch(item.producto_nombre);
+  const lote = normalizeSearch(item.codigo_lote);
 
-  if (lote === query) return 0
-  if (lote.startsWith(query)) return 1
-  if (product.startsWith(query)) return 2
-  if (lote.includes(query)) return 3
-  if (product.includes(query)) return 4
-  return 5
-}
+  if (lote === query) return 0;
+  if (lote.startsWith(query)) return 1;
+  if (product.startsWith(query)) return 2;
+  if (lote.includes(query)) return 3;
+  if (product.includes(query)) return 4;
+  return 5;
+};
 
 interface ProductSuggestion {
-  producto_nombre: string
-  lotes: DescarteVencidoItem[]
-  areas: string[]
+  producto_nombre: string;
+  lotes: DescarteVencidoItem[];
+  areas: string[];
 }
 
 const groupByProduct = (items: DescarteVencidoItem[]): ProductSuggestion[] => {
-  const byProduct = new Map<string, DescarteVencidoItem[]>()
+  const byProduct = new Map<string, DescarteVencidoItem[]>();
   items.forEach((item) => {
-    const existing = byProduct.get(item.producto_nombre) ?? []
-    byProduct.set(item.producto_nombre, [...existing, item])
-  })
+    const existing = byProduct.get(item.producto_nombre) ?? [];
+    byProduct.set(item.producto_nombre, [...existing, item]);
+  });
   return [...byProduct.entries()].map(([nombre, lotes]) => ({
     producto_nombre: nombre,
     lotes,
     areas: [...new Set(lotes.map((l) => l.area_nombre))],
-  }))
-}
+  }));
+};
 
 interface NuevoDescarteTabProps {
-  successSession: DescarteSession | null
-  onDescarteCreado: (session: DescarteSession) => void
-  onNuevoDescarte: () => void
+  successSession: DescarteSession | null;
+  onDescarteCreado: (session: DescarteSession) => void;
+  onNuevoDescarte: () => void;
 }
 
-export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDescarte }: NuevoDescarteTabProps) {
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false)
-  const [searchActiveIndex, setSearchActiveIndex] = useState(-1)
-  const searchContainerRef = useRef<HTMLDivElement>(null)
-  const searchItemRefs = useRef<(HTMLDivElement | null)[]>([])
+export function NuevoDescarteTab({
+  successSession,
+  onDescarteCreado,
+  onNuevoDescarte,
+}: NuevoDescarteTabProps) {
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
+  const [searchActiveIndex, setSearchActiveIndex] = useState(-1);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const searchItemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  const [filterAreaId, setFilterAreaId] = useState<number | null>(null)
-  const [filterProveedorId, setFilterProveedorId] = useState<number | null>(null)
-  const [filterIncluirProximos, setFilterIncluirProximos] = useState(false)
-  const [items, setItems] = useState<Record<string, DescarteItemLocal>>({})
-  const [showHealthyWarning, setShowHealthyWarning] = useState(false)
-  const [healthyJustification, setHealthyJustification] = useState('')
-  const [showMainConfirm, setShowMainConfirm] = useState(false)
+  const [filterAreaId, setFilterAreaId] = useState<number | null>(null);
+  const [filterProveedorId, setFilterProveedorId] = useState<number | null>(
+    null,
+  );
+  const [filterIncluirProximos, setFilterIncluirProximos] = useState(false);
+  const [items, setItems] = useState<Record<string, DescarteItemLocal>>({});
+  const [showHealthyWarning, setShowHealthyWarning] = useState(false);
+  const [healthyJustification, setHealthyJustification] = useState("");
+  const [showMainConfirm, setShowMainConfirm] = useState(false);
 
-  const queryClient = useQueryClient()
-  const usuario = useAuthStore((s) => s.usuario)
-  const searchTerm = search.trim()
-  const canSearch = searchTerm.length >= MIN_SEARCH_CHARS
+  const queryClient = useQueryClient();
+  const usuario = useAuthStore((s) => s.usuario);
+  const searchTerm = search.trim();
+  const canSearch = searchTerm.length >= MIN_SEARCH_CHARS;
 
   // Debounce de búsqueda para no saturar el backend
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(canSearch ? searchTerm : ''), 300)
-    return () => clearTimeout(timer)
-  }, [searchTerm, canSearch])
+    const timer = setTimeout(
+      () => setDebouncedSearch(canSearch ? searchTerm : ""),
+      300,
+    );
+    return () => clearTimeout(timer);
+  }, [searchTerm, canSearch]);
 
   const { data: areas } = useQuery({
-    queryKey: ['areas'],
-    queryFn: () => api.get<Area[]>('/areas').then((r) => r.data),
+    queryKey: ["areas"],
+    queryFn: () => api.get<Area[]>("/areas").then((r) => r.data),
     staleTime: 5 * 60 * 1000,
-  })
+  });
 
   const { data: proveedores } = useQuery({
-    queryKey: ['proveedores'],
-    queryFn: () => api.get<Proveedor[]>('/proveedores').then((r) => r.data),
+    queryKey: ["proveedores"],
+    queryFn: () => api.get<Proveedor[]>("/proveedores").then((r) => r.data),
     staleTime: 5 * 60 * 1000,
-  })
+  });
 
   const { data: config } = useQuery({
-    queryKey: ['configuracion'],
-    queryFn: () => api.get<Record<string, string>>('/configuracion').then((r) => r.data),
-  })
+    queryKey: ["configuracion"],
+    queryFn: () =>
+      api.get<Record<string, string>>("/configuracion").then((r) => r.data),
+  });
 
-  const { data: stock = [], isLoading, isError: stockError } = useDescartesStock({
+  const {
+    data: stock = [],
+    isLoading,
+    isError: stockError,
+  } = useDescartesStock({
     diasAlerta: filterIncluirProximos ? 30 : 0,
     areaId: filterAreaId,
     proveedorId: filterProveedorId,
     q: debouncedSearch || undefined,
-  })
+  });
 
-  const selectedItems = Object.values(items)
-  const totalSelected = selectedItems.length
+  const selectedItems = Object.values(items);
+  const totalSelected = selectedItems.length;
   const healthyItems = selectedItems.filter((item) => {
-    const days = daysUntil(item.fecha_vencimiento)
-    return item.motivo !== 'vencido' && (days === null || days > 30)
-  })
-  const hasHealthyItems = healthyItems.length > 0
+    const days = daysUntil(item.fecha_vencimiento);
+    return item.motivo !== "vencido" && (days === null || days > 30);
+  });
+  const hasHealthyItems = healthyItems.length > 0;
 
   const descarteMutation = useMutation({
-    mutationFn: ({ request }: { request: DescarteRequest; snapshot: DescarteItemLocal[] }) =>
+    mutationFn: ({
+      request,
+    }: {
+      request: DescarteRequest;
+      snapshot: DescarteItemLocal[];
+    }) =>
       api
-        .post('/descartes', request, { headers: { 'X-Idempotency-Key': uuidv4() } })
+        .post("/descartes", request, {
+          headers: { "X-Idempotency-Key": uuidv4() },
+        })
         .then((r) => r.data),
     onSuccess: (data, variables) => {
-      const { snapshot } = variables
-      queryClient.invalidateQueries({ queryKey: ['stock'] })
-      queryClient.invalidateQueries({ queryKey: ['descartes-stock'] })
+      const { snapshot } = variables;
+      queryClient.invalidateQueries({ queryKey: ["stock"] });
+      queryClient.invalidateQueries({ queryKey: ["descartes-stock"] });
       const session: DescarteSession = {
         grupo_movimiento: data.grupo_movimiento,
         fecha: new Date().toISOString(),
-        usuario_nombre: usuario?.nombre ?? '',
+        usuario_nombre: usuario?.nombre ?? "",
         total_items: snapshot.length,
         areas: [...new Set(snapshot.map((i) => i.area_nombre))],
         items: snapshot.map((i) => ({
           producto_nombre: i.producto_nombre,
           codigo_lote: i.codigo_lote,
           area_nombre: i.area_nombre,
-          tipo: i.motivo === 'vencido' ? 'DESCARTE_VENCIDO' : 'DESCARTE_DAÑADO',
+          tipo: i.motivo === "vencido" ? "DESCARTE_VENCIDO" : "DESCARTE_DAÑADO",
           cantidad: i.cantidad_descartar,
           unidad_base_nombre: i.unidad_base_nombre,
           unidad_base_nombre_plural: i.unidad_base_nombre_plural,
           fecha_vencimiento: i.fecha_vencimiento,
           nota: null,
         })),
-      }
-      setItems({})
-      setShowMainConfirm(false)
-      setShowHealthyWarning(false)
-      onDescarteCreado(session)
+      };
+      setItems({});
+      setShowMainConfirm(false);
+      setShowHealthyWarning(false);
+      onDescarteCreado(session);
     },
     onError: (err: unknown) => {
-      setShowMainConfirm(false)
-      setShowHealthyWarning(false)
-      notify.error(parseApiError(err))
+      setShowMainConfirm(false);
+      setShowHealthyWarning(false);
+      notify.error(parseApiError(err));
     },
-  })
+  });
 
   const toggleItem = (stockItemKey: string) => {
     setItems((prev) => {
       if (prev[stockItemKey]) {
-        const rest = { ...prev }
-        delete rest[stockItemKey]
-        return rest
+        const rest = { ...prev };
+        delete rest[stockItemKey];
+        return rest;
       }
-      const stockItem = stock.find((s) => stockKey(s) === stockItemKey)
-      if (!stockItem) return prev
-      const days = daysUntil(stockItem.fecha_vencimiento)
-      const isExpired = days !== null && days < 0
+      const stockItem = stock.find((s) => stockKey(s) === stockItemKey);
+      if (!stockItem) return prev;
+      const days = daysUntil(stockItem.fecha_vencimiento);
+      const isExpired = days !== null && days < 0;
       return {
         ...prev,
         [stockItemKey]: {
           ...stockItem,
           cantidad_descartar: stockItem.cantidad,
-          motivo: isExpired ? 'vencido' : 'dañado',
+          motivo: isExpired ? "vencido" : "dañado",
         },
-      }
-    })
-  }
+      };
+    });
+  };
 
   const updateItem = (
     stockItemKey: string,
-    field: 'cantidad_descartar' | 'motivo',
-    value: number | string
+    field: "cantidad_descartar" | "motivo",
+    value: number | string,
   ) => {
-    setItems((prev) => ({ ...prev, [stockItemKey]: { ...prev[stockItemKey], [field]: value } }))
-  }
+    setItems((prev) => ({
+      ...prev,
+      [stockItemKey]: { ...prev[stockItemKey], [field]: value },
+    }));
+  };
 
   const executeDescarte = (justificacion?: string) => {
-    if (totalSelected === 0) return
-    const snapshot = [...selectedItems]
+    if (totalSelected === 0) return;
+    const snapshot = [...selectedItems];
 
-    const invalidItem = snapshot.find((i) => i.cantidad_descartar <= 0)
+    const invalidItem = snapshot.find((i) => i.cantidad_descartar <= 0);
     if (invalidItem) {
-      notify.error(`La cantidad de "${invalidItem.producto_nombre}" debe ser mayor a 0`)
-      return
+      notify.error(
+        `La cantidad de "${invalidItem.producto_nombre}" debe ser mayor a 0`,
+      );
+      return;
     }
 
     const request: DescarteRequest = {
@@ -211,126 +247,143 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
         lote_id: i.lote_id,
         area_id: i.area_id,
         cantidad: String(i.cantidad_descartar),
-        tipo: i.motivo === 'vencido' ? 'DESCARTE_VENCIDO' : 'DESCARTE_DAÑADO',
+        tipo: i.motivo === "vencido" ? "DESCARTE_VENCIDO" : "DESCARTE_DAÑADO",
         nota:
           justificacion &&
-          i.motivo !== 'vencido' &&
+          i.motivo !== "vencido" &&
           (daysUntil(i.fecha_vencimiento) ?? 999) > 30
             ? justificacion
             : null,
       })),
-    }
-    descarteMutation.mutate({ request, snapshot })
-    setShowHealthyWarning(false)
-    setHealthyJustification('')
-  }
+    };
+    descarteMutation.mutate({ request, snapshot });
+    setShowHealthyWarning(false);
+    setHealthyJustification("");
+  };
 
   const handleConfirm = () => {
     if (hasHealthyItems) {
-      setShowMainConfirm(false)
-      setShowHealthyWarning(true)
+      setShowMainConfirm(false);
+      setShowHealthyWarning(true);
     } else {
-      executeDescarte()
+      executeDescarte();
     }
-  }
+  };
 
-  useEffect(() => { setSearchActiveIndex(-1) }, [search])
+  useEffect(() => {
+    setSearchActiveIndex(-1);
+  }, [search]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node))
-        setSearchDropdownOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(e.target as Node)
+      )
+        setSearchDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   useEffect(() => {
     if (searchActiveIndex >= 0)
-      searchItemRefs.current[searchActiveIndex]?.scrollIntoView({ block: 'nearest' })
-  }, [searchActiveIndex])
+      searchItemRefs.current[searchActiveIndex]?.scrollIntoView({
+        block: "nearest",
+      });
+  }, [searchActiveIndex]);
 
   const searchSuggestions = useMemo((): ProductSuggestion[] => {
-    if (!canSearch) return []
-    const q = normalizeSearch(searchTerm)
+    if (!canSearch) return [];
+    const q = normalizeSearch(searchTerm);
     const matching = stock.filter(
       (s) =>
         normalizeSearch(s.producto_nombre).includes(q) ||
-        normalizeSearch(s.codigo_lote).includes(q)
-    )
+        normalizeSearch(s.codigo_lote).includes(q),
+    );
     return groupByProduct(matching)
       .sort((a, b) => {
-        const rankA = Math.min(...a.lotes.map((l) => searchRank(l, q)))
-        const rankB = Math.min(...b.lotes.map((l) => searchRank(l, q)))
+        const rankA = Math.min(...a.lotes.map((l) => searchRank(l, q)));
+        const rankB = Math.min(...b.lotes.map((l) => searchRank(l, q)));
         return rankA !== rankB
           ? rankA - rankB
-          : a.producto_nombre.localeCompare(b.producto_nombre, 'es')
+          : a.producto_nombre.localeCompare(b.producto_nombre, "es");
       })
-      .slice(0, 12)
-  }, [canSearch, stock, searchTerm])
+      .slice(0, 12);
+  }, [canSearch, stock, searchTerm]);
 
   const recommendedSuggestions = useMemo((): ProductSuggestion[] => {
-    if (canSearch) return []
+    if (canSearch) return [];
     const expired = stock.filter((s) => {
-      const days = daysUntil(s.fecha_vencimiento)
-      return days !== null && days < 0
-    })
+      const days = daysUntil(s.fecha_vencimiento);
+      return days !== null && days < 0;
+    });
     return groupByProduct(expired)
       .sort((a, b) => {
-        const minDayA = Math.min(...a.lotes.map((l) => daysUntil(l.fecha_vencimiento) ?? 0))
-        const minDayB = Math.min(...b.lotes.map((l) => daysUntil(l.fecha_vencimiento) ?? 0))
-        return minDayA - minDayB
+        const minDayA = Math.min(
+          ...a.lotes.map((l) => daysUntil(l.fecha_vencimiento) ?? 0),
+        );
+        const minDayB = Math.min(
+          ...b.lotes.map((l) => daysUntil(l.fecha_vencimiento) ?? 0),
+        );
+        return minDayA - minDayB;
       })
-      .slice(0, 6)
-  }, [canSearch, stock])
+      .slice(0, 6);
+  }, [canSearch, stock]);
 
-  const activeSuggestions = canSearch ? searchSuggestions : recommendedSuggestions
-  const isRecommendMode = !canSearch
-  const showSearchDropdown = searchDropdownOpen && activeSuggestions.length > 0
+  const activeSuggestions = canSearch
+    ? searchSuggestions
+    : recommendedSuggestions;
+  const isRecommendMode = !canSearch;
+  const showSearchDropdown = searchDropdownOpen && activeSuggestions.length > 0;
 
   const selectProduct = (suggestion: ProductSuggestion) => {
     setItems((prev) => {
-      const next = { ...prev }
+      const next = { ...prev };
       suggestion.lotes.forEach((stockItem) => {
-        const key = stockKey(stockItem)
+        const key = stockKey(stockItem);
         if (!next[key]) {
-          const days = daysUntil(stockItem.fecha_vencimiento)
-          const isExpired = days !== null && days < 0
+          const days = daysUntil(stockItem.fecha_vencimiento);
+          const isExpired = days !== null && days < 0;
           next[key] = {
             ...stockItem,
             cantidad_descartar: stockItem.cantidad,
-            motivo: isExpired ? 'vencido' : 'dañado',
-          }
+            motivo: isExpired ? "vencido" : "dañado",
+          };
         }
-      })
-      return next
-    })
-    setSearch('')
-    setSearchDropdownOpen(false)
-    setSearchActiveIndex(-1)
-  }
+      });
+      return next;
+    });
+    setSearch("");
+    setSearchDropdownOpen(false);
+    setSearchActiveIndex(-1);
+  };
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      if (!searchDropdownOpen) setSearchDropdownOpen(true)
-      if (activeSuggestions.length === 0) return
-      setSearchActiveIndex((i) => (i < activeSuggestions.length - 1 ? i + 1 : 0))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      if (activeSuggestions.length === 0) return
-      setSearchActiveIndex((i) => (i > 0 ? i - 1 : activeSuggestions.length - 1))
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!searchDropdownOpen) setSearchDropdownOpen(true);
+      if (activeSuggestions.length === 0) return;
+      setSearchActiveIndex((i) =>
+        i < activeSuggestions.length - 1 ? i + 1 : 0,
+      );
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (activeSuggestions.length === 0) return;
+      setSearchActiveIndex((i) =>
+        i > 0 ? i - 1 : activeSuggestions.length - 1,
+      );
+    } else if (e.key === "Enter") {
+      e.preventDefault();
       if (searchActiveIndex >= 0 && activeSuggestions[searchActiveIndex]) {
-        selectProduct(activeSuggestions[searchActiveIndex])
+        selectProduct(activeSuggestions[searchActiveIndex]);
       }
-    } else if (e.key === 'Escape') {
-      setSearchDropdownOpen(false)
-      setSearch('')
-      setSearchActiveIndex(-1)
+    } else if (e.key === "Escape") {
+      setSearchDropdownOpen(false);
+      setSearch("");
+      setSearchActiveIndex(-1);
     }
-  }
+  };
 
   if (successSession) {
     return (
@@ -342,10 +395,13 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
           <div>
             <h2 className="t-h2">Descarte registrado</h2>
             <p className="text-sm opacity-50 mt-1">
-              {successSession.total_items} {successSession.total_items === 1 ? 'ítem' : 'ítems'} descartados
-              · {successSession.areas.join(', ')}
+              {successSession.total_items}{" "}
+              {successSession.total_items === 1 ? "ítem" : "ítems"} descartados
+              · {successSession.areas.join(", ")}
             </p>
-            <p className="text-xs opacity-40 mt-0.5">{formatDate(successSession.fecha)}</p>
+            <p className="text-xs opacity-40 mt-0.5">
+              {formatDate(successSession.fecha)}
+            </p>
           </div>
           <div className="flex flex-col gap-3 w-full">
             <Button
@@ -353,21 +409,25 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
               onClick={() =>
                 exportarDescartePDF(
                   successSession,
-                  config?.nombre_laboratorio ?? 'Laboratorio Clínico',
-                  config?.logo_base64 ?? null
+                  config?.nombre_laboratorio ?? "Laboratorio Clínico",
+                  config?.logo_base64 ?? null,
                 )
               }
             >
               <Download className="w-4 h-4" />
               Descargar Acta PDF
             </Button>
-            <Button variant="outline" className="w-full" onClick={onNuevoDescarte}>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={onNuevoDescarte}
+            >
               Nuevo descarte
             </Button>
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -376,15 +436,18 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
       <div className="flex-1 flex flex-col min-w-0 min-h-0 gap-3">
         {/* Filtros */}
         <div className="flex flex-wrap items-center gap-2">
-          <div ref={searchContainerRef} className="relative flex-1 min-w-[200px]">
+          <div
+            ref={searchContainerRef}
+            className="relative flex-1 min-w-[200px]"
+          >
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-30 pointer-events-none z-10" />
             <Input
               placeholder="Buscar por insumo o lote..."
               className="pl-9"
               value={search}
               onChange={(e) => {
-                setSearch(e.target.value)
-                setSearchDropdownOpen(true)
+                setSearch(e.target.value);
+                setSearchDropdownOpen(true);
               }}
               onKeyDown={handleSearchKeyDown}
               onFocus={() => setSearchDropdownOpen(true)}
@@ -405,32 +468,42 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
                   const lotesLabel =
                     suggestion.lotes.length === 1
                       ? `1 lote · ${suggestion.areas[0]}`
-                      : `${suggestion.lotes.length} lotes · ${suggestion.areas.slice(0, 2).join(', ')}${suggestion.areas.length > 2 ? '…' : ''}`
+                      : `${suggestion.lotes.length} lotes · ${suggestion.areas.slice(0, 2).join(", ")}${suggestion.areas.length > 2 ? "…" : ""}`;
                   const minDays = isRecommendMode
-                    ? Math.min(...suggestion.lotes.map((l) => daysUntil(l.fecha_vencimiento) ?? 0))
-                    : null
+                    ? Math.min(
+                        ...suggestion.lotes.map(
+                          (l) => daysUntil(l.fecha_vencimiento) ?? 0,
+                        ),
+                      )
+                    : null;
                   return (
                     <div
                       key={suggestion.producto_nombre}
-                      ref={(el) => { searchItemRefs.current[idx] = el }}
+                      ref={(el) => {
+                        searchItemRefs.current[idx] = el;
+                      }}
                       role="option"
                       aria-selected={idx === searchActiveIndex}
                       className={cn(
-                        'flex items-center justify-between px-3 py-2.5 cursor-pointer text-sm gap-2',
+                        "flex items-center justify-between px-3 py-2.5 cursor-pointer text-sm gap-2",
                         idx === searchActiveIndex
-                          ? 'bg-primary/10 text-primary'
-                          : 'hover:bg-base-200/60'
+                          ? "bg-primary/10 text-primary"
+                          : "hover:bg-base-200/60",
                       )}
                       onMouseDown={(e) => {
-                        e.preventDefault()
-                        selectProduct(suggestion)
+                        e.preventDefault();
+                        selectProduct(suggestion);
                       }}
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         {isRecommendMode && (
-                          <span className="text-error text-[8px] shrink-0">●</span>
+                          <span className="text-error text-[8px] shrink-0">
+                            ●
+                          </span>
                         )}
-                        <span className="font-medium truncate">{suggestion.producto_nombre}</span>
+                        <span className="font-medium truncate">
+                          {suggestion.producto_nombre}
+                        </span>
                       </div>
                       <span className="text-[10px] opacity-40 shrink-0 text-right">
                         {isRecommendMode && minDays !== null
@@ -438,7 +511,7 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
                           : lotesLabel}
                       </span>
                     </div>
-                  )
+                  );
                 })}
                 {isRecommendMode && (
                   <div className="px-3 py-2 text-[10px] text-base-content/30 border-t border-base-200 italic">
@@ -451,30 +524,40 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
 
           <select
             className="select select-bordered select-sm w-auto"
-            value={filterAreaId ?? ''}
-            onChange={(e) => setFilterAreaId(e.target.value ? Number(e.target.value) : null)}
+            value={filterAreaId ?? ""}
+            onChange={(e) =>
+              setFilterAreaId(e.target.value ? Number(e.target.value) : null)
+            }
           >
             <option value="">Todas las áreas</option>
             {areas?.map((a) => (
-              <option key={a.id} value={a.id}>{a.nombre}</option>
+              <option key={a.id} value={a.id}>
+                {a.nombre}
+              </option>
             ))}
           </select>
 
           <select
             className="select select-bordered select-sm w-auto"
-            value={filterProveedorId ?? ''}
-            onChange={(e) => setFilterProveedorId(e.target.value ? Number(e.target.value) : null)}
+            value={filterProveedorId ?? ""}
+            onChange={(e) =>
+              setFilterProveedorId(
+                e.target.value ? Number(e.target.value) : null,
+              )
+            }
           >
             <option value="">Todos los proveedores</option>
             {proveedores?.map((p) => (
-              <option key={p.id} value={p.id}>{p.nombre}</option>
+              <option key={p.id} value={p.id}>
+                {p.nombre}
+              </option>
             ))}
           </select>
 
           <button
             className={cn(
-              'btn btn-sm gap-1.5',
-              filterIncluirProximos ? 'btn-warning' : 'btn-outline'
+              "btn btn-sm gap-1.5",
+              filterIncluirProximos ? "btn-warning" : "btn-outline",
             )}
             onClick={() => setFilterIncluirProximos((v) => !v)}
           >
@@ -506,34 +589,40 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
                 ))
               ) : stockError ? (
                 <tr>
-                  <td colSpan={5} className="py-20 text-center text-error text-sm">
+                  <td
+                    colSpan={5}
+                    className="py-20 text-center text-error text-sm"
+                  >
                     Error al cargar el stock. Intenta recargar la página.
                   </td>
                 </tr>
               ) : stock.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-20 text-center opacity-40 italic text-sm">
+                  <td
+                    colSpan={5}
+                    className="py-20 text-center opacity-40 italic text-sm"
+                  >
                     {canSearch
-                      ? 'No se encontraron ítems con ese filtro'
-                      : 'No hay ítems vencidos en este momento'}
+                      ? "No se encontraron ítems con ese filtro"
+                      : "No hay ítems vencidos en este momento"}
                   </td>
                 </tr>
               ) : (
                 stock.flatMap((s) => {
-                  const days = daysUntil(s.fecha_vencimiento)
-                  const isExpired = days !== null && days < 0
-                  const isExpiring = days !== null && days >= 0 && days <= 30
-                  const isSano = days === null || days > 30
-                  const itemKey = stockKey(s)
-                  const isSelected = !!items[itemKey]
-                  const item = items[itemKey]
+                  const days = daysUntil(s.fecha_vencimiento);
+                  const isExpired = days !== null && days < 0;
+                  const isExpiring = days !== null && days >= 0 && days <= 30;
+                  const isSano = days === null || days > 30;
+                  const itemKey = stockKey(s);
+                  const isSelected = !!items[itemKey];
+                  const item = items[itemKey];
 
                   const rows: React.ReactElement[] = [
                     <tr
                       key={itemKey}
                       className={cn(
-                        'hover:bg-base-200/30 cursor-pointer transition-colors',
-                        isSelected && 'bg-primary/5 hover:bg-primary/10'
+                        "hover:bg-base-200/30 cursor-pointer transition-colors",
+                        isSelected && "bg-primary/5 hover:bg-primary/10",
                       )}
                       onClick={() => toggleItem(itemKey)}
                     >
@@ -548,7 +637,9 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
                       <td>
                         <div className="flex flex-col gap-0.5">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-sm">{s.producto_nombre}</span>
+                            <span className="font-bold text-sm">
+                              {s.producto_nombre}
+                            </span>
                             {isSano && (
                               <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-success/10 text-success border border-success/20">
                                 <ShieldCheck className="w-2.5 h-2.5" /> sano
@@ -565,14 +656,21 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
                         <div className="flex items-center gap-1.5">
                           <span
                             className={cn(
-                              'text-xs font-medium',
-                              isExpired ? 'text-error' : isExpiring ? 'text-warning' : ''
+                              "text-xs font-medium",
+                              isExpired
+                                ? "text-error"
+                                : isExpiring
+                                  ? "text-warning"
+                                  : "",
                             )}
                           >
                             {formatDate(s.fecha_vencimiento)}
                           </span>
                           {isExpired && (
-                            <Badge variant="destructive" className="h-4 text-[8px] px-1">
+                            <Badge
+                              variant="destructive"
+                              className="h-4 text-[8px] px-1"
+                            >
                               VENCIDO
                             </Badge>
                           )}
@@ -580,11 +678,15 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
                       </td>
                       <td className="text-right">
                         <span className="font-mono font-bold text-sm">
-                          {formatCantidad(s.cantidad, s.unidad_base_nombre, s.unidad_base_nombre_plural)}
+                          {formatCantidad(
+                            s.cantidad,
+                            s.unidad_base_nombre,
+                            s.unidad_base_nombre_plural,
+                          )}
                         </span>
                       </td>
                     </tr>,
-                  ]
+                  ];
 
                   if (isSelected && item) {
                     rows.push(
@@ -608,7 +710,11 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
                                 max={item.cantidad}
                                 step="any"
                                 onChange={(e) =>
-                                  updateItem(itemKey, 'cantidad_descartar', Number(e.target.value))
+                                  updateItem(
+                                    itemKey,
+                                    "cantidad_descartar",
+                                    Number(e.target.value),
+                                  )
                                 }
                               />
                             </div>
@@ -620,7 +726,7 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
                                 className="select select-bordered select-xs text-[11px]"
                                 value={item.motivo}
                                 onChange={(e) =>
-                                  updateItem(itemKey, 'motivo', e.target.value)
+                                  updateItem(itemKey, "motivo", e.target.value)
                                 }
                               >
                                 <option value="vencido">Vencido</option>
@@ -637,11 +743,11 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
                             </button>
                           </div>
                         </td>
-                      </tr>
-                    )
+                      </tr>,
+                    );
                   }
 
-                  return rows
+                  return rows;
                 })
               )}
             </tbody>
@@ -652,8 +758,8 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
       {/* Carrito derecho */}
       <div
         className={cn(
-          'w-full lg:w-80 flex flex-col min-h-0 bg-base-100 border border-base-200 rounded-2xl shadow-lg transition-all',
-          totalSelected === 0 && 'opacity-40 grayscale'
+          "w-full lg:w-80 flex flex-col min-h-0 bg-base-100 border border-base-200 rounded-2xl shadow-lg transition-all",
+          totalSelected === 0 && "opacity-40 grayscale",
         )}
       >
         <div className="p-5 border-b border-base-200 flex items-center justify-between">
@@ -672,16 +778,20 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
             </div>
           ) : (
             selectedItems.map((item) => {
-              const days = daysUntil(item.fecha_vencimiento)
-              const isSano = days === null || days > 30
+              const days = daysUntil(item.fecha_vencimiento);
+              const isSano = days === null || days > 30;
               return (
                 <div
                   key={stockKey(item)}
                   className="p-3 bg-base-200/40 rounded-xl border border-base-300 text-xs space-y-1"
                 >
                   <div className="flex justify-between items-start gap-1">
-                    <span className="font-bold line-clamp-1">{item.producto_nombre}</span>
-                    {isSano && <ShieldCheck className="w-3 h-3 text-warning shrink-0" />}
+                    <span className="font-bold line-clamp-1">
+                      {item.producto_nombre}
+                    </span>
+                    {isSano && (
+                      <ShieldCheck className="w-3 h-3 text-warning shrink-0" />
+                    )}
                   </div>
                   <div className="flex items-center gap-2 opacity-50">
                     <span className="font-mono">{item.codigo_lote}</span>
@@ -690,13 +800,17 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
                   </div>
                   <div className="flex items-center gap-1 opacity-60">
                     <span className="font-mono font-bold">
-                      {formatCantidad(item.cantidad_descartar, item.unidad_base_nombre, item.unidad_base_nombre_plural)}
+                      {formatCantidad(
+                        item.cantidad_descartar,
+                        item.unidad_base_nombre,
+                        item.unidad_base_nombre_plural,
+                      )}
                     </span>
                     <span>·</span>
                     <span className="capitalize">{item.motivo}</span>
                   </div>
                 </div>
-              )
+              );
             })
           )}
         </div>
@@ -732,10 +846,20 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
         confirmLabel="Sí, descartar"
         variant="danger"
         impacto={[
-          { label: 'Ítems a descartar', valor: String(selectedItems.length), destacado: true },
-          { label: 'Lotes involucrados', valor: String(selectedItems.length) },
+          {
+            label: "Ítems a descartar",
+            valor: String(selectedItems.length),
+            destacado: true,
+          },
+          { label: "Lotes involucrados", valor: String(selectedItems.length) },
           ...(hasHealthyItems
-            ? [{ label: 'Ítems en buen estado', valor: String(healthyItems.length), destacado: true }]
+            ? [
+                {
+                  label: "Ítems en buen estado",
+                  valor: String(healthyItems.length),
+                  destacado: true,
+                },
+              ]
             : []),
         ]}
       />
@@ -747,10 +871,14 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
             <div className="bg-warning/10 px-6 py-5 flex items-center gap-3 border-b border-warning/20 rounded-t-3xl">
               <AlertTriangle className="w-5 h-5 text-warning shrink-0" />
               <div>
-                <h3 className="font-bold">¿Descartar insumos en buen estado?</h3>
+                <h3 className="font-bold">
+                  ¿Descartar insumos en buen estado?
+                </h3>
                 <p className="text-xs opacity-60 mt-0.5">
-                  {healthyItems.length}{' '}
-                  {healthyItems.length === 1 ? 'ítem sano requiere' : 'ítems sanos requieren'}{' '}
+                  {healthyItems.length}{" "}
+                  {healthyItems.length === 1
+                    ? "ítem sano requiere"
+                    : "ítems sanos requieren"}{" "}
                   justificación
                 </p>
               </div>
@@ -762,9 +890,15 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
                     key={stockKey(item)}
                     className="flex items-center justify-between text-xs bg-base-200/50 rounded-xl px-3 py-2"
                   >
-                    <span className="font-bold truncate">{item.producto_nombre}</span>
+                    <span className="font-bold truncate">
+                      {item.producto_nombre}
+                    </span>
                     <span className="font-mono opacity-50 ml-2 shrink-0">
-                      {formatCantidad(item.cantidad_descartar, item.unidad_base_nombre, item.unidad_base_nombre_plural)}
+                      {formatCantidad(
+                        item.cantidad_descartar,
+                        item.unidad_base_nombre,
+                        item.unidad_base_nombre_plural,
+                      )}
                     </span>
                   </li>
                 ))}
@@ -786,16 +920,24 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
               <div className="flex gap-3">
                 <button
                   className="btn btn-ghost flex-1"
-                  onClick={() => { setShowHealthyWarning(false); setHealthyJustification('') }}
+                  onClick={() => {
+                    setShowHealthyWarning(false);
+                    setHealthyJustification("");
+                  }}
                 >
                   Cancelar
                 </button>
                 <button
                   className="btn btn-warning flex-1 gap-2"
-                  disabled={healthyJustification.trim().length < 10 || descarteMutation.isPending}
+                  disabled={
+                    healthyJustification.trim().length < 10 ||
+                    descarteMutation.isPending
+                  }
                   onClick={() => executeDescarte(healthyJustification.trim())}
                 >
-                  {descarteMutation.isPending && <span className="loading loading-spinner loading-sm" />}
+                  {descarteMutation.isPending && (
+                    <span className="loading loading-spinner loading-sm" />
+                  )}
                   Confirmar de todas formas
                 </button>
               </div>
@@ -804,5 +946,5 @@ export function NuevoDescarteTab({ successSession, onDescarteCreado, onNuevoDesc
         </div>
       )}
     </div>
-  )
+  );
 }

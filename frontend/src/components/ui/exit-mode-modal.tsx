@@ -1,35 +1,38 @@
-import { useState } from 'react'
-import { Lock, X } from 'lucide-react'
-import { notify } from '@/lib/notify'
-import api from '@/lib/api'
-import { clearDeviceMode } from '@/lib/device-mode'
+import { useState } from "react";
+import { Lock, X } from "lucide-react";
+import { notify } from "@/lib/notify";
+import api from "@/lib/api";
+import { clearDeviceMode } from "@/lib/device-mode";
 
 interface ExitModeModalProps {
-  onConfirm: () => void
-  onCancel: () => void
+  onConfirm: () => void;
+  onCancel: () => void;
 }
 
 export function ExitModeModal({ onConfirm, onCancel }: ExitModeModalProps) {
-  const [pin, setPin] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [pin, setPin] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   async function handleVerify() {
-    setError('')
-    setLoading(true)
+    setError("");
+    setLoading(true);
     try {
-      const res = await api.post<{ valido: boolean }>('/configuracion/verificar-pin', { pin })
+      const res = await api.post<{ valido: boolean }>(
+        "/configuracion/verificar-pin",
+        { pin },
+      );
       if (res.data.valido) {
-        clearDeviceMode()
-        onConfirm()
+        clearDeviceMode();
+        onConfirm();
       } else {
-        setError('PIN incorrecto')
-        setPin('')
+        setError("PIN incorrecto");
+        setPin("");
       }
     } catch {
-      notify.error('Error al verificar PIN')
+      notify.error("Error al verificar PIN");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
@@ -41,7 +44,10 @@ export function ExitModeModal({ onConfirm, onCancel }: ExitModeModalProps) {
             <Lock className="h-5 w-5 text-primary" />
             <h3 className="font-bold text-lg">Salir del modo</h3>
           </div>
-          <button className="btn btn-ghost btn-xs btn-circle" onClick={onCancel}>
+          <button
+            className="btn btn-ghost btn-xs btn-circle"
+            onClick={onCancel}
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -57,13 +63,18 @@ export function ExitModeModal({ onConfirm, onCancel }: ExitModeModalProps) {
           placeholder="• • • •"
           maxLength={8}
           value={pin}
-          onChange={(e) => { setPin(e.target.value.replace(/\D/g, '')); setError('') }}
-          onKeyDown={(e) => e.key === 'Enter' && handleVerify()}
+          onChange={(e) => {
+            setPin(e.target.value.replace(/\D/g, ""));
+            setError("");
+          }}
+          onKeyDown={(e) => e.key === "Enter" && handleVerify()}
           autoFocus
         />
 
         {error && (
-          <p className="text-error text-sm text-center mt-2 font-medium">{error}</p>
+          <p className="text-error text-sm text-center mt-2 font-medium">
+            {error}
+          </p>
         )}
 
         <div className="modal-action mt-4">
@@ -75,11 +86,15 @@ export function ExitModeModal({ onConfirm, onCancel }: ExitModeModalProps) {
             onClick={handleVerify}
             disabled={loading}
           >
-            {loading ? <span className="loading loading-spinner loading-sm" /> : 'Confirmar'}
+            {loading ? (
+              <span className="loading loading-spinner loading-sm" />
+            ) : (
+              "Confirmar"
+            )}
           </button>
         </div>
       </div>
       <div className="modal-backdrop" onClick={onCancel} />
     </div>
-  )
+  );
 }

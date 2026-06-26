@@ -1159,7 +1159,13 @@ impl SolicitudService {
         let row = row_opt.ok_or_else(|| AppError::NotFound("Producto no encontrado".into()))?;
 
         // 2. Forecast
-        let res = compute_forecast(&row.serie, row.stock_actual, row.ya_pedido, row.lead_time, cfg);
+        let res = compute_forecast(
+            &row.serie,
+            row.stock_actual,
+            row.ya_pedido,
+            row.lead_time,
+            cfg,
+        );
 
         // 3. Horizonte sugerido = lead_time + revisión, clampado a un piso de 7d.
         //    Si la confianza es baja, no inventar horizonte: devolver lead_time × 3.
@@ -1167,7 +1173,11 @@ impl SolicitudService {
             ((row.lead_time as f64 * 3.0) as i32).max(30)
         } else {
             let base = row.lead_time + cfg.periodo_revision_dias;
-            let cv = if res.mu > 0.0 { res.sigma / res.mu } else { 0.0 };
+            let cv = if res.mu > 0.0 {
+                res.sigma / res.mu
+            } else {
+                0.0
+            };
             let mult = if cv < 0.3 {
                 1.0
             } else if cv < 0.7 {
@@ -1180,7 +1190,11 @@ impl SolicitudService {
             ajustado.max(piso)
         };
 
-        let cv = if res.mu > 0.0 { res.sigma / res.mu } else { 0.0 };
+        let cv = if res.mu > 0.0 {
+            res.sigma / res.mu
+        } else {
+            0.0
+        };
         let short_est = estimate_short_history_demand(
             &row.serie,
             cfg.dias_minimos_historia,

@@ -1,32 +1,34 @@
-import { LogOut, Menu, Search } from 'lucide-react'
-import axios from 'axios'
-import { useAuthStore } from '@/hooks/use-auth-store'
-import { useNavigate } from 'react-router-dom'
-import { clearDeviceMode } from '@/lib/device-mode'
-import { useState } from 'react'
-import { ProfileModal } from '@/components/auth/ProfileModal'
+import { LogOut, Menu, Search } from "lucide-react";
+import axios from "axios";
+import { useAuthStore } from "@/hooks/use-auth-store";
+import { useNavigate } from "react-router-dom";
+import { clearDeviceMode } from "@/lib/device-mode";
+import { useState } from "react";
+import { ProfileModal } from "@/components/auth/ProfileModal";
 
 interface HeaderProps {
-  onOpenSearch?: () => void
-  onMenuClick?: () => void
+  onOpenSearch?: () => void;
+  onMenuClick?: () => void;
 }
 
 export function Header({ onOpenSearch, onMenuClick }: HeaderProps) {
-  const { usuario, refreshToken, logout } = useAuthStore()
-  const navigate = useNavigate()
-  const [profileOpen, setProfileOpen] = useState(false)
+  const { usuario, refreshToken, logout } = useAuthStore();
+  const navigate = useNavigate();
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const handleLogout = async () => {
     try {
       if (refreshToken) {
-        await axios.post('/api/v1/auth/logout', { refresh_token: refreshToken })
+        await axios.post("/api/v1/auth/logout", {
+          refresh_token: refreshToken,
+        });
       }
     } finally {
-      logout()
-      clearDeviceMode()
-      navigate('/login')
+      logout();
+      clearDeviceMode();
+      navigate("/login");
     }
-  }
+  };
 
   return (
     <header className="glass-header sticky top-0 z-20 flex h-[60px] min-w-0 items-center justify-between border-b border-base-200 bg-base-100/80 px-3 sm:px-4 md:px-6">
@@ -62,21 +64,28 @@ export function Header({ onOpenSearch, onMenuClick }: HeaderProps) {
             className="flex items-center gap-2.5 hover:bg-base-200/50 p-1 px-2 rounded-xl transition-all text-left"
           >
             <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold">
-              {usuario?.nombre?.charAt(0)?.toUpperCase() ?? 'U'}
+              {usuario?.nombre?.charAt(0)?.toUpperCase() ?? "U"}
             </div>
             <div className="hidden sm:flex flex-col">
-              <span className="text-xs font-semibold leading-tight">{usuario?.nombre}</span>
-              <span className="text-[10px] opacity-40 capitalize leading-tight">{usuario?.rol}</span>
+              <span className="text-xs font-semibold leading-tight">
+                {usuario?.nombre}
+              </span>
+              <span className="text-[10px] opacity-40 capitalize leading-tight">
+                {usuario?.rol}
+              </span>
             </div>
           </button>
         </div>
         <div className="tooltip tooltip-bottom" data-tip="Cerrar sesión">
-          <button onClick={handleLogout} className="btn btn-ghost btn-xs btn-square opacity-40 hover:opacity-100">
+          <button
+            onClick={handleLogout}
+            className="btn btn-ghost btn-xs btn-square opacity-40 hover:opacity-100"
+          >
             <LogOut className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
       <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
     </header>
-  )
+  );
 }

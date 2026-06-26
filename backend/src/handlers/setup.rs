@@ -5,9 +5,7 @@ use axum::{Extension, Json, Router};
 use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::errors::AppError;
-use crate::services::setup_service::{
-    self, ImportConfig, ImportResult
-};
+use crate::services::setup_service::{self, ImportConfig, ImportResult};
 
 // === Helpers ===
 
@@ -133,7 +131,9 @@ async fn finalizar(
 ) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
     setup_service::finalizar_setup(&state.pool).await?;
-    Ok(Json(serde_json::json!({ "mensaje": "Configuración finalizada" })))
+    Ok(Json(
+        serde_json::json!({ "mensaje": "Configuración finalizada" }),
+    ))
 }
 
 pub fn routes() -> Router<AppState> {

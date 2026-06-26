@@ -149,8 +149,7 @@ async fn obtener_detalle_incluye_codigos_barras(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::CREATED);
 
-    let (status, json) =
-        common::get_json(&app, &format!("/api/v1/productos/{id}"), &token).await;
+    let (status, json) = common::get_json(&app, &format!("/api/v1/productos/{id}"), &token).await;
     assert_eq!(status, StatusCode::OK);
     let codigos = json["codigos_barras"].as_array().expect("codigos_barras");
     assert_eq!(codigos.len(), 1);

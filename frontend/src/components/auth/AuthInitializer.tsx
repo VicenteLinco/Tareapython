@@ -1,60 +1,60 @@
 // frontend/src/components/auth/AuthInitializer.tsx
-import { useEffect, useState } from 'react'
-import axios from 'axios'
-import { FlaskConical } from 'lucide-react'
-import { useAuthStore } from '@/hooks/use-auth-store'
+import { useEffect, useState } from "react";
+import axios from "axios";
+import { FlaskConical } from "lucide-react";
+import { useAuthStore } from "@/hooks/use-auth-store";
 
 interface Props {
-  children: React.ReactNode
+  children: React.ReactNode;
 }
 
 export function AuthInitializer({ children }: Props) {
-  const [ready, setReady] = useState(false)
-  const { refreshToken, setTokens, logout } = useAuthStore()
+  const [ready, setReady] = useState(false);
+  const { refreshToken, setTokens, logout } = useAuthStore();
 
   useEffect(() => {
     if (!refreshToken) {
-      setReady(true)
-      return
+      setReady(true);
+      return;
     }
 
     axios
-      .post('/api/v1/auth/refresh', { refresh_token: refreshToken })
+      .post("/api/v1/auth/refresh", { refresh_token: refreshToken })
       .then((res) => {
-        const { access_token, refresh_token } = res.data
-        setTokens(access_token, refresh_token)
+        const { access_token, refresh_token } = res.data;
+        setTokens(access_token, refresh_token);
       })
       .catch(() => {
-        logout()
+        logout();
       })
       .finally(() => {
-        setReady(true)
-      })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+        setReady(true);
+      });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'lab-auth-v3') {
+      if (e.key === "lab-auth-v3") {
         if (!e.newValue) {
-          logout()
-          window.location.href = '/login'
+          logout();
+          window.location.href = "/login";
         } else {
           try {
-            const parsed = JSON.parse(e.newValue)
+            const parsed = JSON.parse(e.newValue);
             if (!parsed.state || !parsed.state.refreshToken) {
-              logout()
-              window.location.href = '/login'
+              logout();
+              window.location.href = "/login";
             }
           } catch (err) {
-            console.error('Error parsing synced auth store:', err)
+            console.error("Error parsing synced auth store:", err);
           }
         }
       }
-    }
+    };
 
-    window.addEventListener('storage', handleStorageChange)
-    return () => window.removeEventListener('storage', handleStorageChange)
-  }, [logout])
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, [logout]);
 
   if (!ready) {
     return (
@@ -66,8 +66,8 @@ export function AuthInitializer({ children }: Props) {
           <span className="loading loading-spinner loading-md" />
         </div>
       </div>
-    )
+    );
   }
 
-  return <>{children}</>
+  return <>{children}</>;
 }

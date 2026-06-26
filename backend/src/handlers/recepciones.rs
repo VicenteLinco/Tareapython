@@ -191,7 +191,7 @@ async fn scan_codigo(
 
     let producto: Option<(Uuid, String)> = sqlx::query_as(
         "SELECT p.id, p.nombre FROM productos p \
-         WHERE (p.codigo_interno = $1 OR p.sku = $1) AND p.activo = true LIMIT 1"
+         WHERE (p.codigo_interno = $1 OR p.sku = $1) AND p.activo = true LIMIT 1",
     )
     .bind(&body.codigo)
     .fetch_optional(&state.pool)
@@ -287,7 +287,12 @@ pub struct ItemGuiaParseado {
     #[serde(alias = "skuRef", alias = "sku", alias = "referencia")]
     pub sku_ref: String,
     pub lote: Option<String>,
-    #[serde(alias = "fechaVencimiento", alias = "fechaVto", alias = "vencimiento", alias = "fecha_vencimiento")]
+    #[serde(
+        alias = "fechaVencimiento",
+        alias = "fechaVto",
+        alias = "vencimiento",
+        alias = "fecha_vencimiento"
+    )]
     pub fecha_vencimiento: Option<String>,
     pub cantidad: f64,
     #[serde(alias = "precioUnitario", alias = "precio", alias = "precio_unitario")]
@@ -325,14 +330,22 @@ pub fn parse_guia_regex(raw_text: &str) -> Option<GuiaParseada> {
             continue;
         }
         if let Some(caps) = re.captures(line) {
-            let sku = caps.name("sku").map(|m| m.as_str().to_string()).unwrap_or_default();
-            let desc = caps.name("desc").map(|m| m.as_str().trim().to_string()).unwrap_or_default();
+            let sku = caps
+                .name("sku")
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
+            let desc = caps
+                .name("desc")
+                .map(|m| m.as_str().trim().to_string())
+                .unwrap_or_default();
             let qty_str = caps.name("qty").map(|m| m.as_str()).unwrap_or("0");
             let qty = qty_str.parse::<f64>().unwrap_or(0.0);
             let lote = caps.name("lote").map(|m| m.as_str().to_string());
             let vto_raw = caps.name("vto").map(|m| m.as_str());
             let fecha_vencimiento = vto_raw.and_then(|v| normalize_date(v));
-            let price = caps.name("price").and_then(|m| m.as_str().parse::<f64>().ok());
+            let price = caps
+                .name("price")
+                .and_then(|m| m.as_str().parse::<f64>().ok());
 
             items.push(ItemGuiaParseado {
                 nombre_producto: desc,
@@ -348,10 +361,7 @@ pub fn parse_guia_regex(raw_text: &str) -> Option<GuiaParseada> {
     if items.is_empty() {
         None
     } else {
-        Some(GuiaParseada {
-            proveedor,
-            items,
-        })
+        Some(GuiaParseada { proveedor, items })
     }
 }
 
@@ -367,8 +377,12 @@ async fn parse_guia(
     }
 
     let llm_json = crate::services::llm::parse_guia_con_llm(&state.pool, &payload.raw_text).await?;
-    let parsed_guia: GuiaParseada = serde_json::from_value(llm_json)
-        .map_err(|e| AppError::Internal(format!("LLM response did not match GuiaParseada schema: {}", e)))?;
+    let parsed_guia: GuiaParseada = serde_json::from_value(llm_json).map_err(|e| {
+        AppError::Internal(format!(
+            "LLM response did not match GuiaParseada schema: {}",
+            e
+        ))
+    })?;
 
     Ok(Json(parsed_guia))
 }
@@ -452,13 +466,9 @@ async fn parse_guia_imagen(
         _ => "bin",
     };
 
-    let archivo_url = storage::save_file_bytes(
-        &bytes,
-        extension,
-        "guias",
-        &format!("guia_{}", claims.sub),
-    )
-    .await?;
+    let archivo_url =
+        storage::save_file_bytes(&bytes, extension, "guias", &format!("guia_{}", claims.sub))
+            .await?;
 
     let vision_result = llm::parse_guia_con_vision(&state.pool, &bytes, &mime).await;
 

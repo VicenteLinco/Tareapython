@@ -1,4 +1,4 @@
 export interface PresFormato {
-  nombre: string
-  nombre_plural: string
+  nombre: string;
+  nombre_plural: string;
 }

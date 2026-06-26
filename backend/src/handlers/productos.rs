@@ -20,7 +20,6 @@ struct ProductoQuery {
     q: Option<String>,
     categoria_id: Option<i32>,
     area_id: Option<i32>,
-    proveedor_id: Option<i32>,
     activo: Option<bool>,
     sort_by: Option<String>,
     sort_dir: Option<String>,
@@ -33,22 +32,19 @@ struct ProductoListItem {
     id: Uuid,
     codigo_interno: String,
     nombre: String,
-    sku: Option<String>,
-    proveedor_id: Option<i32>,
     categoria: Option<CategoriaRef>,
     unidad_base: UnidadRef,
-    proveedor: Option<ProveedorRef>,
     area: Option<AreaRef>,
-    precio_unidad: Option<Decimal>,
     lead_time_propio: Option<i32>,
     activo: bool,
     estado_stock: String,
     imagen_url: Option<String>,
-    pres_id: Option<i32>,
-    pres_nombre: Option<String>,
-    pres_nombre_plural: Option<String>,
-    pres_factor: Option<Decimal>,
     control_lote: ControlLote,
+    mpn: Option<String>,
+    alias_unidad_clinica: Option<String>,
+    es_kit: bool,
+    stock_minimo_global: Decimal,
+    codigo_loinc_cpt: Option<String>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow, specta::Type)]
@@ -70,13 +66,6 @@ pub struct AreaRef {
     pub nombre: String,
 }
 
-#[derive(Debug, Serialize, specta::Type)]
-struct ProveedorRef {
-    id: i32,
-    nombre: String,
-    icono: Option<String>,
-}
-
 #[derive(Debug, Deserialize, specta::Type)]
 pub struct CreatePresentacionInline {
     pub nombre: String,
@@ -94,22 +83,17 @@ struct CreateProducto {
     descripcion: Option<String>,
     categoria_id: Option<i32>,
     unidad_base_id: i32,
-    proveedor_id: Option<i32>,
-    sku: Option<String>,
-    precio_unidad: Option<Decimal>,
     ubicacion: Option<String>,
     temperatura_almacenamiento: Option<String>,
     requiere_cadena_frio: Option<bool>,
     dias_estabilidad_abierto: Option<i32>,
     clase_riesgo: Option<String>,
     fabricante: Option<String>,
-    // Flat presentation
-    pres_nombre: Option<String>,
-    pres_nombre_plural: Option<String>,
-    pres_factor: Option<Decimal>,
-    pres_codigo_barras: Option<String>,
-    pres_gtin: Option<String>,
-    pres_gs1_habilitado: Option<bool>,
+    mpn: Option<String>,
+    alias_unidad_clinica: Option<String>,
+    es_kit: Option<bool>,
+    stock_minimo_global: Option<Decimal>,
+    codigo_loinc_cpt: Option<String>,
     // Política de lote (default 'con_vto' si se omite)
     control_lote: Option<ControlLote>,
     // Extra presentations still supported
@@ -124,22 +108,17 @@ struct UpdateProducto {
     nombre: Option<String>,
     descripcion: Option<String>,
     categoria_id: Option<i32>,
-    proveedor_id: Option<i32>,
-    sku: Option<String>,
-    precio_unidad: Option<Decimal>,
     ubicacion: Option<String>,
     temperatura_almacenamiento: Option<String>,
     requiere_cadena_frio: Option<bool>,
     dias_estabilidad_abierto: Option<i32>,
     clase_riesgo: Option<String>,
     fabricante: Option<String>,
-    // Flat presentation
-    pres_nombre: Option<String>,
-    pres_nombre_plural: Option<String>,
-    pres_factor: Option<Decimal>,
-    pres_codigo_barras: Option<String>,
-    pres_gtin: Option<String>,
-    pres_gs1_habilitado: Option<bool>,
+    mpn: Option<String>,
+    alias_unidad_clinica: Option<String>,
+    es_kit: Option<bool>,
+    stock_minimo_global: Option<Decimal>,
+    codigo_loinc_cpt: Option<String>,
     control_lote: Option<ControlLote>,
     area_ids: Option<Vec<i32>>,
     version: i32,
@@ -180,7 +159,6 @@ async fn listar(
             q: params.q,
             categoria_id: params.categoria_id,
             area_id: params.area_id,
-            proveedor_id: params.proveedor_id,
             activo: params.activo.unwrap_or(true),
             sort_by: params.sort_by,
             sort_dir: params.sort_dir,
@@ -196,8 +174,6 @@ async fn listar(
             id: r.id,
             codigo_interno: r.codigo_interno,
             nombre: r.nombre,
-            sku: r.sku,
-            proveedor_id: r.prov_id,
             categoria: r.cat_id.map(|id| CategoriaRef {
                 id,
                 nombre: r.cat_nombre.unwrap_or_default(),
@@ -207,25 +183,20 @@ async fn listar(
                 nombre: r.um_nombre,
                 nombre_plural: r.um_nombre_plural,
             },
-            proveedor: r.prov_id.map(|id| ProveedorRef {
-                id,
-                nombre: r.prov_nombre.unwrap_or_default(),
-                icono: r.prov_icono,
-            }),
             area: r.area_id.map(|id| AreaRef {
                 id,
                 nombre: r.area_nombre.unwrap_or_default(),
             }),
-            precio_unidad: r.precio_unidad,
             lead_time_propio: r.lead_time_propio,
             activo: r.activo,
             estado_stock: r.estado_stock,
             imagen_url: r.imagen_url,
-            pres_id: r.pres_id,
-            pres_nombre: r.pres_nombre,
-            pres_nombre_plural: r.pres_nombre_plural,
-            pres_factor: r.pres_factor,
             control_lote: r.control_lote,
+            mpn: r.mpn,
+            alias_unidad_clinica: r.alias_unidad_clinica,
+            es_kit: r.es_kit,
+            stock_minimo_global: r.stock_minimo_global,
+            codigo_loinc_cpt: r.codigo_loinc_cpt,
         })
         .collect();
 
@@ -286,21 +257,17 @@ async fn crear(
             descripcion: req.descripcion,
             categoria_id: req.categoria_id,
             unidad_base_id: req.unidad_base_id,
-            proveedor_id: req.proveedor_id,
-            sku: req.sku,
-            precio_unidad: req.precio_unidad,
             ubicacion: req.ubicacion,
             temperatura_almacenamiento: req.temperatura_almacenamiento,
             requiere_cadena_frio: req.requiere_cadena_frio.unwrap_or(false),
             dias_estabilidad_abierto: req.dias_estabilidad_abierto,
             clase_riesgo: req.clase_riesgo,
             fabricante: req.fabricante,
-            pres_nombre: req.pres_nombre,
-            pres_nombre_plural: req.pres_nombre_plural,
-            pres_factor: req.pres_factor,
-            pres_codigo_barras: req.pres_codigo_barras,
-            pres_gtin: req.pres_gtin,
-            pres_gs1_habilitado: req.pres_gs1_habilitado.unwrap_or(false),
+            mpn: req.mpn,
+            alias_unidad_clinica: req.alias_unidad_clinica,
+            es_kit: req.es_kit.unwrap_or(false),
+            stock_minimo_global: req.stock_minimo_global.unwrap_or(Decimal::ZERO),
+            codigo_loinc_cpt: req.codigo_loinc_cpt,
             presentaciones: req.presentaciones,
             control_lote: req.control_lote.unwrap_or(ControlLote::ConVto),
             area_ids: req.area_ids,
@@ -343,21 +310,17 @@ async fn actualizar(
             nombre: nombre.to_string(),
             descripcion: req.descripcion,
             categoria_id: req.categoria_id,
-            proveedor_id: req.proveedor_id,
-            sku: req.sku,
-            precio_unidad: req.precio_unidad,
             ubicacion: req.ubicacion,
             temperatura_almacenamiento: req.temperatura_almacenamiento,
             requiere_cadena_frio: req.requiere_cadena_frio,
             dias_estabilidad_abierto: req.dias_estabilidad_abierto,
             clase_riesgo: req.clase_riesgo,
             fabricante: req.fabricante,
-            pres_nombre: req.pres_nombre,
-            pres_nombre_plural: req.pres_nombre_plural,
-            pres_factor: req.pres_factor,
-            pres_codigo_barras: req.pres_codigo_barras,
-            pres_gtin: req.pres_gtin,
-            pres_gs1_habilitado: req.pres_gs1_habilitado,
+            mpn: req.mpn,
+            alias_unidad_clinica: req.alias_unidad_clinica,
+            es_kit: req.es_kit,
+            stock_minimo_global: req.stock_minimo_global,
+            codigo_loinc_cpt: req.codigo_loinc_cpt,
             control_lote: req.control_lote,
             area_ids: req.area_ids,
             version_esperada: req.version,
@@ -409,7 +372,7 @@ async fn scan_barcode(
 /// Read-only lookup check for manual dialogs
 async fn scan_lookup(
     State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
+    Extension(_claims): Extension<Claims>,
     Query(params): Query<ScanQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let codigo = params.codigo.as_deref().unwrap_or("");
@@ -547,11 +510,13 @@ pub struct ApproveProductInput {
     pub categoria_id: i32,
     pub unidad_base_id: i32,
     pub control_lote: ControlLote,
-    pub pres_nombre: Option<String>,
-    pub pres_nombre_plural: Option<String>,
-    pub pres_factor: Option<Decimal>,
     pub fabricante: Option<String>,
     pub ubicacion: Option<String>,
+    pub mpn: Option<String>,
+    pub alias_unidad_clinica: Option<String>,
+    pub es_kit: Option<bool>,
+    pub stock_minimo_global: Option<Decimal>,
+    pub codigo_loinc_cpt: Option<String>,
 }
 
 async fn list_quarantine(
@@ -579,49 +544,43 @@ async fn approve_product(
 
     // Validation
     if input.nombre.trim().is_empty() {
-        return Err(AppError::Validation("El campo nombre es requerido".to_string()));
+        return Err(AppError::Validation(
+            "El campo nombre es requerido".to_string(),
+        ));
     }
     if input.nombre.chars().count() > 300 {
-        return Err(AppError::Validation("El nombre no puede superar los 300 caracteres".to_string()));
+        return Err(AppError::Validation(
+            "El nombre no puede superar los 300 caracteres".to_string(),
+        ));
     }
     if let Some(ref desc) = input.descripcion {
         if desc.chars().count() > 2000 {
-            return Err(AppError::Validation("La descripción no puede superar los 2000 caracteres".to_string()));
+            return Err(AppError::Validation(
+                "La descripción no puede superar los 2000 caracteres".to_string(),
+            ));
         }
     }
     if let Some(ref fab) = input.fabricante {
         if fab.chars().count() > 300 {
-            return Err(AppError::Validation("El fabricante no puede superar los 300 caracteres".to_string()));
+            return Err(AppError::Validation(
+                "El fabricante no puede superar los 300 caracteres".to_string(),
+            ));
         }
     }
     if let Some(ref ubi) = input.ubicacion {
         if ubi.chars().count() > 200 {
-            return Err(AppError::Validation("La ubicación no puede superar los 200 caracteres".to_string()));
-        }
-    }
-
-    // Co-dependency for presentation name and conversion factor
-    if input.pres_factor.is_some() && input.pres_nombre.is_none() {
-        return Err(AppError::Validation("Se requiere nombre de presentación cuando se especifica el factor".to_string()));
-    }
-    if input.pres_nombre.is_some() && input.pres_factor.is_none() {
-        return Err(AppError::Validation("Se requiere factor de conversión cuando se especifica la presentación".to_string()));
-    }
-
-    if let Some(factor) = input.pres_factor {
-        if factor <= Decimal::ZERO {
-            return Err(AppError::Validation("El factor de conversión debe ser mayor a 0".to_string()));
+            return Err(AppError::Validation(
+                "La ubicación no puede superar los 200 caracteres".to_string(),
+            ));
         }
     }
 
     let mut tx = state.pool.begin().await?;
 
-    let prod_opt = sqlx::query_as::<_, Producto>(
-        "SELECT * FROM productos WHERE id = $1"
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let prod_opt = sqlx::query_as::<_, Producto>("SELECT * FROM productos WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?;
 
     let prod = match prod_opt {
         Some(p) => p,
@@ -629,42 +588,9 @@ async fn approve_product(
     };
 
     if prod.estado_catalogo != crate::domain::EstadoCatalogo::PendienteAprobacion {
-        return Err(AppError::Validation("El producto ya está aprobado".to_string()));
-    }
-
-    // Stock scaling logic
-    let old_factor = prod.pres_factor.unwrap_or(Decimal::ONE);
-    let old_factor = if old_factor.is_zero() { Decimal::ONE } else { old_factor };
-
-    if let Some(new_factor) = input.pres_factor {
-        if new_factor != old_factor {
-            let multiplier = new_factor / old_factor;
-
-            // Update stock
-            sqlx::query(
-                r#"UPDATE stock 
-                   SET cantidad = (cantidad * $1)::NUMERIC(12,2)
-                   WHERE lote_id IN (SELECT id FROM lotes WHERE producto_id = $2)"#
-            )
-            .bind(multiplier)
-            .bind(id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| AppError::Internal(format!("Error al escalar stock: {}", e)))?;
-
-            // Update movements
-            sqlx::query(
-                r#"UPDATE movimientos
-                   SET cantidad = (cantidad * $1)::NUMERIC(12,2),
-                       cantidad_resultante = (cantidad_resultante * $1)::NUMERIC(12,2)
-                   WHERE lote_id IN (SELECT id FROM lotes WHERE producto_id = $2)"#
-            )
-            .bind(multiplier)
-            .bind(id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| AppError::Internal(format!("Error al escalar stock: {}", e)))?;
-        }
+        return Err(AppError::Validation(
+            "El producto ya está aprobado".to_string(),
+        ));
     }
 
     // Update product metadata in single update
@@ -672,11 +598,13 @@ async fn approve_product(
         r#"UPDATE productos 
            SET nombre = $1, descripcion = $2, categoria_id = $3, unidad_base_id = $4,
                control_lote = $5, fabricante = $6, ubicacion = $7,
-               pres_nombre = COALESCE($8, pres_nombre),
-               pres_nombre_plural = COALESCE($9, pres_nombre_plural),
-               pres_factor = COALESCE($10, pres_factor),
+               mpn = COALESCE($8, mpn),
+               alias_unidad_clinica = COALESCE($9, alias_unidad_clinica),
+               es_kit = COALESCE($10, es_kit),
+               stock_minimo_global = COALESCE($11, stock_minimo_global),
+               codigo_loinc_cpt = COALESCE($12, codigo_loinc_cpt),
                estado_catalogo = 'aprobado', updated_at = NOW()
-           WHERE id = $11"#
+           WHERE id = $13"#,
     )
     .bind(&input.nombre)
     .bind(&input.descripcion)
@@ -685,9 +613,11 @@ async fn approve_product(
     .bind(&input.control_lote)
     .bind(&input.fabricante)
     .bind(&input.ubicacion)
-    .bind(&input.pres_nombre)
-    .bind(&input.pres_nombre_plural)
-    .bind(input.pres_factor)
+    .bind(&input.mpn)
+    .bind(&input.alias_unidad_clinica)
+    .bind(input.es_kit)
+    .bind(input.stock_minimo_global)
+    .bind(&input.codigo_loinc_cpt)
     .bind(id)
     .execute(&mut *tx)
     .await
@@ -702,48 +632,14 @@ async fn approve_product(
                 AppError::Validation("Categoría o unidad base no válida".into())
             }
         }
-        _ => e.into()
+        _ => e.into(),
     })?;
-
-    // Presentations sync
-    if let (Some(pres_nombre), Some(pres_factor)) = (&input.pres_nombre, input.pres_factor) {
-        let pres_exists = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT 1 FROM presentaciones WHERE producto_id = $1)"
-        )
-        .bind(id)
-        .fetch_one(&mut *tx)
-        .await?;
-
-        if pres_exists {
-            sqlx::query(
-                r#"UPDATE presentaciones 
-                   SET nombre = $1, nombre_plural = $2, factor_conversion = $3
-                   WHERE producto_id = $4"#
-            )
-            .bind(pres_nombre.trim())
-            .bind(input.pres_nombre_plural.as_deref().unwrap_or(pres_nombre.as_str()).trim())
-            .bind(pres_factor)
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
-        } else {
-            sqlx::query(
-                r#"INSERT INTO presentaciones
-                   (producto_id, nombre, nombre_plural, factor_conversion, activa)
-                   VALUES ($1, $2, $3, $4, true)"#
-            )
-            .bind(id)
-            .bind(pres_nombre.trim())
-            .bind(input.pres_nombre_plural.as_deref().unwrap_or(pres_nombre.as_str()).trim())
-            .bind(pres_factor)
-            .execute(&mut *tx)
-            .await?;
-        }
-    }
 
     tx.commit().await?;
 
-    Ok(Json(json!({ "success": true, "message": "Producto aprobado con éxito" })))
+    Ok(Json(
+        json!({ "success": true, "message": "Producto aprobado con éxito" }),
+    ))
 }
 
 async fn reject_product(
@@ -761,7 +657,9 @@ async fn reject_product(
     .await?;
 
     if !exists {
-        return Err(AppError::NotFound("Producto no encontrado o no está en cuarentena".to_string()));
+        return Err(AppError::NotFound(
+            "Producto no encontrado o no está en cuarentena".to_string(),
+        ));
     }
 
     ProductoService::eliminar_producto(&state.pool, id, claims.sub).await?;
@@ -778,7 +676,10 @@ pub fn routes() -> Router<AppState> {
         .route("/scan/asignar", post(asignar_codigo))
         .route("/{id}/precios", get(historial_precios))
         .route("/{id}/codigos", get(listar_codigos).post(agregar_codigo))
-        .route("/{id}/codigos/{codigo_id}", axum::routing::delete(eliminar_codigo))
+        .route(
+            "/{id}/codigos/{codigo_id}",
+            axum::routing::delete(eliminar_codigo),
+        )
         .route("/{id}/approve", post(approve_product))
         .route("/{id}/reject", post(reject_product))
         .route("/{id}", get(obtener).put(actualizar).delete(eliminar))

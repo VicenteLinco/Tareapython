@@ -9,9 +9,11 @@ use uuid::Uuid;
 use crate::auth::models::Claims;
 use crate::db::AppState;
 use crate::errors::{AppError, validate_text_length};
+use crate::services::consumo_service::{
+    ConsumoBatchItemParams, ConsumoBatchParams, ConsumoParams, ConsumoService,
+};
 use crate::services::idempotency;
 use crate::services::stock_ops;
-use crate::services::consumo_service::{ConsumoService, ConsumoParams, ConsumoBatchParams, ConsumoBatchItemParams};
 
 #[derive(Debug, Deserialize)]
 struct ConsumoRequest {
@@ -24,6 +26,8 @@ struct ConsumoRequest {
     /// Lote exacto a consumir (escaneado por QR). Obligatorio para 'trazable';
     /// si se omite, FEFO automático ('con_vto' / 'simple').
     lote_id: Option<Uuid>,
+    /// Override clínico para permitir consumo de stock vencido
+    permitir_vencidos: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,8 +43,9 @@ struct ConsumoBatchItem {
     cantidad: Decimal,
     unidad: String,
     presentacion_id: Option<i32>,
-    area_id: Option<i32>,  // NEW: per-item area override
-    lote_id: Option<Uuid>, // NEW: specific lote override (bypasses FEFO)
+    area_id: Option<i32>,            // NEW: per-item area override
+    lote_id: Option<Uuid>,           // NEW: specific lote override (bypasses FEFO)
+    permitir_vencidos: Option<bool>, // Override clínico
 }
 
 /// POST /api/v1/consumos — Consumo individual con FEFO
@@ -75,6 +80,7 @@ async fn consumo(
         presentacion_id: req.presentacion_id,
         nota: req.nota,
         lote_id: req.lote_id,
+        permitir_vencidos: req.permitir_vencidos.unwrap_or(false),
     };
 
     match ConsumoService::registrar_consumo(&state.pool, params, claims.sub).await {
@@ -123,6 +129,7 @@ async fn consumo_batch(
                 presentacion_id: item.presentacion_id,
                 area_id: item.area_id,
                 lote_id: item.lote_id,
+                permitir_vencidos: item.permitir_vencidos.unwrap_or(false),
             })
             .collect(),
         nota: req.nota,

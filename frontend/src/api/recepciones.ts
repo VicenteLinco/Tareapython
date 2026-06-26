@@ -1,6 +1,6 @@
 // Dominio: recepciones
-import api from '@/lib/api'
-import { useAuthStore } from '@/hooks/use-auth-store'
+import api from "@/lib/api";
+import { useAuthStore } from "@/hooks/use-auth-store";
 import type {
   PaginatedRecepciones,
   RecepcionQuery,
@@ -9,113 +9,132 @@ import type {
   DetalleRecepcionRow,
   LoteCreado,
   RecepcionReconciliacionRow,
-} from '@/types/generated'
+} from "@/types/generated";
 
 // ─── Tipos locales ────────────────────────────────────────────────────────────
 
 export interface RecepcionDetalle {
-  id: string
-  numero_documento: string
-  proveedor_id: number
-  proveedor_nombre: string
-  proveedor_icono: string | null
-  guia_despacho: string | null
-  estado: string
-  fecha_recepcion: string
-  nota: string | null
-  motivo_rechazo: string | null
-  solicitud_id: string | null
-  solicitud_numero: string | null
-  usuario_nombre: string
-  tiene_foto: boolean
-  created_at: string
-  detalles: DetalleRecepcionRow[]
-  lotes_creados: LoteCreado[]
-  reconciliacion: RecepcionReconciliacionRow[]
+  id: string;
+  numero_documento: string;
+  proveedor_id: number;
+  proveedor_nombre: string;
+  proveedor_icono: string | null;
+  guia_despacho: string | null;
+  estado: string;
+  fecha_recepcion: string;
+  nota: string | null;
+  motivo_rechazo: string | null;
+  solicitud_id: string | null;
+  solicitud_numero: string | null;
+  usuario_nombre: string;
+  tiene_foto: boolean;
+  created_at: string;
+  detalles: DetalleRecepcionRow[];
+  lotes_creados: LoteCreado[];
+  reconciliacion: RecepcionReconciliacionRow[];
 }
 
 // ─── Funciones ────────────────────────────────────────────────────────────────
 
 /** GET /recepciones — Listar recepciones con filtros y paginación */
-export async function listarRecepciones(params?: Partial<RecepcionQuery>): Promise<PaginatedRecepciones> {
-  const { data } = await api.get<PaginatedRecepciones>('/recepciones', { params })
-  return data
+export async function listarRecepciones(
+  params?: Partial<RecepcionQuery>,
+): Promise<PaginatedRecepciones> {
+  const { data } = await api.get<PaginatedRecepciones>("/recepciones", {
+    params,
+  });
+  return data;
 }
 
 /** GET /recepciones/:id — Detalle completo de una recepción */
 export async function detalleRecepcion(id: string): Promise<RecepcionDetalle> {
-  const { data } = await api.get<RecepcionDetalle>(`/recepciones/${id}`)
-  return data
+  const { data } = await api.get<RecepcionDetalle>(`/recepciones/${id}`);
+  return data;
 }
 
 /** POST /recepciones — Crear nueva recepción (puede quedar en borrador) */
-export async function crearRecepcion(payload: CreateRecepcion): Promise<RecepcionDetalle> {
-  const { data } = await api.post<RecepcionDetalle>('/recepciones', payload)
-  return data
+export async function crearRecepcion(
+  payload: CreateRecepcion,
+): Promise<RecepcionDetalle> {
+  const { data } = await api.post<RecepcionDetalle>("/recepciones", payload);
+  return data;
 }
 
 /** POST /recepciones/:id/confirmar — Confirmar recepción borrador */
-export async function confirmarRecepcion(id: string, payload?: Record<string, unknown>): Promise<RecepcionDetalle> {
-  const { data } = await api.post<RecepcionDetalle>(`/recepciones/${id}/confirmar`, payload ?? {})
-  return data
+export async function confirmarRecepcion(
+  id: string,
+  payload?: Record<string, unknown>,
+): Promise<RecepcionDetalle> {
+  const { data } = await api.post<RecepcionDetalle>(
+    `/recepciones/${id}/confirmar`,
+    payload ?? {},
+  );
+  return data;
 }
 
 /** DELETE /recepciones/:id — Eliminar recepción en estado borrador */
 export async function eliminarBorrador(id: string): Promise<void> {
-  await api.delete(`/recepciones/${id}`)
+  await api.delete(`/recepciones/${id}`);
 }
 
 /** PUT /recepciones/:id/foto — Subir foto de guía de despacho */
-export async function subirFoto(id: string, payload: SubirFotoInput): Promise<void> {
-  await api.put(`/recepciones/${id}/foto`, payload)
+export async function subirFoto(
+  id: string,
+  payload: SubirFotoInput,
+): Promise<void> {
+  await api.put(`/recepciones/${id}/foto`, payload);
 }
 
 export interface ParsedItem {
-  nombre_producto: string
-  sku_ref: string
-  lote: string | null
-  fecha_vencimiento: string | null
-  cantidad: number
-  precio_unitario: number | null
+  nombre_producto: string;
+  sku_ref: string;
+  lote: string | null;
+  fecha_vencimiento: string | null;
+  cantidad: number;
+  precio_unitario: number | null;
 }
 
 export interface ParseGuiaResponse {
-  proveedor: string
-  items: ParsedItem[]
+  proveedor: string;
+  items: ParsedItem[];
 }
 
 /** POST /recepciones/parse-guia — Parsear texto de guía de despacho */
 export async function parseGuia(raw_text: string): Promise<ParseGuiaResponse> {
-  const { data } = await api.post<ParseGuiaResponse>('/recepciones/parse-guia', { raw_text })
-  return data
+  const { data } = await api.post<ParseGuiaResponse>(
+    "/recepciones/parse-guia",
+    { raw_text },
+  );
+  return data;
 }
 
 export interface ParseGuiaImagenResponse {
-  proveedor: string
-  items: ParsedItem[]
-  archivo_url: string
-  source: string
+  proveedor: string;
+  items: ParsedItem[];
+  archivo_url: string;
+  source: string;
 }
 
 /** POST /recepciones/parse-guia-imagen — Parsear imagen/PDF de guía de despacho */
-export async function parseGuiaImagen(file: File): Promise<ParseGuiaImagenResponse> {
-  const token = useAuthStore.getState().accessToken
-  const formData = new FormData()
-  formData.append('file', file)
+export async function parseGuiaImagen(
+  file: File,
+): Promise<ParseGuiaImagenResponse> {
+  const token = useAuthStore.getState().accessToken;
+  const formData = new FormData();
+  formData.append("file", file);
 
-  const response = await fetch('/api/v1/recepciones/parse-guia-imagen', {
-    method: 'POST',
-    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+  const response = await fetch("/api/v1/recepciones/parse-guia-imagen", {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
-  })
+  });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    const error = new Error(errorData.message || 'Error en el servidor')
-    ;(error as any).response = { status: response.status, data: errorData }
-    throw error
+    const errorData = await response.json().catch(() => ({}));
+    const error = new Error(errorData.message || "Error en el servidor");
+    (error as any).response = { status: response.status, data: errorData };
+    throw error;
   }
 
-  return response.json()
+  return response.json();
 }
-

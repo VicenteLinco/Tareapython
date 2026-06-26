@@ -496,7 +496,10 @@ mod tests {
         assert_eq!(r.confianza, Confianza::Baja);
         assert_eq!(r.dias_con_consumo, 3);
         // Hay estimación short-history → target > 0 y sugiere reposición.
-        assert!(r.target_stock > 0.0, "debe proyectar un target por cobertura");
+        assert!(
+            r.target_stock > 0.0,
+            "debe proyectar un target por cobertura"
+        );
         assert!(r.cantidad_sugerida > 0.0);
         assert!(r.razon.contains("Historial corto"));
     }

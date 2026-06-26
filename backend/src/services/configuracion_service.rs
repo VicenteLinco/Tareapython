@@ -149,7 +149,11 @@ pub async fn actualizar(
         let ant = get_config(pool, "nombre_laboratorio").await?;
         set_config(pool, "nombre_laboratorio", nombre).await?;
         if ant.as_deref() != Some(nombre) {
-            log_changes.push(("nombre_laboratorio", ant.unwrap_or_default(), nombre.clone()));
+            log_changes.push((
+                "nombre_laboratorio",
+                ant.unwrap_or_default(),
+                nombre.clone(),
+            ));
         }
     }
 

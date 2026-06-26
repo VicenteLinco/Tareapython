@@ -1,16 +1,16 @@
 // frontend/src/pages/recepciones/components/scanner-panel.tsx
-import { useState } from 'react'
-import { Camera, X, CheckCircle2 } from 'lucide-react'
-import { QrScanner } from '@/components/shared/qr-scanner'
+import { useState } from "react";
+import { Camera, X, CheckCircle2 } from "lucide-react";
+import { QrScanner } from "@/components/shared/qr-scanner";
 
 interface ScannerPanelProps {
-  onScan: (code: string) => void
-  scanCount: number
-  paused: boolean
+  onScan: (code: string) => void;
+  scanCount: number;
+  paused: boolean;
 }
 
 export function ScannerPanel({ onScan, scanCount, paused }: ScannerPanelProps) {
-  const [active, setActive] = useState(false)
+  const [active, setActive] = useState(false);
 
   if (!active) {
     return (
@@ -22,7 +22,7 @@ export function ScannerPanel({ onScan, scanCount, paused }: ScannerPanelProps) {
         <Camera className="h-4 w-4" />
         Iniciar escaneo con cámara
       </button>
-    )
+    );
   }
 
   return (
@@ -34,12 +34,12 @@ export function ScannerPanel({ onScan, scanCount, paused }: ScannerPanelProps) {
             <>
               <CheckCircle2 className="h-4 w-4 text-success" />
               <span className="text-sm font-semibold text-success">
-                {scanCount} {scanCount === 1 ? 'escaneado' : 'escaneados'}
+                {scanCount} {scanCount === 1 ? "escaneado" : "escaneados"}
               </span>
             </>
           ) : (
             <span className="text-xs opacity-50 uppercase tracking-wide">
-              {paused ? 'En pausa…' : 'Apunta al código'}
+              {paused ? "En pausa…" : "Apunta al código"}
             </span>
           )}
         </div>
@@ -55,15 +55,13 @@ export function ScannerPanel({ onScan, scanCount, paused }: ScannerPanelProps) {
 
       {/* Cámara */}
       <div className="px-4 pb-4">
-        <QrScanner
-          active={active}
-          paused={paused}
-          onScan={onScan}
-        />
+        <QrScanner active={active} paused={paused} onScan={onScan} />
         <p className="text-xs opacity-40 text-center mt-2">
-          {paused ? 'Completa los datos del lote para continuar' : 'Escáner activo — escanea un código QR o de barras'}
+          {paused
+            ? "Completa los datos del lote para continuar"
+            : "Escáner activo — escanea un código QR o de barras"}
         </p>
       </div>
     </div>
-  )
+  );
 }

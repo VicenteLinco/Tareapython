@@ -1,95 +1,95 @@
-import { useState, useEffect } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, X } from 'lucide-react'
-import { DataTable } from '@/components/ui/data-table'
-import { PageLoading } from '@/components/ui/page-state'
-import { Dialog } from '@/components/ui/dialog'
-import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import api from '@/lib/api'
-import { parseApiError } from '@/lib/api-error'
-import { notify } from '@/lib/notify'
-import { cn } from '@/lib/utils'
-import type { Categoria, CreateCategoria, UpdateCategoria } from '@/types'
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, Pencil, Trash2, X } from "lucide-react";
+import { DataTable } from "@/components/ui/data-table";
+import { PageLoading } from "@/components/ui/page-state";
+import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import api from "@/lib/api";
+import { parseApiError } from "@/lib/api-error";
+import { notify } from "@/lib/notify";
+import { cn } from "@/lib/utils";
+import type { Categoria, CreateCategoria, UpdateCategoria } from "@/types";
 
 function useIsDesktop() {
-  const [isDesktop, setIsDesktop] = useState(false)
+  const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => {
-    const check = () => setIsDesktop(window.innerWidth >= 1024)
-    check()
-    window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
-  }, [])
-  return isDesktop
+    const check = () => setIsDesktop(window.innerWidth >= 1024);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  return isDesktop;
 }
 
 export default function CategoriasTab() {
-  const queryClient = useQueryClient()
-  const isDesktop = useIsDesktop()
-  const [formMode, setFormMode] = useState<'idle' | 'crear' | 'editar'>('idle')
-  const [selectedItem, setSelectedItem] = useState<Categoria | null>(null)
-  const [nombre, setNombre] = useState('')
-  const [descripcion, setDescripcion] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<Categoria | null>(null)
+  const queryClient = useQueryClient();
+  const isDesktop = useIsDesktop();
+  const [formMode, setFormMode] = useState<"idle" | "crear" | "editar">("idle");
+  const [selectedItem, setSelectedItem] = useState<Categoria | null>(null);
+  const [nombre, setNombre] = useState("");
+  const [descripcion, setDescripcion] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Categoria | null>(null);
 
   const { data: categorias = [], isLoading } = useQuery({
-    queryKey: ['categorias'],
-    queryFn: () => api.get<Categoria[]>('/categorias').then((r) => r.data),
+    queryKey: ["categorias"],
+    queryFn: () => api.get<Categoria[]>("/categorias").then((r) => r.data),
     staleTime: 5 * 60 * 1000,
-  })
+  });
 
   const createMut = useMutation({
-    mutationFn: (data: CreateCategoria) => api.post('/categorias', data),
+    mutationFn: (data: CreateCategoria) => api.post("/categorias", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['categorias'] })
-      notify.success('Categoría creada')
-      closeForm()
+      queryClient.invalidateQueries({ queryKey: ["categorias"] });
+      notify.success("Categoría creada");
+      closeForm();
     },
     onError: (err) => notify.error(parseApiError(err)),
-  })
+  });
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }: { id: number; data: UpdateCategoria }) =>
       api.put(`/categorias/${id}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['categorias'] })
-      notify.success('Categoría actualizada')
-      closeForm()
+      queryClient.invalidateQueries({ queryKey: ["categorias"] });
+      notify.success("Categoría actualizada");
+      closeForm();
     },
     onError: (err) => notify.error(parseApiError(err)),
-  })
+  });
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => api.delete(`/categorias/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['categorias'] })
-      notify.success('Categoría eliminada')
-      setDeleteTarget(null)
+      queryClient.invalidateQueries({ queryKey: ["categorias"] });
+      notify.success("Categoría eliminada");
+      setDeleteTarget(null);
     },
     onError: (err) => notify.error(parseApiError(err)),
-  })
+  });
 
   function openCreate() {
-    setSelectedItem(null)
-    setNombre('')
-    setDescripcion('')
-    setFormMode('crear')
+    setSelectedItem(null);
+    setNombre("");
+    setDescripcion("");
+    setFormMode("crear");
   }
 
   function openEdit(cat: Categoria) {
-    setSelectedItem(cat)
-    setNombre(cat.nombre)
-    setDescripcion(cat.descripcion ?? '')
-    setFormMode('editar')
+    setSelectedItem(cat);
+    setNombre(cat.nombre);
+    setDescripcion(cat.descripcion ?? "");
+    setFormMode("editar");
   }
 
   function closeForm() {
-    setFormMode('idle')
-    setSelectedItem(null)
+    setFormMode("idle");
+    setSelectedItem(null);
   }
 
   function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!nombre.trim()) return
+    e.preventDefault();
+    if (!nombre.trim()) return;
     if (selectedItem) {
       updateMut.mutate({
         id: selectedItem.id,
@@ -98,18 +98,23 @@ export default function CategoriasTab() {
           descripcion: descripcion.trim() || null,
           version: selectedItem.version,
         },
-      })
+      });
     } else {
-      createMut.mutate({ nombre: nombre.trim(), descripcion: descripcion.trim() || null })
+      createMut.mutate({
+        nombre: nombre.trim(),
+        descripcion: descripcion.trim() || null,
+      });
     }
   }
 
-  const isSaving = createMut.isPending || updateMut.isPending
+  const isSaving = createMut.isPending || updateMut.isPending;
 
   const formJsx = (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="form-control">
-        <label className="label"><span className="label-text text-sm font-medium">Nombre *</span></label>
+        <label className="label">
+          <span className="label-text text-sm font-medium">Nombre *</span>
+        </label>
         <input
           type="text"
           className="input input-bordered input-sm h-9"
@@ -121,7 +126,9 @@ export default function CategoriasTab() {
         />
       </div>
       <div className="form-control">
-        <label className="label"><span className="label-text text-sm font-medium">Descripción</span></label>
+        <label className="label">
+          <span className="label-text text-sm font-medium">Descripción</span>
+        </label>
         <input
           type="text"
           className="input input-bordered input-sm h-9"
@@ -131,44 +138,68 @@ export default function CategoriasTab() {
         />
       </div>
       <div className="flex justify-end gap-2 pt-2">
-        <button type="button" className="btn btn-ghost btn-sm" onClick={closeForm}>Cancelar</button>
-        <button type="submit" className="btn btn-primary btn-sm" disabled={isSaving}>
-          {isSaving ? <span className="loading loading-spinner loading-xs" /> : selectedItem ? 'Guardar' : 'Crear'}
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={closeForm}
+        >
+          Cancelar
+        </button>
+        <button
+          type="submit"
+          className="btn btn-primary btn-sm"
+          disabled={isSaving}
+        >
+          {isSaving ? (
+            <span className="loading loading-spinner loading-xs" />
+          ) : selectedItem ? (
+            "Guardar"
+          ) : (
+            "Crear"
+          )}
         </button>
       </div>
     </form>
-  )
+  );
 
   const columns = [
     {
-      key: 'nombre',
-      header: 'Nombre',
-      render: (item: Categoria) => <span className="font-medium text-sm">{item.nombre}</span>,
-    },
-    {
-      key: 'descripcion',
-      header: 'Descripción',
-      className: 'hidden md:table-cell',
+      key: "nombre",
+      header: "Nombre",
       render: (item: Categoria) => (
-        <span className="text-sm opacity-50">{item.descripcion || '--'}</span>
+        <span className="font-medium text-sm">{item.nombre}</span>
       ),
     },
     {
-      key: 'acciones',
-      header: '',
-      className: 'w-20',
+      key: "descripcion",
+      header: "Descripción",
+      className: "hidden md:table-cell",
+      render: (item: Categoria) => (
+        <span className="text-sm opacity-50">{item.descripcion || "--"}</span>
+      ),
+    },
+    {
+      key: "acciones",
+      header: "",
+      className: "w-20",
       render: (item: Categoria) => (
         <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-          <button className="btn btn-ghost btn-xs btn-square" onClick={() => openEdit(item)}>
+          <button
+            className="btn btn-ghost btn-xs btn-square"
+            onClick={() => openEdit(item)}
+          >
             <Pencil className="h-3.5 w-3.5 opacity-50" />
           </button>
-          <button className="btn btn-ghost btn-xs btn-square" onClick={() => setDeleteTarget(item)}>
+          <button
+            className="btn btn-ghost btn-xs btn-square"
+            onClick={() => setDeleteTarget(item)}
+          >
             <Trash2 className="h-3.5 w-3.5 opacity-50 hover:text-error" />
           </button>
         </div>
       ),
     },
-  ]
+  ];
 
   return (
     <div className="space-y-4">
@@ -180,7 +211,12 @@ export default function CategoriasTab() {
       </div>
 
       <div className="flex gap-6 items-start">
-        <div className={cn('min-w-0', formMode !== 'idle' ? 'lg:flex-[3]' : 'w-full')}>
+        <div
+          className={cn(
+            "min-w-0",
+            formMode !== "idle" ? "lg:flex-[3]" : "w-full",
+          )}
+        >
           {isLoading ? (
             <PageLoading label="Cargando categorías..." />
           ) : (
@@ -189,20 +225,25 @@ export default function CategoriasTab() {
               data={categorias}
               emptyMessage="No hay categorías registradas"
               onRowClick={(item) => openEdit(item)}
-              selectedId={formMode !== 'idle' ? selectedItem?.id : undefined}
+              selectedId={formMode !== "idle" ? selectedItem?.id : undefined}
             />
           )}
         </div>
 
-        {formMode !== 'idle' && isDesktop && (
+        {formMode !== "idle" && isDesktop && (
           <div className="hidden lg:flex flex-col min-w-0 lg:flex-[2] lg:sticky lg:top-24">
             <div className="rounded-xl border border-base-300 bg-base-100 p-5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-sm">
-                  {formMode === 'crear' ? 'Nueva categoría' : 'Editar categoría'}
+                  {formMode === "crear"
+                    ? "Nueva categoría"
+                    : "Editar categoría"}
                 </h3>
-                <button type="button" onClick={closeForm}
-                  className="text-base-content/50 hover:text-base-content">
+                <button
+                  type="button"
+                  onClick={closeForm}
+                  className="text-base-content/50 hover:text-base-content"
+                >
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -212,7 +253,11 @@ export default function CategoriasTab() {
         )}
       </div>
 
-      <Dialog open={formMode !== 'idle' && !isDesktop} onClose={closeForm} title={formMode === 'crear' ? 'Nueva categoría' : 'Editar categoría'}>
+      <Dialog
+        open={formMode !== "idle" && !isDesktop}
+        onClose={closeForm}
+        title={formMode === "crear" ? "Nueva categoría" : "Editar categoría"}
+      >
         {formJsx}
       </Dialog>
 
@@ -226,5 +271,5 @@ export default function CategoriasTab() {
         onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
       />
     </div>
-  )
+  );
 }

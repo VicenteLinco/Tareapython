@@ -1,10 +1,10 @@
+use crate::errors::{AppError, validate_text_length};
+use crate::models::presentacion::Presentacion;
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
-use crate::models::presentacion::Presentacion;
-use crate::errors::{AppError, validate_text_length};
-use serde::{Deserialize, Serialize};
-use rust_decimal::Decimal;
-use serde_json::json;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CrearPresentacionParams {
@@ -15,6 +15,8 @@ pub struct CrearPresentacionParams {
     pub gtin: Option<String>,
     pub gs1_habilitado: Option<bool>,
     pub sku: Option<String>,
+    pub proveedor_id: Option<i32>,
+    pub precio_adquisicion: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -26,6 +28,8 @@ pub struct ActualizarPresentacionParams {
     pub gtin: Option<String>,
     pub gs1_habilitado: Option<bool>,
     pub sku: Option<String>,
+    pub proveedor_id: Option<i32>,
+    pub precio_adquisicion: Option<Decimal>,
     pub version: i32,
 }
 
@@ -74,16 +78,17 @@ impl PresentacionService {
         }
 
         // Verificar que el producto existe
-        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1)")
-            .bind(producto_id)
-            .fetch_one(pool)
-            .await?;
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1)")
+                .bind(producto_id)
+                .fetch_one(pool)
+                .await?;
         if !exists {
             return Err(AppError::NotFound("Producto no encontrado".into()));
         }
 
         let presentacion = sqlx::query_as::<_, Presentacion>(
-            "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado, sku) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
+            "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado, sku, proveedor_id, precio_adquisicion) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *",
         )
         .bind(producto_id)
         .bind(&nombre)
@@ -93,6 +98,8 @@ impl PresentacionService {
         .bind(&params.gtin)
         .bind(params.gs1_habilitado.unwrap_or(false))
         .bind(&params.sku)
+        .bind(params.proveedor_id)
+        .bind(params.precio_adquisicion)
         .fetch_one(pool)
         .await?;
 
@@ -114,11 +121,12 @@ impl PresentacionService {
         params: ActualizarPresentacionParams,
         usuario_id: Uuid,
     ) -> Result<Presentacion, AppError> {
-        let anterior = sqlx::query_as::<_, Presentacion>("SELECT * FROM presentaciones WHERE id = $1")
-            .bind(id)
-            .fetch_optional(pool)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Presentación no encontrada".into()))?;
+        let anterior =
+            sqlx::query_as::<_, Presentacion>("SELECT * FROM presentaciones WHERE id = $1")
+                .bind(id)
+                .fetch_optional(pool)
+                .await?
+                .ok_or_else(|| AppError::NotFound("Presentación no encontrada".into()))?;
 
         if params.version != anterior.version {
             return Err(AppError::VersionConflict {
@@ -139,7 +147,8 @@ impl PresentacionService {
 
                 if used {
                     return Err(AppError::BusinessLogic(
-                        "No se puede cambiar el factor de conversión: ya fue usada en recepciones".into(),
+                        "No se puede cambiar el factor de conversión: ya fue usada en recepciones"
+                            .into(),
                         "FACTOR_EN_USO".into(),
                     ));
                 }
@@ -156,7 +165,9 @@ impl PresentacionService {
             .as_deref()
             .map(str::trim)
             .unwrap_or(&anterior.nombre_plural);
-        let factor = params.factor_conversion.unwrap_or(anterior.factor_conversion);
+        let factor = params
+            .factor_conversion
+            .unwrap_or(anterior.factor_conversion);
         let gtin = params.gtin.as_deref().or(anterior.gtin.as_deref());
         if let Some(gtin) = gtin {
             if !gtin.chars().all(|c| c.is_ascii_digit()) || gtin.len() != 14 {
@@ -165,7 +176,7 @@ impl PresentacionService {
         }
 
         let presentacion = sqlx::query_as::<_, Presentacion>(
-            "UPDATE presentaciones SET nombre = $1, nombre_plural = $2, factor_conversion = $3, codigo_barras = $4, gtin = $5, gs1_habilitado = $6, sku = $7, version = version + 1 WHERE id = $8 AND version = $9 RETURNING *",
+            "UPDATE presentaciones SET nombre = $1, nombre_plural = $2, factor_conversion = $3, codigo_barras = $4, gtin = $5, gs1_habilitado = $6, sku = $7, proveedor_id = $8, precio_adquisicion = $9, version = version + 1 WHERE id = $10 AND version = $11 RETURNING *",
         )
         .bind(nombre)
         .bind(nombre_plural)
@@ -174,6 +185,8 @@ impl PresentacionService {
         .bind(gtin)
         .bind(params.gs1_habilitado.unwrap_or(anterior.gs1_habilitado))
         .bind(params.sku.as_deref().or(anterior.sku.as_deref()))
+        .bind(params.proveedor_id.or(anterior.proveedor_id))
+        .bind(params.precio_adquisicion.or(anterior.precio_adquisicion))
         .bind(id)
         .bind(params.version)
         .fetch_optional(pool)
@@ -196,11 +209,7 @@ impl PresentacionService {
         Ok(presentacion)
     }
 
-    pub async fn eliminar(
-        pool: &PgPool,
-        id: i32,
-        usuario_id: Uuid,
-    ) -> Result<(), AppError> {
+    pub async fn eliminar(pool: &PgPool, id: i32, usuario_id: Uuid) -> Result<(), AppError> {
         let result =
             sqlx::query("UPDATE presentaciones SET activa = false, deleted_at = NOW() WHERE id = $1 AND activa = true")
                 .bind(id)

@@ -122,4 +122,3 @@ pub enum OrigenRegistro {
     ApiRegulatoria,
     GuiaPdf,
 }
-

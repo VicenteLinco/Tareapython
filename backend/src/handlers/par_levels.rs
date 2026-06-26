@@ -49,11 +49,12 @@ pub async fn get_par_level(
     }
 
     // No config yet: confirm the product exists and return an empty auto default.
-    let existe: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1 AND deleted_at IS NULL)")
-            .bind(producto_id)
-            .fetch_one(&state.pool)
-            .await?;
+    let existe: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1 AND deleted_at IS NULL)",
+    )
+    .bind(producto_id)
+    .fetch_one(&state.pool)
+    .await?;
     if !existe {
         return Err(AppError::NotFound("Producto not found".into()));
     }

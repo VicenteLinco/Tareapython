@@ -18,4 +18,7 @@ pub struct Presentacion {
     pub version: i32,
     pub created_at: DateTime<Utc>,
     pub sku: Option<String>,
+    // Nuevos campos: Logística y Financieros (Fase 1)
+    pub proveedor_id: Option<i32>,
+    pub precio_adquisicion: Option<Decimal>,
 }

@@ -3,10 +3,10 @@
 @layer base {
   :root {
     /* --- Espaciado semántico --- */
-    --space-section: 2rem;      /* entre secciones de página */
-    --space-card: 1.25rem;      /* padding interno de cards */
-    --space-row: 0.75rem;       /* gap en filas de tabla/lista */
-    --space-inline: 0.5rem;     /* gap entre íconos y texto */
+    --space-section: 2rem; /* entre secciones de página */
+    --space-card: 1.25rem; /* padding interno de cards */
+    --space-row: 0.75rem; /* gap en filas de tabla/lista */
+    --space-inline: 0.5rem; /* gap entre íconos y texto */
 
     /* --- Tipografía jerárquica --- */
     --text-display: 2rem;
@@ -21,17 +21,19 @@
     --text-h2-weight: 600;
     --text-h2-leading: 1.35;
 
-    --text-body: 0.9375rem;     /* 15px */
+    --text-body: 0.9375rem; /* 15px */
     --text-body-weight: 400;
     --text-body-leading: 1.6;
 
-    --text-caption: 0.8125rem;  /* 13px */
+    --text-caption: 0.8125rem; /* 13px */
     --text-caption-weight: 400;
     --text-caption-leading: 1.5;
 
     /* --- Sombras semánticas --- */
-    --shadow-card: 0 1px 3px 0 oklch(0 0 0 / 0.06), 0 1px 2px -1px oklch(0 0 0 / 0.04);
-    --shadow-card-hover: 0 4px 12px -2px oklch(0 0 0 / 0.08), 0 2px 6px -2px oklch(0 0 0 / 0.05);
+    --shadow-card:
+      0 1px 3px 0 oklch(0 0 0 / 0.06), 0 1px 2px -1px oklch(0 0 0 / 0.04);
+    --shadow-card-hover:
+      0 4px 12px -2px oklch(0 0 0 / 0.08), 0 2px 6px -2px oklch(0 0 0 / 0.05);
     --shadow-modal: 0 20px 40px -8px oklch(0 0 0 / 0.18);
 
     /* --- Transiciones estándar --- */
@@ -50,8 +52,8 @@
     --urgencia-ok-text: var(--color-success-content);
 
     /* --- Autonomía: zonas de la barra --- */
-    --autonomia-danger-max: 7;   /* días: rojo */
-    --autonomia-warn-max: 30;    /* días: amarillo */
+    --autonomia-danger-max: 7; /* días: rojo */
+    --autonomia-warn-max: 30; /* días: amarillo */
   }
 }
 

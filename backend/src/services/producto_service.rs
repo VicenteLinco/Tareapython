@@ -15,7 +15,9 @@ struct Gs1Parsed {
 }
 
 fn parse_gs1(codigo: &str) -> Option<Gs1Parsed> {
-    let trimmed = codigo.trim().trim_start_matches(|c: char| c.is_control() || c.is_whitespace());
+    let trimmed = codigo
+        .trim()
+        .trim_start_matches(|c: char| c.is_control() || c.is_whitespace());
     if trimmed.is_empty() {
         return None;
     }
@@ -63,11 +65,7 @@ fn parse_gs1_bracketed(input: &str) -> Option<Vec<(String, String)>> {
         pairs.push((ai, data));
         rest = &after_close[data_end..];
     }
-    if pairs.is_empty() {
-        None
-    } else {
-        Some(pairs)
-    }
+    if pairs.is_empty() { None } else { Some(pairs) }
 }
 
 /// Splits a concatenated / FNC1-separated string into (AI, data) pairs.
@@ -109,11 +107,7 @@ fn parse_gs1_plain(input: &str) -> Option<Vec<(String, String)>> {
             }
         }
     }
-    if pairs.is_empty() {
-        None
-    } else {
-        Some(pairs)
-    }
+    if pairs.is_empty() { None } else { Some(pairs) }
 }
 
 /// Converts a GS1 `YYMMDD` value to a date. `DD=00` means the last day of the month.
@@ -125,7 +119,11 @@ fn parse_gs1_date(val: &str) -> Option<chrono::NaiveDate> {
     let month = val[2..4].parse::<u32>().ok()?;
     let day = val[4..6].parse::<u32>().ok()?;
     if day == 0 {
-        let (ny, nm) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+        let (ny, nm) = if month == 12 {
+            (year + 1, 1)
+        } else {
+            (year, month + 1)
+        };
         chrono::NaiveDate::from_ymd_opt(ny, nm, 1)?.pred_opt()
     } else {
         chrono::NaiveDate::from_ymd_opt(year, month, day)
@@ -199,21 +197,17 @@ pub struct CrearProductoParams {
     pub descripcion: Option<String>,
     pub categoria_id: Option<i32>,
     pub unidad_base_id: i32,
-    pub proveedor_id: Option<i32>,
-    pub sku: Option<String>,
-    pub precio_unidad: Option<Decimal>,
     pub ubicacion: Option<String>,
     pub temperatura_almacenamiento: Option<String>,
     pub requiere_cadena_frio: bool,
     pub dias_estabilidad_abierto: Option<i32>,
     pub clase_riesgo: Option<String>,
     pub fabricante: Option<String>,
-    pub pres_nombre: Option<String>,
-    pub pres_nombre_plural: Option<String>,
-    pub pres_factor: Option<Decimal>,
-    pub pres_codigo_barras: Option<String>,
-    pub pres_gtin: Option<String>,
-    pub pres_gs1_habilitado: bool,
+    pub mpn: Option<String>,
+    pub alias_unidad_clinica: Option<String>,
+    pub es_kit: bool,
+    pub stock_minimo_global: Decimal,
+    pub codigo_loinc_cpt: Option<String>,
     pub control_lote: crate::domain::ControlLote,
     pub presentaciones: Option<Vec<crate::handlers::productos::CreatePresentacionInline>>,
     pub area_ids: Option<Vec<i32>>,
@@ -227,21 +221,17 @@ pub struct ActualizarProductoParams {
     pub nombre: String,
     pub descripcion: Option<String>,
     pub categoria_id: Option<i32>,
-    pub proveedor_id: Option<i32>,
-    pub sku: Option<String>,
-    pub precio_unidad: Option<Decimal>,
     pub ubicacion: Option<String>,
     pub temperatura_almacenamiento: Option<String>,
     pub requiere_cadena_frio: Option<bool>,
     pub dias_estabilidad_abierto: Option<i32>,
     pub clase_riesgo: Option<String>,
     pub fabricante: Option<String>,
-    pub pres_nombre: Option<String>,
-    pub pres_nombre_plural: Option<String>,
-    pub pres_factor: Option<Decimal>,
-    pub pres_codigo_barras: Option<String>,
-    pub pres_gtin: Option<String>,
-    pub pres_gs1_habilitado: Option<bool>,
+    pub mpn: Option<String>,
+    pub alias_unidad_clinica: Option<String>,
+    pub es_kit: Option<bool>,
+    pub stock_minimo_global: Option<Decimal>,
+    pub codigo_loinc_cpt: Option<String>,
     pub control_lote: Option<crate::domain::ControlLote>,
     pub area_ids: Option<Vec<i32>>,
     pub version_esperada: i32,
@@ -252,7 +242,6 @@ pub struct ListarProductosParams {
     pub q: Option<String>,
     pub categoria_id: Option<i32>,
     pub area_id: Option<i32>,
-    pub proveedor_id: Option<i32>,
     pub activo: bool,
     pub sort_by: Option<String>,
     pub sort_dir: Option<String>,
@@ -265,8 +254,6 @@ pub struct ProductoRow {
     pub id: Uuid,
     pub codigo_interno: String,
     pub nombre: String,
-    pub sku: Option<String>,
-    pub precio_unidad: Option<Decimal>,
     pub lead_time_propio: Option<i32>,
     pub activo: bool,
     pub estado_stock: String,
@@ -275,17 +262,15 @@ pub struct ProductoRow {
     pub um_id: i32,
     pub um_nombre: String,
     pub um_nombre_plural: String,
-    pub prov_id: Option<i32>,
-    pub prov_nombre: Option<String>,
-    pub prov_icono: Option<String>,
     pub area_id: Option<i32>,
     pub area_nombre: Option<String>,
     pub imagen_url: Option<String>,
-    pub pres_id: Option<i32>,
-    pub pres_nombre: Option<String>,
-    pub pres_nombre_plural: Option<String>,
-    pub pres_factor: Option<Decimal>,
     pub control_lote: crate::domain::ControlLote,
+    pub mpn: Option<String>,
+    pub alias_unidad_clinica: Option<String>,
+    pub es_kit: bool,
+    pub stock_minimo_global: Decimal,
+    pub codigo_loinc_cpt: Option<String>,
 }
 
 /// A secondary barcode alias attached to a product (`producto_codigos_barras`).
@@ -312,12 +297,11 @@ impl ProductoService {
         let producto = sqlx::query_as::<_, Producto>(
             r#"INSERT INTO productos
                (codigo_interno, nombre, descripcion, categoria_id, unidad_base_id,
-                proveedor_id, sku, precio_unidad,
-                ubicacion,
-                temperatura_almacenamiento, requiere_cadena_frio, dias_estabilidad_abierto, clase_riesgo, fabricante,
-                pres_nombre, pres_nombre_plural, pres_factor, pres_codigo_barras, pres_gtin, pres_gs1_habilitado,
+                ubicacion, temperatura_almacenamiento, requiere_cadena_frio, 
+                dias_estabilidad_abierto, clase_riesgo, fabricante,
+                mpn, alias_unidad_clinica, es_kit, stock_minimo_global, codigo_loinc_cpt,
                 control_lote, estado_catalogo, origen_registro)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
                RETURNING *"#,
         )
         .bind(&codigo)
@@ -325,21 +309,17 @@ impl ProductoService {
         .bind(&params.descripcion)
         .bind(params.categoria_id)
         .bind(params.unidad_base_id)
-        .bind(params.proveedor_id)
-        .bind(&params.sku)
-        .bind(params.precio_unidad)
         .bind(&params.ubicacion)
         .bind(&params.temperatura_almacenamiento)
         .bind(params.requiere_cadena_frio)
         .bind(params.dias_estabilidad_abierto)
         .bind(&params.clase_riesgo)
         .bind(&params.fabricante)
-        .bind(&params.pres_nombre)
-        .bind(&params.pres_nombre_plural)
-        .bind(params.pres_factor)
-        .bind(&params.pres_codigo_barras)
-        .bind(&params.pres_gtin)
-        .bind(params.pres_gs1_habilitado)
+        .bind(&params.mpn)
+        .bind(&params.alias_unidad_clinica)
+        .bind(params.es_kit)
+        .bind(params.stock_minimo_global)
+        .bind(&params.codigo_loinc_cpt)
         .bind(&params.control_lote)
         .bind(params.estado_catalogo.unwrap_or(crate::domain::EstadoCatalogo::Aprobado))
         .bind(params.origen_registro.unwrap_or(crate::domain::OrigenRegistro::Manual))
@@ -351,24 +331,6 @@ impl ProductoService {
             }
             _ => e.into(),
         })?;
-
-        // Sync the primary presentation row in `presentaciones` (needed for recepcion_detalle FK)
-        if let Some(ref pres_nombre) = params.pres_nombre {
-            sqlx::query(
-                r#"INSERT INTO presentaciones
-                   (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado, activa)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, true)"#,
-            )
-            .bind(producto.id)
-            .bind(pres_nombre.trim())
-            .bind(params.pres_nombre_plural.as_deref().unwrap_or(pres_nombre.as_str()).trim())
-            .bind(params.pres_factor.unwrap_or(Decimal::ONE))
-            .bind(&params.pres_codigo_barras)
-            .bind(&params.pres_gtin)
-            .bind(params.pres_gs1_habilitado)
-            .execute(&mut *tx)
-            .await?;
-        }
 
         // Extra presentations (if provided separately)
         if let Some(pres_list) = params.presentaciones {
@@ -399,21 +361,6 @@ impl ProductoService {
             }
         }
 
-        // Record initial price in history
-        if let (Some(precio), Some(proveedor_id)) = (params.precio_unidad, params.proveedor_id) {
-            sqlx::query(
-                r#"INSERT INTO producto_precio_historial
-                   (producto_id, proveedor_id, precio_unidad, usuario_id, fuente, nota)
-                   VALUES ($1, $2, $3, $4, 'manual', 'Precio inicial de proveedor')"#,
-            )
-            .bind(producto.id)
-            .bind(proveedor_id)
-            .bind(precio)
-            .bind(params.usuario_id)
-            .execute(&mut *tx)
-            .await?;
-        }
-
         // Audit
         sqlx::query(
             "INSERT INTO audit_log (tabla, registro_id, accion, datos_nuevos, usuario_id) VALUES ('productos', $1, 'CREATE', $2, $3)",
@@ -436,24 +383,21 @@ impl ProductoService {
                 'codigo_interno',  p.codigo_interno,
                 'nombre',          p.nombre,
                 'descripcion',     p.descripcion,
-                'sku',             p.sku,
                 'ubicacion',       p.ubicacion,
                 'temperatura_almacenamiento', p.temperatura_almacenamiento,
                 'requiere_cadena_frio',       p.requiere_cadena_frio,
                 'dias_estabilidad_abierto',   p.dias_estabilidad_abierto,
                 'clase_riesgo',               p.clase_riesgo,
                 'activo',          p.activo,
-                'precio_unidad',   p.precio_unidad,
                 'imagen_url',      p.imagen_url,
                 'version',         p.version,
                 'created_at',      p.created_at,
                 'updated_at',      p.updated_at,
-                'pres_nombre',         p.pres_nombre,
-                'pres_nombre_plural',  p.pres_nombre_plural,
-                'pres_factor',         p.pres_factor,
-                'pres_codigo_barras',  p.pres_codigo_barras,
-                'pres_gtin',           p.pres_gtin,
-                'pres_gs1_habilitado', p.pres_gs1_habilitado,
+                'mpn',                 p.mpn,
+                'alias_unidad_clinica', p.alias_unidad_clinica,
+                'es_kit',              p.es_kit,
+                'stock_minimo_global', p.stock_minimo_global,
+                'codigo_loinc_cpt',    p.codigo_loinc_cpt,
                 'categoria', CASE WHEN c.id IS NOT NULL
                     THEN json_build_object('id', c.id, 'nombre', c.nombre)
                     ELSE NULL
@@ -463,14 +407,7 @@ impl ProductoService {
                     'nombre', ub.nombre,
                     'nombre_plural', ub.nombre_plural
                 ),
-                'proveedor', CASE WHEN prov.id IS NOT NULL
-                    THEN json_build_object(
-                        'id', prov.id,
-                        'nombre', prov.nombre,
-                        'icono', prov.icono
-                    )
-                    ELSE NULL
-                END,
+
                 'presentaciones', COALESCE(
                     (SELECT json_agg(
                         json_build_object(
@@ -502,7 +439,6 @@ impl ProductoService {
             )
             FROM productos p
             LEFT JOIN categorias c ON c.id = p.categoria_id
-            LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
             JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
             WHERE p.id = $1"#,
         )
@@ -575,30 +511,23 @@ impl ProductoService {
         let producto = sqlx::query_as::<_, Producto>(
             r#"UPDATE productos
                SET nombre = $1, descripcion = $2, categoria_id = $3,
-                   proveedor_id = COALESCE($4, proveedor_id),
-                   sku = COALESCE($5, sku),
-                   precio_unidad = COALESCE($6, precio_unidad),
-                   ubicacion = $7,
-                   temperatura_almacenamiento = $8, requiere_cadena_frio = $9,
-                   dias_estabilidad_abierto = $10, clase_riesgo = $11,
-                   pres_nombre = COALESCE($12, pres_nombre),
-                   pres_nombre_plural = COALESCE($13, pres_nombre_plural),
-                   pres_factor = COALESCE($14, pres_factor),
-                   pres_codigo_barras = COALESCE($15, pres_codigo_barras),
-                   pres_gtin = COALESCE($16, pres_gtin),
-                   pres_gs1_habilitado = COALESCE($17, pres_gs1_habilitado),
-                   control_lote = COALESCE($20, control_lote),
-                   fabricante = $21,
+                   ubicacion = $4,
+                   temperatura_almacenamiento = $5, requiere_cadena_frio = $6,
+                   dias_estabilidad_abierto = $7, clase_riesgo = $8,
+                   mpn = COALESCE($9, mpn),
+                   alias_unidad_clinica = COALESCE($10, alias_unidad_clinica),
+                   es_kit = COALESCE($11, es_kit),
+                   stock_minimo_global = COALESCE($12, stock_minimo_global),
+                   codigo_loinc_cpt = COALESCE($13, codigo_loinc_cpt),
+                   control_lote = COALESCE($14, control_lote),
+                   fabricante = $15,
                    version = version + 1, updated_at = NOW()
-               WHERE id = $18 AND version = $19
+               WHERE id = $16 AND version = $17
                RETURNING *"#,
         )
         .bind(&params.nombre)
         .bind(&params.descripcion)
         .bind(params.categoria_id)
-        .bind(params.proveedor_id)
-        .bind(&params.sku)
-        .bind(params.precio_unidad)
         .bind(&params.ubicacion)
         .bind(&params.temperatura_almacenamiento)
         .bind(
@@ -608,69 +537,21 @@ impl ProductoService {
         )
         .bind(params.dias_estabilidad_abierto)
         .bind(&params.clase_riesgo)
-        .bind(&params.pres_nombre)
-        .bind(&params.pres_nombre_plural)
-        .bind(params.pres_factor)
-        .bind(&params.pres_codigo_barras)
-        .bind(&params.pres_gtin)
-        .bind(params.pres_gs1_habilitado)
-        .bind(params.id)
-        .bind(params.version_esperada)
+        .bind(&params.mpn)
+        .bind(&params.alias_unidad_clinica)
+        .bind(params.es_kit)
+        .bind(params.stock_minimo_global)
+        .bind(&params.codigo_loinc_cpt)
         .bind(&params.control_lote)
         .bind(&params.fabricante)
+        .bind(params.id)
+        .bind(params.version_esperada)
         .fetch_optional(&mut *tx)
         .await?
         .ok_or(AppError::VersionConflict {
             esperada: params.version_esperada as i64,
             actual: anterior.version as i64,
         })?;
-
-        // Sync primary presentation row in presentaciones if pres_nombre changed
-        if let Some(ref pres_nombre) = params.pres_nombre {
-            let existing_id: Option<i32> = sqlx::query_scalar(
-                "SELECT id FROM presentaciones WHERE producto_id = $1 AND activa = true ORDER BY factor_conversion DESC LIMIT 1"
-            )
-            .bind(params.id)
-            .fetch_optional(&mut *tx)
-            .await?;
-
-            match existing_id {
-                Some(pres_id) => {
-                    sqlx::query(
-                        r#"UPDATE presentaciones
-                           SET nombre = $1, nombre_plural = $2,
-                               factor_conversion = $3, codigo_barras = $4,
-                               gtin = $5, gs1_habilitado = $6
-                           WHERE id = $7"#,
-                    )
-                    .bind(pres_nombre.trim())
-                    .bind(params.pres_nombre_plural.as_deref().unwrap_or(pres_nombre.as_str()).trim())
-                    .bind(params.pres_factor.unwrap_or(Decimal::ONE))
-                    .bind(&params.pres_codigo_barras)
-                    .bind(&params.pres_gtin)
-                    .bind(params.pres_gs1_habilitado.unwrap_or(false))
-                    .bind(pres_id)
-                    .execute(&mut *tx)
-                    .await?;
-                }
-                None => {
-                    sqlx::query(
-                        r#"INSERT INTO presentaciones
-                           (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado, activa)
-                           VALUES ($1, $2, $3, $4, $5, $6, $7, true)"#,
-                    )
-                    .bind(params.id)
-                    .bind(pres_nombre.trim())
-                    .bind(params.pres_nombre_plural.as_deref().unwrap_or(pres_nombre.as_str()).trim())
-                    .bind(params.pres_factor.unwrap_or(Decimal::ONE))
-                    .bind(&params.pres_codigo_barras)
-                    .bind(&params.pres_gtin)
-                    .bind(params.pres_gs1_habilitado.unwrap_or(false))
-                    .execute(&mut *tx)
-                    .await?;
-                }
-            }
-        }
 
         if let Some(ids) = params.area_ids {
             sqlx::query("DELETE FROM producto_area WHERE producto_id = $1")
@@ -683,23 +564,6 @@ impl ProductoService {
                     .bind(area_id)
                     .execute(&mut *tx)
                     .await?;
-            }
-        }
-
-        // Record price change in history
-        if let (Some(precio), Some(proveedor_id)) = (params.precio_unidad, params.proveedor_id.or(anterior.proveedor_id)) {
-            if params.precio_unidad != anterior.precio_unidad {
-                sqlx::query(
-                    r#"INSERT INTO producto_precio_historial
-                       (producto_id, proveedor_id, precio_unidad, usuario_id, fuente, nota)
-                       VALUES ($1, $2, $3, $4, 'manual', 'Precio actualizado desde producto')"#,
-                )
-                .bind(params.id)
-                .bind(proveedor_id)
-                .bind(precio)
-                .bind(params.usuario_id)
-                .execute(&mut *tx)
-                .await?;
             }
         }
 
@@ -1070,7 +934,12 @@ impl ProductoService {
         }
 
         // If not found locally, attempt cascade lookup in regulatory APIs
-        match crate::services::api_regulatoria_service::lookup_dispositivo(pool, codigo_presentacion).await {
+        match crate::services::api_regulatoria_service::lookup_dispositivo(
+            pool,
+            codigo_presentacion,
+        )
+        .await
+        {
             Ok(dispositivo) => {
                 let base_unit_opt: Option<(i32, String, String)> = sqlx::query_as(
                     "SELECT id, nombre, nombre_plural FROM unidades_basicas ORDER BY id ASC LIMIT 1"
@@ -1084,7 +953,7 @@ impl ProductoService {
                         sqlx::query_as(
                             "INSERT INTO unidades_basicas (nombre, nombre_plural, categoria) \
                              VALUES ('unidad', 'unidades', 'count') \
-                             RETURNING id, nombre, nombre_plural"
+                             RETURNING id, nombre, nombre_plural",
                         )
                         .fetch_one(pool)
                         .await?
@@ -1096,21 +965,17 @@ impl ProductoService {
                     descripcion: dispositivo.descripcion,
                     categoria_id: None,
                     unidad_base_id: base_unit.0,
-                    proveedor_id: None,
-                    sku: dispositivo.sku_ref.clone(),
-                    precio_unidad: None,
                     ubicacion: Some("Estantería de cuarentena".to_string()),
                     temperatura_almacenamiento: None,
                     requiere_cadena_frio: false,
                     dias_estabilidad_abierto: None,
                     clase_riesgo: dispositivo.clase_riesgo,
                     fabricante: dispositivo.fabricante,
-                    pres_nombre: Some("Unidad".to_string()),
-                    pres_nombre_plural: Some("Unidades".to_string()),
-                    pres_factor: Some(Decimal::ONE),
-                    pres_codigo_barras: Some(codigo_presentacion.to_string()),
-                    pres_gtin: Some(codigo_presentacion.to_string()),
-                    pres_gs1_habilitado: gs1.is_some(),
+                    mpn: None,
+                    alias_unidad_clinica: Some("Unidad".to_string()),
+                    es_kit: false,
+                    stock_minimo_global: Decimal::ZERO,
+                    codigo_loinc_cpt: None,
                     control_lote: crate::domain::ControlLote::ConVto,
                     presentaciones: None,
                     area_ids: None,
@@ -1122,7 +987,7 @@ impl ProductoService {
                 let prod = Self::crear_producto(pool, params).await?;
 
                 let pres: (i32, String) = sqlx::query_as(
-                    "SELECT id, nombre FROM presentaciones WHERE producto_id = $1 LIMIT 1"
+                    "SELECT id, nombre FROM presentaciones WHERE producto_id = $1 LIMIT 1",
                 )
                 .bind(prod.id)
                 .fetch_one(pool)
@@ -1134,7 +999,6 @@ impl ProductoService {
                     "tipo": if gs1.is_some() { "gs1" } else { "presentacion" },
                     "producto_id": prod.id,
                     "producto_nombre": prod.nombre,
-                    "proveedor_id": prod.proveedor_id,
                     "unidad_base_nombre": base_unit.1,
                     "unidad_base_nombre_plural": base_unit.2,
                     "presentacion_id": pres.0,
@@ -1142,7 +1006,6 @@ impl ProductoService {
                     "factor_conversion": 1.0,
                     "stock_total": 0.0,
                     "imagen_url": prod.imagen_url,
-                    "precio_unidad": prod.precio_unidad,
                     "control_lote": prod.control_lote,
                     "estado_catalogo": prod.estado_catalogo,
                 });
@@ -1169,10 +1032,7 @@ impl ProductoService {
         }
     }
 
-    pub async fn lookup_gtin(
-        pool: &PgPool,
-        code: &str,
-    ) -> Result<serde_json::Value, AppError> {
+    pub async fn lookup_gtin(pool: &PgPool, code: &str) -> Result<serde_json::Value, AppError> {
         let code = code.trim();
         if code.is_empty() {
             return Err(AppError::Validation(
@@ -1223,29 +1083,25 @@ impl ProductoService {
 
         // 2. Check external APIs via lookup_dispositivo
         match crate::services::api_regulatoria_service::lookup_dispositivo(pool, code).await {
-            Ok(disp) => {
-                Ok(json!({
-                    "found": true,
-                    "source": "api_regulatoria",
-                    "existing_product": null,
-                    "data": {
-                        "nombre": disp.nombre,
-                        "fabricante": disp.fabricante,
-                        "sku_ref": disp.sku_ref,
-                        "clase_riesgo": disp.clase_riesgo,
-                        "descripcion": disp.descripcion,
-                    }
-                }))
-            }
-            Err(AppError::NotFound(_)) => {
-                Ok(json!({
-                    "found": false,
-                    "source": null,
-                    "existing_product": null,
-                    "data": null,
-                    "message": "No se encontró información regulatoria para el código proporcionado"
-                }))
-            }
+            Ok(disp) => Ok(json!({
+                "found": true,
+                "source": "api_regulatoria",
+                "existing_product": null,
+                "data": {
+                    "nombre": disp.nombre,
+                    "fabricante": disp.fabricante,
+                    "sku_ref": disp.sku_ref,
+                    "clase_riesgo": disp.clase_riesgo,
+                    "descripcion": disp.descripcion,
+                }
+            })),
+            Err(AppError::NotFound(_)) => Ok(json!({
+                "found": false,
+                "source": null,
+                "existing_product": null,
+                "data": null,
+                "message": "No se encontró información regulatoria para el código proporcionado"
+            })),
             Err(e) => Err(e),
         }
     }
@@ -1278,10 +1134,6 @@ impl ProductoService {
             ));
             param_idx += 1;
         }
-        if params.proveedor_id.is_some() {
-            conditions.push(format!("p.proveedor_id = ${}", param_idx));
-            param_idx += 1;
-        }
 
         let where_clause = conditions.join(" AND ");
         let sort_col = match params.sort_by.as_deref() {
@@ -1298,8 +1150,8 @@ impl ProductoService {
 
         let count_sql = format!("SELECT COUNT(*) FROM productos p WHERE {}", where_clause);
         let data_sql = format!(
-            r#"SELECT p.id, p.codigo_interno, p.nombre, p.sku,
-                      p.precio_unidad, p.lead_time_propio, p.activo,
+            r#"SELECT p.id, p.codigo_interno, p.nombre,
+                      p.lead_time_propio, p.activo,
                       CASE
                           WHEN NOT p.activo THEN 'inactivo'
                           WHEN COALESCE((SELECT SUM(s.cantidad) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = p.id), 0) <= 0
@@ -1312,16 +1164,15 @@ impl ProductoService {
                       p.imagen_url AS imagen_url,
                       c.id as cat_id, c.nombre as cat_nombre,
                       um.id as um_id, um.nombre as um_nombre, um.nombre_plural as um_nombre_plural,
-                      pr.id as prov_id, pr.nombre as prov_nombre, pr.icono as prov_icono,
                       (SELECT a.id FROM areas a JOIN producto_area pa ON pa.area_id = a.id WHERE pa.producto_id = p.id ORDER BY a.nombre LIMIT 1) as area_id,
                       (SELECT a.nombre FROM areas a JOIN producto_area pa ON pa.area_id = a.id WHERE pa.producto_id = p.id ORDER BY a.nombre LIMIT 1) as area_nombre,
-                      (SELECT id FROM presentaciones WHERE producto_id = p.id AND activa = true ORDER BY factor_conversion DESC LIMIT 1) as pres_id,
-                      p.pres_nombre,
-                      p.pres_nombre_plural,
-                      p.pres_factor,
-                      p.control_lote
+                      p.control_lote,
+                      p.mpn,
+                      p.alias_unidad_clinica,
+                      p.es_kit,
+                      p.stock_minimo_global,
+                      p.codigo_loinc_cpt
                FROM productos p
-               LEFT JOIN proveedores pr ON pr.id = p.proveedor_id
                LEFT JOIN categorias c ON c.id = p.categoria_id
                JOIN unidades_basicas um ON um.id = p.unidad_base_id
                WHERE {}
@@ -1348,10 +1199,6 @@ impl ProductoService {
         if let Some(area_id) = params.area_id {
             count_query = count_query.bind(area_id);
             data_query = data_query.bind(area_id);
-        }
-        if let Some(prov_id) = params.proveedor_id {
-            count_query = count_query.bind(prov_id);
-            data_query = data_query.bind(prov_id);
         }
 
         data_query = data_query.bind(params.limit).bind(params.offset);
@@ -1389,7 +1236,9 @@ impl ProductoService {
     ) -> Result<CodigoBarras, AppError> {
         let codigo = codigo_raw.trim().to_string();
         if codigo.is_empty() {
-            return Err(AppError::Validation("El código no puede estar vacío".into()));
+            return Err(AppError::Validation(
+                "El código no puede estar vacío".into(),
+            ));
         }
 
         let product_exists: bool = sqlx::query_scalar(

@@ -48,7 +48,9 @@ async fn post_multipart(
 
 /// A multipart body carrying a single non-file field (no "file" part).
 fn body_sin_archivo() -> String {
-    format!("--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"other\"\r\n\r\nx\r\n--{BOUNDARY}--\r\n")
+    format!(
+        "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"other\"\r\n\r\nx\r\n--{BOUNDARY}--\r\n"
+    )
 }
 
 #[sqlx::test(migrations = "./migrations")]

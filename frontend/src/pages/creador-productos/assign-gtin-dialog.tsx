@@ -1,84 +1,95 @@
-import { useEffect, useState, useCallback } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { isAxiosError } from 'axios'
-import { Barcode, Camera, CheckCircle2, Sparkles, Trash2, X } from 'lucide-react'
-import { Dialog } from '@/components/ui/dialog'
-import { QrScanner } from '@/components/shared/qr-scanner'
-import api from '@/lib/api'
-import { notify } from '@/lib/notify'
-import { isValidGtin, extractGtinFromScan } from '@/lib/gtin'
+import { useEffect, useState, useCallback } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
+import {
+  Barcode,
+  Camera,
+  CheckCircle2,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
+import { Dialog } from "@/components/ui/dialog";
+import { QrScanner } from "@/components/shared/qr-scanner";
+import api from "@/lib/api";
+import { notify } from "@/lib/notify";
+import { isValidGtin, extractGtinFromScan } from "@/lib/gtin";
 
 export type GtinTarget = {
-  id: number
-  producto_nombre: string
-  nombre: string
-  gtin: string | null
-}
+  id: number;
+  producto_nombre: string;
+  nombre: string;
+  gtin: string | null;
+};
 
 interface AssignGtinDialogProps {
-  target: GtinTarget | null
-  onClose: () => void
-  onAssigned: () => void
+  target: GtinTarget | null;
+  onClose: () => void;
+  onAssigned: () => void;
 }
 
-export function AssignGtinDialog({ target, onClose, onAssigned }: AssignGtinDialogProps) {
-  const [value, setValue] = useState('')
-  const [scanning, setScanning] = useState(false)
+export function AssignGtinDialog({
+  target,
+  onClose,
+  onAssigned,
+}: AssignGtinDialogProps) {
+  const [value, setValue] = useState("");
+  const [scanning, setScanning] = useState(false);
 
   // Reset local state whenever a different presentation is opened.
   useEffect(() => {
-    setValue(target?.gtin ?? '')
-    setScanning(false)
-  }, [target])
+    setValue(target?.gtin ?? "");
+    setScanning(false);
+  }, [target]);
 
   const assignMut = useMutation({
     mutationFn: (payload: { gtin?: string; generate_internal?: boolean }) =>
       api.post(`/presentaciones/${target!.id}/assign-gtin`, payload),
     onSuccess: () => {
-      notify.success(target?.gtin ? 'GTIN actualizado' : 'GTIN asignado')
-      onAssigned()
-      onClose()
+      notify.success(target?.gtin ? "GTIN actualizado" : "GTIN asignado");
+      onAssigned();
+      onClose();
     },
     onError: (err) => {
       if (isAxiosError(err) && err.response?.status === 409) {
-        notify.error('Ese GTIN ya está asignado a otra presentación activa')
+        notify.error("Ese GTIN ya está asignado a otra presentación activa");
       } else {
-        notify.error('No se pudo asignar el GTIN')
+        notify.error("No se pudo asignar el GTIN");
       }
     },
-  })
+  });
 
   const clearMut = useMutation({
     mutationFn: () => api.delete(`/presentaciones/${target!.id}/gtin`),
     onSuccess: () => {
-      notify.success('GTIN quitado')
-      onAssigned()
-      onClose()
+      notify.success("GTIN quitado");
+      onAssigned();
+      onClose();
     },
-    onError: () => notify.error('No se pudo quitar el GTIN'),
-  })
+    onError: () => notify.error("No se pudo quitar el GTIN"),
+  });
 
   const handleScan = useCallback((data: string) => {
-    const gtin = extractGtinFromScan(data)
+    const gtin = extractGtinFromScan(data);
     if (!gtin) {
-      notify.error('El código escaneado no contiene un GTIN válido')
-      return
+      notify.error("El código escaneado no contiene un GTIN válido");
+      return;
     }
-    setValue(gtin)
-    setScanning(false)
-    notify.success('GTIN capturado del escaneo')
-  }, [])
+    setValue(gtin);
+    setScanning(false);
+    notify.success("GTIN capturado del escaneo");
+  }, []);
 
-  const trimmed = value.trim()
-  const valid = isValidGtin(trimmed)
-  const unchanged = target?.gtin != null && trimmed === target.gtin
-  const isEditing = target?.gtin != null
+  const trimmed = value.trim();
+  const valid = isValidGtin(trimmed);
+  const unchanged = target?.gtin != null && trimmed === target.gtin;
+  const isEditing = target?.gtin != null;
 
   return (
     <Dialog
       open={target !== null}
       onClose={onClose}
-      title={isEditing ? 'Editar GTIN' : 'Asignar GTIN'}
+      title={isEditing ? "Editar GTIN" : "Asignar GTIN"}
     >
       {target && (
         <div className="space-y-4">
@@ -111,10 +122,14 @@ export function AssignGtinDialog({ target, onClose, onAssigned }: AssignGtinDial
                   inputMode="numeric"
                   autoFocus
                   value={value}
-                  onChange={(e) => setValue(e.target.value.replace(/\s/g, ''))}
+                  onChange={(e) => setValue(e.target.value.replace(/\s/g, ""))}
                   placeholder="13 o 14 dígitos"
                   className={`input input-bordered w-full font-mono tracking-wide bg-base-100 ${
-                    trimmed && !valid ? 'input-error' : trimmed && valid ? 'input-success' : ''
+                    trimmed && !valid
+                      ? "input-error"
+                      : trimmed && valid
+                        ? "input-success"
+                        : ""
                   }`}
                 />
                 {trimmed ? (
@@ -125,7 +140,8 @@ export function AssignGtinDialog({ target, onClose, onAssigned }: AssignGtinDial
                     </p>
                   ) : (
                     <p className="text-xs text-error">
-                      Inválido: revisá la longitud (13/14) y el dígito verificador
+                      Inválido: revisá la longitud (13/14) y el dígito
+                      verificador
                     </p>
                   )
                 ) : (
@@ -143,7 +159,7 @@ export function AssignGtinDialog({ target, onClose, onAssigned }: AssignGtinDial
                   onClick={() => assignMut.mutate({ gtin: trimmed })}
                 >
                   <Barcode className="h-4 w-4" />
-                  {isEditing ? 'Guardar' : 'Asignar'}
+                  {isEditing ? "Guardar" : "Asignar"}
                 </button>
                 <button
                   className="btn btn-outline btn-sm gap-2"
@@ -179,5 +195,5 @@ export function AssignGtinDialog({ target, onClose, onAssigned }: AssignGtinDial
         </div>
       )}
     </Dialog>
-  )
+  );
 }

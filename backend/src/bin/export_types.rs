@@ -1,7 +1,7 @@
 use inventario_lab_backend::domain::{
-    ConfianzaForecast, ControlLote, EstadoConteoItem, EstadoConteoSesion, EstadoEnvioProveedor,
-    EstadoOrdenCompra, EstadoRecepcion, EstadoSolicitud, UrgenciaReposicion,
-    EstadoCatalogo, OrigenRegistro,
+    ConfianzaForecast, ControlLote, EstadoCatalogo, EstadoConteoItem, EstadoConteoSesion,
+    EstadoEnvioProveedor, EstadoOrdenCompra, EstadoRecepcion, EstadoSolicitud, OrigenRegistro,
+    UrgenciaReposicion,
 };
 use inventario_lab_backend::dto::{
     area::{

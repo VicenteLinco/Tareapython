@@ -1,110 +1,127 @@
-import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Barcode, Zap, CheckCircle2, Circle, Pencil, Search } from 'lucide-react'
-import { DataTable } from '@/components/ui/data-table'
-import { PageLoading } from '@/components/ui/page-state'
-import api from '@/lib/api'
-import { notify } from '@/lib/notify'
-import { AssignGtinDialog, type GtinTarget } from './assign-gtin-dialog'
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Barcode,
+  Zap,
+  CheckCircle2,
+  Circle,
+  Pencil,
+  Search,
+} from "lucide-react";
+import { DataTable } from "@/components/ui/data-table";
+import { PageLoading } from "@/components/ui/page-state";
+import api from "@/lib/api";
+import { notify } from "@/lib/notify";
+import { AssignGtinDialog, type GtinTarget } from "./assign-gtin-dialog";
 
 type PresentacionConProducto = {
-  id: number
-  producto_id: string
-  producto_nombre: string
-  nombre: string
-  nombre_plural: string
-  gtin: string | null
-  gs1_habilitado: boolean
-  gtin_interno: boolean
-  activa: boolean
-}
+  id: number;
+  producto_id: string;
+  producto_nombre: string;
+  nombre: string;
+  nombre_plural: string;
+  gtin: string | null;
+  gs1_habilitado: boolean;
+  gtin_interno: boolean;
+  activa: boolean;
+};
 
 export default function GtinsTab() {
-  const queryClient = useQueryClient()
-  const [filter, setFilter] = useState<'all' | 'missing' | 'assigned'>('all')
-  const [search, setSearch] = useState('')
-  const [target, setTarget] = useState<GtinTarget | null>(null)
+  const queryClient = useQueryClient();
+  const [filter, setFilter] = useState<"all" | "missing" | "assigned">("all");
+  const [search, setSearch] = useState("");
+  const [target, setTarget] = useState<GtinTarget | null>(null);
 
   const { data: presentaciones = [], isLoading } = useQuery({
-    queryKey: ['presentaciones-todas'],
-    queryFn: () => api.get<PresentacionConProducto[]>('/presentaciones').then((r) => r.data),
-  })
+    queryKey: ["presentaciones-todas"],
+    queryFn: () =>
+      api.get<PresentacionConProducto[]>("/presentaciones").then((r) => r.data),
+  });
 
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ['presentaciones-todas'] })
+    queryClient.invalidateQueries({ queryKey: ["presentaciones-todas"] });
 
   const bulkMut = useMutation({
-    mutationFn: () => api.post('/presentaciones/bulk-assign-gtin', { generate_missing: true }),
+    mutationFn: () =>
+      api.post("/presentaciones/bulk-assign-gtin", { generate_missing: true }),
     onSuccess: (res) => {
-      invalidate()
-      const updated = res.data.updated as number
-      if (updated === 0) notify.info('Todas las presentaciones ya tienen GTIN asignado')
-      else notify.success(`${updated} GTIN${updated !== 1 ? 's' : ''} asignado${updated !== 1 ? 's' : ''}`)
+      invalidate();
+      const updated = res.data.updated as number;
+      if (updated === 0)
+        notify.info("Todas las presentaciones ya tienen GTIN asignado");
+      else
+        notify.success(
+          `${updated} GTIN${updated !== 1 ? "s" : ""} asignado${updated !== 1 ? "s" : ""}`,
+        );
     },
-    onError: () => notify.error('Error al asignar GTINs'),
-  })
+    onError: () => notify.error("Error al asignar GTINs"),
+  });
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
+    const q = search.trim().toLowerCase();
     return presentaciones.filter((p) => {
-      if (filter === 'missing' && p.gtin !== null) return false
-      if (filter === 'assigned' && p.gtin === null) return false
-      if (!q) return true
+      if (filter === "missing" && p.gtin !== null) return false;
+      if (filter === "assigned" && p.gtin === null) return false;
+      if (!q) return true;
       return (
         p.producto_nombre.toLowerCase().includes(q) ||
         p.nombre.toLowerCase().includes(q) ||
         (p.gtin?.includes(q) ?? false)
-      )
-    })
-  }, [presentaciones, filter, search])
+      );
+    });
+  }, [presentaciones, filter, search]);
 
-  const missing = presentaciones.filter((p) => p.gtin === null).length
-  const assigned = presentaciones.length - missing
+  const missing = presentaciones.filter((p) => p.gtin === null).length;
+  const assigned = presentaciones.length - missing;
 
   const columns = [
     {
-      key: 'producto',
-      header: 'Producto',
+      key: "producto",
+      header: "Producto",
       render: (item: PresentacionConProducto) => (
         <span className="text-sm font-medium">{item.producto_nombre}</span>
       ),
     },
     {
-      key: 'presentacion',
-      header: 'Presentación',
+      key: "presentacion",
+      header: "Presentación",
       render: (item: PresentacionConProducto) => (
         <span className="text-sm opacity-70">{item.nombre}</span>
       ),
     },
     {
-      key: 'gtin',
-      header: 'GTIN',
+      key: "gtin",
+      header: "GTIN",
       render: (item: PresentacionConProducto) =>
         item.gtin ? (
-          <span className="font-mono text-xs bg-base-200 px-2 py-0.5 rounded">{item.gtin}</span>
+          <span className="font-mono text-xs bg-base-200 px-2 py-0.5 rounded">
+            {item.gtin}
+          </span>
         ) : (
           <span className="text-xs opacity-30">—</span>
         ),
     },
     {
-      key: 'origen',
-      header: 'Origen',
-      className: 'w-24',
+      key: "origen",
+      header: "Origen",
+      className: "w-24",
       render: (item: PresentacionConProducto) =>
         item.gtin ? (
           item.gtin_interno ? (
             <span className="badge badge-sm badge-ghost gap-1">Interno</span>
           ) : (
-            <span className="badge badge-sm badge-info badge-outline gap-1">Proveedor</span>
+            <span className="badge badge-sm badge-info badge-outline gap-1">
+              Proveedor
+            </span>
           )
         ) : (
           <span className="text-xs opacity-30">—</span>
         ),
     },
     {
-      key: 'estado',
-      header: 'Estado',
-      className: 'w-28',
+      key: "estado",
+      header: "Estado",
+      className: "w-28",
       render: (item: PresentacionConProducto) =>
         item.gtin ? (
           <span className="flex items-center gap-1 text-xs text-success">
@@ -119,16 +136,16 @@ export default function GtinsTab() {
         ),
     },
     {
-      key: 'accion',
-      header: '',
-      className: 'w-24',
+      key: "accion",
+      header: "",
+      className: "w-24",
       render: (item: PresentacionConProducto) =>
         item.gtin ? (
           <button
             className="btn btn-xs btn-ghost gap-1"
             onClick={(e) => {
-              e.stopPropagation()
-              setTarget(item)
+              e.stopPropagation();
+              setTarget(item);
             }}
           >
             <Pencil className="h-3 w-3" />
@@ -138,8 +155,8 @@ export default function GtinsTab() {
           <button
             className="btn btn-xs btn-outline btn-primary gap-1"
             onClick={(e) => {
-              e.stopPropagation()
-              setTarget(item)
+              e.stopPropagation();
+              setTarget(item);
             }}
           >
             <Barcode className="h-3 w-3" />
@@ -147,9 +164,9 @@ export default function GtinsTab() {
           </button>
         ),
     },
-  ]
+  ];
 
-  if (isLoading) return <PageLoading label="Cargando presentaciones..." />
+  if (isLoading) return <PageLoading label="Cargando presentaciones..." />;
 
   return (
     <div className="space-y-4">
@@ -163,13 +180,17 @@ export default function GtinsTab() {
             </p>
           </div>
           <div className="text-center">
-            <p className="text-2xl font-bold tabular-nums text-warning">{missing}</p>
+            <p className="text-2xl font-bold tabular-nums text-warning">
+              {missing}
+            </p>
             <p className="text-[10px] uppercase font-semibold tracking-widest text-base-content/40">
               Sin GTIN
             </p>
           </div>
           <div className="text-center">
-            <p className="text-2xl font-bold tabular-nums">{presentaciones.length}</p>
+            <p className="text-2xl font-bold tabular-nums">
+              {presentaciones.length}
+            </p>
             <p className="text-[10px] uppercase font-semibold tracking-widest text-base-content/40">
               Total
             </p>
@@ -182,20 +203,26 @@ export default function GtinsTab() {
           disabled={bulkMut.isPending || missing === 0}
         >
           <Zap className="h-4 w-4" />
-          {bulkMut.isPending ? 'Asignando...' : `Asignar ${missing} faltante${missing !== 1 ? 's' : ''}`}
+          {bulkMut.isPending
+            ? "Asignando..."
+            : `Asignar ${missing} faltante${missing !== 1 ? "s" : ""}`}
         </button>
       </div>
 
       {/* Filtros: búsqueda + chips */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1">
-          {(['all', 'missing', 'assigned'] as const).map((f) => (
+          {(["all", "missing", "assigned"] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`btn btn-xs rounded-full ${filter === f ? 'btn-primary' : 'btn-ghost'}`}
+              className={`btn btn-xs rounded-full ${filter === f ? "btn-primary" : "btn-ghost"}`}
             >
-              {f === 'all' ? 'Todos' : f === 'missing' ? 'Sin GTIN' : 'Con GTIN'}
+              {f === "all"
+                ? "Todos"
+                : f === "missing"
+                  ? "Sin GTIN"
+                  : "Con GTIN"}
             </button>
           ))}
         </div>
@@ -219,7 +246,11 @@ export default function GtinsTab() {
         emptyMessage="No hay presentaciones"
       />
 
-      <AssignGtinDialog target={target} onClose={() => setTarget(null)} onAssigned={invalidate} />
+      <AssignGtinDialog
+        target={target}
+        onClose={() => setTarget(null)}
+        onAssigned={invalidate}
+      />
     </div>
-  )
+  );
 }

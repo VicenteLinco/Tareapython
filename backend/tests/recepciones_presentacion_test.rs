@@ -112,7 +112,13 @@ async fn test_recepcion_sets_lote_presentacion_id(pool: PgPool) {
         &idem,
     )
     .await;
-    assert_eq!(status, StatusCode::CREATED, "Expected CREATED, got {:?}: {:?}", status, json);
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "Expected CREATED, got {:?}: {:?}",
+        status,
+        json
+    );
 
     // Verify that the lot created has presentacion_id set correctly
     let lote_presentacion_id: Option<i32> = sqlx::query_scalar(

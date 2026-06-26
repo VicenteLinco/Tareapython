@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listarStock,
   obtenerAlertas,
@@ -7,18 +7,18 @@ import {
   crearConsumoBatch,
   crearDescarte,
   historicoDescartes,
-} from '@/api'
+} from "@/api";
 import type {
   StockQuery,
   AlertasQuery,
   ConsumoRequest,
   ConsumoBatchRequest,
   DescartesHistorialQuery,
-} from '@/api'
-import type { DescarteRequest } from '@/types/generated'
-import { notify } from '@/lib/notify'
-import { parseApiError } from '@/lib/api-error'
-import { stockKeys, descartesKeys } from '@/lib/queryKeys'
+} from "@/api";
+import type { DescarteRequest } from "@/types/generated";
+import { notify } from "@/lib/notify";
+import { parseApiError } from "@/lib/api-error";
+import { stockKeys, descartesKeys } from "@/lib/queryKeys";
 
 // ─── Queries ─────────────────────────────────────────────────────────────────
 
@@ -27,7 +27,7 @@ export function useStockList(params?: StockQuery) {
     queryKey: stockKeys.list(params),
     queryFn: () => listarStock(params),
     staleTime: 2 * 60 * 1000,
-  })
+  });
 }
 
 export function useStockAlertas(params?: AlertasQuery) {
@@ -35,19 +35,19 @@ export function useStockAlertas(params?: AlertasQuery) {
     queryKey: [...stockKeys.alertas(), params],
     queryFn: () => obtenerAlertas(params),
     staleTime: 2 * 60 * 1000,
-  })
+  });
 }
 
 export function useStockPorArea(
   areaId: number | null | undefined,
-  params?: { page?: number; per_page?: number; q?: string }
+  params?: { page?: number; per_page?: number; q?: string },
 ) {
   return useQuery({
     queryKey: stockKeys.area(areaId ?? 0, params),
     queryFn: () => stockPorArea(areaId!, params),
     enabled: !!areaId,
     staleTime: 2 * 60 * 1000,
-  })
+  });
 }
 
 export function useDescartesHistorial(params?: DescartesHistorialQuery) {
@@ -55,44 +55,44 @@ export function useDescartesHistorial(params?: DescartesHistorialQuery) {
     queryKey: descartesKeys.list(params),
     queryFn: () => historicoDescartes(params),
     staleTime: 2 * 60 * 1000,
-  })
+  });
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
 export function useCrearConsumo() {
-  const qc = useQueryClient()
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: ConsumoRequest) => crearConsumo(payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: stockKeys.all })
-      notify.success('Consumo registrado')
+      qc.invalidateQueries({ queryKey: stockKeys.all });
+      notify.success("Consumo registrado");
     },
     onError: (err) => notify.error(parseApiError(err)),
-  })
+  });
 }
 
 export function useCrearConsumoBatch() {
-  const qc = useQueryClient()
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: ConsumoBatchRequest) => crearConsumoBatch(payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: stockKeys.all })
-      notify.success('Consumos registrados')
+      qc.invalidateQueries({ queryKey: stockKeys.all });
+      notify.success("Consumos registrados");
     },
     onError: (err) => notify.error(parseApiError(err)),
-  })
+  });
 }
 
 export function useCrearDescarte() {
-  const qc = useQueryClient()
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: DescarteRequest) => crearDescarte(payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: stockKeys.all })
-      qc.invalidateQueries({ queryKey: descartesKeys.all })
-      notify.success('Descarte registrado')
+      qc.invalidateQueries({ queryKey: stockKeys.all });
+      qc.invalidateQueries({ queryKey: descartesKeys.all });
+      notify.success("Descarte registrado");
     },
     onError: (err) => notify.error(parseApiError(err)),
-  })
+  });
 }

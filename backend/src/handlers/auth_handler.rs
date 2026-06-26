@@ -82,8 +82,9 @@ async fn actualizar_me(
     Extension(claims): Extension<Claims>,
     Json(req): Json<crate::auth::models::UpdateProfileRequest>,
 ) -> Result<Json<UserResponse>, AppError> {
-    let updated_user = crate::services::usuario_service::actualizar_perfil(&state.pool, claims.sub, req).await?;
-    
+    let updated_user =
+        crate::services::usuario_service::actualizar_perfil(&state.pool, claims.sub, req).await?;
+
     Ok(Json(UserResponse {
         id: updated_user.id,
         nombre: updated_user.nombre,
@@ -101,7 +102,9 @@ async fn cambiar_password(
     Json(req): Json<CambiarPasswordRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     AuthService::cambiar_password(&state.pool, claims.sub, req).await?;
-    Ok(Json(serde_json::json!({ "message": "Contraseña actualizada" })))
+    Ok(Json(
+        serde_json::json!({ "message": "Contraseña actualizada" }),
+    ))
 }
 
 /// Rutas públicas (no requieren JWT)

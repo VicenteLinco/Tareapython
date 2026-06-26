@@ -1,38 +1,38 @@
 // frontend/src/pages/solicitudes-compra/index.tsx
-import { useState } from 'react'
-import { ShoppingCart, History } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { useSolicitudState } from './hooks/useSolicitudState'
-import { SolicitudStepper } from './components/solicitud-stepper'
-import { ProveedorGallery } from './components/proveedor-gallery'
-import { QuiebresPanelIzquierdo } from './components/quiebres-panel'
-import { PedidoPanel } from './components/pedido-panel'
-import { HistorialView } from './components/historial-view'
-import { DetalleModal } from './components/detalle-modal'
-import { RevisionView } from './components/revision-view'
-import { ProveedorBanner } from './components/proveedor-banner'
+import { useState } from "react";
+import { ShoppingCart, History } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useSolicitudState } from "./hooks/useSolicitudState";
+import { SolicitudStepper } from "./components/solicitud-stepper";
+import { ProveedorGallery } from "./components/proveedor-gallery";
+import { QuiebresPanelIzquierdo } from "./components/quiebres-panel";
+import { PedidoPanel } from "./components/pedido-panel";
+import { HistorialView } from "./components/historial-view";
+import { DetalleModal } from "./components/detalle-modal";
+import { RevisionView } from "./components/revision-view";
+import { ProveedorBanner } from "./components/proveedor-banner";
 
 export default function SolicitudesCompraPage() {
-  const s = useSolicitudState()
-  const [proveedoresPreseleccionados, setProveedoresPreseleccionados] = useState<number[]>([])
+  const s = useSolicitudState();
+  const [proveedoresPreseleccionados, setProveedoresPreseleccionados] =
+    useState<number[]>([]);
 
   const toggleProveedorPreseleccionado = (id: number) => {
-    setProveedoresPreseleccionados(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    )
-  }
+    setProveedoresPreseleccionados((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
 
   const continuarConProveedores = () => {
     for (const id of proveedoresPreseleccionados) {
-      const proveedor = s.proveedores?.find(p => p.id === id)
-      if (proveedor) s.handleAgregarProveedorFiltro(proveedor)
+      const proveedor = s.proveedores?.find((p) => p.id === id);
+      if (proveedor) s.handleAgregarProveedorFiltro(proveedor);
     }
-    setProveedoresPreseleccionados([])
-  }
+    setProveedoresPreseleccionados([]);
+  };
 
   return (
     <div className="flex flex-col h-[calc(100vh-100px)] gap-6 p-2">
-
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -40,21 +40,28 @@ export default function SolicitudesCompraPage() {
             <ShoppingCart className="h-6 w-6 text-primary" />
             Solicitudes de Compra
           </h1>
-          <p className="text-sm opacity-50">Gestiona tus pedidos y revisa recomendaciones basadas en stock</p>
+          <p className="text-sm opacity-50">
+            Gestiona tus pedidos y revisa recomendaciones basadas en stock
+          </p>
         </div>
         <button
           className={cn(
             "btn btn-sm gap-2 rounded-xl self-start",
-            s.view === 'historial' ? "btn-primary" : "btn-ghost border border-base-300",
+            s.view === "historial"
+              ? "btn-primary"
+              : "btn-ghost border border-base-300",
           )}
-          onClick={() => s.setView(s.view === 'historial' ? 'crear' : 'historial')}
+          onClick={() =>
+            s.setView(s.view === "historial" ? "crear" : "historial")
+          }
         >
-          <History className="h-4 w-4" /> {s.view === 'historial' ? 'Volver a crear' : 'Historial'}
+          <History className="h-4 w-4" />{" "}
+          {s.view === "historial" ? "Volver a crear" : "Historial"}
         </button>
       </div>
 
       {/* Stepper — guía visual del flujo de creación */}
-      {s.view === 'crear' && !s.restaurando && (
+      {s.view === "crear" && !s.restaurando && (
         <SolicitudStepper
           modoRevision={s.modoRevision}
           hayProveedorSeleccionado={s.selectedProveedor !== null}
@@ -65,7 +72,7 @@ export default function SolicitudesCompraPage() {
       )}
 
       {/* Cuerpo */}
-      {s.view === 'crear' && s.restaurando ? (
+      {s.view === "crear" && s.restaurando ? (
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-[30%_1fr] gap-4 min-h-0 animate-pulse">
           <div className="bg-base-200/60 rounded-[2rem]" />
           <div className="flex flex-col gap-3">
@@ -73,7 +80,7 @@ export default function SolicitudesCompraPage() {
             <div className="flex-1 bg-base-200/60 rounded-[2.5rem]" />
           </div>
         </div>
-      ) : s.view === 'crear' && s.modoRevision ? (
+      ) : s.view === "crear" && s.modoRevision ? (
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 min-h-0 overflow-y-auto">
           <div className="overflow-y-auto custom-scrollbar pr-1">
             <RevisionView
@@ -115,7 +122,7 @@ export default function SolicitudesCompraPage() {
             </div>
           )}
         </div>
-      ) : s.view === 'crear' ? (
+      ) : s.view === "crear" ? (
         s.selectedProveedor === null ? (
           <ProveedorGallery
             proveedores={s.proveedores}
@@ -126,7 +133,7 @@ export default function SolicitudesCompraPage() {
             onDiasVencimientoChange={s.setDiasVencimiento}
             logoBase64={s.configuracion?.logo_base64}
             selectedIds={proveedoresPreseleccionados}
-            onSelect={p => toggleProveedorPreseleccionado(p.id)}
+            onSelect={(p) => toggleProveedorPreseleccionado(p.id)}
             onContinue={continuarConProveedores}
           />
         ) : (
@@ -193,12 +200,17 @@ export default function SolicitudesCompraPage() {
         isLoading={s.isLoadingDetail}
         pdfFirmaLabel={s.pdfFirmaLabel}
         monedaCodigo={s.monedaCodigo}
-        monedaSimbolo={s.configuracion?.moneda_simbolo ?? '$'}
-        nombreLaboratorio={s.configuracion?.nombre_laboratorio ?? 'Laboratorio Clínico'}
+        monedaSimbolo={s.configuracion?.moneda_simbolo ?? "$"}
+        nombreLaboratorio={
+          s.configuracion?.nombre_laboratorio ?? "Laboratorio Clínico"
+        }
         logoBase64={s.configuracion?.logo_base64}
-        onClose={() => { s.setSelectedSolicitudId(null); s.setPdfFirmaLabel('') }}
+        onClose={() => {
+          s.setSelectedSolicitudId(null);
+          s.setPdfFirmaLabel("");
+        }}
         onPdfFirmaChange={s.setPdfFirmaLabel}
       />
     </div>
-  )
+  );
 }

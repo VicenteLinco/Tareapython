@@ -306,7 +306,7 @@ async fn crear_presentaciones_con_sku_duplicado(pool: PgPool) {
         }),
     )
     .await;
-    
+
     // El error de clave única se mapea como AppError::Database/Internal, que retorna un status de error.
     assert!(status2.is_client_error() || status2.is_server_error());
 }
@@ -331,8 +331,7 @@ async fn listar_filtra_por_categoria(pool: PgPool) {
 
     let app = common::test_app(pool);
 
-    let (status, json) =
-        common::get_json(&app, "/api/v1/productos?categoria_id=1", &token).await;
+    let (status, json) = common::get_json(&app, "/api/v1/productos?categoria_id=1", &token).await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["total"], 1);
@@ -382,12 +381,12 @@ async fn test_migration_catalogacion_defaults(pool: PgPool) {
     .unwrap();
 
     // 2. Query product and check fields using sqlx FromRow mapping
-    let prod: Producto = sqlx::query_as("SELECT * FROM productos WHERE codigo_interno = 'PRD-TEST-CAT'")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let prod: Producto =
+        sqlx::query_as("SELECT * FROM productos WHERE codigo_interno = 'PRD-TEST-CAT'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
 
     assert_eq!(prod.estado_catalogo, EstadoCatalogo::Aprobado);
     assert_eq!(prod.origen_registro, OrigenRegistro::Manual);
 }
-

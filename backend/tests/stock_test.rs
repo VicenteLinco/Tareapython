@@ -102,15 +102,30 @@ async fn test_stock_por_area_includes_presentacion_equivalente(pool: PgPool) {
     let app = common::test_app(pool.clone());
 
     let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
-    create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
-        .await;
+    create_reception_with_pres(
+        &pool,
+        &app,
+        &token,
+        proveedor_id,
+        producto_id,
+        presentacion_id,
+    )
+    .await;
 
     // Call stock_por_area for area 1
     let (status, json) = common::get_json(&app, "/api/v1/stock/area/1", &token).await;
-    assert_eq!(status, StatusCode::OK, "Expected OK, got {:?}: {:?}", status, json);
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "Expected OK, got {:?}: {:?}",
+        status,
+        json
+    );
 
     // Find our product in the response
-    let productos = json["productos"].as_array().expect("expected productos array");
+    let productos = json["productos"]
+        .as_array()
+        .expect("expected productos array");
     let prod = productos
         .iter()
         .find(|p| p["producto_id"].as_str() == Some(&producto_id.to_string()))
@@ -127,7 +142,11 @@ async fn test_stock_por_area_includes_presentacion_equivalente(pool: PgPool) {
         pres_nombre.is_some(),
         "Expected presentacion_nombre to be set, got null"
     );
-    assert_eq!(pres_nombre, Some("Caja"), "Expected presentacion_nombre = 'Caja'");
+    assert_eq!(
+        pres_nombre,
+        Some("Caja"),
+        "Expected presentacion_nombre = 'Caja'"
+    );
 
     // Check cantidad_presentaciones_equivalente = 150 / 10 = 15.00
     let equivalente = lote["cantidad_presentaciones_equivalente"].as_f64();
@@ -186,7 +205,9 @@ async fn test_stock_por_area_lote_without_presentacion_returns_null_equivalente(
     let (status, json) = common::get_json(&app, "/api/v1/stock/area/1", &token).await;
     assert_eq!(status, StatusCode::OK);
 
-    let productos = json["productos"].as_array().expect("expected productos array");
+    let productos = json["productos"]
+        .as_array()
+        .expect("expected productos array");
     let prod = productos
         .iter()
         .find(|p| p["producto_id"].as_str() == Some(&producto_id.to_string()))
@@ -235,8 +256,15 @@ async fn test_listar_stock_envelope_y_resumen(pool: PgPool) {
     let app = common::test_app(pool.clone());
 
     let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
-    create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
-        .await;
+    create_reception_with_pres(
+        &pool,
+        &app,
+        &token,
+        proveedor_id,
+        producto_id,
+        presentacion_id,
+    )
+    .await;
 
     let (status, json) = common::get_json(&app, "/api/v1/stock", &token).await;
     assert_eq!(status, StatusCode::OK, "got {:?}: {:?}", status, json);
@@ -246,7 +274,10 @@ async fn test_listar_stock_envelope_y_resumen(pool: PgPool) {
     assert!(json["total"].is_number(), "total debe ser número");
     assert!(json["page"].is_number(), "page debe ser número");
     assert!(json["per_page"].is_number(), "per_page debe ser número");
-    assert!(json["total_pages"].is_number(), "total_pages debe ser número");
+    assert!(
+        json["total_pages"].is_number(),
+        "total_pages debe ser número"
+    );
 
     // Resumen agregado con las tres claves del contrato
     let resumen = &json["resumen"];
@@ -279,9 +310,15 @@ async fn test_dos_ejes_solo_vencido_es_agotado_y_vencido(pool: PgPool) {
     let app = common::test_app(pool.clone());
 
     let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
-    let lote_id =
-        create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
-            .await;
+    let lote_id = create_reception_with_pres(
+        &pool,
+        &app,
+        &token,
+        proveedor_id,
+        producto_id,
+        presentacion_id,
+    )
+    .await;
 
     // Vencer el lote: sus 150 u. pasan a ser físico-vencido (0 usable).
     sqlx::query("UPDATE lotes SET fecha_vencimiento = CURRENT_DATE - 5 WHERE id = $1")
@@ -328,9 +365,15 @@ async fn test_estado_vencimiento_no_aplica_para_simple(pool: PgPool) {
     let app = common::test_app(pool.clone());
 
     let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
-    let lote_id =
-        create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
-            .await;
+    let lote_id = create_reception_with_pres(
+        &pool,
+        &app,
+        &token,
+        proveedor_id,
+        producto_id,
+        presentacion_id,
+    )
+    .await;
 
     // Reclasificar a 'simple' y volar el vencimiento del lote (consumible: lote
     // implícito sin fecha). El stock usable se conserva.
@@ -374,8 +417,15 @@ async fn test_filtros_dos_ejes_vencido_agotado_aparece_en_ambos(pool: PgPool) {
     let app = common::test_app(pool.clone());
 
     let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
-    create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
-        .await;
+    create_reception_with_pres(
+        &pool,
+        &app,
+        &token,
+        proveedor_id,
+        producto_id,
+        presentacion_id,
+    )
+    .await;
     sqlx::query("UPDATE lotes SET fecha_vencimiento = CURRENT_DATE - 2 WHERE producto_id = $1")
         .bind(producto_id)
         .execute(&pool)
@@ -393,12 +443,18 @@ async fn test_filtros_dos_ejes_vencido_agotado_aparece_en_ambos(pool: PgPool) {
     // Filtro "agotado" (sin_stock) → aparece (0 usable).
     let (s1, j1) = common::get_json(&app, "/api/v1/stock?estado=sin_stock", &token).await;
     assert_eq!(s1, StatusCode::OK);
-    assert!(aparece(&j1), "el ítem debe aparecer bajo el filtro 'agotado'");
+    assert!(
+        aparece(&j1),
+        "el ítem debe aparecer bajo el filtro 'agotado'"
+    );
 
     // Filtro "vencido" → aparece el MISMO ítem.
     let (s2, j2) = common::get_json(&app, "/api/v1/stock?estado=vencidos", &token).await;
     assert_eq!(s2, StatusCode::OK);
-    assert!(aparece(&j2), "el MISMO ítem debe aparecer bajo el filtro 'vencido'");
+    assert!(
+        aparece(&j2),
+        "el MISMO ítem debe aparecer bajo el filtro 'vencido'"
+    );
 }
 
 /// GET /api/v1/stock — valoriza cada producto por el costo real de sus lotes.
@@ -469,8 +525,15 @@ async fn test_listar_stock_sin_costo_se_informa(pool: PgPool) {
 
     let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
     // create_reception_with_pres NO manda precio → costo del lote nulo.
-    create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
-        .await;
+    create_reception_with_pres(
+        &pool,
+        &app,
+        &token,
+        proveedor_id,
+        producto_id,
+        presentacion_id,
+    )
+    .await;
 
     let (status, json) = common::get_json(&app, "/api/v1/stock", &token).await;
     assert_eq!(status, StatusCode::OK);
@@ -497,8 +560,15 @@ async fn test_alertas_envelope_y_resumen(pool: PgPool) {
     let app = common::test_app(pool.clone());
 
     let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
-    create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
-        .await;
+    create_reception_with_pres(
+        &pool,
+        &app,
+        &token,
+        proveedor_id,
+        producto_id,
+        presentacion_id,
+    )
+    .await;
 
     let (status, json) = common::get_json(&app, "/api/v1/stock/alertas", &token).await;
     assert_eq!(status, StatusCode::OK, "got {:?}: {:?}", status, json);
@@ -523,8 +593,15 @@ async fn test_alertas_vencido_agotado_cuenta_en_ambos_ejes(pool: PgPool) {
     let app = common::test_app(pool.clone());
 
     let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
-    create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
-        .await;
+    create_reception_with_pres(
+        &pool,
+        &app,
+        &token,
+        proveedor_id,
+        producto_id,
+        presentacion_id,
+    )
+    .await;
 
     // Vencer todo el stock: 0 usable (agotado) + stock vencido (vencido).
     sqlx::query("UPDATE lotes SET fecha_vencimiento = CURRENT_DATE - 3 WHERE producto_id = $1")
@@ -555,13 +632,23 @@ async fn test_lotes_vencidos_incluye_lote_en_ventana(pool: PgPool) {
     let app = common::test_app(pool.clone());
 
     let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
-    let lote_id =
-        create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
-            .await;
+    let lote_id = create_reception_with_pres(
+        &pool,
+        &app,
+        &token,
+        proveedor_id,
+        producto_id,
+        presentacion_id,
+    )
+    .await;
 
     // dias_alerta amplio: el lote (vence 2028) cae dentro de la ventana
-    let (status, json) =
-        common::get_json(&app, "/api/v1/stock/lotes-vencidos?dias_alerta=3650", &token).await;
+    let (status, json) = common::get_json(
+        &app,
+        "/api/v1/stock/lotes-vencidos?dias_alerta=3650",
+        &token,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "got {:?}: {:?}", status, json);
 
     let items = json.as_array().expect("lotes-vencidos devuelve un array");
@@ -569,7 +656,10 @@ async fn test_lotes_vencidos_incluye_lote_en_ventana(pool: PgPool) {
         .iter()
         .find(|r| r["lote_id"].as_str() == Some(&lote_id.to_string()))
         .expect("el lote recibido debe aparecer dentro de la ventana de alerta");
-    assert_eq!(found["producto_id"].as_str(), Some(producto_id.to_string().as_str()));
+    assert_eq!(
+        found["producto_id"].as_str(),
+        Some(producto_id.to_string().as_str())
+    );
     assert!(found["fecha_vencimiento"].is_string());
     assert!(found["area_nombre"].is_string());
     assert!(json_num(&found["cantidad"]) > 0.0);
@@ -584,13 +674,24 @@ async fn test_balance_check_sano_tras_recepcion(pool: PgPool) {
     let app = common::test_app(pool.clone());
 
     let (proveedor_id, producto_id, presentacion_id) = setup_base(&pool, &token, &app).await;
-    create_reception_with_pres(&pool, &app, &token, proveedor_id, producto_id, presentacion_id)
-        .await;
+    create_reception_with_pres(
+        &pool,
+        &app,
+        &token,
+        proveedor_id,
+        producto_id,
+        presentacion_id,
+    )
+    .await;
 
     let (status, json) = common::get_json(&app, "/api/v1/stock/balance-check", &token).await;
     assert_eq!(status, StatusCode::OK, "got {:?}: {:?}", status, json);
 
-    assert_eq!(json["sano"].as_bool(), Some(true), "el ledger debe estar sano");
+    assert_eq!(
+        json["sano"].as_bool(),
+        Some(true),
+        "el ledger debe estar sano"
+    );
     assert_eq!(
         json["discrepancias"].as_array().map(|a| a.len()),
         Some(0),

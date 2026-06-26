@@ -101,5 +101,8 @@ async fn fusion_aborta_si_vencimiento_conflictivo(pool: PgPool) {
     let res = sqlx::query_scalar::<_, i32>("SELECT fn_fusionar_lotes_duplicados()")
         .fetch_one(&pool)
         .await;
-    assert!(res.is_err(), "la fusión debe abortar ante vencimientos en conflicto");
+    assert!(
+        res.is_err(),
+        "la fusión debe abortar ante vencimientos en conflicto"
+    );
 }

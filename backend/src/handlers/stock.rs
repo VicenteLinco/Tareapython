@@ -167,7 +167,8 @@ async fn alertas(
 
     let requested_area_ids = parse_area_ids(params.area_ids.as_deref())?;
 
-    let resultado = stock_service::alertas(&state.pool, requested_area_ids, per_page, offset).await?;
+    let resultado =
+        stock_service::alertas(&state.pool, requested_area_ids, per_page, offset).await?;
 
     let total_pages = (resultado.total + per_page - 1) / per_page;
 

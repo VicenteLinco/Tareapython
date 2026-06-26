@@ -6,7 +6,7 @@
  * check-digit validation so typos are caught in the UI before saving.
  */
 
-import { parseGS1 } from './gs1'
+import { parseGS1 } from "./gs1";
 
 /**
  * Computes the mod-10 check digit for a GTIN payload (all digits except the
@@ -15,22 +15,22 @@ import { parseGS1 } from './gs1'
  * GTIN-13 and GTIN-14 alike.
  */
 export function gtinCheckDigit(payload: string): number {
-  let sum = 0
-  const reversed = payload.split('').reverse()
+  let sum = 0;
+  const reversed = payload.split("").reverse();
   for (let i = 0; i < reversed.length; i++) {
-    const digit = Number(reversed[i])
-    sum += digit * (i % 2 === 0 ? 3 : 1)
+    const digit = Number(reversed[i]);
+    sum += digit * (i % 2 === 0 ? 3 : 1);
   }
-  return (10 - (sum % 10)) % 10
+  return (10 - (sum % 10)) % 10;
 }
 
 /** True when `gtin` is 13 or 14 digits with a valid mod-10 check digit. */
 export function isValidGtin(gtin: string): boolean {
-  if (!/^\d+$/.test(gtin)) return false
-  if (gtin.length !== 13 && gtin.length !== 14) return false
-  const payload = gtin.slice(0, -1)
-  const check = Number(gtin.slice(-1))
-  return gtinCheckDigit(payload) === check
+  if (!/^\d+$/.test(gtin)) return false;
+  if (gtin.length !== 13 && gtin.length !== 14) return false;
+  const payload = gtin.slice(0, -1);
+  const check = Number(gtin.slice(-1));
+  return gtinCheckDigit(payload) === check;
 }
 
 /**
@@ -39,10 +39,10 @@ export function isValidGtin(gtin: string): boolean {
  * Returns null when nothing GTIN-shaped (13–14 digits) can be recovered.
  */
 export function extractGtinFromScan(raw: string): string | null {
-  const parsed = parseGS1(raw)
-  if (parsed?.gtin) return parsed.gtin
+  const parsed = parseGS1(raw);
+  if (parsed?.gtin) return parsed.gtin;
 
-  const digits = raw.replace(/\D/g, '')
-  if (digits.length === 13 || digits.length === 14) return digits
-  return null
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 13 || digits.length === 14) return digits;
+  return null;
 }

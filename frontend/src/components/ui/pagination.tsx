@@ -1,13 +1,17 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface PaginationProps {
-  page: number
-  totalPages: number
-  onPageChange: (page: number) => void
+  page: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
 }
 
-export function Pagination({ page, totalPages, onPageChange }: PaginationProps) {
-  if (totalPages <= 1) return null
+export function Pagination({
+  page,
+  totalPages,
+  onPageChange,
+}: PaginationProps) {
+  if (totalPages <= 1) return null;
 
   return (
     <div className="flex items-center justify-between pt-2">
@@ -34,5 +38,5 @@ export function Pagination({ page, totalPages, onPageChange }: PaginationProps) 
         </button>
       </div>
     </div>
-  )
+  );
 }

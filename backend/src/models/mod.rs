@@ -8,5 +8,6 @@ pub mod proveedor;
 pub mod recepcion;
 pub mod solicitud;
 pub mod stock;
+pub mod stock_snapshot;
 pub mod unidad_basica;
 pub mod usuario;

@@ -648,20 +648,26 @@ async fn crear_recepcion_simple_sin_lote_ni_vto_ok(pool: PgPool) {
         &Uuid::new_v4().to_string(),
     )
     .await;
-    assert_eq!(status, StatusCode::CREATED, "el simple sin lote debe crearse");
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "el simple sin lote debe crearse"
+    );
 
     // Stock aplicado.
     let stock = stock_del_producto(&pool, producto_id, 1).await;
-    assert!(stock > rust_decimal::Decimal::ZERO, "el stock del simple se aplica");
+    assert!(
+        stock > rust_decimal::Decimal::ZERO,
+        "el stock del simple se aplica"
+    );
 
     // Lote implícito: sentinela 'IMPL-' y sin vencimiento.
-    let (numero_lote, fv): (String, Option<chrono::NaiveDate>) = sqlx::query_as(
-        "SELECT numero_lote, fecha_vencimiento FROM lotes WHERE producto_id = $1",
-    )
-    .bind(producto_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let (numero_lote, fv): (String, Option<chrono::NaiveDate>) =
+        sqlx::query_as("SELECT numero_lote, fecha_vencimiento FROM lotes WHERE producto_id = $1")
+            .bind(producto_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert!(fv.is_none(), "lote simple sin vencimiento");
     assert!(
         numero_lote.starts_with("IMPL-"),

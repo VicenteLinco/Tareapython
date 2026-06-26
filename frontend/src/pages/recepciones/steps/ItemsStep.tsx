@@ -1,25 +1,31 @@
 // frontend/src/pages/recepciones/steps/ItemsStep.tsx
-import { Package } from 'lucide-react'
-import { ReceptionItemCard } from '../components/item-card'
-import { ProductoAutocomplete } from '../components/producto-autocomplete'
-import { LabelsSection } from '../components/labels-section'
-import { ScannerPanel } from '../components/scanner-panel'
-import { isCardComplete } from '../components/item-card-utils'
-import { AsignarCodigoModal } from '@/components/shared/AsignarCodigoModal'
-import type { RecepcionWizardReturn } from '../hooks/useRecepcionWizard'
-import type { RecepcionItemsReturn } from '../hooks/useRecepcionItems'
-import type { Area, Producto } from '@/types'
+import { Package } from "lucide-react";
+import { ReceptionItemCard } from "../components/item-card";
+import { ProductoAutocomplete } from "../components/producto-autocomplete";
+import { LabelsSection } from "../components/labels-section";
+import { ScannerPanel } from "../components/scanner-panel";
+import { isCardComplete } from "../components/item-card-utils";
+import { AsignarCodigoModal } from "@/components/shared/AsignarCodigoModal";
+import type { RecepcionWizardReturn } from "../hooks/useRecepcionWizard";
+import type { RecepcionItemsReturn } from "../hooks/useRecepcionItems";
+import type { Area, Producto } from "@/types";
 
 interface Props {
-  wizard: RecepcionWizardReturn
-  items: RecepcionItemsReturn
-  productos: Producto[] | undefined
-  areas: Area[] | undefined
-  monedaSimbolo: string
+  wizard: RecepcionWizardReturn;
+  items: RecepcionItemsReturn;
+  productos: Producto[] | undefined;
+  areas: Area[] | undefined;
+  monedaSimbolo: string;
 }
 
-export function ItemsStep({ wizard, items, productos, areas, monedaSimbolo }: Props) {
-  const { proveedorId, decision } = wizard
+export function ItemsStep({
+  wizard,
+  items,
+  productos,
+  areas,
+  monedaSimbolo,
+}: Props) {
+  const { proveedorId, decision } = wizard;
   const {
     detalles,
     scannerPaused,
@@ -35,18 +41,20 @@ export function ItemsStep({ wizard, items, productos, areas, monedaSimbolo }: Pr
     handleAddLote,
     handleRemoveLote,
     handleRemove,
-  } = items
+  } = items;
 
-  const itemsCompletos = detalles.filter(isCardComplete).length
+  const itemsCompletos = detalles.filter(isCardComplete).length;
 
   return (
     <div className="space-y-4">
       {/* Búsqueda / scan */}
       <ProductoAutocomplete
         productos={productos ?? []}
-        excluidos={detalles.map(d => d.producto_id)}
+        excluidos={detalles.map((d) => d.producto_id)}
         proveedorId={proveedorId}
-        onSelect={prod => { addProducto(prod) }}
+        onSelect={(prod) => {
+          addProducto(prod);
+        }}
         onScan={handleSearch}
       />
 
@@ -59,16 +67,27 @@ export function ItemsStep({ wizard, items, productos, areas, monedaSimbolo }: Pr
       {pendingUnknownCode && (
         <AsignarCodigoModal
           codigo={pendingUnknownCode}
-          productos={productos?.map(p => ({ id: String(p.id), nombre: p.nombre, codigo_interno: p.codigo_interno ?? null, sku: p.sku ?? null })) ?? []}
+          productos={
+            productos?.map((p) => ({
+              id: String(p.id),
+              nombre: p.nombre,
+              codigo_interno: p.codigo_interno ?? null,
+              sku: p.sku ?? null,
+            })) ?? []
+          }
           onClose={clearPendingUnknownCode}
           onAsignado={() => {
-            const code = pendingUnknownCode
-            clearPendingUnknownCode()
-            handleSearch(code)
+            const code = pendingUnknownCode;
+            clearPendingUnknownCode();
+            handleSearch(code);
           }}
           onCreadoYAsignado={(prodId, lote, vencimiento) => {
-            clearPendingUnknownCode()
-            addProductoConLote(prodId, { codigo_lote: lote, fecha_vencimiento: vencimiento, cantidad: 1 })
+            clearPendingUnknownCode();
+            addProductoConLote(prodId, {
+              codigo_lote: lote,
+              fecha_vencimiento: vencimiento,
+              cantidad: 1,
+            });
           }}
           proveedorId={proveedorId}
         />
@@ -78,11 +97,13 @@ export function ItemsStep({ wizard, items, productos, areas, monedaSimbolo }: Pr
       {detalles.length === 0 ? (
         <div className="card bg-base-100 border border-dashed p-12 text-center">
           <Package className="mx-auto mb-3 size-10 text-base-content/30" />
-          <p className="opacity-50 text-sm">Escanea o busca productos para agregar ítems a la recepción</p>
+          <p className="opacity-50 text-sm">
+            Escanea o busca productos para agregar ítems a la recepción
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
-          {detalles.map(d => (
+          {detalles.map((d) => (
             <ReceptionItemCard
               key={d.id}
               detalle={d}
@@ -101,18 +122,23 @@ export function ItemsStep({ wizard, items, productos, areas, monedaSimbolo }: Pr
       {/* Aviso de ítems incompletos */}
       {detalles.length > 0 && itemsCompletos < detalles.length && (
         <p className="text-xs text-warning text-center">
-          {detalles.length - itemsCompletos} ítem(s) incompleto(s) — completa lote, vencimiento y área para confirmar
+          {detalles.length - itemsCompletos} ítem(s) incompleto(s) — completa
+          lote, vencimiento y área para confirmar
         </p>
       )}
 
       {/* Sección etiquetas */}
-      {decision !== 'rechazada' && (
+      {decision !== "rechazada" && (
         <LabelsSection
           detalles={detalles}
-          onToggleEtiqueta={(detalleId, loteId, val) => handleChangeLote(detalleId, loteId, { incluir_etiqueta: val })}
-          onCantidadEtiqueta={(detalleId, loteId, val) => handleChangeLote(detalleId, loteId, { cantidad_etiquetas: val })}
+          onToggleEtiqueta={(detalleId, loteId, val) =>
+            handleChangeLote(detalleId, loteId, { incluir_etiqueta: val })
+          }
+          onCantidadEtiqueta={(detalleId, loteId, val) =>
+            handleChangeLote(detalleId, loteId, { cantidad_etiquetas: val })
+          }
         />
       )}
     </div>
-  )
+  );
 }

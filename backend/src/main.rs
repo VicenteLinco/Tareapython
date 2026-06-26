@@ -225,6 +225,12 @@ async fn main() {
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     tracing::info!("Servidor iniciado en {}", addr);
 
+    // Iniciar el Job de Auto-descarte de Vencidos en background
+    let pool_for_job = pool.clone();
+    tokio::spawn(async move {
+        crate::services::vencimientos_job::start_auto_descarte_job(pool_for_job).await;
+    });
+
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }

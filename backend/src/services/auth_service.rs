@@ -1,10 +1,10 @@
-use sqlx::{PgPool, Row};
-use uuid::Uuid;
-use chrono::{TimeZone, Utc};
-use sha2::{Digest, Sha256};
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use chrono::{TimeZone, Utc};
+use sha2::{Digest, Sha256};
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
 
 use crate::auth::jwt::{create_access_token, create_refresh_token, verify_refresh_token};
 use crate::auth::models::{
@@ -155,11 +155,13 @@ impl AuthService {
             return Err(AppError::Unauthorized);
         }
 
-        let user = sqlx::query("SELECT id, rol, activo FROM usuarios WHERE id = $1 AND deleted_at IS NULL")
-            .bind(refresh_claims.sub)
-            .fetch_optional(pool)
-            .await?
-            .ok_or(AppError::Unauthorized)?;
+        let user = sqlx::query(
+            "SELECT id, rol, activo FROM usuarios WHERE id = $1 AND deleted_at IS NULL",
+        )
+        .bind(refresh_claims.sub)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
 
         let activo: bool = user.get("activo");
         if !activo {
@@ -279,10 +281,11 @@ impl AuthService {
             ));
         }
 
-        let user = sqlx::query("SELECT password_hash FROM usuarios WHERE id = $1 AND deleted_at IS NULL")
-            .bind(claims_sub)
-            .fetch_one(pool)
-            .await?;
+        let user =
+            sqlx::query("SELECT password_hash FROM usuarios WHERE id = $1 AND deleted_at IS NULL")
+                .bind(claims_sub)
+                .fetch_one(pool)
+                .await?;
 
         let password_hash: String = user.get("password_hash");
         let parsed_hash = PasswordHash::new(&password_hash)

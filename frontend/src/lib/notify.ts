@@ -1,11 +1,11 @@
-import { toast } from 'sonner'
+import { toast } from "sonner";
 
 const DURATION = {
   success: 3000,
   error: 5000,
   warning: 4000,
   info: 3500,
-} as const
+} as const;
 
 export const notify = {
   success: (message: string, description?: string) =>
@@ -22,7 +22,6 @@ export const notify = {
 
   promise: <T>(
     promise: Promise<T>,
-    msgs: { loading: string; success: string; error: string }
-  ) =>
-    toast.promise(promise, msgs),
-}
+    msgs: { loading: string; success: string; error: string },
+  ) => toast.promise(promise, msgs),
+};

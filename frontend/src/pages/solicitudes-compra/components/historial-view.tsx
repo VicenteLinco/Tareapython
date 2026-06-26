@@ -1,31 +1,31 @@
 // frontend/src/pages/solicitudes-compra/components/historial-view.tsx
-import { Search, ArrowRight, User } from 'lucide-react'
-import { cn, formatDate } from '@/lib/utils'
-import { Input } from '@/components/ui/input'
-import { PageLoading } from '@/components/ui/page-state'
-import { EmptyState } from '@/components/ui/empty-state'
-import { EstadoBadge } from '@/components/ui/estado-badge'
-import type { SolicitudResumen } from '@/types'
+import { Search, ArrowRight, User } from "lucide-react";
+import { cn, formatDate } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { PageLoading } from "@/components/ui/page-state";
+import { EmptyState } from "@/components/ui/empty-state";
+import { EstadoBadge } from "@/components/ui/estado-badge";
+import type { SolicitudResumen } from "@/types";
 
 interface HistorialViewProps {
-  solicitudes: SolicitudResumen[] | undefined
-  isLoading: boolean
-  search: string
-  onSearchChange: (v: string) => void
-  onSelectSolicitud: (id: string) => void
-  estado: string | null
-  onEstadoChange: (v: string | null) => void
+  solicitudes: SolicitudResumen[] | undefined;
+  isLoading: boolean;
+  search: string;
+  onSearchChange: (v: string) => void;
+  onSelectSolicitud: (id: string) => void;
+  estado: string | null;
+  onEstadoChange: (v: string | null) => void;
 }
 
 const ESTADO_FILTROS: { value: string | null; label: string }[] = [
-  { value: null, label: 'Todas' },
-  { value: 'guardada', label: 'Pendientes' },
-  { value: 'parcialmente_enviada', label: 'Env. parcial' },
-  { value: 'enviada', label: 'Enviadas' },
-  { value: 'parcialmente_recibida', label: 'Rec. parcial' },
-  { value: 'completada', label: 'Completadas' },
-  { value: 'cancelada', label: 'Canceladas' },
-]
+  { value: null, label: "Todas" },
+  { value: "guardada", label: "Pendientes" },
+  { value: "parcialmente_enviada", label: "Env. parcial" },
+  { value: "enviada", label: "Enviadas" },
+  { value: "parcialmente_recibida", label: "Rec. parcial" },
+  { value: "completada", label: "Completadas" },
+  { value: "cancelada", label: "Canceladas" },
+];
 
 export function HistorialView({
   solicitudes,
@@ -46,20 +46,20 @@ export function HistorialView({
               placeholder="Buscar por N° documento o usuario..."
               className="pl-10 h-10 rounded-xl"
               value={search}
-              onChange={e => onSearchChange(e.target.value)}
+              onChange={(e) => onSearchChange(e.target.value)}
             />
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
-          {ESTADO_FILTROS.map(f => (
+          {ESTADO_FILTROS.map((f) => (
             <button
               key={f.label}
               onClick={() => onEstadoChange(f.value)}
               className={cn(
-                'px-3 h-7 rounded-full text-xs font-bold transition-colors border',
+                "px-3 h-7 rounded-full text-xs font-bold transition-colors border",
                 estado === f.value
-                  ? 'bg-primary text-primary-content border-primary shadow-sm'
-                  : 'bg-base-100 border-base-300 hover:bg-base-200 opacity-70 hover:opacity-100'
+                  ? "bg-primary text-primary-content border-primary shadow-sm"
+                  : "bg-base-100 border-base-300 hover:bg-base-200 opacity-70 hover:opacity-100",
               )}
             >
               {f.label}
@@ -82,39 +82,60 @@ export function HistorialView({
             <table className="table table-md table-zebra w-full">
               <thead className="bg-base-200/50 sticky top-0 z-10">
                 <tr className="border-b border-base-300">
-                  <th className="text-[10px] font-black uppercase tracking-widest opacity-40">Documento</th>
-                  <th className="text-[10px] font-black uppercase tracking-widest opacity-40">Fecha</th>
-                  <th className="text-[10px] font-black uppercase tracking-widest opacity-40">Usuario</th>
-                  <th className="text-[10px] font-black uppercase tracking-widest opacity-40">Proveedor</th>
-                  <th className="text-[10px] font-black uppercase tracking-widest opacity-40 text-center">Items</th>
-                  <th className="text-[10px] font-black uppercase tracking-widest opacity-40">Estado</th>
-                  <th className="text-[10px] font-black uppercase tracking-widest opacity-40 text-right">Acciones</th>
+                  <th className="text-[10px] font-black uppercase tracking-widest opacity-40">
+                    Documento
+                  </th>
+                  <th className="text-[10px] font-black uppercase tracking-widest opacity-40">
+                    Fecha
+                  </th>
+                  <th className="text-[10px] font-black uppercase tracking-widest opacity-40">
+                    Usuario
+                  </th>
+                  <th className="text-[10px] font-black uppercase tracking-widest opacity-40">
+                    Proveedor
+                  </th>
+                  <th className="text-[10px] font-black uppercase tracking-widest opacity-40 text-center">
+                    Items
+                  </th>
+                  <th className="text-[10px] font-black uppercase tracking-widest opacity-40">
+                    Estado
+                  </th>
+                  <th className="text-[10px] font-black uppercase tracking-widest opacity-40 text-right">
+                    Acciones
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {solicitudes?.map(s => (
+                {solicitudes?.map((s) => (
                   <tr
                     key={s.id}
                     className="hover:bg-primary/5 transition-colors cursor-pointer group"
                     onClick={() => onSelectSolicitud(s.id)}
                   >
                     <td className="font-bold text-sm">{s.numero_documento}</td>
-                    <td className="text-xs opacity-60">{formatDate(s.fecha_creacion)}</td>
+                    <td className="text-xs opacity-60">
+                      {formatDate(s.fecha_creacion)}
+                    </td>
                     <td className="text-xs font-medium">
                       <div className="flex items-center gap-2">
                         <User className="h-3 w-3" /> {s.usuario_nombre}
                       </div>
                     </td>
                     <td className="text-xs font-medium max-w-[180px]">
-                      <span className="truncate block" title={s.proveedores_nombres ?? undefined}>
+                      <span
+                        className="truncate block"
+                        title={s.proveedores_nombres ?? undefined}
+                      >
                         {s.proveedores_count <= 0
-                          ? 'Sin proveedor'
+                          ? "Sin proveedor"
                           : s.proveedores_count === 1
                             ? s.proveedores_nombres
                             : `${s.proveedores_count} proveedores`}
                       </span>
                     </td>
-                    <td className="text-center font-mono text-sm">{s.items_count}</td>
+                    <td className="text-center font-mono text-sm">
+                      {s.items_count}
+                    </td>
                     <td>
                       <EstadoBadge estado={s.estado} size="sm" />
                     </td>
@@ -131,5 +152,5 @@ export function HistorialView({
         )}
       </div>
     </div>
-  )
+  );
 }

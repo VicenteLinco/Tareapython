@@ -1,65 +1,88 @@
-import { useState } from 'react'
-import { Check, X, ShieldAlert, Sparkles, Tag, Layers, RefreshCw, AlertCircle, FileText } from 'lucide-react'
+import { useState } from "react";
+import {
+  Check,
+  X,
+  ShieldAlert,
+  Sparkles,
+  Tag,
+  Layers,
+  RefreshCw,
+  AlertCircle,
+  FileText,
+} from "lucide-react";
 import {
   useProductosQuarantine,
   useAprobarProductoQuarantine,
   useRechazarProductoQuarantine,
   useCategorias,
   useUnidadesBasicas,
-} from '@/hooks/dominio'
-import { notify } from '@/lib/notify'
-import type { Producto } from '@/types'
+} from "@/hooks/dominio";
+import { notify } from "@/lib/notify";
+import type { Producto } from "@/types";
 
 export default function BandejaCatalogacionTab() {
-  const { data: quarantinedProducts, isLoading, refetch, isFetching } = useProductosQuarantine()
-  const { data: categorias } = useCategorias()
-  const { data: unidades } = useUnidadesBasicas()
+  const {
+    data: quarantinedProducts,
+    isLoading,
+    refetch,
+    isFetching,
+  } = useProductosQuarantine();
+  const { data: categorias } = useCategorias();
+  const { data: unidades } = useUnidadesBasicas();
 
-  const aprobarMutation = useAprobarProductoQuarantine()
-  const rechazarMutation = useRechazarProductoQuarantine()
+  const aprobarMutation = useAprobarProductoQuarantine();
+  const rechazarMutation = useRechazarProductoQuarantine();
 
   // Selected product for approval configuration
-  const [selectedProduct, setSelectedProduct] = useState<Producto | null>(null)
-  const [selectedCategoriaId, setSelectedCategoriaId] = useState<string>('')
-  const [selectedControlLote, setSelectedControlLote] = useState<'simple' | 'con_vto' | 'trazable'>('con_vto')
+  const [selectedProduct, setSelectedProduct] = useState<Producto | null>(null);
+  const [selectedCategoriaId, setSelectedCategoriaId] = useState<string>("");
+  const [selectedControlLote, setSelectedControlLote] = useState<
+    "simple" | "con_vto" | "trazable"
+  >("con_vto");
 
   // New editable metadata fields
-  const [nombre, setNombre] = useState<string>('')
-  const [descripcion, setDescripcion] = useState<string>('')
-  const [fabricante, setFabricante] = useState<string>('')
-  const [unidadBaseId, setUnidadBaseId] = useState<string>('')
-  const [presNombre, setPresNombre] = useState<string>('')
-  const [presNombrePlural, setPresNombrePlural] = useState<string>('')
-  const [presFactor, setPresFactor] = useState<string>('')
-  const [ubicacion, setUbicacion] = useState<string>('')
+  const [nombre, setNombre] = useState<string>("");
+  const [descripcion, setDescripcion] = useState<string>("");
+  const [fabricante, setFabricante] = useState<string>("");
+  const [unidadBaseId, setUnidadBaseId] = useState<string>("");
+  const [presNombre, setPresNombre] = useState<string>("");
+  const [presNombrePlural, setPresNombrePlural] = useState<string>("");
+  const [presFactor, setPresFactor] = useState<string>("");
+  const [ubicacion, setUbicacion] = useState<string>("");
 
   const handleOpenApproveModal = (product: Producto) => {
-    setSelectedProduct(product)
-    setSelectedCategoriaId(product.categoria_id ? String(product.categoria_id) : '')
-    setSelectedControlLote((product.control_lote as 'simple' | 'con_vto' | 'trazable') || 'con_vto')
-    setNombre(product.nombre || '')
-    setDescripcion(product.descripcion || '')
-    setFabricante(product.fabricante || '')
-    setUnidadBaseId(product.unidad_base_id ? String(product.unidad_base_id) : '')
-    setPresNombre(product.pres_nombre || '')
-    setPresNombrePlural(product.pres_nombre_plural || '')
-    setPresFactor(product.pres_factor ? String(product.pres_factor) : '')
-    setUbicacion(product.ubicacion || '')
-  }
+    setSelectedProduct(product);
+    setSelectedCategoriaId(
+      product.categoria_id ? String(product.categoria_id) : "",
+    );
+    setSelectedControlLote(
+      (product.control_lote as "simple" | "con_vto" | "trazable") || "con_vto",
+    );
+    setNombre(product.nombre || "");
+    setDescripcion(product.descripcion || "");
+    setFabricante(product.fabricante || "");
+    setUnidadBaseId(
+      product.unidad_base_id ? String(product.unidad_base_id) : "",
+    );
+    setPresNombre(product.pres_nombre || "");
+    setPresNombrePlural(product.pres_nombre_plural || "");
+    setPresFactor(product.pres_factor ? String(product.pres_factor) : "");
+    setUbicacion(product.ubicacion || "");
+  };
 
   const handleConfirmApprove = () => {
-    if (!selectedProduct) return
+    if (!selectedProduct) return;
     if (!nombre.trim()) {
-      notify.error('El nombre del producto no puede estar vacío')
-      return
+      notify.error("El nombre del producto no puede estar vacío");
+      return;
     }
     if (!selectedCategoriaId) {
-      notify.error('Selecciona una categoría antes de aprobar')
-      return
+      notify.error("Selecciona una categoría antes de aprobar");
+      return;
     }
     if (!unidadBaseId) {
-      notify.error('Selecciona una unidad de medida básica')
-      return
+      notify.error("Selecciona una unidad de medida básica");
+      return;
     }
 
     const payload: any = {
@@ -70,27 +93,29 @@ export default function BandejaCatalogacionTab() {
       control_lote: selectedControlLote,
       fabricante: fabricante.trim() || null,
       ubicacion: ubicacion.trim() || null,
-    }
+    };
 
     // Presentation logic
     if (presNombre.trim() || presNombrePlural.trim() || presFactor.trim()) {
-      payload.pres_nombre = presNombre.trim() || null
-      payload.pres_nombre_plural = presNombrePlural.trim() || null
+      payload.pres_nombre = presNombre.trim() || null;
+      payload.pres_nombre_plural = presNombrePlural.trim() || null;
       if (presFactor.trim()) {
-        const factor = Number(presFactor)
+        const factor = Number(presFactor);
         if (isNaN(factor) || factor <= 0) {
-          notify.error('El factor de conversión debe ser un número mayor a 0')
-          return
+          notify.error("El factor de conversión debe ser un número mayor a 0");
+          return;
         }
-        payload.pres_factor = factor
+        payload.pres_factor = factor;
       } else {
-        notify.error('Debes indicar el factor de conversión si defines una presentación')
-        return
+        notify.error(
+          "Debes indicar el factor de conversión si defines una presentación",
+        );
+        return;
       }
     } else {
-      payload.pres_nombre = null
-      payload.pres_nombre_plural = null
-      payload.pres_factor = null
+      payload.pres_nombre = null;
+      payload.pres_nombre_plural = null;
+      payload.pres_factor = null;
     }
 
     aprobarMutation.mutate(
@@ -100,38 +125,52 @@ export default function BandejaCatalogacionTab() {
       },
       {
         onSuccess: () => {
-          setSelectedProduct(null)
-          refetch()
+          setSelectedProduct(null);
+          refetch();
         },
-      }
-    )
-  }
+      },
+    );
+  };
 
   const handleReject = (product: Producto) => {
-    if (window.confirm(`¿Estás seguro de rechazar y eliminar "${product.nombre}"?`)) {
-      rechazarMutation.mutate(product.id)
+    if (
+      window.confirm(
+        `¿Estás seguro de rechazar y eliminar "${product.nombre}"?`,
+      )
+    ) {
+      rechazarMutation.mutate(product.id);
     }
-  }
+  };
 
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3">
         <span className="loading loading-spinner loading-lg text-primary" />
-        <p className="text-sm opacity-50">Cargando bandeja de catalogación...</p>
+        <p className="text-sm opacity-50">
+          Cargando bandeja de catalogación...
+        </p>
       </div>
-    )
+    );
   }
 
   const getOrigenBadge = (origen: string) => {
     switch (origen) {
-      case 'api_regulatoria':
-        return <span className="badge badge-primary badge-sm gap-1"><Sparkles className="h-3 w-3" /> API Salud</span>
-      case 'guia_pdf':
-        return <span className="badge badge-secondary badge-sm gap-1"><Tag className="h-3 w-3" /> Guía PDF</span>
+      case "api_regulatoria":
+        return (
+          <span className="badge badge-primary badge-sm gap-1">
+            <Sparkles className="h-3 w-3" /> API Salud
+          </span>
+        );
+      case "guia_pdf":
+        return (
+          <span className="badge badge-secondary badge-sm gap-1">
+            <Tag className="h-3 w-3" /> Guía PDF
+          </span>
+        );
       default:
-        return <span className="badge badge-ghost badge-sm">Manual</span>
+        return <span className="badge badge-ghost badge-sm">Manual</span>;
     }
-  }
+  };
 
   return (
     <div className="space-y-6">
@@ -143,7 +182,8 @@ export default function BandejaCatalogacionTab() {
             Bandeja de Catalogación (Cuarentena)
           </h2>
           <p className="text-xs opacity-60">
-            Productos creados por canales automatizados que requieren revisión clínica y aprobación.
+            Productos creados por canales automatizados que requieren revisión
+            clínica y aprobación.
           </p>
         </div>
         <button
@@ -151,7 +191,9 @@ export default function BandejaCatalogacionTab() {
           disabled={isFetching}
           className="btn btn-sm btn-ghost gap-1"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+          <RefreshCw
+            className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`}
+          />
           Refrescar
         </button>
       </div>
@@ -161,7 +203,8 @@ export default function BandejaCatalogacionTab() {
           <Check className="h-12 w-12 text-success opacity-80" />
           <h3 className="font-bold text-base">¡Bandeja vacía!</h3>
           <p className="text-xs opacity-60 max-w-sm">
-            No hay productos pendientes de catalogación. Todos los registros automáticos están aprobados y sus existencias liberadas.
+            No hay productos pendientes de catalogación. Todos los registros
+            automáticos están aprobados y sus existencias liberadas.
           </p>
         </div>
       ) : (
@@ -181,8 +224,14 @@ export default function BandejaCatalogacionTab() {
               {quarantinedProducts?.map((product) => (
                 <tr key={product.id} className="hover">
                   <td className="font-semibold">{product.nombre}</td>
-                  <td><span className="font-mono">{product.sku || '—'}</span></td>
-                  <td><span className="font-mono">{product.codigo_interno || '—'}</span></td>
+                  <td>
+                    <span className="font-mono">{product.sku || "—"}</span>
+                  </td>
+                  <td>
+                    <span className="font-mono">
+                      {product.codigo_interno || "—"}
+                    </span>
+                  </td>
                   <td>{getOrigenBadge(product.origen_registro)}</td>
                   <td>{new Date(product.created_at).toLocaleString()}</td>
                   <td className="text-right">
@@ -220,18 +269,21 @@ export default function BandejaCatalogacionTab() {
               Aprobar Producto en Catalogación
             </h3>
             <p className="text-xs opacity-60 mt-1">
-              Asigna los metadatos necesarios para incorporar "{selectedProduct.nombre}" al catálogo aprobado.
+              Asigna los metadatos necesarios para incorporar "
+              {selectedProduct.nombre}" al catálogo aprobado.
             </p>
 
             <div className="space-y-4 py-4">
               {/* Product summary info */}
               <div className="bg-base-200 p-3 rounded-lg border border-base-300 text-xs space-y-1.5">
                 <div>
-                  <span className="opacity-50">SKU/REF:</span>{' '}
-                  <strong className="font-mono">{selectedProduct.sku || '—'}</strong>
+                  <span className="opacity-50">SKU/REF:</span>{" "}
+                  <strong className="font-mono">
+                    {selectedProduct.sku || "—"}
+                  </strong>
                 </div>
                 <div>
-                  <span className="opacity-50">Origen de registro:</span>{' '}
+                  <span className="opacity-50">Origen de registro:</span>{" "}
                   {getOrigenBadge(selectedProduct.origen_registro)}
                 </div>
               </div>
@@ -240,7 +292,9 @@ export default function BandejaCatalogacionTab() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Left Column */}
                 <div className="space-y-4">
-                  <h4 className="font-bold text-xs opacity-70 uppercase tracking-wider">Información del Producto</h4>
+                  <h4 className="font-bold text-xs opacity-70 uppercase tracking-wider">
+                    Información del Producto
+                  </h4>
 
                   {/* Nombre */}
                   <div className="form-control">
@@ -258,7 +312,9 @@ export default function BandejaCatalogacionTab() {
                   {/* Fabricante */}
                   <div className="form-control">
                     <label className="label py-1">
-                      <span className="label-text font-semibold">Fabricante</span>
+                      <span className="label-text font-semibold">
+                        Fabricante
+                      </span>
                     </label>
                     <input
                       type="text"
@@ -282,7 +338,9 @@ export default function BandejaCatalogacionTab() {
                       value={selectedCategoriaId}
                       onChange={(e) => setSelectedCategoriaId(e.target.value)}
                     >
-                      <option value="" disabled>Selecciona una categoría...</option>
+                      <option value="" disabled>
+                        Selecciona una categoría...
+                      </option>
                       {categorias?.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.nombre}
@@ -294,7 +352,9 @@ export default function BandejaCatalogacionTab() {
                   {/* Ubicación */}
                   <div className="form-control">
                     <label className="label py-1">
-                      <span className="label-text font-semibold">Ubicación</span>
+                      <span className="label-text font-semibold">
+                        Ubicación
+                      </span>
                     </label>
                     <input
                       type="text"
@@ -308,19 +368,25 @@ export default function BandejaCatalogacionTab() {
 
                 {/* Right Column */}
                 <div className="space-y-4">
-                  <h4 className="font-bold text-xs opacity-70 uppercase tracking-wider">Control y Presentación</h4>
+                  <h4 className="font-bold text-xs opacity-70 uppercase tracking-wider">
+                    Control y Presentación
+                  </h4>
 
                   {/* Unidad Base */}
                   <div className="form-control">
                     <label className="label py-1">
-                      <span className="label-text font-semibold">Unidad Base</span>
+                      <span className="label-text font-semibold">
+                        Unidad Base
+                      </span>
                     </label>
                     <select
                       className="select select-bordered select-sm w-full bg-base-100 border-base-300 focus:border-primary"
                       value={unidadBaseId}
                       onChange={(e) => setUnidadBaseId(e.target.value)}
                     >
-                      <option value="" disabled>Selecciona una unidad...</option>
+                      <option value="" disabled>
+                        Selecciona una unidad...
+                      </option>
                       {unidades?.map((u) => (
                         <option key={u.id} value={u.id}>
                           {u.nombre} ({u.nombre_plural})
@@ -340,11 +406,21 @@ export default function BandejaCatalogacionTab() {
                     <select
                       className="select select-bordered select-sm w-full bg-base-100 border-base-300 focus:border-primary"
                       value={selectedControlLote}
-                      onChange={(e) => setSelectedControlLote(e.target.value as 'simple' | 'con_vto' | 'trazable')}
+                      onChange={(e) =>
+                        setSelectedControlLote(
+                          e.target.value as "simple" | "con_vto" | "trazable",
+                        )
+                      }
                     >
-                      <option value="con_vto">Con Vencimiento (Recomendado reactivos)</option>
-                      <option value="simple">Simple (Cantidad sin lotes detallados)</option>
-                      <option value="trazable">Trazable completo (Serie y lotes estrictos)</option>
+                      <option value="con_vto">
+                        Con Vencimiento (Recomendado reactivos)
+                      </option>
+                      <option value="simple">
+                        Simple (Cantidad sin lotes detallados)
+                      </option>
+                      <option value="trazable">
+                        Trazable completo (Serie y lotes estrictos)
+                      </option>
                     </select>
                   </div>
 
@@ -358,7 +434,9 @@ export default function BandejaCatalogacionTab() {
                     <div className="grid grid-cols-2 gap-2">
                       <div className="form-control col-span-2">
                         <label className="label py-0.5">
-                          <span className="text-[10px] font-semibold">Nombre Presentación</span>
+                          <span className="text-[10px] font-semibold">
+                            Nombre Presentación
+                          </span>
                         </label>
                         <input
                           type="text"
@@ -371,7 +449,9 @@ export default function BandejaCatalogacionTab() {
 
                       <div className="form-control">
                         <label className="label py-0.5">
-                          <span className="text-[10px] font-semibold">Plural</span>
+                          <span className="text-[10px] font-semibold">
+                            Plural
+                          </span>
                         </label>
                         <input
                           type="text"
@@ -384,7 +464,9 @@ export default function BandejaCatalogacionTab() {
 
                       <div className="form-control">
                         <label className="label py-0.5">
-                          <span className="text-[10px] font-semibold">Factor</span>
+                          <span className="text-[10px] font-semibold">
+                            Factor
+                          </span>
                         </label>
                         <input
                           type="number"
@@ -420,7 +502,10 @@ export default function BandejaCatalogacionTab() {
               <div className="alert alert-warning text-xs mt-3 flex items-start gap-2 bg-warning/10 border-warning">
                 <AlertCircle className="h-4 w-4 shrink-0 text-warning" />
                 <span>
-                  Al aprobar este producto, todo el stock cargado en cuarentena se liberará inmediatamente para consumo. Si modifica el factor de conversión, las existencias cargadas se escalarán proporcionalmente.
+                  Al aprobar este producto, todo el stock cargado en cuarentena
+                  se liberará inmediatamente para consumo. Si modifica el factor
+                  de conversión, las existencias cargadas se escalarán
+                  proporcionalmente.
                 </span>
               </div>
             </div>
@@ -452,5 +537,5 @@ export default function BandejaCatalogacionTab() {
         </div>
       )}
     </div>
-  )
+  );
 }

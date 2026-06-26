@@ -22,7 +22,9 @@ struct CreatePresentacion {
     codigo_barras: Option<String>,
     gtin: Option<String>,
     gs1_habilitado: Option<bool>,
-    sku: Option<String>,
+    pub sku: Option<String>,
+    pub proveedor_id: Option<i32>,
+    pub precio_adquisicion: Option<Decimal>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,8 +35,10 @@ struct UpdatePresentacion {
     codigo_barras: Option<String>,
     gtin: Option<String>,
     gs1_habilitado: Option<bool>,
-    sku: Option<String>,
-    version: i32,
+    pub sku: Option<String>,
+    pub proveedor_id: Option<i32>,
+    pub precio_adquisicion: Option<Decimal>,
+    pub version: i32,
 }
 
 async fn listar(
@@ -61,9 +65,12 @@ async fn crear(
         gtin: req.gtin,
         gs1_habilitado: req.gs1_habilitado,
         sku: req.sku,
+        proveedor_id: req.proveedor_id,
+        precio_adquisicion: req.precio_adquisicion,
     };
 
-    let presentacion = PresentacionService::crear(&state.pool, producto_id, params, claims.sub).await?;
+    let presentacion =
+        PresentacionService::crear(&state.pool, producto_id, params, claims.sub).await?;
     Ok((axum::http::StatusCode::CREATED, Json(presentacion)))
 }
 
@@ -83,6 +90,8 @@ async fn actualizar(
         gtin: req.gtin,
         gs1_habilitado: req.gs1_habilitado,
         sku: req.sku,
+        proveedor_id: req.proveedor_id,
+        precio_adquisicion: req.precio_adquisicion,
         version: req.version,
     };
 
@@ -121,9 +130,7 @@ pub async fn assign_gtin(
     if let Some(explicit_gtin) = req.gtin {
         let len = explicit_gtin.len();
         if len != 13 && len != 14 {
-            return Err(AppError::Validation(
-                "GTIN must be 13 or 14 digits".into(),
-            ));
+            return Err(AppError::Validation("GTIN must be 13 or 14 digits".into()));
         }
         if !explicit_gtin.chars().all(|c| c.is_ascii_digit()) {
             return Err(AppError::Validation("GTIN must contain only digits".into()));
@@ -163,7 +170,9 @@ pub async fn assign_gtin(
             if msg.contains("idx_presentaciones_gtin_active")
                 || (msg.contains("unique") && msg.contains("gtin"))
             {
-                return Err(AppError::Conflict("GTIN already assigned to another active presentation".into()));
+                return Err(AppError::Conflict(
+                    "GTIN already assigned to another active presentation".into(),
+                ));
             }
             return Err(AppError::Sqlx(e));
         }

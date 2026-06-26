@@ -18,7 +18,10 @@ async fn test_obtener_configuracion_defaults(pool: PgPool) {
     let (status, json) = common::get_json(&app, "/api/v1/configuracion", &token).await;
     assert_eq!(status, StatusCode::OK, "got {:?}: {:?}", status, json);
 
-    assert_eq!(json["nombre_laboratorio"].as_str(), Some("Laboratorio Clínico"));
+    assert_eq!(
+        json["nombre_laboratorio"].as_str(),
+        Some("Laboratorio Clínico")
+    );
     assert_eq!(json["moneda_codigo"].as_str(), Some("CLP"));
     assert_eq!(json["moneda_simbolo"].as_str(), Some("$"));
     assert_eq!(json["dias_autonomia_objetivo"].as_i64(), Some(15));
@@ -49,7 +52,10 @@ async fn test_actualizar_configuracion_persiste(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
 
     let (_, json) = common::get_json(&app, "/api/v1/configuracion", &token).await;
-    assert_eq!(json["nombre_laboratorio"].as_str(), Some("Lab Central de Pruebas"));
+    assert_eq!(
+        json["nombre_laboratorio"].as_str(),
+        Some("Lab Central de Pruebas")
+    );
     assert_eq!(json["dias_autonomia_objetivo"].as_i64(), Some(21));
 }
 
@@ -108,7 +114,10 @@ async fn test_enviar_placeholder_no_borra_secreto(pool: PgPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(valor, "real-key", "el placeholder *** no debe sobrescribir el secreto");
+    assert_eq!(
+        valor, "real-key",
+        "el placeholder *** no debe sobrescribir el secreto"
+    );
 }
 
 /// PUT /api/v1/configuracion — un no-admin recibe 403.
@@ -124,7 +133,11 @@ async fn test_actualizar_requiere_admin(pool: PgPool) {
         serde_json::json!({ "nombre_laboratorio": "Hackeado" }),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "solo admin puede actualizar configuración");
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "solo admin puede actualizar configuración"
+    );
 }
 
 /// GET /api/v1/branding — endpoint público: nombre del laboratorio + imagen de

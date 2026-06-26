@@ -30,11 +30,10 @@ pub async fn procesar_descartes(
         }
     }
 
-    let virtual_discarded_id: Option<i32> = sqlx::query_scalar(
-        "SELECT id FROM areas WHERE nombre = 'VIRTUAL_DISCARDED'"
-    )
-    .fetch_optional(pool)
-    .await?;
+    let virtual_discarded_id: Option<i32> =
+        sqlx::query_scalar("SELECT id FROM areas WHERE nombre = 'VIRTUAL_DISCARDED'")
+            .fetch_optional(pool)
+            .await?;
 
     let mut tx = pool.begin().await?;
     let grupo = Uuid::new_v4();

@@ -1,7 +1,9 @@
 @import "tailwindcss";
 @import "./styles/tokens.css";
 @plugin "daisyui" {
-  themes: light --default, dark --prefersdark;
+  themes:
+    light --default,
+    dark --prefersdark;
   root: ":root";
 }
 
@@ -77,18 +79,23 @@
 
 @layer base {
   body {
-    font-family: "Outfit", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-family:
+      "Outfit",
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   /* Hide native number input spinners — use custom +/- buttons instead */
-  input[type=number].no-spinners::-webkit-inner-spin-button,
-  input[type=number].no-spinners::-webkit-outer-spin-button {
+  input[type="number"].no-spinners::-webkit-inner-spin-button,
+  input[type="number"].no-spinners::-webkit-outer-spin-button {
     -webkit-appearance: none;
     margin: 0;
   }
-  input[type=number].no-spinners {
+  input[type="number"].no-spinners {
     -moz-appearance: textfield;
   }
 
@@ -123,7 +130,12 @@
   /* For Firefox */
   * {
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklab, var(--color-base-content), transparent 90%) transparent;
+    scrollbar-color: color-mix(
+        in oklab,
+        var(--color-base-content),
+        transparent 90%
+      )
+      transparent;
   }
 }
 
@@ -151,8 +163,12 @@
 }
 
 @keyframes slide-up {
-  from { transform: translateY(100%); }
-  to   { transform: translateY(0); }
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 
 .animate-slide-up {
@@ -160,13 +176,28 @@
 }
 
 @keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  15%       { transform: translateX(-6px); }
-  30%       { transform: translateX(6px); }
-  45%       { transform: translateX(-5px); }
-  60%       { transform: translateX(5px); }
-  75%       { transform: translateX(-3px); }
-  90%       { transform: translateX(3px); }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  15% {
+    transform: translateX(-6px);
+  }
+  30% {
+    transform: translateX(6px);
+  }
+  45% {
+    transform: translateX(-5px);
+  }
+  60% {
+    transform: translateX(5px);
+  }
+  75% {
+    transform: translateX(-3px);
+  }
+  90% {
+    transform: translateX(3px);
+  }
 }
 
 .animate-shake {
@@ -174,8 +205,13 @@
 }
 
 @keyframes scan-flash {
-  0%, 15% { background-color: oklch(76% 0.177 163.223 / 0.18); }
-  100%     { background-color: transparent; }
+  0%,
+  15% {
+    background-color: oklch(76% 0.177 163.223 / 0.18);
+  }
+  100% {
+    background-color: transparent;
+  }
 }
 
 .scan-flash {
@@ -183,8 +219,15 @@
 }
 
 @keyframes pulse-cta {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-primary), transparent 55%); }
-  50%       { box-shadow: 0 0 0 6px color-mix(in oklab, var(--color-primary), transparent 100%); }
+  0%,
+  100% {
+    box-shadow: 0 0 0 0
+      color-mix(in oklab, var(--color-primary), transparent 55%);
+  }
+  50% {
+    box-shadow: 0 0 0 6px
+      color-mix(in oklab, var(--color-primary), transparent 100%);
+  }
 }
 
 /* Soft attention pulse for a ready-to-press primary action. */
@@ -245,12 +288,15 @@
   }
   .stat-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 25px -5px oklch(0 0 0 / 0.08), 0 4px 10px -6px oklch(0 0 0 / 0.05);
+    box-shadow:
+      0 8px 25px -5px oklch(0 0 0 / 0.08),
+      0 4px 10px -6px oklch(0 0 0 / 0.05);
   }
 
   /* Sidebar link active glow */
   .sidebar-link-active {
-    box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-primary), transparent 72%);
+    box-shadow: 0 0 0 1px
+      color-mix(in oklab, var(--color-primary), transparent 72%);
   }
 
   /* Table row hover slide */

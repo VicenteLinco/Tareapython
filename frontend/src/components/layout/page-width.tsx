@@ -1,26 +1,33 @@
-import { createContext, useContext, useLayoutEffect, useState, type ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  useLayoutEffect,
+  useState,
+  type ReactNode,
+} from "react";
 
 interface PageWidthContextValue {
-  fullWidth: boolean
-  setFullWidth: (value: boolean) => void
+  fullWidth: boolean;
+  setFullWidth: (value: boolean) => void;
 }
 
-const PageWidthContext = createContext<PageWidthContextValue | null>(null)
+const PageWidthContext = createContext<PageWidthContextValue | null>(null);
 
 export function PageWidthProvider({ children }: { children: ReactNode }) {
-  const [fullWidth, setFullWidth] = useState(false)
+  const [fullWidth, setFullWidth] = useState(false);
   return (
     <PageWidthContext.Provider value={{ fullWidth, setFullWidth }}>
       {children}
     </PageWidthContext.Provider>
-  )
+  );
 }
 
 /** Read the current layout width state. Used by the layout shell. */
 export function usePageWidth(): PageWidthContextValue {
-  const ctx = useContext(PageWidthContext)
-  if (!ctx) throw new Error('usePageWidth must be used within a PageWidthProvider')
-  return ctx
+  const ctx = useContext(PageWidthContext);
+  if (!ctx)
+    throw new Error("usePageWidth must be used within a PageWidthProvider");
+  return ctx;
 }
 
 /**
@@ -29,9 +36,9 @@ export function usePageWidth(): PageWidthContextValue {
  * The constraint is restored automatically when the page unmounts.
  */
 export function useFullWidthPage() {
-  const { setFullWidth } = usePageWidth()
+  const { setFullWidth } = usePageWidth();
   useLayoutEffect(() => {
-    setFullWidth(true)
-    return () => setFullWidth(false)
-  }, [setFullWidth])
+    setFullWidth(true);
+    return () => setFullWidth(false);
+  }, [setFullWidth]);
 }

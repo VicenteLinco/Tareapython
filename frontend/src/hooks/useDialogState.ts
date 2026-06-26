@@ -1,10 +1,10 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback } from "react";
 
 export interface DialogState {
-  open: boolean
-  onOpen: () => void
-  onClose: () => void
-  toggle: () => void
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  toggle: () => void;
 }
 
 /**
@@ -12,9 +12,9 @@ export interface DialogState {
  * Reemplaza el patrón `useState(false)` + handlers manuales.
  */
 export function useDialogState(initial = false): DialogState {
-  const [open, setOpen] = useState(initial)
-  const onOpen  = useCallback(() => setOpen(true), [])
-  const onClose = useCallback(() => setOpen(false), [])
-  const toggle  = useCallback(() => setOpen(v => !v), [])
-  return { open, onOpen, onClose, toggle }
+  const [open, setOpen] = useState(initial);
+  const onOpen = useCallback(() => setOpen(true), []);
+  const onClose = useCallback(() => setOpen(false), []);
+  const toggle = useCallback(() => setOpen((v) => !v), []);
+  return { open, onOpen, onClose, toggle };
 }

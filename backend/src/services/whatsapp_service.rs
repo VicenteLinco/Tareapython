@@ -1,7 +1,7 @@
-use sqlx::PgPool;
-use rust_decimal::Decimal;
 use crate::errors::AppError;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 
 #[derive(Debug, Clone)]
 pub struct WhatsappSettings {
@@ -136,9 +136,12 @@ pub async fn load_whatsapp_settings(pool: &PgPool) -> Result<WhatsappSettings, A
     .fetch_all(pool)
     .await?;
 
-    let mut api_url = std::env::var("WHATSAPP_API_URL").unwrap_or_else(|_| "http://localhost:8008".to_string());
-    let mut api_key = std::env::var("WHATSAPP_API_KEY").unwrap_or_else(|_| "mock_whatsapp_api_key_for_dev".to_string());
-    let mut webhook_secret = std::env::var("WHATSAPP_WEBHOOK_SECRET").unwrap_or_else(|_| "mock_webhook_secret_for_dev".to_string());
+    let mut api_url =
+        std::env::var("WHATSAPP_API_URL").unwrap_or_else(|_| "http://localhost:8008".to_string());
+    let mut api_key = std::env::var("WHATSAPP_API_KEY")
+        .unwrap_or_else(|_| "mock_whatsapp_api_key_for_dev".to_string());
+    let mut webhook_secret = std::env::var("WHATSAPP_WEBHOOK_SECRET")
+        .unwrap_or_else(|_| "mock_webhook_secret_for_dev".to_string());
     let mut bot_phone = std::env::var("WHATSAPP_BOT_PHONE").unwrap_or_default();
 
     for (clave, valor) in rows {
@@ -164,7 +167,7 @@ pub async fn load_whatsapp_settings(pool: &PgPool) -> Result<WhatsappSettings, A
 
 pub async fn webhook_log_exists(pool: &PgPool, message_id: &str) -> Result<bool, AppError> {
     let exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM whatsapp_webhook_logs WHERE message_id = $1)"
+        "SELECT EXISTS(SELECT 1 FROM whatsapp_webhook_logs WHERE message_id = $1)",
     )
     .bind(message_id)
     .fetch_one(pool)
@@ -173,9 +176,12 @@ pub async fn webhook_log_exists(pool: &PgPool, message_id: &str) -> Result<bool,
     Ok(exists)
 }
 
-pub async fn get_active_user_by_phone(pool: &PgPool, phone: &str) -> Result<Option<ActiveUser>, AppError> {
+pub async fn get_active_user_by_phone(
+    pool: &PgPool,
+    phone: &str,
+) -> Result<Option<ActiveUser>, AppError> {
     let user = sqlx::query_as::<_, ActiveUser>(
-        "SELECT id, rol FROM usuarios WHERE whatsapp_phone = $1 AND activo = true"
+        "SELECT id, rol FROM usuarios WHERE whatsapp_phone = $1 AND activo = true",
     )
     .bind(phone)
     .fetch_optional(pool)
@@ -197,7 +203,7 @@ pub async fn log_webhook_transaction(
     sqlx::query(
         r#"INSERT INTO whatsapp_webhook_logs 
            (message_id, sender_phone, usuario_id, request_body, command_type, status, response_body)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)"#
+           VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
     )
     .bind(message_id)
     .bind(sender_phone)
@@ -229,7 +235,7 @@ pub async fn resolve_product_by_code(
     ident: &str,
 ) -> Result<Result<ProductResolution, String>, AppError> {
     let ident = ident.trim();
-    
+
     // 1. Try exact internal code
     let exact_code = sqlx::query_as::<_, ProductResolution>(
         r#"SELECT 
@@ -241,7 +247,7 @@ pub async fn resolve_product_by_code(
             p.unidad_base_id
         FROM productos p
         JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-        WHERE UPPER(p.codigo_interno) = UPPER($1) AND p.activo = true AND p.deleted_at IS NULL"#
+        WHERE UPPER(p.codigo_interno) = UPPER($1) AND p.activo = true AND p.deleted_at IS NULL"#,
     )
     .bind(ident)
     .fetch_optional(pool)
@@ -287,7 +293,7 @@ pub async fn resolve_product_by_code(
         WHERE (p.nombre ILIKE $1 OR similarity(p.nombre, $2) > 0.3)
           AND p.activo = true AND p.deleted_at IS NULL
         ORDER BY similarity(p.nombre, $2) DESC, p.nombre ASC
-        LIMIT 5"#
+        LIMIT 5"#,
     )
     .bind(format!("%{}%", ident))
     .bind(ident)
@@ -295,7 +301,10 @@ pub async fn resolve_product_by_code(
     .await?;
 
     if candidates.is_empty() {
-        return Ok(Err(format!("Error: No se encontró ningún producto activo con código, código de barras o nombre '{}'.", ident)));
+        return Ok(Err(format!(
+            "Error: No se encontró ningún producto activo con código, código de barras o nombre '{}'.",
+            ident
+        )));
     }
 
     if candidates.len() == 1 {
@@ -311,7 +320,10 @@ pub async fn resolve_product_by_code(
     }
 
     // Multiple candidates found, build a selection message
-    let mut msg = format!("Se encontraron múltiples productos que coinciden con '{}'. Por favor, indica el código exacto:\n", ident);
+    let mut msg = format!(
+        "Se encontraron múltiples productos que coinciden con '{}'. Por favor, indica el código exacto:\n",
+        ident
+    );
     for cand in candidates {
         let code: String = sqlx::query_scalar("SELECT codigo_interno FROM productos WHERE id = $1")
             .bind(cand.producto_id)
@@ -330,7 +342,9 @@ pub async fn buscar_stock_tool(
     args: BuscarStockArgs,
 ) -> Result<BuscarStockResult, AppError> {
     if !matches!(user.rol.as_str(), "admin" | "tecnologo") {
-        return Err(AppError::Forbidden("No autorizado: Requiere rol tecnologo o admin para buscar stock.".to_string()));
+        return Err(AppError::Forbidden(
+            "No autorizado: Requiere rol tecnologo o admin para buscar stock.".to_string(),
+        ));
     }
 
     let clean_query = args.busqueda.trim();
@@ -370,7 +384,7 @@ pub async fn buscar_stock_tool(
              similarity(p.nombre, $4) DESC,
              p.nombre, 
              p.codigo_interno, 
-             v.area_nombre"#
+             v.area_nombre"#,
     )
     .bind(&ilike_query)
     .bind(&user.rol)
@@ -393,7 +407,10 @@ pub async fn buscar_stock_tool(
         .collect::<Vec<_>>();
 
     let message = if items.is_empty() {
-        Some(format!("No se encontró stock para la búsqueda: '{}'.", args.busqueda))
+        Some(format!(
+            "No se encontró stock para la búsqueda: '{}'.",
+            args.busqueda
+        ))
     } else {
         None
     };
@@ -413,7 +430,8 @@ pub async fn registrar_recepcion_tool(
     if !matches!(user.rol.as_str(), "admin" | "tecnologo") {
         return Ok(RegistrarIngresoResult {
             status: "error".to_string(),
-            message: "No autorizado: Requiere rol tecnologo o admin para registrar ingreso.".to_string(),
+            message: "No autorizado: Requiere rol tecnologo o admin para registrar ingreso."
+                .to_string(),
         });
     }
 
@@ -436,7 +454,10 @@ pub async fn registrar_recepcion_tool(
             if date <= today {
                 return Ok(RegistrarIngresoResult {
                     status: "error".to_string(),
-                    message: format!("Error: La fecha de vencimiento '{}' debe ser futura.", args.vencimiento),
+                    message: format!(
+                        "Error: La fecha de vencimiento '{}' debe ser futura.",
+                        args.vencimiento
+                    ),
                 });
             }
             date
@@ -444,18 +465,20 @@ pub async fn registrar_recepcion_tool(
         Err(_) => {
             return Ok(RegistrarIngresoResult {
                 status: "error".to_string(),
-                message: format!("Error: La fecha de vencimiento '{}' no tiene el formato AAAA-MM-DD.", args.vencimiento),
+                message: format!(
+                    "Error: La fecha de vencimiento '{}' no tiene el formato AAAA-MM-DD.",
+                    args.vencimiento
+                ),
             });
         }
     };
 
-    let area_exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM areas WHERE id = $1)"
-    )
-    .bind(args.area_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    let area_exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM areas WHERE id = $1)")
+            .bind(args.area_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
     if !area_exists {
         return Ok(RegistrarIngresoResult {
@@ -466,7 +489,7 @@ pub async fn registrar_recepcion_tool(
 
     if user.rol != "admin" {
         let has_access = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT 1 FROM usuario_area WHERE usuario_id = $1 AND area_id = $2)"
+            "SELECT EXISTS(SELECT 1 FROM usuario_area WHERE usuario_id = $1 AND area_id = $2)",
         )
         .bind(user.id)
         .bind(args.area_id)
@@ -477,7 +500,10 @@ pub async fn registrar_recepcion_tool(
         if !has_access {
             return Ok(RegistrarIngresoResult {
                 status: "error".to_string(),
-                message: format!("Error: No tiene autorización para ingresar stock en el área ID {}.", args.area_id),
+                message: format!(
+                    "Error: No tiene autorización para ingresar stock en el área ID {}.",
+                    args.area_id
+                ),
             });
         }
     }
@@ -492,13 +518,16 @@ pub async fn registrar_recepcion_tool(
         }
     };
 
-    let mut tx = pool.begin().await.map_err(|e| AppError::Internal(e.to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let mut provider_id: Option<i32> = sqlx::query_scalar::<_, i32>(
         r#"SELECT p.proveedor_id
            FROM productos p
            JOIN proveedores prov ON prov.id = p.proveedor_id
-           WHERE p.id = $1 AND prov.activa = true"#
+           WHERE p.id = $1 AND prov.activa = true"#,
     )
     .bind(resolved.producto_id)
     .fetch_optional(&mut *tx)
@@ -506,12 +535,11 @@ pub async fn registrar_recepcion_tool(
     .map_err(|e| AppError::Internal(e.to_string()))?;
 
     if provider_id.is_none() {
-        provider_id = sqlx::query_scalar::<_, i32>(
-            "SELECT id FROM proveedores ORDER BY id ASC LIMIT 1"
-        )
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        provider_id =
+            sqlx::query_scalar::<_, i32>("SELECT id FROM proveedores ORDER BY id ASC LIMIT 1")
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
     let provider_id = match provider_id {
@@ -534,14 +562,19 @@ pub async fn registrar_recepcion_tool(
     .fetch_one(&mut *tx)
     .await;
 
-    let (recepcion_id, numero_documento) = insert_reception_res.map_err(|e| AppError::Internal(format!("Falló la creación del registro de recepción: {}", e)))?;
+    let (recepcion_id, numero_documento) = insert_reception_res.map_err(|e| {
+        AppError::Internal(format!(
+            "Falló la creación del registro de recepción: {}",
+            e
+        ))
+    })?;
 
     let lote_id: uuid::Uuid = sqlx::query_scalar(
         r#"INSERT INTO lotes (producto_id, proveedor_id, numero_lote, fecha_vencimiento)
            VALUES ($1, $2, $3, $4)
            ON CONFLICT (producto_id, numero_lote)
            DO UPDATE SET fecha_vencimiento = EXCLUDED.fecha_vencimiento
-           RETURNING id"#
+           RETURNING id"#,
     )
     .bind(resolved.producto_id)
     .bind(provider_id)
@@ -571,7 +604,7 @@ pub async fn registrar_recepcion_tool(
     .map_err(|e| AppError::Internal(format!("Falló el registro del detalle de la recepción: {}", e)))?;
 
     sqlx::query(
-        "INSERT INTO producto_area (producto_id, area_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
+        "INSERT INTO producto_area (producto_id, area_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
     )
     .bind(resolved.producto_id)
     .bind(args.area_id)
@@ -593,7 +626,9 @@ pub async fn registrar_recepcion_tool(
     )
     .await?;
 
-    tx.commit().await.map_err(|e| AppError::Internal(format!("Falló el commit de la transacción: {}", e)))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(format!("Falló el commit de la transacción: {}", e)))?;
 
     let success_msg = format!(
         "Recepción {} registrada exitosamente.\n\
@@ -637,10 +672,13 @@ pub async fn add_to_purchase_request_tool(
         }
     };
 
-    let mut tx = pool.begin().await.map_err(|e| AppError::Internal(e.to_string()))?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let solicitud_id_res = sqlx::query_scalar::<_, uuid::Uuid>(
-        "SELECT id FROM solicitudes_compra WHERE usuario_id = $1 AND estado = 'borrador'"
+        "SELECT id FROM solicitudes_compra WHERE usuario_id = $1 AND estado = 'borrador'",
     )
     .bind(user.id)
     .fetch_optional(&mut *tx)
@@ -675,11 +713,17 @@ pub async fn add_to_purchase_request_tool(
     .await
     .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let (unidad_basica_id, presentacion_id, cantidad_sugerida, cantidad_presentaciones) = if let Some(pres_id) = resolved.presentacion_id {
-        (None, Some(pres_id), args.cantidad * resolved.factor_conversion, Some(args.cantidad))
-    } else {
-        (Some(resolved.unidad_base_id), None, args.cantidad, None)
-    };
+    let (unidad_basica_id, presentacion_id, cantidad_sugerida, cantidad_presentaciones) =
+        if let Some(pres_id) = resolved.presentacion_id {
+            (
+                None,
+                Some(pres_id),
+                args.cantidad * resolved.factor_conversion,
+                Some(args.cantidad),
+            )
+        } else {
+            (Some(resolved.unidad_base_id), None, args.cantidad, None)
+        };
 
     if existing_qty.is_some() {
         sqlx::query(
@@ -712,7 +756,9 @@ pub async fn add_to_purchase_request_tool(
         .map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
-    tx.commit().await.map_err(|e| AppError::Internal(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let success_msg = format!(
         "Solicitud de compra borrador actualizada exitosamente.\n\
@@ -765,7 +811,11 @@ pub async fn registrar_consumo_fefo_tool(
     };
 
     let cantidad_base = args.cantidad * resolved.factor_conversion;
-    let lote_ident = args.lote.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty());
+    let lote_ident = args
+        .lote
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
 
     if lote_ident.is_none() {
         let rows = sqlx::query_as::<_, StockQueryRow>(
@@ -782,7 +832,7 @@ pub async fn registrar_consumo_fefo_tool(
             JOIN areas a ON a.id = s.area_id
             WHERE l.producto_id = $1 AND s.cantidad > 0
               AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
-            ORDER BY l.fecha_vencimiento ASC"#
+            ORDER BY l.fecha_vencimiento ASC"#,
         )
         .bind(resolved.producto_id)
         .fetch_all(pool)
@@ -798,10 +848,13 @@ pub async fn registrar_consumo_fefo_tool(
 
         if rows.len() == 1 {
             let row = &rows[0];
-            let mut tx = pool.begin().await.map_err(|e| AppError::Internal(e.to_string()))?;
+            let mut tx = pool
+                .begin()
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))?;
 
             let current_qty = sqlx::query_scalar::<_, Decimal>(
-                "SELECT cantidad FROM stock WHERE id = $1 FOR UPDATE"
+                "SELECT cantidad FROM stock WHERE id = $1 FOR UPDATE",
             )
             .bind(row.stock_id)
             .fetch_one(&mut *tx)
@@ -822,11 +875,10 @@ pub async fn registrar_consumo_fefo_tool(
                 area_id: row.area_id,
             }];
 
-            let virtual_consumed_id: Option<i32> = sqlx::query_scalar(
-                "SELECT id FROM areas WHERE nombre = 'VIRTUAL_CONSUMED'"
-            )
-            .fetch_optional(pool)
-            .await?;
+            let virtual_consumed_id: Option<i32> =
+                sqlx::query_scalar("SELECT id FROM areas WHERE nombre = 'VIRTUAL_CONSUMED'")
+                    .fetch_optional(pool)
+                    .await?;
 
             let _movimientos = crate::services::stock_ops::aplicar_salida_fefo(
                 &mut tx,
@@ -841,7 +893,9 @@ pub async fn registrar_consumo_fefo_tool(
             )
             .await?;
 
-            tx.commit().await.map_err(|e| AppError::Internal(e.to_string()))?;
+            tx.commit()
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))?;
 
             return Ok(serde_json::json!({
                 "status": "success",
@@ -904,7 +958,7 @@ pub async fn registrar_consumo_fefo_tool(
                   AND (l.numero_lote = $2 OR l.id::text = $2)
                   AND s.cantidad > 0
                   AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
-                  AND s.area_id = $3"#
+                  AND s.area_id = $3"#,
             )
             .bind(resolved.producto_id)
             .bind(lote_str)
@@ -928,7 +982,7 @@ pub async fn registrar_consumo_fefo_tool(
                 WHERE l.producto_id = $1
                   AND (l.numero_lote = $2 OR l.id::text = $2)
                   AND s.cantidad > 0
-                  AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)"#
+                  AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)"#,
             )
             .bind(resolved.producto_id)
             .bind(lote_str)
@@ -953,10 +1007,13 @@ pub async fn registrar_consumo_fefo_tool(
             &rows[0]
         };
 
-        let mut tx = pool.begin().await.map_err(|e| AppError::Internal(e.to_string()))?;
+        let mut tx = pool
+            .begin()
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
         let current_qty = sqlx::query_scalar::<_, Decimal>(
-            "SELECT cantidad FROM stock WHERE lote_id = $1 AND area_id = $2 FOR UPDATE"
+            "SELECT cantidad FROM stock WHERE lote_id = $1 AND area_id = $2 FOR UPDATE",
         )
         .bind(row.lote_id)
         .bind(row.area_id)
@@ -978,11 +1035,10 @@ pub async fn registrar_consumo_fefo_tool(
             area_id: row.area_id,
         }];
 
-        let virtual_consumed_id: Option<i32> = sqlx::query_scalar(
-            "SELECT id FROM areas WHERE nombre = 'VIRTUAL_CONSUMED'"
-        )
-        .fetch_optional(pool)
-        .await?;
+        let virtual_consumed_id: Option<i32> =
+            sqlx::query_scalar("SELECT id FROM areas WHERE nombre = 'VIRTUAL_CONSUMED'")
+                .fetch_optional(pool)
+                .await?;
 
         let _movimientos = crate::services::stock_ops::aplicar_salida_fefo(
             &mut tx,
@@ -997,7 +1053,9 @@ pub async fn registrar_consumo_fefo_tool(
         )
         .await?;
 
-        tx.commit().await.map_err(|e| AppError::Internal(e.to_string()))?;
+        tx.commit()
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
         return Ok(serde_json::json!({
             "status": "success",

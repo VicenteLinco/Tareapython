@@ -274,10 +274,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
     let prov_filter = if let Some(prov_id) = params.proveedor_id {
         param_idx += 1;
         binds.push(prov_id.to_string());
-        format!(
-            "AND p.proveedor_id = ${}::integer",
-            param_idx
-        )
+        format!("AND p.proveedor_id = ${}::integer", param_idx)
     } else {
         "".to_string()
     };
@@ -315,6 +312,16 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
             "bajo" | "critico" => "AND estado_cantidad IN ('critico', 'reponer')",
             _ => "",
         },
+    };
+
+    let (stock_col, stock_table, area_filter2) = if let Some(area_ids) = &scoped_area_array {
+        (
+            "s.cantidad",
+            "stock",
+            format!("AND s2.area_id = ANY(ARRAY[{}]::integer[])", area_ids),
+        )
+    } else {
+        ("s.stock_actual", "stock_snapshot", "".to_string())
     };
 
     // Base query using the already updated 'stock' table
@@ -356,14 +363,14 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                    l.producto_id,
                    l.id AS lote_id,
                    l.fecha_vencimiento,
-                   s.cantidad,
+                   {} AS cantidad,
                    -- Vencimiento más próximo entre el stock USABLE (no vencido).
                    -- Excluir lo vencido es lo que separa "vence pronto" de "ya venció".
                    MIN(l.fecha_vencimiento) FILTER (
-                       WHERE s.cantidad > 0
+                       WHERE {} > 0
                          AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
                    ) OVER (PARTITION BY l.producto_id) AS prox_fecha
-               FROM stock s
+               FROM {} s
                JOIN lotes l ON l.id = s.lote_id
                WHERE 1=1 {}
            ),
@@ -434,9 +441,9 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                SELECT DISTINCT ON (l2.producto_id)
                    l2.producto_id, pv.nombre, pv.icono
                FROM lotes l2
-               JOIN stock s2 ON s2.lote_id = l2.id
+               JOIN {} s2 ON s2.lote_id = l2.id
                JOIN proveedores pv ON pv.id = l2.proveedor_id
-               WHERE s2.cantidad > 0
+               WHERE {} > 0 {}
                ORDER BY l2.producto_id, l2.fecha_vencimiento ASC
            ),
            final_stats AS (
@@ -549,10 +556,16 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
            LIMIT ${} OFFSET ${}"#,
         forecast_cfg.ventana_demanda_dias,
         movement_area_filter,
+        stock_col,
+        stock_col,
+        stock_table,
         area_filter,
         par_area_filter,
         forecast_cfg.ventana_demanda_dias,
         movement_area_filter,
+        stock_table,
+        stock_col,
+        area_filter2,
         inicializado_expr,
         q_filter,
         cat_filter,
@@ -732,8 +745,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
              AND l.fecha_vencimiento >= CURRENT_DATE
              AND l.fecha_vencimiento <= CURRENT_DATE + ({1} * INTERVAL '1 day')
              {0}"#,
-        resumen_area_filter,
-        forecast_cfg.vencimiento_proximo_dias,
+        resumen_area_filter, forecast_cfg.vencimiento_proximo_dias,
     ))
     .fetch_one(pool)
     .await?;
@@ -953,23 +965,34 @@ pub async fn alertas(
     offset: i64,
 ) -> Result<AlertasResultado, AppError> {
     // El área es solo un filtro opcional: cualquier rol puede pedir cualquier área (o todas).
-    let (stock_area_filter, stock_exists_area_filter, movement_area_filter, product_area_filter, par_area_filter) =
-        if area_ids.is_empty() {
-            (String::new(), String::new(), String::new(), String::new(), String::new())
-        } else {
-            let arr = area_ids
-                .iter()
-                .map(|id| id.to_string())
-                .collect::<Vec<_>>()
-                .join(",");
-            (
-                format!("AND s.area_id = ANY(ARRAY[{}]::integer[])", arr),
-                format!("AND si.area_id = ANY(ARRAY[{}]::integer[])", arr),
-                format!("AND m.area_id = ANY(ARRAY[{}]::integer[])", arr),
-                String::new(),
-                format!("AND pl.area_id = ANY(ARRAY[{}]::integer[])", arr),
-            )
-        };
+    let (
+        stock_area_filter,
+        stock_exists_area_filter,
+        movement_area_filter,
+        product_area_filter,
+        par_area_filter,
+    ) = if area_ids.is_empty() {
+        (
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        )
+    } else {
+        let arr = area_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        (
+            format!("AND s.area_id = ANY(ARRAY[{}]::integer[])", arr),
+            format!("AND si.area_id = ANY(ARRAY[{}]::integer[])", arr),
+            format!("AND m.area_id = ANY(ARRAY[{}]::integer[])", arr),
+            String::new(),
+            format!("AND pl.area_id = ANY(ARRAY[{}]::integer[])", arr),
+        )
+    };
 
     let forecast_cfg = load_forecast_config(pool).await?;
 
@@ -984,7 +1007,7 @@ pub async fn alertas(
            ),"#;
 
     let sql = format!(
-r#"WITH stock_stats AS (
+        r#"WITH stock_stats AS (
                SELECT
                    p.id as producto_id,
                    COALESCE(SUM(s.cantidad), 0) AS total,
@@ -1307,7 +1330,9 @@ pub async fn lotes_vencidos(
         where_clause
     );
 
-    let mut query = sqlx::query_as::<_, LoteVencidoItem>(&sql).bind(dias).bind(q);
+    let mut query = sqlx::query_as::<_, LoteVencidoItem>(&sql)
+        .bind(dias)
+        .bind(q);
     if let Some(v) = area_id {
         query = query.bind(v);
     }

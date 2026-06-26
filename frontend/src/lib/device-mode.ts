@@ -1,21 +1,21 @@
 // frontend/src/lib/device-mode.ts
 
-export type DeviceMode = 'normal'
+export type DeviceMode = "normal";
 
-const LS_KEY = 'lab-device-mode'
-const SS_KEY = 'lab-device-mode-session'
+const LS_KEY = "lab-device-mode";
+const SS_KEY = "lab-device-mode-session";
 
 export function getDeviceMode(): DeviceMode {
-  return 'normal'
+  return "normal";
 }
 
 export function setDeviceMode(mode: DeviceMode, persistent: boolean): void {
-  void mode
-  void persistent
-  clearDeviceMode()
+  void mode;
+  void persistent;
+  clearDeviceMode();
 }
 
 export function clearDeviceMode(): void {
-  localStorage.removeItem(LS_KEY)
-  sessionStorage.removeItem(SS_KEY)
+  localStorage.removeItem(LS_KEY);
+  sessionStorage.removeItem(SS_KEY);
 }

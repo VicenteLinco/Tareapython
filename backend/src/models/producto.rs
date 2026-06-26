@@ -27,16 +27,11 @@ pub struct Producto {
     pub version: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    // Supplier flat fields
-    pub proveedor_id: Option<i32>,
-    pub sku: Option<String>,
-    pub precio_unidad: Option<Decimal>,
     pub imagen_url: Option<String>,
-    // Presentation flat fields
-    pub pres_nombre: Option<String>,
-    pub pres_nombre_plural: Option<String>,
-    pub pres_factor: Option<Decimal>,
-    pub pres_codigo_barras: Option<String>,
-    pub pres_gtin: Option<String>,
-    pub pres_gs1_habilitado: bool,
+    // Nuevos Atributos: Identidad Clínica y Trazabilidad (Fase 1)
+    pub mpn: Option<String>,
+    pub alias_unidad_clinica: Option<String>,
+    pub es_kit: bool,
+    pub stock_minimo_global: Decimal,
+    pub codigo_loinc_cpt: Option<String>,
 }

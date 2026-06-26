@@ -656,8 +656,8 @@ export default function ImportadorGuiaModal({
                 </div>
 
                 {/* Table */}
-                <div className="flex-1 overflow-y-auto border rounded-lg">
-                  <table className="table table-compact table-zebra w-full text-xs">
+                <div className="flex-1 overflow-auto border rounded-lg">
+                  <table className="table table-compact table-zebra w-full text-xs min-w-[1000px]">
                     <thead>
                       <tr>
                         <th>Producto</th>

@@ -61,14 +61,14 @@ fi
 # 4. Iniciar frontend (React / Vite)
 echo ""
 echo "[4/4] Iniciar frontend (npm run dev)..."
-echo "Abriendo el navegador en http://localhost:5173..."
+echo "Abriendo el navegador en http://localhost:5072..."
 sleep 2
 
 # Abrir navegador en segundo plano
 if command -v xdg-open > /dev/null; then
-    xdg-open http://localhost:5173 &
+    xdg-open http://localhost:5072 &
 elif command -v sensible-browser > /dev/null; then
-    sensible-browser http://localhost:5173 &
+    sensible-browser http://localhost:5072 &
 fi
 
 # Correr el frontend en primer plano para ver los logs

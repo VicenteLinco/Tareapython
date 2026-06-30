@@ -41,6 +41,13 @@ async fn setup_base(pool: &PgPool, token: &str, app: &axum::Router) -> (i32, Uui
             .await
             .unwrap();
 
+    sqlx::query("UPDATE presentaciones SET proveedor_id = $1 WHERE id = $2")
+        .bind(proveedor_id)
+        .bind(presentacion_id)
+        .execute(pool)
+        .await
+        .unwrap();
+
     (proveedor_id, producto_id, presentacion_id)
 }
 

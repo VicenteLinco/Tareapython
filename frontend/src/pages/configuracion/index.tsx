@@ -35,6 +35,9 @@ interface Configuracion {
   whatsapp_api_key: string;
   whatsapp_webhook_secret: string;
   whatsapp_bot_phone: string;
+  vencimiento_alerta_activa: boolean;
+  vencimiento_vida_util_minima_dias: number;
+  vencimiento_margen_tolerancia_pct: number;
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -82,6 +85,9 @@ export default function ConfiguracionPage() {
   const [whatsappApiKey, setWhatsappApiKey] = useState("");
   const [whatsappWebhookSecret, setWhatsappWebhookSecret] = useState("");
   const [whatsappBotPhone, setWhatsappBotPhone] = useState("");
+  const [vencimientoAlertaActiva, setVencimientoAlertaActiva] = useState(true);
+  const [vencimientoVidaUtilMinimaDias, setVencimientoVidaUtilMinimaDias] = useState(30);
+  const [vencimientoMargenToleranciaPct, setVencimientoMargenToleranciaPct] = useState(10);
 
   const [isCustomModel, setIsCustomModel] = useState(false);
 
@@ -125,6 +131,9 @@ export default function ConfiguracionPage() {
     setWhatsappApiKey(data.whatsapp_api_key || "");
     setWhatsappWebhookSecret(data.whatsapp_webhook_secret || "");
     setWhatsappBotPhone(data.whatsapp_bot_phone || "");
+    setVencimientoAlertaActiva(data.vencimiento_alerta_activa !== false);
+    setVencimientoVidaUtilMinimaDias(data.vencimiento_vida_util_minima_dias ?? 30);
+    setVencimientoMargenToleranciaPct(data.vencimiento_margen_tolerancia_pct ?? 10);
   }, [data]);
 
   const mutation = useMutation({
@@ -149,6 +158,9 @@ export default function ConfiguracionPage() {
       whatsapp_api_key: string;
       whatsapp_webhook_secret: string;
       whatsapp_bot_phone: string;
+      vencimiento_alerta_activa: boolean;
+      vencimiento_vida_util_minima_dias: number;
+      vencimiento_margen_tolerancia_pct: number;
     }) => api.put<Configuracion>("/configuracion", payload).then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["configuracion"] });
@@ -207,6 +219,14 @@ export default function ConfiguracionPage() {
       notify.error("El nombre del laboratorio es requerido");
       return;
     }
+    if (vencimientoVidaUtilMinimaDias < 0) {
+      notify.error("La vida útil mínima debe ser mayor o igual a 0");
+      return;
+    }
+    if (vencimientoMargenToleranciaPct < 0 || vencimientoMargenToleranciaPct > 100) {
+      notify.error("El margen de tolerancia debe estar entre 0 y 100");
+      return;
+    }
     mutation.mutate({
       nombre_laboratorio: nombre.trim(),
       logo_base64: logo,
@@ -228,6 +248,9 @@ export default function ConfiguracionPage() {
       whatsapp_api_key: whatsappApiKey,
       whatsapp_webhook_secret: whatsappWebhookSecret,
       whatsapp_bot_phone: whatsappBotPhone,
+      vencimiento_alerta_activa: vencimientoAlertaActiva,
+      vencimiento_vida_util_minima_dias: vencimientoVidaUtilMinimaDias,
+      vencimiento_margen_tolerancia_pct: vencimientoMargenToleranciaPct,
     });
   }
 
@@ -592,6 +615,68 @@ export default function ConfiguracionPage() {
               </p>
             </div>
           </div>
+        </div>
+
+        <Divider />
+
+        {/* ── ALERTAS DE VENCIMIENTO ── */}
+        <SectionTitle>Alertas de Vencimiento</SectionTitle>
+
+        <div className="space-y-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Activar alertas de vencimiento</label>
+              <p className="text-xs text-base-content/50 max-w-sm leading-relaxed">
+                Habilita advertencias visuales en la recepción si un lote ingresado vencerá antes de consumirse o tiene vida útil muy corta.
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              className="toggle toggle-primary mt-0.5 shrink-0"
+              checked={vencimientoAlertaActiva}
+              onChange={(e) => setVencimientoAlertaActiva(e.target.checked)}
+            />
+          </div>
+
+          {vencimientoAlertaActiva && (
+            <div className="grid grid-cols-2 gap-5 animate-fade-in">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Vida útil mínima</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    className="input input-bordered w-24"
+                    value={vencimientoVidaUtilMinimaDias}
+                    onChange={(e) => setVencimientoVidaUtilMinimaDias(Number(e.target.value))}
+                    min={0}
+                    max={365}
+                  />
+                  <span className="text-sm text-base-content/50">días</span>
+                </div>
+                <p className="text-xs text-base-content/50 leading-relaxed">
+                  Lotes con menos días de vida útil desde hoy generarán una advertencia inmediata.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Margen de tolerancia</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    className="input input-bordered w-24"
+                    value={vencimientoMargenToleranciaPct}
+                    onChange={(e) => setVencimientoMargenToleranciaPct(Number(e.target.value))}
+                    min={0}
+                    max={100}
+                  />
+                  <span className="text-sm text-base-content/50">%</span>
+                </div>
+                <p className="text-xs text-base-content/50 leading-relaxed">
+                  Porcentaje máximo permitido de desperdicio proyectado sobre la cantidad recibida antes de alertar.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         <Divider />

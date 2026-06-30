@@ -337,7 +337,7 @@ impl ProductoService {
         if let Some(pres_list) = params.presentaciones {
             for pres in pres_list {
                 sqlx::query(
-                    "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado, sku) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                    "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, codigo_barras, gtin, gs1_habilitado, sku, proveedor_id, precio_adquisicion) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
                 )
                 .bind(producto.id)
                 .bind(pres.nombre.trim())
@@ -347,6 +347,8 @@ impl ProductoService {
                 .bind(&pres.gtin)
                 .bind(pres.gs1_habilitado.unwrap_or(false))
                 .bind(&pres.sku)
+                .bind(pres.proveedor_id)
+                .bind(pres.precio_adquisicion)
                 .execute(&mut *tx)
                 .await?;
             }

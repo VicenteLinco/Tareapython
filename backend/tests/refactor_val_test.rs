@@ -43,21 +43,28 @@ async fn test_integridad_stock_y_servicios_refactorizados(pool: sqlx::PgPool) {
             .await
             .unwrap();
 
-    // El proveedor se vincula directo en productos.proveedor_id (la antigua tabla puente
-    // producto_proveedor fue eliminada). stock_minimo vive en par_level_config, no en
-    // productos, y este test no lo necesita.
+    // El proveedor se vincula a través de la tabla de presentaciones.
     let producto_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO productos (id, codigo_interno, nombre, categoria_id, unidad_base_id, proveedor_id) \
-         VALUES ($1, $2, $3, $4, $5, $6)",
+        "INSERT INTO productos (id, codigo_interno, nombre, categoria_id, unidad_base_id) \
+         VALUES ($1, $2, $3, $4, $5)",
     )
     .bind(producto_id)
     .bind(format!("TEST-{}", Uuid::new_v4().to_string()[..8].to_string()))
     .bind("Producto Test Refactor")
     .bind(categoria_id)
     .bind(unidad_id)
-    .bind(proveedor_id)
     .execute(&pool)
+    .await
+    .unwrap();
+
+    let presentacion_id: i32 = sqlx::query_scalar(
+        "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, proveedor_id, precio_adquisicion) \
+         VALUES ($1, 'Unidad', 'Unidades', 1.0, $2, 50.0) RETURNING id"
+    )
+    .bind(producto_id)
+    .bind(proveedor_id)
+    .fetch_one(&pool)
     .await
     .unwrap();
 
@@ -77,7 +84,7 @@ async fn test_integridad_stock_y_servicios_refactorizados(pool: sqlx::PgPool) {
             producto_id,
             numero_lote: Some(num_lote.clone()),
             fecha_vencimiento: Some(fecha.date_naive() + chrono::Days::new(365)),
-            presentacion_id: None,
+            presentacion_id: Some(presentacion_id),
             cantidad_presentaciones: Decimal::from(100),
             area_destino_id: area.id,
             costo_unitario: Some(Decimal::from(50)),

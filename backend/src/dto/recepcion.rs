@@ -130,3 +130,17 @@ pub struct RecepcionReconciliacionRow {
     pub nota: Option<String>,
     pub created_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Deserialize, Type)]
+pub struct ValidarVencimientoInput {
+    pub producto_id: Uuid,
+    pub cantidad: Decimal,
+    pub presentacion_id: Option<i32>,
+    pub fecha_vencimiento: NaiveDate,
+}
+
+#[derive(Debug, Serialize, Type)]
+pub struct ValidarVencimientoResponse {
+    pub desperdicio_proyectado: Decimal,
+    pub alerta_vencimiento: bool,
+}

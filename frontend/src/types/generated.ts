@@ -35,6 +35,8 @@ export type UsuarioResponse = { id: string; nombre: string; email: string; whats
 export type AreaSimple = { id: number; nombre: string }
 export type UsuarioQuery = { rol: string | null; activo: boolean | null }
 export type ResetPasswordRequest = { password_nueva: string }
+export type NotificacionResponse = { id: string; usuario_id: string; titulo: string; mensaje: string; tipo: string; leido: boolean; created_at: string }
+export type UnreadCountResponse = { conteo: number }
 export type CreateCategoria = { nombre: string; descripcion: string | null }
 export type UpdateCategoria = { nombre: string | null; descripcion: string | null; version: number }
 export type CreateUnidadBasica = { nombre: string; nombre_plural: string }
@@ -78,6 +80,8 @@ export type RecepcionReconciliacionRow = { id: string; recepcion_id: string; sol
  * Información del lote creado durante la recepción, para generar etiquetas QR
  */
 export type LoteCreado = { lote_id: string; numero_lote: string; fecha_vencimiento: string | null; producto_id: string; producto_nombre: string; presentacion_nombre: string | null; area_nombre: string; cantidad: string }
+export type ValidarVencimientoInput = { producto_id: string; cantidad: string; presentacion_id: number | null; fecha_vencimiento: string }
+export type ValidarVencimientoResponse = { desperdicio_proyectado: string; alerta_vencimiento: boolean }
 export type ApiErrorCode =
   | "NOT_FOUND"
   | "VALIDATION_ERROR"

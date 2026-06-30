@@ -76,6 +76,8 @@ pub struct CreatePresentacionInline {
     pub gtin: Option<String>,
     pub gs1_habilitado: Option<bool>,
     pub sku: Option<String>,
+    pub proveedor_id: Option<i32>,
+    pub precio_adquisicion: Option<Decimal>,
 }
 
 #[derive(Debug, Deserialize, specta::Type)]

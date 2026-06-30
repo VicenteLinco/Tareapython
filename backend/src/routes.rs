@@ -85,6 +85,8 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
         .nest("/etiquetas", handlers::etiquetas::routes())
         // Configuración del sistema
         .nest("/configuracion", handlers::configuracion::routes())
+        // Notificaciones
+        .nest("/notificaciones", handlers::notificaciones::routes())
         // Setup (carga inicial)
         .nest("/setup", handlers::setup::routes())
         // Uploads privados (documentos de recepcion, guias, etc.)

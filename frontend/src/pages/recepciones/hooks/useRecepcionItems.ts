@@ -222,6 +222,7 @@ export function useRecepcionItems({
   const [scannerPaused, setScannerPaused] = useState(false);
   const [scanCount, setScanCount] = useState(0);
   const isProcessingScan = useRef(false);
+  const debounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
   const [pendingScan, setPendingScan] = useState<PendingScan | null>(null);
   const [pendingUnknownCode, setPendingUnknownCode] = useState<string | null>(
     null,
@@ -917,20 +918,100 @@ export function useRecepcionItems({
     [],
   );
 
-  const handleChangeLote = useCallback(
-    (detalleId: string, loteId: string, patch: Partial<LoteLineUI>) => {
+  const validateLote = useCallback(async (
+    detalleId: string,
+    loteId: string,
+    productoId: string,
+    cantidad: number,
+    presentacionId: number | null,
+    fechaVencimiento: string
+  ) => {
+    if (!fechaVencimiento) {
+      // Clear alert status if expiry date is deleted
       setDetalles((prev) =>
         prev.map((d) => {
           if (d.id !== detalleId) return d;
-          const lotes = d.lotes.map((l) =>
-            l.id === loteId ? { ...l, ...patch } : l,
-          );
-          // Collapse is controlled manually via the chevron; never auto-collapse.
-          return { ...d, lotes };
-        }),
+          return {
+            ...d,
+            lotes: d.lotes.map((l) =>
+              l.id === loteId
+                ? {
+                    ...l,
+                    alerta_vencimiento: false,
+                    desperdicio_proyectado: undefined,
+                  }
+                : l
+            ),
+          };
+        })
       );
+      return;
+    }
+    try {
+      const res = await api.post("/recepciones/validar-vencimiento", {
+        producto_id: productoId,
+        cantidad,
+        presentacion_id: presentacionId,
+        fecha_vencimiento: fechaVencimiento,
+      });
+      const data = res.data;
+      setDetalles((prev) =>
+        prev.map((d) => {
+          if (d.id !== detalleId) return d;
+          return {
+            ...d,
+            lotes: d.lotes.map((l) =>
+              l.id === loteId
+                ? {
+                    ...l,
+                    alerta_vencimiento: data.alerta_vencimiento,
+                    desperdicio_proyectado: data.desperdicio_proyectado,
+                  }
+                : l
+            ),
+          };
+        })
+      );
+    } catch (e) {
+      console.error("Error al validar vencimiento del lote", e);
+    }
+  }, []);
+
+  const handleChangeLote = useCallback(
+    (detalleId: string, loteId: string, patch: Partial<LoteLineUI>) => {
+      setDetalles((prev) => {
+        return prev.map((d) => {
+          if (d.id !== detalleId) return d;
+          const lotes = d.lotes.map((l) => {
+            if (l.id === loteId) {
+              const updated = { ...l, ...patch };
+
+              if (patch.cantidad_presentacion !== undefined || patch.fecha_vencimiento !== undefined) {
+                const timerKey = `${detalleId}-${loteId}`;
+                if (debounceTimers.current[timerKey]) {
+                  clearTimeout(debounceTimers.current[timerKey]);
+                }
+                debounceTimers.current[timerKey] = setTimeout(() => {
+                  validateLote(
+                    detalleId,
+                    loteId,
+                    d.producto_id,
+                    updated.cantidad_presentacion,
+                    d.presentacion_id,
+                    updated.fecha_vencimiento
+                  );
+                }, 400);
+              }
+
+              return updated;
+            }
+            return l;
+          });
+          return { ...d, lotes };
+        });
+      });
     },
-    [],
+    [validateLote],
   );
 
   const handleAddLote = useCallback((detalleId: string) => {

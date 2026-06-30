@@ -390,6 +390,7 @@ async fn parse_guia(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
+        .route("/validar-vencimiento", post(validar_vencimiento_handler))
         .route("/parse-guia", post(parse_guia))
         .route("/parse-guia-imagen", post(parse_guia_imagen))
         .route("/{id}", get(obtener).delete(eliminar_borrador_handler))
@@ -501,4 +502,14 @@ async fn parse_guia_imagen(
             )))
         }
     }
+}
+
+async fn validar_vencimiento_handler(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(input): Json<crate::dto::recepcion::ValidarVencimientoInput>,
+) -> Result<Json<crate::dto::recepcion::ValidarVencimientoResponse>, AppError> {
+    crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
+    let res = recepcion_service::validar_vencimiento(&state.pool, input).await?;
+    Ok(Json(res))
 }

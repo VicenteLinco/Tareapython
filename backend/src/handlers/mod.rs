@@ -13,6 +13,7 @@ pub mod movimientos;
 pub mod ordenes_compra;
 pub mod par_levels;
 pub mod presentacion_formatos;
+pub mod notificaciones;
 pub mod presentaciones;
 pub mod productos;
 pub mod proveedores;

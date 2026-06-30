@@ -25,6 +25,9 @@ pub struct ConfiguracionResponse {
     pub whatsapp_api_key: String,
     pub whatsapp_webhook_secret: String,
     pub whatsapp_bot_phone: String,
+    pub vencimiento_alerta_activa: bool,
+    pub vencimiento_vida_util_minima_dias: i32,
+    pub vencimiento_margen_tolerancia_pct: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,6 +53,9 @@ pub struct UpdateConfiguracion {
     pub whatsapp_api_key: Option<String>,
     pub whatsapp_webhook_secret: Option<String>,
     pub whatsapp_bot_phone: Option<String>,
+    pub vencimiento_alerta_activa: Option<bool>,
+    pub vencimiento_vida_util_minima_dias: Option<i32>,
+    pub vencimiento_margen_tolerancia_pct: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]

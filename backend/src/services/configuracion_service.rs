@@ -41,7 +41,8 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
             'moneda_codigo','moneda_simbolo','conteo_periodo_dias',
             'ventana_consumo_dias','periodo_revision_dias','factor_historial_corto',
             'ia_proveedor','ia_modelo','ia_api_url','ia_api_key',
-            'whatsapp_api_url','whatsapp_api_key','whatsapp_webhook_secret','whatsapp_bot_phone'
+            'whatsapp_api_url','whatsapp_api_key','whatsapp_webhook_secret','whatsapp_bot_phone',
+            'vencimiento_alerta_activa','vencimiento_vida_util_minima_dias','vencimiento_margen_tolerancia_pct'
         )",
     )
     .fetch_all(pool)
@@ -68,6 +69,9 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
     let mut whatsapp_api_key = String::new();
     let mut whatsapp_webhook_secret = String::new();
     let mut whatsapp_bot_phone = String::new();
+    let mut vencimiento_alerta_activa = true;
+    let mut vencimiento_vida_util_minima_dias = 30;
+    let mut vencimiento_margen_tolerancia_pct = 10;
 
     for (clave, valor) in rows {
         match clave.as_str() {
@@ -106,6 +110,13 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
             }
             "whatsapp_webhook_secret" => whatsapp_webhook_secret = valor,
             "whatsapp_bot_phone" => whatsapp_bot_phone = valor,
+            "vencimiento_alerta_activa" => vencimiento_alerta_activa = valor == "true",
+            "vencimiento_vida_util_minima_dias" => {
+                vencimiento_vida_util_minima_dias = valor.parse().unwrap_or(30)
+            }
+            "vencimiento_margen_tolerancia_pct" => {
+                vencimiento_margen_tolerancia_pct = valor.parse().unwrap_or(10)
+            }
             _ => {}
         }
     }
@@ -132,6 +143,9 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
         whatsapp_api_key,
         whatsapp_webhook_secret,
         whatsapp_bot_phone,
+        vencimiento_alerta_activa,
+        vencimiento_vida_util_minima_dias,
+        vencimiento_margen_tolerancia_pct,
     })
 }
 
@@ -143,6 +157,17 @@ pub async fn actualizar(
     body: UpdateConfiguracion,
     usuario_id: Uuid,
 ) -> Result<ConfiguracionResponse, AppError> {
+    if let Some(dias) = body.vencimiento_vida_util_minima_dias {
+        if dias < 0 {
+            return Err(AppError::Validation("La vida útil mínima debe ser mayor o igual a 0".to_string()));
+        }
+    }
+    if let Some(margen) = body.vencimiento_margen_tolerancia_pct {
+        if margen < 0 || margen > 100 {
+            return Err(AppError::Validation("El margen de tolerancia debe estar entre 0 y 100".to_string()));
+        }
+    }
+
     let mut log_changes: Vec<(&str, String, String)> = Vec::new();
 
     if let Some(nombre) = &body.nombre_laboratorio {
@@ -319,6 +344,45 @@ pub async fn actualizar(
 
     if let Some(phone) = &body.whatsapp_bot_phone {
         set_config(pool, "whatsapp_bot_phone", phone).await?;
+    }
+
+    if let Some(activa) = body.vencimiento_alerta_activa {
+        let val = if activa { "true" } else { "false" };
+        let ant = get_config(pool, "vencimiento_alerta_activa").await?;
+        set_config(pool, "vencimiento_alerta_activa", val).await?;
+        if ant.as_deref() != Some(val) {
+            log_changes.push((
+                "vencimiento_alerta_activa",
+                ant.unwrap_or_else(|| "true".to_string()),
+                val.to_string(),
+            ));
+        }
+    }
+
+    if let Some(dias) = body.vencimiento_vida_util_minima_dias {
+        let val = dias.to_string();
+        let ant = get_config(pool, "vencimiento_vida_util_minima_dias").await?;
+        set_config(pool, "vencimiento_vida_util_minima_dias", &val).await?;
+        if ant.as_deref() != Some(&val) {
+            log_changes.push((
+                "vencimiento_vida_util_minima_dias",
+                ant.unwrap_or_else(|| "30".to_string()),
+                val,
+            ));
+        }
+    }
+
+    if let Some(margen) = body.vencimiento_margen_tolerancia_pct {
+        let val = margen.to_string();
+        let ant = get_config(pool, "vencimiento_margen_tolerancia_pct").await?;
+        set_config(pool, "vencimiento_margen_tolerancia_pct", &val).await?;
+        if ant.as_deref() != Some(&val) {
+            log_changes.push((
+                "vencimiento_margen_tolerancia_pct",
+                ant.unwrap_or_else(|| "10".to_string()),
+                val,
+            ));
+        }
     }
 
     for (clave, ant, nuev) in log_changes {

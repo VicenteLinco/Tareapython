@@ -41,8 +41,9 @@ async fn reconciliar_solicitud_recepcion(
            JOIN productos p ON p.id = d.producto_id
            LEFT JOIN unidades_basicas ub ON ub.id = d.unidad_basica_id
            LEFT JOIN presentaciones pr ON pr.id = d.presentacion_id
+           LEFT JOIN presentaciones fallback_pr ON fallback_pr.producto_id = d.producto_id AND fallback_pr.activa = true
            WHERE d.solicitud_id = $1
-             AND p.proveedor_id = $2
+             AND COALESCE(pr.proveedor_id, fallback_pr.proveedor_id) = $2
            GROUP BY d.producto_id"#,
     )
     .bind(solicitud_id)
@@ -296,6 +297,9 @@ pub async fn crear_recepcion(
     req.validate()
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
+    let mut any_alert = false;
+    let mut warning_details: Vec<String> = Vec::new();
+
     let estado = req.estado.as_deref().unwrap_or("completa");
     if !["completa", "parcial", "rechazada", "borrador"].contains(&estado) {
         return Err(AppError::Validation(format!("Estado inválido: {}", estado)));
@@ -429,10 +433,38 @@ pub async fn crear_recepcion(
 
             let cantidad_base = item.cantidad_presentaciones * factor;
 
+            let mut alerta_item = false;
+            let mut desperdicio_item = Decimal::ZERO;
+
+            if let Some(fv) = fecha_venc_efectiva {
+                let validation_res = validar_vencimiento(pool, crate::dto::recepcion::ValidarVencimientoInput {
+                    producto_id: item.producto_id,
+                    cantidad: item.cantidad_presentaciones,
+                    presentacion_id: item.presentacion_id,
+                    fecha_vencimiento: fv,
+                }).await.unwrap_or(crate::dto::recepcion::ValidarVencimientoResponse {
+                    desperdicio_proyectado: Decimal::ZERO,
+                    alerta_vencimiento: false,
+                });
+                alerta_item = validation_res.alerta_vencimiento;
+                desperdicio_item = validation_res.desperdicio_proyectado;
+            }
+
+            if alerta_item {
+                any_alert = true;
+                warning_details.push(format!(
+                    "{} (Lote: {}, Desperdicio: {})",
+                    producto_nombre,
+                    numero_lote_efectivo,
+                    desperdicio_item
+                ));
+            }
+
             sqlx::query(
                 "INSERT INTO recepcion_detalle (recepcion_id, producto_id, lote_id, presentacion_id, area_destino_id,
-                                              cantidad_presentaciones, factor_conversion_usado, cantidad_unidades_base, precio_unitario)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
+                                              cantidad_presentaciones, factor_conversion_usado, cantidad_unidades_base, precio_unitario,
+                                              alerta_vencimiento, desperdicio_proyectado)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"
             )
             .bind(recepcion_id)
             .bind(item.producto_id)
@@ -443,6 +475,8 @@ pub async fn crear_recepcion(
             .bind(factor)
             .bind(cantidad_base)
             .bind(item.precio_unitario)
+            .bind(alerta_item)
+            .bind(desperdicio_item)
             .execute(&mut *tx)
             .await?;
 
@@ -516,6 +550,22 @@ pub async fn crear_recepcion(
     }
 
     tx.commit().await?;
+
+    if any_alert {
+        let titulo = format!("Alerta de vencimiento en recepción {}", _numero);
+        let mensaje = format!(
+            "Se detectaron productos con riesgo de vencimiento o vida útil corta: {}.",
+            warning_details.join(", ")
+        );
+        let _ = crate::services::notificacion_service::crear_para_admins(
+            pool,
+            &titulo,
+            &mensaje,
+            "vencimiento",
+        )
+        .await;
+    }
+
     Ok((recepcion_id, lotes_creados))
 }
 
@@ -700,4 +750,203 @@ pub async fn obtener_reconciliacion(
     .fetch_all(pool)
     .await
     .map_err(Into::into)
+}
+
+async fn load_vencimiento_settings(pool: &PgPool) -> Result<(bool, i32, i32), AppError> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT clave, valor_texto FROM configuracion WHERE clave IN (
+            'vencimiento_alerta_activa',
+            'vencimiento_vida_util_minima_dias',
+            'vencimiento_margen_tolerancia_pct'
+        )"
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut alerta_activa = true;
+    let mut vida_util_minima = 30;
+    let mut margen_tolerancia = 10;
+
+    for (clave, valor) in rows {
+        match clave.as_str() {
+            "vencimiento_alerta_activa" => alerta_activa = valor == "true",
+            "vencimiento_vida_util_minima_dias" => vida_util_minima = valor.parse().unwrap_or(30),
+            "vencimiento_margen_tolerancia_pct" => margen_tolerancia = valor.parse().unwrap_or(10),
+            _ => {}
+        }
+    }
+
+    Ok((alerta_activa, vida_util_minima, margen_tolerancia))
+}
+
+pub fn calcular_alerta_vencimiento_pure(
+    dias_vida_util: i64,
+    vida_util_minima: i64,
+    stock_actual: Decimal,
+    cantidad_base: Decimal,
+    mu: f64,
+    margen_tolerancia: i32,
+) -> (Decimal, bool) {
+    let dias_vida_util_f = if dias_vida_util < 0 { 0.0 } else { dias_vida_util as f64 };
+    let total_stock_base = stock_actual.to_string().parse::<f64>().unwrap_or(0.0)
+        + cantidad_base.to_string().parse::<f64>().unwrap_or(0.0);
+    let expected_consumption = mu * dias_vida_util_f;
+    let desperdicio_f = (total_stock_base - expected_consumption).max(0.0);
+
+    use rust_decimal::prelude::FromPrimitive;
+    let desperdicio = Decimal::from_f64(desperdicio_f).unwrap_or(Decimal::ZERO).round_dp(2);
+
+    let pct = Decimal::from(margen_tolerancia) / Decimal::from(100);
+    let limite_tolerancia = cantidad_base * pct;
+    let alerta_vencimiento = (dias_vida_util < vida_util_minima) || (desperdicio > limite_tolerancia);
+
+    (desperdicio, alerta_vencimiento)
+}
+
+pub async fn validar_vencimiento(
+    pool: &PgPool,
+    input: crate::dto::recepcion::ValidarVencimientoInput,
+) -> Result<crate::dto::recepcion::ValidarVencimientoResponse, AppError> {
+    let factor = if let Some(pres_id) = input.presentacion_id {
+        sqlx::query_scalar::<_, Decimal>(
+            "SELECT factor_conversion FROM presentaciones WHERE id = $1 AND activa = true",
+        )
+        .bind(pres_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(Decimal::from(1))
+    } else {
+        Decimal::from(1)
+    };
+    let cantidad_base = input.cantidad * factor;
+
+    let stock_actual: Decimal = sqlx::query_scalar::<_, Decimal>(
+        "SELECT COALESCE(SUM(s.cantidad), 0.0) FROM stock s JOIN lotes l ON l.id = s.lote_id WHERE l.producto_id = $1"
+    )
+    .bind(input.producto_id)
+    .fetch_one(pool)
+    .await?;
+
+    let (alerta_activa, vida_util_minima, margen_tolerancia) = load_vencimiento_settings(pool).await?;
+    if !alerta_activa {
+        return Ok(crate::dto::recepcion::ValidarVencimientoResponse {
+            desperdicio_proyectado: Decimal::ZERO,
+            alerta_vencimiento: false,
+        });
+    }
+
+    let today = chrono::Utc::now().naive_utc().date();
+    let dias_vida_util = (input.fecha_vencimiento - today).num_days();
+
+    let forecast_cfg = crate::services::stock_service::load_forecast_config(pool).await?;
+    let serie_diaria: Vec<f64> = sqlx::query_scalar(
+        r#"
+        WITH ventana AS (
+            SELECT NOW() - ($2::int * INTERVAL '1 day') AS desde
+        ),
+        dias AS (
+            SELECT generate_series(
+                (SELECT desde FROM ventana)::date,
+                NOW()::date,
+                INTERVAL '1 day'
+            )::date AS dia
+        ),
+        consumo_dia AS (
+            SELECT
+                m.created_at::date AS dia,
+                SUM(m.cantidad)::FLOAT8 AS cantidad
+            FROM movimientos m
+            JOIN lotes l ON l.id = m.lote_id
+            WHERE l.producto_id = $1
+              AND m.tipo = 'CONSUMO'
+              AND m.created_at >= (SELECT desde FROM ventana)
+            GROUP BY m.created_at::date
+        )
+        SELECT COALESCE(cd.cantidad, 0.0)::FLOAT8
+        FROM dias d
+        LEFT JOIN consumo_dia cd ON cd.dia = d.dia
+        ORDER BY d.dia ASC
+        "#,
+    )
+    .bind(input.producto_id)
+    .bind(forecast_cfg.ventana_demanda_dias)
+    .fetch_all(pool)
+    .await?;
+
+    let forecast_res = crate::services::forecast::compute_forecast(
+        &serie_diaria,
+        stock_actual.to_string().parse::<f64>().unwrap_or(0.0),
+        0.0,
+        0,
+        forecast_cfg,
+    );
+
+    let (desperdicio, alerta_vencimiento) = calcular_alerta_vencimiento_pure(
+        dias_vida_util,
+        vida_util_minima as i64,
+        stock_actual,
+        cantidad_base,
+        forecast_res.mu,
+        margen_tolerancia,
+    );
+
+    Ok(crate::dto::recepcion::ValidarVencimientoResponse {
+        desperdicio_proyectado: desperdicio,
+        alerta_vencimiento,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn test_calcular_alerta_vencimiento_pure_bajo_riesgo() {
+        // Vida útil cómoda (60 días vs 30 mínima) y sin desperdicio proyectado
+        let (desperdicio, alerta) = calcular_alerta_vencimiento_pure(
+            60, // dias_vida_util
+            30, // vida_util_minima
+            dec!(10), // stock_actual
+            dec!(5), // cantidad_base
+            1.0, // mu (demanda de 1u por día, consumo esperado = 60u)
+            10, // margen_tolerancia_pct
+        );
+
+        assert_eq!(desperdicio, Decimal::ZERO);
+        assert!(!alerta);
+    }
+
+    #[test]
+    fn test_calcular_alerta_vencimiento_pure_vida_util_corta() {
+        // Vida útil por debajo del mínimo (20 días vs 30 mínima)
+        let (_desperdicio, alerta) = calcular_alerta_vencimiento_pure(
+            20, // dias_vida_util
+            30, // vida_util_minima
+            dec!(10),
+            dec!(5),
+            1.0,
+            10,
+        );
+
+        assert!(alerta, "Debería alertar porque la vida útil es corta");
+    }
+
+    #[test]
+    fn test_calcular_alerta_vencimiento_pure_alto_desperdicio() {
+        // Vida útil cómoda (50 días), pero consumo esperado es 0 (mu=0).
+        // Stock 10 + cantidad 5 = 15. Consumo 0. Desperdicio = 15.
+        // Tolerancia = 10% de 5 = 0.5. Desperdicio 15 > 0.5.
+        let (desperdicio, alerta) = calcular_alerta_vencimiento_pure(
+            50, // dias_vida_util
+            30, // vida_util_minima
+            dec!(10),
+            dec!(5),
+            0.0, // mu (sin consumo esperado)
+            10,
+        );
+
+        assert_eq!(desperdicio, dec!(15));
+        assert!(alerta, "Debería alertar por desperdicio superior a tolerancia");
+    }
 }

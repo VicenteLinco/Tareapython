@@ -10,6 +10,7 @@ pub mod descarte_service;
 pub mod forecast;
 pub mod idempotency;
 pub mod llm;
+pub mod notificacion_service;
 pub mod presentacion_service;
 pub mod producto_service;
 pub mod proveedor_service;

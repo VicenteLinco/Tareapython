@@ -80,13 +80,13 @@ impl SolicitudService {
         let items = sqlx::query_as::<_, SolicitudDetalleItem>(
             r#"SELECT
                 d.producto_id,
-                p.proveedor_id,
+                COALESCE(pres.proveedor_id, fallback_pres.proveedor_id) as proveedor_id,
                 p.nombre as producto_nombre,
                 d.cantidad_sugerida,
                 d.unidad_basica_id,
                 COALESCE(pres.nombre, ub.nombre) as unidad,
                 COALESCE(pres.nombre_plural, ub.nombre_plural) as unidad_plural,
-                p.sku as codigo_proveedor,
+                COALESCE(pres.sku, fallback_pres.sku) as codigo_proveedor,
                 NULL::varchar as codigo_maestro,
                 prov.nombre as proveedor_nombre,
                 pres.nombre as presentacion_nombre,
@@ -102,8 +102,9 @@ impl SolicitudService {
                FROM solicitud_compra_detalle d
                JOIN productos p ON p.id = d.producto_id
                LEFT JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-               LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
                LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
+               LEFT JOIN presentaciones fallback_pres ON fallback_pres.producto_id = d.producto_id AND fallback_pres.activa = true
+               LEFT JOIN proveedores prov ON prov.id = COALESCE(pres.proveedor_id, fallback_pres.proveedor_id)
                WHERE d.solicitud_id = $1
                ORDER BY p.nombre"#,
         )
@@ -114,7 +115,7 @@ impl SolicitudService {
         let envios = sqlx::query_as::<_, EnvioProveedorView>(
             r#"WITH proveedores_solicitud AS (
                    SELECT
-                       p.proveedor_id,
+                       COALESCE(pres.proveedor_id, fallback_pres.proveedor_id) AS proveedor_id,
                        COALESCE(prov.nombre, '[Proveedor eliminado]') AS proveedor_nombre,
                        COUNT(d.id)::integer AS total_items,
                        COALESCE(SUM(
@@ -130,10 +131,11 @@ impl SolicitudService {
                        ), 0) AS monto_total
                    FROM solicitud_compra_detalle d
                    JOIN productos p ON p.id = d.producto_id
-                   LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
                    LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
-                   WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
-                   GROUP BY p.proveedor_id, prov.nombre
+                   LEFT JOIN presentaciones fallback_pres ON fallback_pres.producto_id = d.producto_id AND fallback_pres.activa = true
+                   LEFT JOIN proveedores prov ON prov.id = COALESCE(pres.proveedor_id, fallback_pres.proveedor_id)
+                   WHERE d.solicitud_id = $1 AND COALESCE(pres.proveedor_id, fallback_pres.proveedor_id) IS NOT NULL
+                   GROUP BY COALESCE(pres.proveedor_id, fallback_pres.proveedor_id), prov.nombre
                )
                SELECT
                    ps.proveedor_id,
@@ -208,8 +210,9 @@ impl SolicitudService {
         if let Some(proveedor_id) = params.proveedor_id {
             count_builder.push(
                 " AND EXISTS (SELECT 1 FROM solicitud_compra_detalle scd \
-                 JOIN productos p ON p.id = scd.producto_id \
-                 WHERE scd.solicitud_id = s.id AND p.proveedor_id = ",
+                 LEFT JOIN presentaciones pres ON pres.id = scd.presentacion_id \
+                 LEFT JOIN presentaciones fallback_pres ON fallback_pres.producto_id = scd.producto_id AND fallback_pres.activa = true \
+                 WHERE scd.solicitud_id = s.id AND COALESCE(pres.proveedor_id, fallback_pres.proveedor_id) = ",
             );
             count_builder.push_bind(proveedor_id);
             count_builder.push(")");
@@ -223,16 +226,18 @@ impl SolicitudService {
                       (SELECT COUNT(*)::integer FROM solicitud_compra_detalle WHERE solicitud_id = s.id) as items_count,
                       s.fecha_envio, s.fecha_cierre,
                       COALESCE((
-                          SELECT COUNT(DISTINCT p.proveedor_id)::integer
+                          SELECT COUNT(DISTINCT COALESCE(pres.proveedor_id, fallback_pres.proveedor_id))::integer
                           FROM solicitud_compra_detalle scd
-                          JOIN productos p ON p.id = scd.producto_id
-                          WHERE scd.solicitud_id = s.id AND p.proveedor_id IS NOT NULL
+                          LEFT JOIN presentaciones pres ON pres.id = scd.presentacion_id
+                          LEFT JOIN presentaciones fallback_pres ON fallback_pres.producto_id = scd.producto_id AND fallback_pres.activa = true
+                          WHERE scd.solicitud_id = s.id AND COALESCE(pres.proveedor_id, fallback_pres.proveedor_id) IS NOT NULL
                       ), 0) as proveedores_count,
                       (
                           SELECT string_agg(DISTINCT prov.nombre, ', ' ORDER BY prov.nombre)
                           FROM solicitud_compra_detalle scd
-                          JOIN productos p ON p.id = scd.producto_id
-                          JOIN proveedores prov ON prov.id = p.proveedor_id
+                          LEFT JOIN presentaciones pres ON pres.id = scd.presentacion_id
+                          LEFT JOIN presentaciones fallback_pres ON fallback_pres.producto_id = scd.producto_id AND fallback_pres.activa = true
+                          JOIN proveedores prov ON prov.id = COALESCE(pres.proveedor_id, fallback_pres.proveedor_id)
                           WHERE scd.solicitud_id = s.id
                       ) as proveedores_nombres
                FROM solicitudes_compra s
@@ -253,8 +258,9 @@ impl SolicitudService {
         if let Some(proveedor_id) = params.proveedor_id {
             list_builder.push(
                 " AND EXISTS (SELECT 1 FROM solicitud_compra_detalle scd \
-                 JOIN productos p ON p.id = scd.producto_id \
-                 WHERE scd.solicitud_id = s.id AND p.proveedor_id = ",
+                 LEFT JOIN presentaciones pres ON pres.id = scd.presentacion_id \
+                 LEFT JOIN presentaciones fallback_pres ON fallback_pres.producto_id = scd.producto_id AND fallback_pres.activa = true \
+                 WHERE scd.solicitud_id = s.id AND COALESCE(pres.proveedor_id, fallback_pres.proveedor_id) = ",
             );
             list_builder.push_bind(proveedor_id);
             list_builder.push(")");
@@ -440,8 +446,9 @@ impl SolicitudService {
 
         let sin_proveedor: i64 = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM solicitud_compra_detalle d
-             JOIN productos p ON p.id = d.producto_id
-             WHERE d.solicitud_id = $1 AND p.proveedor_id IS NULL",
+             LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
+             LEFT JOIN presentaciones fallback_pres ON fallback_pres.producto_id = d.producto_id AND fallback_pres.activa = true
+             WHERE d.solicitud_id = $1 AND COALESCE(pres.proveedor_id, fallback_pres.proveedor_id) IS NULL",
         )
         .bind(id)
         .fetch_one(&mut *tx)
@@ -469,10 +476,11 @@ impl SolicitudService {
 
         sqlx::query(
             "INSERT INTO solicitud_envios (solicitud_id, proveedor_id, estado)
-             SELECT DISTINCT $1, p.proveedor_id, 'pendiente'
+             SELECT DISTINCT $1, COALESCE(pres.proveedor_id, fallback_pres.proveedor_id), 'pendiente'
              FROM solicitud_compra_detalle d
-             JOIN productos p ON p.id = d.producto_id
-             WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
+             LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
+             LEFT JOIN presentaciones fallback_pres ON fallback_pres.producto_id = d.producto_id AND fallback_pres.activa = true
+             WHERE d.solicitud_id = $1 AND COALESCE(pres.proveedor_id, fallback_pres.proveedor_id) IS NOT NULL
              ON CONFLICT (solicitud_id, proveedor_id) DO NOTHING",
         )
         .bind(id)
@@ -548,10 +556,11 @@ impl SolicitudService {
         let (total_provs, provs_enviados, fecha_max): (i64, i64, Option<DateTime<Utc>>) =
             sqlx::query_as(
                 r#"WITH proveedores_items AS (
-                       SELECT DISTINCT p.proveedor_id
+                       SELECT DISTINCT COALESCE(pres.proveedor_id, fallback_pres.proveedor_id) AS proveedor_id
                        FROM solicitud_compra_detalle d
-                       JOIN productos p ON p.id = d.producto_id
-                       WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
+                       LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
+                       LEFT JOIN presentaciones fallback_pres ON fallback_pres.producto_id = d.producto_id AND fallback_pres.activa = true
+                       WHERE d.solicitud_id = $1 AND COALESCE(pres.proveedor_id, fallback_pres.proveedor_id) IS NOT NULL
                    ),
                    envios_ok AS (
                        SELECT proveedor_id
@@ -631,10 +640,11 @@ impl SolicitudService {
         // su método/fecha propios): no se pisan.
         sqlx::query(
             "INSERT INTO solicitud_envios (solicitud_id, proveedor_id, estado, metodo_envio, fecha_envio, usuario_envio_id)
-             SELECT DISTINCT $1, p.proveedor_id, 'enviado', COALESCE($2, 'otro'), NOW(), $3
+             SELECT DISTINCT $1, COALESCE(pres.proveedor_id, fallback_pres.proveedor_id), 'enviado', COALESCE($2, 'otro'), NOW(), $3
              FROM solicitud_compra_detalle d
-             JOIN productos p ON p.id = d.producto_id
-             WHERE d.solicitud_id = $1 AND p.proveedor_id IS NOT NULL
+             LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
+             LEFT JOIN presentaciones fallback_pres ON fallback_pres.producto_id = d.producto_id AND fallback_pres.activa = true
+             WHERE d.solicitud_id = $1 AND COALESCE(pres.proveedor_id, fallback_pres.proveedor_id) IS NOT NULL
              ON CONFLICT (solicitud_id, proveedor_id) DO UPDATE
              SET estado = 'enviado',
                  metodo_envio = EXCLUDED.metodo_envio,
@@ -691,8 +701,9 @@ impl SolicitudService {
         let proveedor_presente: i64 = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*)
              FROM solicitud_compra_detalle d
-             JOIN productos p ON p.id = d.producto_id
-             WHERE d.solicitud_id = $1 AND p.proveedor_id = $2",
+             LEFT JOIN presentaciones pres ON pres.id = d.presentacion_id
+             LEFT JOIN presentaciones fallback_pres ON fallback_pres.producto_id = d.producto_id AND fallback_pres.activa = true
+             WHERE d.solicitud_id = $1 AND COALESCE(pres.proveedor_id, fallback_pres.proveedor_id) = $2",
         )
         .bind(id)
         .bind(input.proveedor_id)
@@ -921,7 +932,9 @@ impl SolicitudService {
                 FROM solicitud_compra_detalle scd
                 JOIN solicitudes_compra sc ON sc.id = scd.solicitud_id
                 JOIN productos p2 ON p2.id = scd.producto_id
-                LEFT JOIN proveedores prov2 ON prov2.id = p2.proveedor_id
+                LEFT JOIN presentaciones pres2 ON pres2.id = scd.presentacion_id
+                LEFT JOIN presentaciones fallback_pres2 ON fallback_pres2.producto_id = scd.producto_id AND fallback_pres2.activa = true
+                LEFT JOIN proveedores prov2 ON prov2.id = COALESCE(pres2.proveedor_id, fallback_pres2.proveedor_id)
                 WHERE sc.estado IN ('guardada', 'parcialmente_enviada', 'enviada', 'parcialmente_recibida')
                   AND sc.fecha_creacion >= NOW() - (
                       COALESCE(p2.lead_time_propio,
@@ -947,7 +960,7 @@ impl SolicitudService {
             ),
             pres AS (
                 SELECT DISTINCT ON (producto_id)
-                    producto_id, id, nombre, nombre_plural, factor_conversion
+                    producto_id, id, nombre, nombre_plural, factor_conversion, proveedor_id, precio_adquisicion, sku
                 FROM presentaciones
                 WHERE activa = true
                 ORDER BY producto_id, factor_conversion DESC
@@ -955,7 +968,7 @@ impl SolicitudService {
             SELECT
                 p.id                                                              AS producto_id,
                 p.nombre                                                          AS producto_nombre,
-                p.sku                                                             AS codigo_proveedor,
+                pres.sku                                                          AS codigo_proveedor,
                 NULL::varchar                                                     AS codigo_maestro,
                 prov.id                                                           AS proveedor_id,
                 prov.nombre                                                       AS proveedor_nombre,
@@ -970,17 +983,17 @@ impl SolicitudService {
                 pres.nombre                                                       AS presentacion_nombre,
                 pres.nombre_plural                                                AS presentacion_nombre_plural,
                 pres.factor_conversion::FLOAT8                                    AS factor_conversion,
-                COALESCE(up.precio_unitario, p.precio_unidad)::FLOAT8             AS precio_ultimo,
+                COALESCE(up.precio_unitario, pres.precio_adquisicion)::FLOAT8     AS precio_ultimo,
                 ub.nombre                                                         AS unidad_base,
                 ub.nombre_plural                                                  AS unidad_base_plural,
                 p.unidad_base_id                                                  AS unidad_basica_id,
                 p.imagen_url                                                      AS imagen_url
             FROM productos p
             JOIN series s ON s.producto_id = p.id
-            LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
+            LEFT JOIN pres ON pres.producto_id = p.id
+            LEFT JOIN proveedores prov ON prov.id = pres.proveedor_id
             LEFT JOIN stock_total st ON st.producto_id = p.id
             LEFT JOIN ultimo_precio up ON up.producto_id = p.id
-            LEFT JOIN pres ON pres.producto_id = p.id
             LEFT JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
             LEFT JOIN pedidos_en_vuelo pev ON pev.producto_id = p.id
             LEFT JOIN par_level_config plc ON plc.producto_id = p.id AND plc.area_id IS NULL
@@ -1142,7 +1155,10 @@ impl SolicitudService {
                     WHERE scd.producto_id = p.id
                       AND sc.estado IN ('guardada', 'parcialmente_enviada', 'enviada', 'parcialmente_recibida')
                 ), 0.0)                                                           AS ya_pedido,
-                COALESCE(up.precio_unitario, p.precio_unidad)::FLOAT8             AS precio_ultimo
+                COALESCE(
+                    up.precio_unitario,
+                    (SELECT pr.precio_adquisicion FROM presentaciones pr WHERE pr.producto_id = p.id AND pr.activa = true ORDER BY pr.id ASC LIMIT 1)
+                )::FLOAT8                                                         AS precio_ultimo
             FROM productos p
             LEFT JOIN proveedores prov ON prov.id = $3
             LEFT JOIN par_level_config plc ON plc.producto_id = p.id AND plc.area_id IS NULL

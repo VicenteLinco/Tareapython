@@ -13,7 +13,7 @@ use inventario_lab_backend::dto::{
     recepcion::{
         CreateRecepcion, DetalleRecepcionInput, DetalleRecepcionRow, LoteCreado,
         PaginatedRecepciones, RecepcionListItem, RecepcionQuery, RecepcionReconciliacionRow,
-        SubirFotoInput,
+        SubirFotoInput, ValidarVencimientoInput, ValidarVencimientoResponse,
     },
     solicitud::{
         CancelarEnvioInput, CreateSolicitudItem, EnvioProveedorView, ItemRecomendado,
@@ -25,6 +25,7 @@ use inventario_lab_backend::dto::{
         AreaSimple, CreateUsuario, ResetPasswordRequest, UpdateUsuario, UsuarioQuery,
         UsuarioResponse,
     },
+    notificacion::{NotificacionResponse, UnreadCountResponse},
 };
 /// Genera tipos TypeScript desde los modelos y DTOs Rust usando specta.
 /// Ejecutar con: cargo run --bin export_types
@@ -110,6 +111,10 @@ fn main() {
     append!(UsuarioQuery);
     append!(ResetPasswordRequest);
 
+    // DTOs Notificaciones
+    append!(NotificacionResponse);
+    append!(UnreadCountResponse);
+
     // DTOs Categorías
     append!(CreateCategoria);
     append!(UpdateCategoria);
@@ -146,6 +151,8 @@ fn main() {
     append!(DetalleRecepcionRow);
     append!(RecepcionReconciliacionRow);
     append!(LoteCreado);
+    append!(ValidarVencimientoInput);
+    append!(ValidarVencimientoResponse);
 
     // Tipos de error de API — añadidos manualmente (no vienen de specta)
     writeln!(output, r#"export type ApiErrorCode ="#).unwrap();

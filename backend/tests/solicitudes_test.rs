@@ -21,10 +21,9 @@ async fn setup_producto(_pool: &PgPool, token: &str, app: &axum::Router) -> Uuid
         serde_json::json!({
             "nombre": format!("Producto Test {}", Uuid::new_v4()),
             "unidad_base_id": 1,
-            "proveedor_id": proveedor_id,
             "stock_minimo": 100,
             "presentaciones": [
-                { "nombre": "Unitario", "nombre_plural": "Unitarios", "factor_conversion": 1 }
+                { "nombre": "Unitario", "nombre_plural": "Unitarios", "factor_conversion": 1, "proveedor_id": proveedor_id, "precio_adquisicion": 50 }
             ]
         }),
     )
@@ -383,7 +382,7 @@ async fn enviar_preserva_envios_granulares_ya_registrados(pool: PgPool) {
     let prod_b = setup_producto(&pool, &admin_token, &app).await;
 
     let prov_a: Option<i32> =
-        sqlx::query_scalar("SELECT proveedor_id FROM productos WHERE id = $1")
+        sqlx::query_scalar("SELECT proveedor_id FROM presentaciones WHERE producto_id = $1 LIMIT 1")
             .bind(prod_a)
             .fetch_one(&pool)
             .await
@@ -517,7 +516,7 @@ async fn completar_requiere_recepcion_completa(pool: PgPool) {
 
     // Insertar una recepción completa vinculada a la solicitud.
     let proveedor_id: Option<i32> =
-        sqlx::query_scalar("SELECT proveedor_id FROM productos WHERE id = $1")
+        sqlx::query_scalar("SELECT proveedor_id FROM presentaciones WHERE producto_id = $1 LIMIT 1")
             .bind(prod_id)
             .fetch_one(&pool)
             .await

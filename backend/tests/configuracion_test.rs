@@ -207,3 +207,86 @@ async fn test_verificar_pin_con_pin_configurado(pool: PgPool) {
     .await;
     assert_eq!(bad["valido"].as_bool(), Some(false));
 }
+
+/// GET /api/v1/configuracion — devuelve vencimiento defaults
+#[sqlx::test(migrations = "./migrations")]
+async fn test_vencimiento_configuracion_defaults(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (status, json) = common::get_json(&app, "/api/v1/configuracion", &token).await;
+    assert_eq!(status, StatusCode::OK);
+
+    assert_eq!(json["vencimiento_alerta_activa"].as_bool(), Some(true));
+    assert_eq!(json["vencimiento_vida_util_minima_dias"].as_i64(), Some(30));
+    assert_eq!(json["vencimiento_margen_tolerancia_pct"].as_i64(), Some(10));
+}
+
+/// PUT /api/v1/configuracion — permite valores válidos
+#[sqlx::test(migrations = "./migrations")]
+async fn test_actualizar_vencimiento_valores_validos(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (status, _) = common::put_json(
+        &app,
+        "/api/v1/configuracion",
+        &token,
+        serde_json::json!({
+            "vencimiento_alerta_activa": false,
+            "vencimiento_vida_util_minima_dias": 45,
+            "vencimiento_margen_tolerancia_pct": 15
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (_, json) = common::get_json(&app, "/api/v1/configuracion", &token).await;
+    assert_eq!(json["vencimiento_alerta_activa"].as_bool(), Some(false));
+    assert_eq!(json["vencimiento_vida_util_minima_dias"].as_i64(), Some(45));
+    assert_eq!(json["vencimiento_margen_tolerancia_pct"].as_i64(), Some(15));
+}
+
+/// PUT /api/v1/configuracion — valida restricciones de valor
+#[sqlx::test(migrations = "./migrations")]
+async fn test_actualizar_vencimiento_valores_invalidos(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    // 1. Margen tolerancia > 100
+    let (status1, _) = common::put_json(
+        &app,
+        "/api/v1/configuracion",
+        &token,
+        serde_json::json!({
+            "vencimiento_margen_tolerancia_pct": 101
+        }),
+    )
+    .await;
+    assert_eq!(status1, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // 2. Margen tolerancia < 0
+    let (status2, _) = common::put_json(
+        &app,
+        "/api/v1/configuracion",
+        &token,
+        serde_json::json!({
+            "vencimiento_margen_tolerancia_pct": -5
+        }),
+    )
+    .await;
+    assert_eq!(status2, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // 3. Vida útil < 0
+    let (status3, _) = common::put_json(
+        &app,
+        "/api/v1/configuracion",
+        &token,
+        serde_json::json!({
+            "vencimiento_vida_util_minima_dias": -10
+        }),
+    )
+    .await;
+    assert_eq!(status3, StatusCode::UNPROCESSABLE_ENTITY);
+}
+

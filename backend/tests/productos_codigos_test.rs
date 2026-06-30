@@ -189,10 +189,12 @@ async fn agregar_codigo_en_conflicto_con_barcode_primario_falla(pool: PgPool) {
         serde_json::json!({
             "nombre": "Producto con primario",
             "unidad_base_id": 1,
-            "pres_nombre": "Caja",
-            "pres_nombre_plural": "Cajas",
-            "pres_factor": 10,
-            "pres_codigo_barras": "PRIMARY-999"
+            "presentaciones": [{
+                "nombre": "Caja",
+                "nombre_plural": "Cajas",
+                "factor_conversion": 10.0,
+                "codigo_barras": "PRIMARY-999"
+            }]
         }),
     )
     .await;

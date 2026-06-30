@@ -16,6 +16,8 @@ export interface LoteLineUI {
   cantidad_presentacion: number;
   incluir_etiqueta: boolean;
   cantidad_etiquetas: number;
+  alerta_vencimiento?: boolean;
+  desperdicio_proyectado?: string | number;
 }
 
 export interface DetalleLineUI {
@@ -126,82 +128,100 @@ function LoteRow({
     : lote.fecha_vencimiento;
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs opacity-30 w-4 text-right shrink-0">
-        {index + 1}
-      </span>
-      {control_lote !== "simple" && (
-        <>
-          <input
-            className={`input input-sm input-bordered w-28 shrink-0 font-mono ${!lote.codigo_lote ? "input-warning" : ""}`}
-            placeholder="Nº lote"
-            value={lote.codigo_lote}
-            onChange={(e) => onChange({ codigo_lote: e.target.value })}
-          />
-          <div className="flex items-center gap-1 w-44 shrink-0">
-            {modoMes ? (
-              <input
-                type="month"
-                className={`input input-sm input-bordered flex-1 min-w-0 ${!lote.fecha_vencimiento ? "input-warning" : ""}`}
-                value={fechaDisplayValue}
-                onChange={(e) => handleFechaChange(e.target.value)}
-              />
-            ) : (
-              <input
-                type="date"
-                className={`input input-sm input-bordered flex-1 min-w-0 ${!lote.fecha_vencimiento ? "input-warning" : ""}`}
-                value={fechaDisplayValue}
-                onChange={(e) => handleFechaChange(e.target.value)}
-              />
-            )}
-            <button
-              type="button"
-              className={`btn btn-xs btn-ghost px-1.5 shrink-0 gap-0.5 ${modoMes ? "text-primary" : "opacity-35 hover:opacity-70"}`}
-              title={
-                modoMes
-                  ? "Cambiar a fecha exacta (D/M/A)"
-                  : "Ingresar solo mes/año"
-              }
-              onClick={() => setModoMes((v) => !v)}
-            >
-              <Calendar className="h-3 w-3" />
-              <span className="text-[10px] font-bold leading-none">
-                {modoMes ? "M/A" : "D"}
-              </span>
-            </button>
-          </div>
-        </>
-      )}
-      <input
-        type="number"
-        min={1}
-        className="input input-sm input-bordered w-16 shrink-0"
-        value={lote.cantidad_presentacion}
-        onChange={(e) =>
-          onChange({ cantidad_presentacion: Number(e.target.value) || 1 })
-        }
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            onAddLote?.();
+    <div className="flex flex-col gap-1.5 w-full">
+      <div className="flex items-center gap-2">
+        <span className="text-xs opacity-30 w-4 text-right shrink-0">
+          {index + 1}
+        </span>
+        {control_lote !== "simple" && (
+          <>
+            <input
+              className={`input input-sm input-bordered w-28 shrink-0 font-mono ${!lote.codigo_lote ? "input-warning" : ""}`}
+              placeholder="Nº lote"
+              value={lote.codigo_lote}
+              onChange={(e) => onChange({ codigo_lote: e.target.value })}
+            />
+            <div className="flex items-center gap-1 w-44 shrink-0">
+              {modoMes ? (
+                <input
+                  type="month"
+                  className={`input input-sm input-bordered flex-1 min-w-0 ${!lote.fecha_vencimiento ? "input-warning" : ""}`}
+                  value={fechaDisplayValue}
+                  onChange={(e) => handleFechaChange(e.target.value)}
+                />
+              ) : (
+                <input
+                  type="date"
+                  className={`input input-sm input-bordered flex-1 min-w-0 ${!lote.fecha_vencimiento ? "input-warning" : ""}`}
+                  value={fechaDisplayValue}
+                  onChange={(e) => handleFechaChange(e.target.value)}
+                />
+              )}
+              <button
+                type="button"
+                className={`btn btn-xs btn-ghost px-1.5 shrink-0 gap-0.5 ${modoMes ? "text-primary" : "opacity-35 hover:opacity-70"}`}
+                title={
+                  modoMes
+                    ? "Cambiar a fecha exacta (D/M/A)"
+                    : "Ingresar solo mes/año"
+                }
+                onClick={() => setModoMes((v) => !v)}
+              >
+                <Calendar className="h-3 w-3" />
+                <span className="text-[10px] font-bold leading-none">
+                  {modoMes ? "M/A" : "D"}
+                </span>
+              </button>
+            </div>
+          </>
+        )}
+        <input
+          type="number"
+          min={1}
+          className="input input-sm input-bordered w-16 shrink-0"
+          value={lote.cantidad_presentacion}
+          onChange={(e) =>
+            onChange({ cantidad_presentacion: Number(e.target.value) || 1 })
           }
-        }}
-      />
-      <span
-        className="text-xs opacity-50 flex-1 min-w-0 truncate"
-        title={unitLabel}
-      >
-        {unitLabel}
-      </span>
-      {canDelete && control_lote !== "simple" ? (
-        <button
-          className="btn btn-ghost btn-xs btn-circle shrink-0"
-          onClick={onDelete}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              onAddLote?.();
+            }
+          }}
+        />
+        <span
+          className="text-xs opacity-50 flex-1 min-w-0 truncate"
+          title={unitLabel}
         >
-          <Trash2 className="h-3 w-3 text-error" />
-        </button>
-      ) : (
-        <div className="w-6 shrink-0" />
+          {unitLabel}
+        </span>
+        {canDelete && control_lote !== "simple" ? (
+          <button
+            className="btn btn-ghost btn-xs btn-circle shrink-0"
+            onClick={onDelete}
+          >
+            <Trash2 className="h-3 w-3 text-error" />
+          </button>
+        ) : (
+          <div className="w-6 shrink-0" />
+        )}
+      </div>
+
+      {lote.alerta_vencimiento && (
+        <div className="ml-6 mr-6 p-2 rounded-lg bg-warning/10 border border-warning/20 text-warning text-[11px] leading-normal flex items-start gap-1.5 animate-fade-in">
+          <span className="w-1.5 h-1.5 rounded-full bg-warning mt-1.5 shrink-0 animate-pulse" />
+          <div>
+            <span className="font-semibold">Advertencia de vencimiento: </span>
+            <span>
+              Este lote vencerá antes de consumirse por completo. Desperdicio estimado:{" "}
+              {typeof lote.desperdicio_proyectado === "string"
+                ? parseFloat(lote.desperdicio_proyectado).toFixed(1)
+                : Number(lote.desperdicio_proyectado || 0).toFixed(1)}
+              %.
+            </span>
+          </div>
+        </div>
       )}
     </div>
   );

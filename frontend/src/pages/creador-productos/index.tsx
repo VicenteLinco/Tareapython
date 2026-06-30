@@ -2,32 +2,26 @@ import { useSearchParams } from "react-router-dom";
 import {
   Tag,
   Layers,
-  MapPin,
   Truck,
   LayoutList,
   Package,
-  Barcode,
   ShieldAlert,
 } from "lucide-react";
 import { useFullWidthPage } from "@/components/layout/page-width";
 import { cn } from "@/lib/utils";
 import CategoriasTab from "./categorias-tab";
 import UnidadesTab from "./unidades-tab";
-import AreasTab from "./areas-tab";
 import ProveedoresTab from "./proveedores-tab";
 import ProductosTab from "./productos-tab";
 import PresentacionesFormatosTab from "./presentaciones-formatos-tab";
-import GtinsTab from "./gtins-tab";
 import BandejaCatalogacionTab from "./BandejaCatalogacionTab";
 
 type TabId =
   | "productos"
   | "categorias"
   | "unidades"
-  | "areas"
   | "proveedores"
   | "presentaciones"
-  | "gtins"
   | "catalogacion";
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
@@ -36,9 +30,7 @@ const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: "categorias", label: "Categorías", icon: Tag },
   { id: "unidades", label: "Unidades", icon: Layers },
   { id: "proveedores", label: "Proveedores", icon: Truck },
-  { id: "areas", label: "Áreas", icon: MapPin },
-  { id: "presentaciones", label: "Presentaciones", icon: LayoutList },
-  { id: "gtins", label: "GTINs", icon: Barcode },
+  { id: "presentaciones", label: "Formatos de Empaque", icon: LayoutList },
 ];
 
 export default function CreadorProductosPage() {
@@ -91,9 +83,7 @@ export default function CreadorProductosPage() {
         {tabActivo === "categorias" && <CategoriasTab />}
         {tabActivo === "unidades" && <UnidadesTab />}
         {tabActivo === "proveedores" && <ProveedoresTab />}
-        {tabActivo === "areas" && <AreasTab />}
         {tabActivo === "presentaciones" && <PresentacionesFormatosTab />}
-        {tabActivo === "gtins" && <GtinsTab />}
       </div>
     </div>
   );

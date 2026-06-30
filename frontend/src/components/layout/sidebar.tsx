@@ -80,7 +80,7 @@ const navGroups: { label: string | null; items: NavItem[] }[] = [
       {
         to: "/ordenes-compra",
         icon: ShoppingBag,
-        label: "Guías de Despacho",
+        label: "Adquisiciones",
         adminOnly: true,
       },
     ],
@@ -107,6 +107,7 @@ const navGroups: { label: string | null; items: NavItem[] }[] = [
         label: "Configuración",
         adminOnly: true,
       },
+      { to: "/areas", icon: Settings, label: "Áreas", adminOnly: true },
       { to: "/audit-log", icon: FileText, label: "Audit Log", adminOnly: true },
     ],
   },

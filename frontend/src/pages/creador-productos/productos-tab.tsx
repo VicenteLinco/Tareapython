@@ -1107,7 +1107,6 @@ function CreateProductoDialog({
     control_lote: "con_vto" as ControlLote,
     fabricante: "",
     mpn: "",
-    alias_unidad_clinica: "",
     codigo_loinc_cpt: "",
     es_kit: false,
     stock_minimo_global: "",
@@ -1218,7 +1217,6 @@ function CreateProductoDialog({
       control_lote: duplicateSource.control_lote ?? "con_vto",
       fabricante: duplicateSource.fabricante ?? "",
       mpn: duplicateSource.mpn ?? "",
-      alias_unidad_clinica: duplicateSource.alias_unidad_clinica ?? "",
       codigo_loinc_cpt: duplicateSource.codigo_loinc_cpt ?? "",
       es_kit: duplicateSource.es_kit ?? false,
       stock_minimo_global: duplicateSource.stock_minimo_global
@@ -1257,7 +1255,6 @@ function CreateProductoDialog({
       control_lote: "con_vto" as ControlLote,
       fabricante: "",
       mpn: "",
-      alias_unidad_clinica: "",
       codigo_loinc_cpt: "",
       es_kit: false,
       stock_minimo_global: "",
@@ -1303,7 +1300,6 @@ function CreateProductoDialog({
       control_lote: form.control_lote,
       fabricante: form.fabricante.trim() || undefined,
       mpn: form.mpn.trim() || undefined,
-      alias_unidad_clinica: form.alias_unidad_clinica.trim() || undefined,
       codigo_loinc_cpt: form.codigo_loinc_cpt.trim() || undefined,
       es_kit: form.es_kit,
       stock_minimo_global: form.stock_minimo_global
@@ -1683,7 +1679,7 @@ function CreateProductoDialog({
               <div className="grid grid-cols-2 gap-3">
                 <div className="form-control">
                   <label className="label py-0.5">
-                    <span className="label-text text-sm font-medium">MPN</span>
+                    <span className="label-text text-sm font-medium">Nº Parte Fabricante (MPN)</span>
                     <span className="label-text-alt text-base-content/40 text-[10px]">
                       opcional
                     </span>
@@ -1695,13 +1691,13 @@ function CreateProductoDialog({
                     onChange={(e) =>
                       setForm((f) => ({ ...f, mpn: e.target.value }))
                     }
-                    placeholder="Nº de parte de fabricante"
+                    placeholder="Ej: 044123 (Ref. fabricante)"
                   />
                 </div>
                 <div className="form-control">
                   <label className="label py-0.5">
                     <span className="label-text text-sm font-medium">
-                      LOINC/CPT
+                      LOINC/CPT (Clínico)
                     </span>
                     <span className="label-text-alt text-base-content/40 text-[10px]">
                       opcional
@@ -1717,33 +1713,14 @@ function CreateProductoDialog({
                         codigo_loinc_cpt: e.target.value,
                       }))
                     }
-                    placeholder="Código estándar clínico"
+                    placeholder="Ej: 94500-6"
                   />
+                  <p className="text-[10px] text-base-content/40 mt-0.5">
+                    Integración LIS/HIS (Exámenes/Facturación)
+                  </p>
                 </div>
               </div>
 
-              <div className="form-control">
-                <label className="label py-0.5">
-                  <span className="label-text text-sm font-medium">
-                    Alias en Unidad Clínica
-                  </span>
-                  <span className="label-text-alt text-base-content/40 text-[10px]">
-                    opcional
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  className="input input-bordered input-sm h-9 bg-base-100"
-                  value={form.alias_unidad_clinica}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      alias_unidad_clinica: e.target.value,
-                    }))
-                  }
-                  placeholder="Ej: jeringa tuberculina"
-                />
-              </div>
 
               <div className="grid grid-cols-2 gap-3 mt-1">
                 <div className="form-control">
@@ -1990,7 +1967,6 @@ function EditProductoDialog({
     control_lote: "con_vto" as ControlLote,
     fabricante: "",
     mpn: "",
-    alias_unidad_clinica: "",
     codigo_loinc_cpt: "",
     es_kit: false,
     stock_minimo_global: "",
@@ -2019,7 +1995,6 @@ function EditProductoDialog({
         control_lote: producto.control_lote ?? "con_vto",
         fabricante: producto.fabricante ?? "",
         mpn: producto.mpn ?? "",
-        alias_unidad_clinica: producto.alias_unidad_clinica ?? "",
         codigo_loinc_cpt: producto.codigo_loinc_cpt ?? "",
         es_kit: producto.es_kit ?? false,
         stock_minimo_global: producto.stock_minimo_global
@@ -2072,7 +2047,6 @@ function EditProductoDialog({
       control_lote: form.control_lote,
       fabricante: form.fabricante.trim() || null,
       mpn: form.mpn.trim() || null,
-      alias_unidad_clinica: form.alias_unidad_clinica.trim() || null,
       codigo_loinc_cpt: form.codigo_loinc_cpt.trim() || null,
       es_kit: form.es_kit,
       stock_minimo_global: form.stock_minimo_global
@@ -2358,7 +2332,7 @@ function EditProductoDialog({
                   <div className="form-control">
                     <label className="label py-0.5">
                       <span className="label-text text-sm font-medium">
-                        MPN
+                        Nº Parte Fabricante (MPN)
                       </span>
                       <span className="label-text-alt text-base-content/40 text-[10px]">
                         opcional
@@ -2371,13 +2345,13 @@ function EditProductoDialog({
                       onChange={(e) =>
                         setForm((f) => ({ ...f, mpn: e.target.value }))
                       }
-                      placeholder="Nº de parte de fabricante"
+                      placeholder="Ej: 044123 (Ref. fabricante)"
                     />
                   </div>
                   <div className="form-control">
                     <label className="label py-0.5">
                       <span className="label-text text-sm font-medium">
-                        LOINC/CPT
+                        LOINC/CPT (Clínico)
                       </span>
                       <span className="label-text-alt text-base-content/40 text-[10px]">
                         opcional
@@ -2393,33 +2367,14 @@ function EditProductoDialog({
                           codigo_loinc_cpt: e.target.value,
                         }))
                       }
-                      placeholder="Código estándar clínico"
+                      placeholder="Ej: 94500-6"
                     />
+                    <p className="text-[10px] text-base-content/40 mt-0.5">
+                      Integración LIS/HIS (Exámenes/Facturación)
+                    </p>
                   </div>
                 </div>
 
-                <div className="form-control">
-                  <label className="label py-0.5">
-                    <span className="label-text text-sm font-medium">
-                      Alias en Unidad Clínica
-                    </span>
-                    <span className="label-text-alt text-base-content/40 text-[10px]">
-                      opcional
-                    </span>
-                  </label>
-                  <input
-                    type="text"
-                    className="input input-bordered input-sm h-9 bg-base-100"
-                    value={form.alias_unidad_clinica}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        alias_unidad_clinica: e.target.value,
-                      }))
-                    }
-                    placeholder="Ej: jeringa tuberculina"
-                  />
-                </div>
 
                 <div className="grid grid-cols-2 gap-3 mt-1">
                   <div className="form-control">
@@ -2765,13 +2720,9 @@ function ProductoDetail({ id }: { id: string }) {
           value={producto.activo ? "Activo" : "Inactivo"}
         />
 
-        <DetailRow label="MPN" value={producto.mpn ?? "--"} mono />
+        <DetailRow label="Nº Parte (MPN)" value={producto.mpn ?? "--"} mono />
         <DetailRow
-          label="Alias"
-          value={producto.alias_unidad_clinica ?? "--"}
-        />
-        <DetailRow
-          label="LOINC/CPT"
+          label="LOINC/CPT (Clínico)"
           value={producto.codigo_loinc_cpt ?? "--"}
           mono
         />

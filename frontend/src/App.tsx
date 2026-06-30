@@ -16,6 +16,7 @@ const RecepcionDetallePage = lazy(() => import("@/pages/recepciones/detalle"));
 const MovimientosPage = lazy(() => import("@/pages/movimientos"));
 const SolicitudesCompraPage = lazy(() => import("@/pages/solicitudes-compra"));
 const CreadorProductosPage = lazy(() => import("@/pages/creador-productos"));
+const AreasPage = lazy(() => import("@/pages/areas"));
 const DescartesPage = lazy(() => import("@/pages/descartes"));
 const ConfiguracionPage = lazy(() => import("@/pages/configuracion"));
 const SetupPage = lazy(() => import("@/pages/setup"));
@@ -108,6 +109,7 @@ export default function App() {
                     element={<ConfiguracionPage />}
                   />
                   <Route path="/usuarios" element={<UsuariosPage />} />
+                  <Route path="/areas" element={<AreasPage />} />
                   <Route path="/audit-log" element={<AuditLogPage />} />
                   <Route path="/setup" element={<SetupPage />} />
                   <Route path="/reportes" element={<ReportesPage />} />

@@ -18,8 +18,10 @@ import {
   Package,
   Upload,
   Printer,
+  Image as ImageIcon,
+  Download,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { PageLoading } from "@/components/ui/page-state";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -42,8 +44,11 @@ import { notify } from "@/lib/notify";
 import { useFilterStorage } from "@/hooks/use-filter-storage";
 import { toDecimal, toNum } from "@/domain/parse";
 import { AuthenticatedUploadImage } from "@/components/ui/authenticated-image";
+import { downloadUpload } from "@/lib/uploads";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const PAGE_SIZE = 15;
+const PAGE_SIZE_GUIAS = 8;
 
 interface PaginatedRecepciones {
   data: RecepcionListItem[];
@@ -53,7 +58,7 @@ interface PaginatedRecepciones {
   total_pages: number;
 }
 
-type TabActivo = "borradores" | "confirmadas" | "todas";
+type TabActivo = "borradores" | "confirmadas" | "todas" | "guias";
 
 // ── Tipos del detalle ──────────────────────────────────────────────────────
 
@@ -441,6 +446,15 @@ export default function RecepcionesPage() {
   const [fotoOpen, setFotoOpen] = useState(false);
   const [printModalOpen, setPrintModalOpen] = useState(false);
 
+  // --- Estados para Guías Respaldadas ---
+  const [guiaSearchInput, setGuiaSearchInput] = useState("");
+  const [guiaSearch, setGuiaSearch] = useState("");
+  const [pageGuias, setPageGuias] = useState(1);
+  const [selectedFotoPath, setSelectedFotoPath] = useState<string | null>(null);
+  const [selectedFotoTitle, setSelectedFotoTitle] = useState<string | null>(
+    null,
+  );
+
   const navigate = useNavigate();
   const canOperate = useCanOperate();
   const queryClient = useQueryClient();
@@ -478,6 +492,15 @@ export default function RecepcionesPage() {
     };
   }, [searchInput]);
 
+  // Debounce para búsqueda de guías
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setGuiaSearch(guiaSearchInput);
+      setPageGuias(1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [guiaSearchInput]);
+
   // Reset page on tab/filter change
   useEffect(() => {
     setPage(1);
@@ -507,6 +530,25 @@ export default function RecepcionesPage() {
         })
         .then((r) => r.data),
     placeholderData: keepPreviousData,
+    enabled: tabActivo !== "guias",
+  });
+
+  // --- Query Guías Respaldadas (Recepciones con foto) ---
+  const { data: dataGuias, isLoading: isLoadingGuias } = useQuery({
+    queryKey: ["guias-respaldadas", { search: guiaSearch, page: pageGuias }],
+    queryFn: () =>
+      api
+        .get<PaginatedRecepciones>("/recepciones", {
+          params: {
+            solo_con_foto: true,
+            busqueda: guiaSearch || undefined,
+            page: pageGuias,
+            per_page: PAGE_SIZE_GUIAS,
+          },
+        })
+        .then((r) => r.data),
+    placeholderData: keepPreviousData,
+    enabled: tabActivo === "guias",
   });
 
   const { data: proveedores } = useQuery({
@@ -585,21 +627,26 @@ export default function RecepcionesPage() {
   const total = data?.total ?? 0;
   const totalPages = data?.total_pages ?? 1;
 
+  const rowsGuias = dataGuias?.data ?? [];
+  const totalGuias = dataGuias?.total ?? 0;
+  const totalPagesGuias = dataGuias?.total_pages ?? 1;
+
   const tabs: { key: TabActivo; label: string }[] = [
     { key: "borradores", label: "Borradores" },
     { key: "confirmadas", label: "Confirmadas" },
     { key: "todas", label: "Todas" },
+    { key: "guias", label: "Guías Respaldadas" },
   ];
 
   return (
     <div
-      className={cn("flex gap-6 items-start", selectedId && "lg:items-stretch")}
+      className={cn("flex gap-6 items-start", (selectedId && tabActivo !== "guias") && "lg:items-stretch")}
     >
       {/* ── Columna izquierda: lista ── */}
       <div
         className={cn(
           "min-w-0 transition-all duration-200 space-y-4",
-          selectedId ? "lg:flex-[3]" : "w-full",
+          (selectedId && tabActivo !== "guias") ? "lg:flex-[3]" : "w-full",
         )}
       >
         <div className="flex items-center justify-between">
@@ -638,55 +685,225 @@ export default function RecepcionesPage() {
         </div>
 
         {/* Filtros */}
-        <div className="rounded-xl border border-base-200 bg-base-100 p-3 flex flex-wrap gap-2 items-end">
-          {/* Buscador */}
-          <fieldset className="fieldset p-0 gap-1 min-w-[200px] flex-1">
-            <legend className="fieldset-legend text-[10px]">Buscar</legend>
-            <label className="input input-bordered flex items-center gap-2 h-9">
-              <Search className="h-3.5 w-3.5 opacity-40 shrink-0" />
+        {tabActivo !== "guias" && (
+          <div className="rounded-xl border border-base-200 bg-base-100 p-3 flex flex-wrap gap-2 items-end">
+            {/* Buscador */}
+            <fieldset className="fieldset p-0 gap-1 min-w-[200px] flex-1">
+              <legend className="fieldset-legend text-[10px]">Buscar</legend>
+              <label className="input input-bordered flex items-center gap-2 h-9">
+                <Search className="h-3.5 w-3.5 opacity-40 shrink-0" />
+                <input
+                  type="text"
+                  className="grow text-sm min-w-0"
+                  placeholder="N° doc, proveedor, guía…"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                />
+                {isFetching && (
+                  <span className="loading loading-spinner loading-xs opacity-40" />
+                )}
+              </label>
+            </fieldset>
+
+            {/* Proveedor */}
+            <fieldset className="fieldset p-0 gap-1">
+              <legend className="fieldset-legend text-[10px]">Proveedor</legend>
+              <ProveedorSelect
+                value={proveedorFiltro ? String(proveedorFiltro) : ""}
+                onChange={(v) => setProveedorFiltro(v ? Number(v) : null)}
+                proveedores={proveedores ?? []}
+                allLabel="Todos"
+                className="w-44 h-9"
+                size="md"
+              />
+            </fieldset>
+
+            {(hasRfActive || search) && (
+              <button
+                onClick={() => {
+                  clearRf();
+                  setSearchInput("");
+                  setSearch("");
+                  setPage(1);
+                }}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-base-300 text-xs font-bold text-base-content/60 hover:text-error hover:border-error/40 transition-all self-end mb-0.5"
+              >
+                <X className="w-3 h-3" />
+                Limpiar filtros
+              </button>
+            )}
+          </div>
+        )}
+
+        {tabActivo === "guias" ? (
+          <div className="space-y-4 animate-fadeIn">
+            {/* Barra de búsqueda */}
+            <div className="rounded-2xl border border-base-200 bg-base-100 p-3 shadow-sm flex items-center max-w-md">
+              <Search className="h-4 w-4 opacity-40 shrink-0 mr-2" />
               <input
                 type="text"
-                className="grow text-sm min-w-0"
-                placeholder="N° doc, proveedor, guía…"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Buscar por N° guía, proveedor o recepción..."
+                className="grow text-sm bg-transparent outline-none border-none"
+                value={guiaSearchInput}
+                onChange={(e) => setGuiaSearchInput(e.target.value)}
               />
-              {isFetching && (
-                <span className="loading loading-spinner loading-xs opacity-40" />
+              {guiaSearchInput && (
+                <button
+                  onClick={() => setGuiaSearchInput("")}
+                  className="btn btn-ghost btn-xs btn-circle"
+                >
+                  <X className="h-3 w-3" />
+                </button>
               )}
-            </label>
-          </fieldset>
+            </div>
 
-          {/* Proveedor */}
-          <fieldset className="fieldset p-0 gap-1">
-            <legend className="fieldset-legend text-[10px]">Proveedor</legend>
-            <ProveedorSelect
-              value={proveedorFiltro ? String(proveedorFiltro) : ""}
-              onChange={(v) => setProveedorFiltro(v ? Number(v) : null)}
-              proveedores={proveedores ?? []}
-              allLabel="Todos"
-              className="w-44 h-9"
-              size="md"
-            />
-          </fieldset>
+            {/* Galería Visual */}
+            {isLoadingGuias ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                {[1, 2, 3, 4].map((i) => (
+                  <div
+                    key={i}
+                    className="card bg-base-100 border border-base-200 overflow-hidden rounded-2xl shadow-sm space-y-3 p-0"
+                  >
+                    <Skeleton className="h-40 w-full rounded-t-2xl rounded-b-none" />
+                    <div className="p-4 space-y-2">
+                      <Skeleton className="h-4 w-2/3 rounded-lg" />
+                      <Skeleton className="h-3 w-1/2 rounded-lg" />
+                      <Skeleton className="h-8 w-full rounded-xl mt-3" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : rowsGuias.length === 0 ? (
+              <div className="rounded-[2rem] border border-base-200 bg-base-100 p-12 text-center shadow-sm">
+                <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-20 text-primary" />
+                <h3 className="font-bold text-base mb-1">
+                  No se encontraron guías respaldadas
+                </h3>
+                <p className="text-sm opacity-40 max-w-md mx-auto">
+                  {guiaSearch
+                    ? "Ajusta los filtros de búsqueda o ingresa un término diferente."
+                    : "Aún no se han adjuntado fotos de guías de despacho en las recepciones."}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                {rowsGuias.map((guia) => (
+                  <div
+                    key={guia.id}
+                    className="card bg-base-100 border border-base-200 overflow-hidden rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 group flex flex-col"
+                  >
+                    {/* Thumbnail */}
+                    <div className="relative h-40 w-full overflow-hidden bg-base-200 shrink-0">
+                      {guia.guia_despacho_archivo ? (
+                        <AuthenticatedUploadImage
+                          path={guia.guia_despacho_archivo}
+                          alt={`Guía ${guia.guia_despacho}`}
+                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-base-content/30">
+                          <ImageIcon className="h-8 w-8" />
+                        </div>
+                      )}
+                      <div className="absolute top-2 right-2">
+                        <span className="badge badge-sm bg-base-100/90 text-[10px] font-bold shadow-sm py-2 px-2.5 border-none">
+                          {guia.proveedor_nombre}
+                        </span>
+                      </div>
+                    </div>
 
-          {(hasRfActive || search) && (
-            <button
-              onClick={() => {
-                clearRf();
-                setSearchInput("");
-                setSearch("");
-                setPage(1);
-              }}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-base-300 text-xs font-bold text-base-content/60 hover:text-error hover:border-error/40 transition-all self-end mb-0.5"
-            >
-              <X className="w-3 h-3" />
-              Limpiar filtros
-            </button>
-          )}
-        </div>
+                    {/* Info */}
+                    <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                      <div className="space-y-1">
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="min-w-0">
+                            <p className="text-[10px] uppercase font-bold tracking-wider opacity-45">
+                              N° Guía
+                            </p>
+                            <h3
+                              className="font-mono font-bold text-sm text-primary truncate"
+                              title={guia.guia_despacho ?? ""}
+                            >
+                              {guia.guia_despacho || "PROVISIONAL"}
+                            </h3>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-[10px] uppercase font-bold tracking-wider opacity-45">
+                              Recepción
+                            </p>
+                            <Link
+                              to={`/recepciones/${guia.id}`}
+                              className="font-mono font-bold text-xs hover:underline text-base-content/70"
+                            >
+                              {guia.numero_documento}
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
 
-        {isLoading ? (
+                      <div className="flex items-center justify-between pt-2 border-t border-base-200 text-[11px] text-base-content/50">
+                        <span>{formatDate(guia.fecha_recepcion)}</span>
+                        <span
+                          className="truncate max-w-[110px]"
+                          title={guia.usuario_nombre}
+                        >
+                          {guia.usuario_nombre}
+                        </span>
+                      </div>
+
+                      {guia.guia_despacho_archivo && (
+                        <button
+                          type="button"
+                          className="btn btn-xs btn-primary font-bold w-full gap-1.5 shadow-sm hover:scale-[1.01] transition-all"
+                          onClick={() => {
+                            setSelectedFotoPath(guia.guia_despacho_archivo);
+                            setSelectedFotoTitle(
+                              guia.guia_despacho || guia.numero_documento,
+                            );
+                          }}
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          Ver Documento
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Paginación Guías */}
+            {!isLoadingGuias && rowsGuias.length > 0 && (
+              <div className="flex items-center justify-between text-sm pt-4">
+                <span className="opacity-50 text-xs">
+                  {totalGuias} resultado{totalGuias !== 1 ? "s" : ""} · página{" "}
+                  {pageGuias} de {totalPagesGuias}
+                </span>
+                <div className="join">
+                  <button
+                    className="join-item btn btn-sm btn-ghost"
+                    onClick={() => setPageGuias((p) => Math.max(1, p - 1))}
+                    disabled={pageGuias === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Anterior
+                  </button>
+                  <button
+                    className="join-item btn btn-sm btn-ghost"
+                    onClick={() =>
+                      setPageGuias((p) => Math.min(totalPagesGuias, p + 1))
+                    }
+                    disabled={pageGuias >= totalPagesGuias}
+                  >
+                    Siguiente
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : isLoading ? (
           <PageLoading label="Cargando recepciones..." />
         ) : (
           <>
@@ -924,7 +1141,7 @@ export default function RecepcionesPage() {
       </div>
 
       {/* ── Panel detalle: solo desktop, solo cuando hay selección ── */}
-      {selectedId && (
+      {selectedId && tabActivo !== "guias" && (
         <div className="hidden lg:flex lg:flex-[2] lg:sticky lg:top-24 self-start flex-col min-w-0">
           <RecepcionDetailPanel
             recepcionData={selectedRecepcion}
@@ -1072,6 +1289,56 @@ export default function RecepcionesPage() {
             </button>
           </div>
         </Dialog>
+      )}
+
+      {/* Lightbox para visor de fotos de guías de despacho (Galería) */}
+      {selectedFotoPath && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 transition-opacity"
+          onClick={() => {
+            setSelectedFotoPath(null);
+            setSelectedFotoTitle(null);
+          }}
+        >
+          <div
+            className="relative max-h-[90vh] max-w-[90vw]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute -top-12 left-0 right-0 flex items-center justify-between text-white px-2">
+              <span className="font-semibold text-sm">
+                Guía: {selectedFotoTitle}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  className="btn btn-sm btn-primary gap-1.5 font-bold"
+                  onClick={() =>
+                    downloadUpload(
+                      selectedFotoPath,
+                      `guia-${selectedFotoTitle ?? "despacho"}.jpg`,
+                    )
+                  }
+                >
+                  <Download className="h-4 w-4" />
+                  Descargar
+                </button>
+                <button
+                  className="btn btn-circle btn-sm btn-error"
+                  onClick={() => {
+                    setSelectedFotoPath(null);
+                    setSelectedFotoTitle(null);
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <AuthenticatedUploadImage
+              path={selectedFotoPath}
+              alt="Guía de despacho"
+              className="max-h-[80vh] max-w-[85vw] rounded-xl shadow-2xl object-contain border border-base-200/20"
+            />
+          </div>
+        </div>
       )}
     </div>
   );

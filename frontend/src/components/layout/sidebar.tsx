@@ -27,7 +27,6 @@ import {
   Moon,
   ClipboardCheck,
   BarChart3,
-  MessageCircle,
   Tag,
 } from "lucide-react";
 import { useAuthStore, useCanOperate } from "@/hooks/use-auth-store";
@@ -89,12 +88,6 @@ const navGroups: { label: string | null; items: NavItem[] }[] = [
     label: "Herramientas",
     items: [
       { to: "/etiquetas", icon: Tag, label: "Etiquetas" },
-      {
-        to: "/whatsapp-simulator",
-        icon: MessageCircle,
-        label: "Simulador WhatsApp",
-        adminOnly: true,
-      },
     ],
   },
   {

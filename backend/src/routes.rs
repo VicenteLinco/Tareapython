@@ -91,8 +91,6 @@ pub fn create_routes(state: AppState) -> Router<AppState> {
         .nest("/setup", handlers::setup::routes())
         // Uploads privados (documentos de recepcion, guias, etc.)
         .nest("/uploads", handlers::uploads::routes())
-        // WhatsApp: consola de logs del simulador (admin)
-        .nest("/webhooks/whatsapp", handlers::whatsapp::routes())
         // Middleware de auth
         .route_layer(middleware::from_fn_with_state(state, require_auth));
 

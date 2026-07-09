@@ -30,7 +30,6 @@ const OrdenCompraDetallePage = lazy(
 );
 const ScanPage = lazy(() => import("./pages/scan/index"));
 const ReportesPage = lazy(() => import("@/pages/reportes"));
-const WhatsappSimulatorPage = lazy(() => import("@/pages/whatsapp-simulator"));
 const EtiquetasPage = lazy(() =>
   import("@/pages/etiquetas").then((m) => ({ default: m.EtiquetasPage })),
 );
@@ -113,10 +112,6 @@ export default function App() {
                   <Route path="/audit-log" element={<AuditLogPage />} />
                   <Route path="/setup" element={<SetupPage />} />
                   <Route path="/reportes" element={<ReportesPage />} />
-                  <Route
-                    path="/whatsapp-simulator"
-                    element={<WhatsappSimulatorPage />}
-                  />
                   <Route path="/etiquetas" element={<EtiquetasPage />} />
                 </Route>
                 <Route path="/scan/:token" element={<ScanPage />} />

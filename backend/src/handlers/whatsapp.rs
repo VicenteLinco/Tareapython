@@ -18,7 +18,7 @@ use crate::services::whatsapp_service;
 pub use crate::services::whatsapp_service::{
     ActiveUser, BuscarStockArgs, BuscarStockResult, CrearSolicitudCompraArgs,
     CrearSolicitudCompraResult, ProductResolution, RegistrarConsumoArgs, RegistrarIngresoArgs,
-    RegistrarIngresoResult, StockItemResult, WebhookLogEntry, WhatsappSettings,
+    RegistrarIngresoResult, WhatsappSettings,
 };
 
 type HmacSha1 = Hmac<Sha1>;
@@ -234,6 +234,7 @@ pub async fn execute_buscar_stock(
     whatsapp_service::buscar_stock_tool(pool, user, args).await
 }
 
+#[allow(dead_code)]
 pub async fn resolve_product(
     pool: &sqlx::PgPool,
     ident: &str,
@@ -477,22 +478,10 @@ pub async fn process_message_async(state: AppState, msg: WebhookMessage) -> Resu
     Ok(())
 }
 
-pub async fn get_logs_handler(
-    State(state): State<AppState>,
-) -> Result<axum::Json<Vec<WebhookLogEntry>>, AppError> {
-    let logs = whatsapp_service::get_logs(&state.pool).await?;
-    Ok(axum::Json(logs))
-}
-
 /// Public webhook endpoint. Authenticated by `X-Webhook-Secret` (or the Twilio
 /// signature), never by JWT — a real WhatsApp provider cannot send a bearer token.
 pub fn public_routes() -> Router<AppState> {
     Router::new().route("/", axum::routing::post(webhook_handler))
-}
-
-/// Protected admin endpoints (behind JWT). Powers the WhatsApp simulator console.
-pub fn routes() -> Router<AppState> {
-    Router::new().route("/logs", axum::routing::get(get_logs_handler))
 }
 
 #[cfg(test)]

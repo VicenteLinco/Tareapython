@@ -116,6 +116,7 @@ struct StockQueryRow {
     area_nombre: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, sqlx::FromRow, Clone)]
 pub struct WebhookLogEntry {
     pub id: uuid::Uuid,
@@ -218,6 +219,7 @@ pub async fn log_webhook_transaction(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn get_logs(pool: &PgPool) -> Result<Vec<WebhookLogEntry>, AppError> {
     let logs = sqlx::query_as::<_, WebhookLogEntry>(
         "SELECT id, message_id, sender_phone, usuario_id, request_body, command_type, status, response_body, created_at 

@@ -312,9 +312,9 @@ impl LlmClient for GeminiClient {
 
         let mut active_model = db_config.model.clone();
         let mut fallback_models = vec![
-            "gemini-1.5-flash-latest".to_string(),
+            "gemini-1.5-flash".to_string(),
             "gemini-2.0-flash".to_string(),
-            "gemini-1.5-pro-latest".to_string(),
+            "gemini-1.5-pro".to_string(),
         ];
         fallback_models.retain(|m| m != &active_model);
 
@@ -339,6 +339,7 @@ impl LlmClient for GeminiClient {
             let response;
             let mut model_idx = 0;
             let mut current_model = active_model.clone();
+            let mut errors_collected = Vec::new();
 
             loop {
                 let url = format!(
@@ -351,11 +352,12 @@ impl LlmClient for GeminiClient {
                     .json(&request_payload)
                     .send()
                     .await
-                    .map_err(|e| AppError::Internal(format!("Gemini request failed: {}", e)))?;
+                    .map_err(|e| AppError::Internal(format!("Gemini request failed for {}: {}", current_model, e)))?;
 
                 if !res.status().is_success() {
                     let status_code = res.status();
                     let err_text = res.text().await.unwrap_or_default();
+                    errors_collected.push(format!("Model {}: Code {}, Error: {}", current_model, status_code, err_text));
 
                     if (status_code == reqwest::StatusCode::NOT_FOUND
                         || status_code == reqwest::StatusCode::SERVICE_UNAVAILABLE
@@ -374,8 +376,8 @@ impl LlmClient for GeminiClient {
                     }
 
                     return Err(AppError::Internal(format!(
-                        "Gemini API returned error code {}: {}",
-                        status_code, err_text
+                        "Gemini API failures: {}",
+                        errors_collected.join(" | ")
                     )));
                 }
 
@@ -1365,9 +1367,9 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
 
         let mut models_to_try = vec![db_config.model.clone()];
         let fallbacks = vec![
-            "gemini-1.5-flash-latest".to_string(),
+            "gemini-1.5-flash".to_string(),
             "gemini-2.0-flash".to_string(),
-            "gemini-1.5-pro-latest".to_string(),
+            "gemini-1.5-pro".to_string(),
         ];
         for f in fallbacks {
             if f != db_config.model {
@@ -1375,7 +1377,7 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
             }
         }
 
-        let mut last_error = None;
+        let mut errors_collected = Vec::new();
         let mut response = None;
 
         for (idx, current_model) in models_to_try.iter().enumerate() {
@@ -1399,17 +1401,21 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
             {
                 Ok(r) => r,
                 Err(e) => {
-                    last_error = Some(format!("Request to {} failed: {}", current_model, e));
+                    errors_collected.push(format!("Request to {} failed: {}", current_model, e));
                     if idx < models_to_try.len() - 1 {
                         continue;
                     }
-                    return Err(AppError::Internal(format!("Gemini Vision request failed: {}", e)));
+                    return Err(AppError::Internal(format!(
+                        "Gemini Vision request failures: {}",
+                        errors_collected.join(" | ")
+                    )));
                 }
             };
 
             if !res.status().is_success() {
                 let status_code = res.status();
                 let err_text = res.text().await.unwrap_or_default();
+                errors_collected.push(format!("Model {} failed ({}): {}", current_model, status_code, err_text));
                 
                 if (status_code == reqwest::StatusCode::NOT_FOUND 
                     || status_code == reqwest::StatusCode::SERVICE_UNAVAILABLE
@@ -1417,12 +1423,11 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
                     && idx < models_to_try.len() - 1 
                 {
                     tracing::warn!("Gemini Vision model {} failed with {}. Trying fallback...", current_model, status_code);
-                    last_error = Some(format!("Model {} failed ({}): {}", current_model, status_code, err_text));
                     continue;
                 }
                 return Err(AppError::Internal(format!(
-                    "Gemini Vision API returned error code {}: {}",
-                    status_code, err_text
+                    "Gemini Vision API failures: {}",
+                    errors_collected.join(" | ")
                 )));
             }
 
@@ -1431,7 +1436,10 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
         }
 
         let response = response.ok_or_else(|| {
-            AppError::Internal(format!("All Gemini Vision models failed. Last error: {:?}", last_error))
+            AppError::Internal(format!(
+                "All Gemini Vision models failed. Failures: {}",
+                errors_collected.join(" | ")
+            ))
         })?;
 
         let gemini_resp: GeminiResponse = response.json().await.map_err(|e| {

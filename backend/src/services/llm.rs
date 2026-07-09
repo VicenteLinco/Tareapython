@@ -251,10 +251,6 @@ impl LlmClient for GeminiClient {
     ) -> Result<String, AppError> {
         let db_config = load_llm_config(pool).await?;
         let client = reqwest::Client::new();
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            db_config.model, db_config.api_key
-        );
 
         let mut contents = Vec::new();
 
@@ -314,6 +310,14 @@ impl LlmClient for GeminiClient {
         let mut loop_count = 0;
         let max_loops = 5;
 
+        let mut active_model = db_config.model.clone();
+        let mut fallback_models = vec![
+            "gemini-1.5-flash-latest".to_string(),
+            "gemini-2.0-flash".to_string(),
+            "gemini-1.5-pro-latest".to_string(),
+        ];
+        fallback_models.retain(|m| m != &active_model);
+
         loop {
             loop_count += 1;
             if loop_count > max_loops {
@@ -332,20 +336,51 @@ impl LlmClient for GeminiClient {
                 }),
             };
 
-            let response = client
-                .post(&url)
-                .json(&request_payload)
-                .send()
-                .await
-                .map_err(|e| AppError::Internal(format!("Gemini request failed: {}", e)))?;
+            let response;
+            let mut model_idx = 0;
+            let mut current_model = active_model.clone();
 
-            if !response.status().is_success() {
-                let status_code = response.status();
-                let err_text = response.text().await.unwrap_or_default();
-                return Err(AppError::Internal(format!(
-                    "Gemini API returned error code {}: {}",
-                    status_code, err_text
-                )));
+            loop {
+                let url = format!(
+                    "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+                    current_model, db_config.api_key
+                );
+
+                let res = client
+                    .post(&url)
+                    .json(&request_payload)
+                    .send()
+                    .await
+                    .map_err(|e| AppError::Internal(format!("Gemini request failed: {}", e)))?;
+
+                if !res.status().is_success() {
+                    let status_code = res.status();
+                    let err_text = res.text().await.unwrap_or_default();
+
+                    if (status_code == reqwest::StatusCode::NOT_FOUND
+                        || status_code == reqwest::StatusCode::SERVICE_UNAVAILABLE
+                        || status_code == reqwest::StatusCode::TOO_MANY_REQUESTS)
+                        && model_idx < fallback_models.len()
+                    {
+                        let next_model = fallback_models[model_idx].clone();
+                        tracing::warn!(
+                            "Gemini model {} failed with {}. Trying fallback {}...",
+                            current_model, status_code, next_model
+                        );
+                        active_model = next_model.clone();
+                        current_model = next_model;
+                        model_idx += 1;
+                        continue;
+                    }
+
+                    return Err(AppError::Internal(format!(
+                        "Gemini API returned error code {}: {}",
+                        status_code, err_text
+                    )));
+                }
+
+                response = res;
+                break;
             }
 
             let response_text = response.text().await.map_err(|e| {
@@ -1286,11 +1321,6 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
 
     let base64_data = base64::engine::general_purpose::STANDARD.encode(image_bytes);
 
-    let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-        db_config.model, db_config.api_key
-    );
-
     let contents = vec![GeminiContent {
         role: "user".to_string(),
         parts: vec![
@@ -1329,27 +1359,76 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
         },
     };
 
-    tracing::info!(
-        "Sending Vision request to Gemini for dispatch guide image ({} bytes, {})",
-        image_bytes.len(),
-        mime_type
-    );
-
-    let response = client
-        .post(&url)
-        .json(&request_payload)
-        .send()
-        .await
-        .map_err(|e| AppError::Internal(format!("Gemini Vision request failed: {}", e)))?;
-
-    if !response.status().is_success() {
-        let status_code = response.status();
-        let err_text = response.text().await.unwrap_or_default();
-        return Err(AppError::Internal(format!(
-            "Gemini Vision API returned error code {}: {}",
-            status_code, err_text
-        )));
+    let mut models_to_try = vec![db_config.model.clone()];
+    let fallbacks = vec![
+        "gemini-1.5-flash-latest".to_string(),
+        "gemini-2.0-flash".to_string(),
+        "gemini-1.5-pro-latest".to_string(),
+    ];
+    for f in fallbacks {
+        if f != db_config.model {
+            models_to_try.push(f);
+        }
     }
+
+    let mut last_error = None;
+    let mut response = None;
+
+    for (idx, current_model) in models_to_try.iter().enumerate() {
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            current_model, db_config.api_key
+        );
+
+        tracing::info!(
+            "Sending Vision request to Gemini (model: {}) for dispatch guide image ({} bytes, {})",
+            current_model,
+            image_bytes.len(),
+            mime_type
+        );
+
+        let res = match client
+            .post(&url)
+            .json(&request_payload)
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                last_error = Some(format!("Request to {} failed: {}", current_model, e));
+                if idx < models_to_try.len() - 1 {
+                    continue;
+                }
+                return Err(AppError::Internal(format!("Gemini Vision request failed: {}", e)));
+            }
+        };
+
+        if !res.status().is_success() {
+            let status_code = res.status();
+            let err_text = res.text().await.unwrap_or_default();
+            
+            if (status_code == reqwest::StatusCode::NOT_FOUND 
+                || status_code == reqwest::StatusCode::SERVICE_UNAVAILABLE
+                || status_code == reqwest::StatusCode::TOO_MANY_REQUESTS)
+                && idx < models_to_try.len() - 1 
+            {
+                tracing::warn!("Gemini Vision model {} failed with {}. Trying fallback...", current_model, status_code);
+                last_error = Some(format!("Model {} failed ({}): {}", current_model, status_code, err_text));
+                continue;
+            }
+            return Err(AppError::Internal(format!(
+                "Gemini Vision API returned error code {}: {}",
+                status_code, err_text
+            )));
+        }
+
+        response = Some(res);
+        break;
+    }
+
+    let response = response.ok_or_else(|| {
+        AppError::Internal(format!("All Gemini Vision models failed. Last error: {:?}", last_error))
+    })?;
 
     let gemini_resp: GeminiResponse = response.json().await.map_err(|e| {
         AppError::Internal(format!("Failed to parse Gemini Vision response: {}", e))

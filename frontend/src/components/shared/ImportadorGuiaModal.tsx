@@ -52,6 +52,7 @@ export default function ImportadorGuiaModal({
   const [isParsing, setIsParsing] = useState(false);
   const [proveedorDetectado, setProveedorDetectado] = useState("");
   const [items, setItems] = useState<ParsedItem[]>([]);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Tab y upload de imagen
   const [activeTab, setActiveTab] = useState<"text" | "image">("text");
@@ -212,8 +213,11 @@ export default function ImportadorGuiaModal({
       return;
     }
     setIsParsing(true);
+    setUploadProgress(0);
     try {
-      const res = await parseGuiaImagen(selectedFile);
+      const res = await parseGuiaImagen(selectedFile, (progress) => {
+        setUploadProgress(progress);
+      });
       setProveedorDetectado(res.proveedor);
       setItems(initializeParsedItems(res.items || []));
       setArchivoUrl(res.archivo_url);
@@ -623,6 +627,21 @@ export default function ImportadorGuiaModal({
                     </>
                   )}
                 </button>
+                {isParsing && (
+                  <div className="w-full space-y-1 mt-3">
+                    <div className="flex justify-between text-xs font-semibold px-1">
+                      <span className="text-primary">
+                        {uploadProgress < 100 ? "Subiendo archivo..." : "Analizando y extrayendo datos con IA..."}
+                      </span>
+                      <span className="text-primary">{uploadProgress}%</span>
+                    </div>
+                    <progress
+                      className="progress progress-primary w-full h-2"
+                      value={uploadProgress}
+                      max="100"
+                    ></progress>
+                  </div>
+                )}
               </>
             )}
           </div>

@@ -504,6 +504,13 @@ pub async fn obtener_ia_modelos(pool: &PgPool) -> Result<Vec<String>, AppError> 
             .await
             .map_err(|e| AppError::Internal(format!("Error al decodificar la lista de modelos de Gemini: {}", e)))?;
 
+        let deprecated_models = vec![
+            "gemini-2.5-flash",
+            "gemini-1.0-pro",
+            "gemini-1.5-flash-001",
+            "gemini-1.5-pro-001",
+        ];
+
         let mut models = Vec::new();
         for m in response.models {
             let has_generate = m
@@ -513,7 +520,10 @@ pub async fn obtener_ia_modelos(pool: &PgPool) -> Result<Vec<String>, AppError> 
 
             if has_generate {
                 let clean_name = m.name.strip_prefix("models/").unwrap_or(&m.name).to_string();
-                models.push(clean_name);
+                let is_deprecated = deprecated_models.iter().any(|&dep| clean_name == dep || clean_name.contains("gemini-1.0"));
+                if !is_deprecated {
+                    models.push(clean_name);
+                }
             }
         }
         

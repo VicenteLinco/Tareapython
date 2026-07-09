@@ -1,6 +1,5 @@
 // Dominio: recepciones
 import api from "@/lib/api";
-import { useAuthStore } from "@/hooks/use-auth-store";
 import type {
   PaginatedRecepciones,
   RecepcionQuery,
@@ -118,23 +117,22 @@ export interface ParseGuiaImagenResponse {
 /** POST /recepciones/parse-guia-imagen — Parsear imagen/PDF de guía de despacho */
 export async function parseGuiaImagen(
   file: File,
+  onUploadProgress?: (progress: number) => void,
 ): Promise<ParseGuiaImagenResponse> {
-  const token = useAuthStore.getState().accessToken;
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch("/api/v1/recepciones/parse-guia-imagen", {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData,
+  const res = await api.post("/recepciones/parse-guia-imagen", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+    onUploadProgress: (progressEvent) => {
+      if (onUploadProgress && progressEvent.total) {
+        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+        onUploadProgress(percentCompleted);
+      }
+    },
   });
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    const error = new Error(errorData.message || "Error en el servidor");
-    (error as any).response = { status: response.status, data: errorData };
-    throw error;
-  }
-
-  return response.json();
+  return res.data;
 }

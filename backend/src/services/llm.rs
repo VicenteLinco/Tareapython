@@ -727,6 +727,7 @@ impl LlmClient for OllamaClient {
             match db_config.provider.to_lowercase().as_str() {
                 "openai" => "https://api.openai.com".to_string(),
                 "deepseek" => "https://api.deepseek.com".to_string(),
+                "github" => "https://models.inference.ai.azure.com".to_string(),
                 _ => "http://localhost:11434".to_string(),
             }
         } else {
@@ -947,7 +948,7 @@ impl LlmClient for OllamaClient {
 
 pub async fn load_llm_config(pool: &sqlx::PgPool) -> Result<LlmConfig, AppError> {
     let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT clave, valor_texto FROM configuracion WHERE clave IN ('ia_proveedor', 'ia_modelo', 'ia_api_url', 'ia_api_key')"
+        "SELECT clave, valor_texto FROM configuracion WHERE clave LIKE 'ia_%'"
     )
     .fetch_all(pool)
     .await?;
@@ -957,24 +958,57 @@ pub async fn load_llm_config(pool: &sqlx::PgPool) -> Result<LlmConfig, AppError>
     let mut api_url = std::env::var("IA_API_URL").unwrap_or_default();
     let mut api_key = std::env::var("IA_API_KEY").unwrap_or_default();
 
+    let mut key_gemini = String::new();
+    let mut key_openai = String::new();
+    let mut key_deepseek = String::new();
+    let mut key_github = String::new();
+    let mut url_openai = String::new();
+    let mut url_deepseek = String::new();
+    let mut url_github = String::new();
+    let mut url_ollama = String::new();
+
     for (clave, valor) in rows {
-        let trimmed = valor.trim();
+        let trimmed = valor.trim().to_string();
         if !trimmed.is_empty() {
             match clave.as_str() {
-                "ia_proveedor" => provider = trimmed.to_string(),
-                "ia_modelo" => model = trimmed.to_string(),
-                "ia_api_url" => api_url = trimmed.to_string(),
-                "ia_api_key" => api_key = trimmed.to_string(),
+                "ia_proveedor" => provider = trimmed,
+                "ia_modelo" => model = trimmed,
+                "ia_api_url" => api_url = trimmed.clone(),
+                "ia_api_key" => api_key = trimmed.clone(),
+                "ia_api_key_gemini" => key_gemini = trimmed,
+                "ia_api_key_openai" => key_openai = trimmed,
+                "ia_api_key_deepseek" => key_deepseek = trimmed,
+                "ia_api_key_github" => key_github = trimmed,
+                "ia_api_url_openai" => url_openai = trimmed,
+                "ia_api_url_deepseek" => url_deepseek = trimmed,
+                "ia_api_url_github" => url_github = trimmed,
+                "ia_api_url_ollama" => url_ollama = trimmed,
                 _ => {}
             }
         }
     }
 
+    let active_key = match provider.to_lowercase().as_str() {
+        "gemini" => if !key_gemini.is_empty() { key_gemini } else { api_key },
+        "openai" => if !key_openai.is_empty() { key_openai } else { api_key },
+        "deepseek" => if !key_deepseek.is_empty() { key_deepseek } else { api_key },
+        "github" => if !key_github.is_empty() { key_github } else { api_key },
+        _ => api_key,
+    };
+
+    let active_url = match provider.to_lowercase().as_str() {
+        "openai" => if !url_openai.is_empty() { url_openai } else { api_url },
+        "deepseek" => if !url_deepseek.is_empty() { url_deepseek } else { api_url },
+        "ollama" => if !url_ollama.is_empty() { url_ollama } else { api_url },
+        "github" => if !url_github.is_empty() { url_github } else { "https://models.inference.ai.azure.com".to_string() },
+        _ => api_url,
+    };
+
     Ok(LlmConfig {
         provider,
         model,
-        api_url,
-        api_key,
+        api_url: active_url,
+        api_key: active_key,
     })
 }
 
@@ -984,7 +1018,7 @@ impl LlmFactory {
     pub fn create(config: LlmConfig) -> Result<Box<dyn LlmClient + Send + Sync>, AppError> {
         match config.provider.to_lowercase().as_str() {
             "gemini" => Ok(Box::new(GeminiClient::new(config))),
-            "ollama" | "openai" | "deepseek" | "custom" => Ok(Box::new(OllamaClient::new(config))),
+            "ollama" | "openai" | "deepseek" | "github" | "custom" => Ok(Box::new(OllamaClient::new(config))),
             other => Err(AppError::Internal(format!(
                 "Unsupported AI provider: {}",
                 other
@@ -1255,8 +1289,66 @@ pub async fn parse_guia_con_vision(
     pool: &sqlx::PgPool,
     image_bytes: &[u8],
     mime_type: &str,
+    provider_override: Option<String>,
+    model_override: Option<String>,
 ) -> Result<serde_json::Value, AppError> {
-    let db_config = load_llm_config(pool).await?;
+    let mut db_config = load_llm_config(pool).await?;
+
+    if provider_override.is_some() || model_override.is_some() {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT clave, valor_texto FROM configuracion WHERE clave LIKE 'ia_%'"
+        )
+        .fetch_all(pool)
+        .await?;
+        
+        let mut key_gemini = String::new();
+        let mut key_openai = String::new();
+        let mut key_deepseek = String::new();
+        let mut key_github = String::new();
+        let mut url_openai = String::new();
+        let mut url_deepseek = String::new();
+        let mut url_github = String::new();
+        let mut url_ollama = String::new();
+        
+        for (clave, valor) in rows {
+            let trimmed = valor.trim().to_string();
+            if !trimmed.is_empty() {
+                match clave.as_str() {
+                    "ia_api_key_gemini" => key_gemini = trimmed,
+                    "ia_api_key_openai" => key_openai = trimmed,
+                    "ia_api_key_deepseek" => key_deepseek = trimmed,
+                    "ia_api_key_github" => key_github = trimmed,
+                    "ia_api_url_openai" => url_openai = trimmed,
+                    "ia_api_url_deepseek" => url_deepseek = trimmed,
+                    "ia_api_url_github" => url_github = trimmed,
+                    "ia_api_url_ollama" => url_ollama = trimmed,
+                    _ => {}
+                }
+            }
+        }
+
+        if let Some(prov) = provider_override {
+            db_config.provider = prov;
+            db_config.api_key = match db_config.provider.to_lowercase().as_str() {
+                "gemini" => if !key_gemini.is_empty() { key_gemini } else { db_config.api_key },
+                "openai" => if !key_openai.is_empty() { key_openai } else { db_config.api_key },
+                "deepseek" => if !key_deepseek.is_empty() { key_deepseek } else { db_config.api_key },
+                "github" => if !key_github.is_empty() { key_github } else { db_config.api_key },
+                _ => db_config.api_key,
+            };
+            db_config.api_url = match db_config.provider.to_lowercase().as_str() {
+                "openai" => if !url_openai.is_empty() { url_openai } else { db_config.api_url },
+                "deepseek" => if !url_deepseek.is_empty() { url_deepseek } else { db_config.api_url },
+                "ollama" => if !url_ollama.is_empty() { url_ollama } else { db_config.api_url },
+                "github" => if !url_github.is_empty() { url_github } else { "https://models.inference.ai.azure.com".to_string() },
+                _ => db_config.api_url,
+            };
+        }
+
+        if let Some(mod_name) = model_override {
+            db_config.model = mod_name;
+        }
+    }
 
     if db_config.api_key.is_empty() || db_config.api_key == "mock" {
         tracing::warn!(

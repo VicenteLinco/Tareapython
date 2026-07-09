@@ -33,6 +33,14 @@ interface Configuracion {
   ia_modelo: string;
   ia_api_url: string;
   ia_api_key: string;
+  ia_api_key_gemini?: string;
+  ia_api_key_openai?: string;
+  ia_api_key_deepseek?: string;
+  ia_api_key_github?: string;
+  ia_api_url_openai?: string;
+  ia_api_url_deepseek?: string;
+  ia_api_url_github?: string;
+  ia_api_url_ollama?: string;
   whatsapp_api_url: string;
   whatsapp_api_key: string;
   whatsapp_webhook_secret: string;
@@ -83,6 +91,14 @@ export default function ConfiguracionPage() {
   const [iaModelo, setIaModelo] = useState("gemini-2.5-flash");
   const [iaApiUrl, setIaApiUrl] = useState("");
   const [iaApiKey, setIaApiKey] = useState("");
+  const [iaApiKeyGemini, setIaApiKeyGemini] = useState("");
+  const [iaApiKeyOpenai, setIaApiKeyOpenai] = useState("");
+  const [iaApiKeyDeepseek, setIaApiKeyDeepseek] = useState("");
+  const [iaApiKeyGithub, setIaApiKeyGithub] = useState("");
+  const [iaApiUrlOpenai, setIaApiUrlOpenai] = useState("");
+  const [iaApiUrlDeepseek, setIaApiUrlDeepseek] = useState("");
+  const [iaApiUrlGithub, setIaApiUrlGithub] = useState("");
+  const [iaApiUrlOllama, setIaApiUrlOllama] = useState("");
   const [whatsappApiUrl, setWhatsappApiUrl] = useState("");
   const [whatsappApiKey, setWhatsappApiKey] = useState("");
   const [whatsappWebhookSecret, setWhatsappWebhookSecret] = useState("");
@@ -161,6 +177,14 @@ export default function ConfiguracionPage() {
     }
     setIaApiUrl(data.ia_api_url || "");
     setIaApiKey(data.ia_api_key || "");
+    setIaApiKeyGemini(data.ia_api_key_gemini || "");
+    setIaApiKeyOpenai(data.ia_api_key_openai || "");
+    setIaApiKeyDeepseek(data.ia_api_key_deepseek || "");
+    setIaApiKeyGithub(data.ia_api_key_github || "");
+    setIaApiUrlOpenai(data.ia_api_url_openai || "");
+    setIaApiUrlDeepseek(data.ia_api_url_deepseek || "");
+    setIaApiUrlGithub(data.ia_api_url_github || "");
+    setIaApiUrlOllama(data.ia_api_url_ollama || "");
     setWhatsappApiUrl(data.whatsapp_api_url || "");
     setWhatsappApiKey(data.whatsapp_api_key || "");
     setWhatsappWebhookSecret(data.whatsapp_webhook_secret || "");
@@ -188,6 +212,14 @@ export default function ConfiguracionPage() {
       ia_modelo: string;
       ia_api_url: string;
       ia_api_key: string;
+      ia_api_key_gemini?: string;
+      ia_api_key_openai?: string;
+      ia_api_key_deepseek?: string;
+      ia_api_key_github?: string;
+      ia_api_url_openai?: string;
+      ia_api_url_deepseek?: string;
+      ia_api_url_github?: string;
+      ia_api_url_ollama?: string;
       whatsapp_api_url: string;
       whatsapp_api_key: string;
       whatsapp_webhook_secret: string;
@@ -278,6 +310,14 @@ export default function ConfiguracionPage() {
       ia_modelo: iaModelo,
       ia_api_url: iaApiUrl,
       ia_api_key: iaApiKey,
+      ia_api_key_gemini: iaApiKeyGemini,
+      ia_api_key_openai: iaApiKeyOpenai,
+      ia_api_key_deepseek: iaApiKeyDeepseek,
+      ia_api_key_github: iaApiKeyGithub,
+      ia_api_url_openai: iaApiUrlOpenai,
+      ia_api_url_deepseek: iaApiUrlDeepseek,
+      ia_api_url_github: iaApiUrlGithub,
+      ia_api_url_ollama: iaApiUrlOllama,
       whatsapp_api_url: whatsappApiUrl,
       whatsapp_api_key: whatsappApiKey,
       whatsapp_webhook_secret: whatsappWebhookSecret,
@@ -745,6 +785,9 @@ export default function ConfiguracionPage() {
                   } else if (val === "deepseek") {
                     setIsCustomModel(false);
                     setIaModelo("deepseek-chat");
+                  } else if (val === "github") {
+                    setIsCustomModel(false);
+                    setIaModelo("gpt-4o-mini");
                   } else {
                     setIsCustomModel(true);
                     setIaModelo("llama3");
@@ -754,6 +797,7 @@ export default function ConfiguracionPage() {
                 <option value="gemini">Google Gemini</option>
                 <option value="openai">OpenAI (ChatGPT)</option>
                 <option value="deepseek">DeepSeek (IA China)</option>
+                <option value="github">GitHub Models (Gratuito)</option>
                 <option value="ollama">Ollama (Local)</option>
               </select>
             </div>
@@ -762,7 +806,7 @@ export default function ConfiguracionPage() {
               <label className="text-sm font-medium mb-1.5">Modelo de IA</label>
               <div className="flex flex-col gap-2">
                 <div className="flex gap-2">
-                  {["gemini", "openai", "deepseek"].includes(iaProveedor) || modelosDisponibles.length > 0 ? (
+                  {["gemini", "openai", "deepseek", "github"].includes(iaProveedor) || modelosDisponibles.length > 0 ? (
                     <select
                       className="select select-bordered flex-1"
                       value={isCustomModel ? "custom" : iaModelo}
@@ -791,6 +835,13 @@ export default function ConfiguracionPage() {
                       ) : iaProveedor === "deepseek" ? (
                         <>
                           <option value="deepseek-chat">deepseek-chat (Recomendado)</option>
+                        </>
+                      ) : iaProveedor === "github" ? (
+                        <>
+                          <option value="gpt-4o-mini">gpt-4o-mini (Recomendado - Rápido)</option>
+                          <option value="gpt-4o">gpt-4o (Avanzado)</option>
+                          <option value="meta-llama-3.1-405b-instruct">Llama 3.1 405B</option>
+                          <option value="cohere-command-r-plus">Cohere Command R+</option>
                         </>
                       ) : (
                         <>
@@ -856,21 +907,71 @@ export default function ConfiguracionPage() {
               <input
                 type="text"
                 className="input input-bordered w-full"
-                value={iaApiUrl}
-                onChange={(e) => setIaApiUrl(e.target.value)}
-                placeholder={iaProveedor === "ollama" ? "Ej: http://localhost:11434" : "Ej: https://api.deepseek.com"}
+                value={
+                  iaProveedor === "ollama"
+                    ? iaApiUrlOllama
+                    : iaProveedor === "openai"
+                    ? iaApiUrlOpenai
+                    : iaProveedor === "deepseek"
+                    ? iaApiUrlDeepseek
+                    : iaProveedor === "github"
+                    ? iaApiUrlGithub
+                    : ""
+                }
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (iaProveedor === "ollama") setIaApiUrlOllama(val);
+                  else if (iaProveedor === "openai") setIaApiUrlOpenai(val);
+                  else if (iaProveedor === "deepseek") setIaApiUrlDeepseek(val);
+                  else if (iaProveedor === "github") setIaApiUrlGithub(val);
+                }}
+                placeholder={
+                  iaProveedor === "ollama" 
+                    ? "Ej: http://localhost:11434" 
+                    : iaProveedor === "github"
+                    ? "Ej: https://models.inference.ai.azure.com (Por defecto)"
+                    : "Ej: https://api.deepseek.com"
+                }
                 disabled={iaProveedor === "gemini"}
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">IA API Key (Gemini / OpenAI / DeepSeek)</label>
+              <label className="text-sm font-medium">IA API Key (Gemini / OpenAI / DeepSeek / GitHub)</label>
               <input
                 type="password"
                 className="input input-bordered w-full"
-                value={iaApiKey}
-                onChange={(e) => setIaApiKey(e.target.value)}
-                placeholder={iaApiKey === "***" ? "••••••••" : "API Key"}
+                value={
+                  iaProveedor === "gemini"
+                    ? iaApiKeyGemini
+                    : iaProveedor === "openai"
+                    ? iaApiKeyOpenai
+                    : iaProveedor === "deepseek"
+                    ? iaApiKeyDeepseek
+                    : iaProveedor === "github"
+                    ? iaApiKeyGithub
+                    : ""
+                }
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (iaProveedor === "gemini") setIaApiKeyGemini(val);
+                  else if (iaProveedor === "openai") setIaApiKeyOpenai(val);
+                  else if (iaProveedor === "deepseek") setIaApiKeyDeepseek(val);
+                  else if (iaProveedor === "github") setIaApiKeyGithub(val);
+                }}
+                placeholder={
+                  (iaProveedor === "gemini"
+                    ? iaApiKeyGemini
+                    : iaProveedor === "openai"
+                    ? iaApiKeyOpenai
+                    : iaProveedor === "deepseek"
+                    ? iaApiKeyDeepseek
+                    : iaApiKeyGithub) === "***"
+                    ? "••••••••"
+                    : iaProveedor === "github"
+                    ? "GitHub PAT (Token de Acceso)"
+                    : "API Key"
+                }
                 disabled={iaProveedor === "ollama"}
               />
             </div>

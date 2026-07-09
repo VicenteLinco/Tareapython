@@ -118,14 +118,24 @@ export interface ParseGuiaImagenResponse {
 export async function parseGuiaImagen(
   file: File,
   onUploadProgress?: (progress: number) => void,
+  providerOverride?: string,
+  modelOverride?: string,
 ): Promise<ParseGuiaImagenResponse> {
   const formData = new FormData();
   formData.append("file", file);
 
+  const headers: Record<string, string> = {
+    "Content-Type": "multipart/form-data",
+  };
+  if (providerOverride) {
+    headers["X-Provider-Override"] = providerOverride;
+  }
+  if (modelOverride) {
+    headers["X-Model-Override"] = modelOverride;
+  }
+
   const res = await api.post("/recepciones/parse-guia-imagen", formData, {
-    headers: {
-      "Content-Type": "multipart/form-data",
-    },
+    headers,
     onUploadProgress: (progressEvent) => {
       if (onUploadProgress && progressEvent.total) {
         const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);

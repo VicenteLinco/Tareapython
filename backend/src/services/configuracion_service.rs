@@ -41,6 +41,8 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
             'moneda_codigo','moneda_simbolo','conteo_periodo_dias',
             'ventana_consumo_dias','periodo_revision_dias','factor_historial_corto',
             'ia_proveedor','ia_modelo','ia_api_url','ia_api_key',
+            'ia_api_key_gemini','ia_api_key_openai','ia_api_key_deepseek','ia_api_key_github',
+            'ia_api_url_openai','ia_api_url_deepseek','ia_api_url_github','ia_api_url_ollama',
             'whatsapp_api_url','whatsapp_api_key','whatsapp_webhook_secret','whatsapp_bot_phone',
             'vencimiento_alerta_activa','vencimiento_vida_util_minima_dias','vencimiento_margen_tolerancia_pct'
         )",
@@ -65,6 +67,14 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
     let mut ia_modelo = "gemini-2.5-flash".to_string();
     let mut ia_api_url = String::new();
     let mut ia_api_key = String::new();
+    let mut ia_api_key_gemini = String::new();
+    let mut ia_api_key_openai = String::new();
+    let mut ia_api_key_deepseek = String::new();
+    let mut ia_api_key_github = String::new();
+    let mut ia_api_url_openai = String::new();
+    let mut ia_api_url_deepseek = String::new();
+    let mut ia_api_url_github = String::new();
+    let mut ia_api_url_ollama = String::new();
     let mut whatsapp_api_url = String::new();
     let mut whatsapp_api_key = String::new();
     let mut whatsapp_webhook_secret = String::new();
@@ -95,6 +105,38 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
             "ia_api_url" => ia_api_url = valor,
             "ia_api_key" => {
                 ia_api_key = if valor.is_empty() {
+                    String::new()
+                } else {
+                    "***".to_string()
+                };
+            }
+            "ia_api_key_gemini" => {
+                ia_api_key_gemini = if valor.is_empty() {
+                    String::new()
+                } else {
+                    "***".to_string()
+                };
+            }
+            "ia_api_key_openai" => {
+                ia_api_key_openai = if valor.is_empty() {
+                    String::new()
+                } else {
+                    "***".to_string()
+                };
+            }
+            "ia_api_key_deepseek" => {
+                ia_api_key_deepseek = if valor.is_empty() {
+                    String::new()
+                } else {
+                    "***".to_string()
+                };
+            }
+            "ia_api_url_openai" => ia_api_url_openai = valor,
+            "ia_api_url_deepseek" => ia_api_url_deepseek = valor,
+            "ia_api_url_github" => ia_api_url_github = valor,
+            "ia_api_url_ollama" => ia_api_url_ollama = valor,
+            "ia_api_key_github" => {
+                ia_api_key_github = if valor.is_empty() {
                     String::new()
                 } else {
                     "***".to_string()
@@ -139,6 +181,14 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
         ia_modelo,
         ia_api_url,
         ia_api_key,
+        ia_api_key_gemini,
+        ia_api_key_openai,
+        ia_api_key_deepseek,
+        ia_api_key_github,
+        ia_api_url_openai,
+        ia_api_url_deepseek,
+        ia_api_url_github,
+        ia_api_url_ollama,
         whatsapp_api_url,
         whatsapp_api_key,
         whatsapp_webhook_secret,
@@ -325,6 +375,46 @@ pub async fn actualizar(
             set_config(pool, "ia_api_key", api_key).await?;
             log_changes.push(("ia_api_key", "***".to_string(), "***".to_string()));
         }
+    }
+
+    if let Some(key_gemini) = &body.ia_api_key_gemini {
+        if key_gemini != "***" {
+            set_config(pool, "ia_api_key_gemini", key_gemini).await?;
+        }
+    }
+
+    if let Some(key_openai) = &body.ia_api_key_openai {
+        if key_openai != "***" {
+            set_config(pool, "ia_api_key_openai", key_openai).await?;
+        }
+    }
+
+    if let Some(key_deepseek) = &body.ia_api_key_deepseek {
+        if key_deepseek != "***" {
+            set_config(pool, "ia_api_key_deepseek", key_deepseek).await?;
+        }
+    }
+
+    if let Some(key_github) = &body.ia_api_key_github {
+        if key_github != "***" {
+            set_config(pool, "ia_api_key_github", key_github).await?;
+        }
+    }
+
+    if let Some(url_openai) = &body.ia_api_url_openai {
+        set_config(pool, "ia_api_url_openai", url_openai).await?;
+    }
+
+    if let Some(url_deepseek) = &body.ia_api_url_deepseek {
+        set_config(pool, "ia_api_url_deepseek", url_deepseek).await?;
+    }
+
+    if let Some(url_github) = &body.ia_api_url_github {
+        set_config(pool, "ia_api_url_github", url_github).await?;
+    }
+
+    if let Some(url_ollama) = &body.ia_api_url_ollama {
+        set_config(pool, "ia_api_url_ollama", url_ollama).await?;
     }
 
     if let Some(wa_url) = &body.whatsapp_api_url {

@@ -60,6 +60,9 @@ export default function ImportadorGuiaModal({
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [archivoUrl, setArchivoUrl] = useState<string | null>(null);
+  const [providerOverride, setProviderOverride] = useState<string>("");
+  const [modelOverride, setModelOverride] = useState<string>("");
+  const [lastParseError, setLastParseError] = useState<string>("");
 
   // Defaults for new product creation
   const [defaultAreaId, setDefaultAreaId] = useState<string>("");
@@ -214,16 +217,24 @@ export default function ImportadorGuiaModal({
     }
     setIsParsing(true);
     setUploadProgress(0);
+    setLastParseError("");
     try {
-      const res = await parseGuiaImagen(selectedFile, (progress) => {
-        setUploadProgress(progress);
-      });
+      const res = await parseGuiaImagen(
+        selectedFile,
+        (progress) => {
+          setUploadProgress(progress);
+        },
+        providerOverride || undefined,
+        modelOverride || undefined
+      );
       setProveedorDetectado(res.proveedor);
       setItems(initializeParsedItems(res.items || []));
       setArchivoUrl(res.archivo_url);
       notify.success(`Guía analizada con IA (${res.source})`);
     } catch (err) {
-      notify.error(parseApiError(err));
+      const errMsg = parseApiError(err) || String(err);
+      setLastParseError(errMsg);
+      notify.error(errMsg);
     } finally {
       setIsParsing(false);
     }
@@ -610,6 +621,101 @@ export default function ImportadorGuiaModal({
                   </div>
                 )}
 
+                <div className="bg-base-200/50 p-2.5 rounded-lg border border-base-300 space-y-2 mb-3 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-base-content/85 text-[10px]">Proveedor de IA (Opcional)</span>
+                    {(providerOverride || modelOverride) && (
+                      <button
+                        type="button"
+                        className="text-[10px] text-error font-medium hover:underline"
+                        onClick={() => {
+                          setProviderOverride("");
+                          setModelOverride("");
+                        }}
+                      >
+                        Limpiar
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <select
+                        className="select select-xs select-bordered w-full text-[11px]"
+                        value={providerOverride}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setProviderOverride(val);
+                          if (val === "gemini") {
+                            setModelOverride("gemini-1.5-flash");
+                          } else if (val === "openai") {
+                            setModelOverride("gpt-4o-mini");
+                          } else if (val === "deepseek") {
+                            setModelOverride("deepseek-chat");
+                          } else if (val === "github") {
+                            setModelOverride("gpt-4o-mini");
+                          } else {
+                            setModelOverride("");
+                          }
+                        }}
+                      >
+                        <option value="">Por defecto (Guardado)</option>
+                        <option value="gemini">Google Gemini</option>
+                        <option value="openai">OpenAI (ChatGPT)</option>
+                        <option value="deepseek">DeepSeek (China)</option>
+                        <option value="github">GitHub Models</option>
+                        <option value="ollama">Ollama (Local)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      {["gemini", "openai", "deepseek", "github"].includes(providerOverride) ? (
+                        <select
+                          className="select select-xs select-bordered w-full text-[11px]"
+                          value={modelOverride}
+                          onChange={(e) => setModelOverride(e.target.value)}
+                        >
+                          <option value="">Por defecto (Modelo)</option>
+                          {providerOverride === "gemini" && (
+                            <>
+                              <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                              <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                              <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                            </>
+                          )}
+                          {providerOverride === "openai" && (
+                            <>
+                              <option value="gpt-4o-mini">gpt-4o-mini</option>
+                              <option value="gpt-4o">gpt-4o</option>
+                            </>
+                          )}
+                          {providerOverride === "deepseek" && (
+                            <>
+                              <option value="deepseek-chat">deepseek-chat</option>
+                            </>
+                          )}
+                          {providerOverride === "github" && (
+                            <>
+                              <option value="gpt-4o-mini">gpt-4o-mini</option>
+                              <option value="gpt-4o">gpt-4o</option>
+                              <option value="meta-llama-3.1-405b-instruct">Llama 3.1 405B</option>
+                              <option value="cohere-command-r-plus">Cohere Command R+</option>
+                            </>
+                          )}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          className="input input-xs input-bordered w-full text-[11px]"
+                          placeholder="Modelo (ej: llama3)"
+                          value={modelOverride}
+                          onChange={(e) => setModelOverride(e.target.value)}
+                          disabled={!providerOverride}
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 <button
                   onClick={handleParseImage}
                   disabled={isParsing || !selectedFile}
@@ -640,6 +746,27 @@ export default function ImportadorGuiaModal({
                       value={uploadProgress}
                       max="100"
                     ></progress>
+                  </div>
+                )}
+                {lastParseError && (
+                  <div className="mt-3 p-2 bg-base-200 border border-base-300 rounded text-xs text-base-content/85 flex items-start gap-2 justify-between">
+                    <div className="flex-1 min-w-0">
+                      <span className="font-semibold block text-error mb-0.5 text-[10px]">Error de Extracción:</span>
+                      <p className="font-mono break-all line-clamp-3 select-all text-[10px]" title={lastParseError}>
+                        {lastParseError}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-ghost text-primary text-[10px] h-auto min-h-0 py-1 px-1.5"
+                      onClick={() => {
+                        navigator.clipboard.writeText(lastParseError);
+                        notify.success("Error copiado al portapapeles");
+                      }}
+                      title="Copiar error al portapapeles"
+                    >
+                      Copiar
+                    </button>
                   </div>
                 )}
               </>

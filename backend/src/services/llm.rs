@@ -909,7 +909,7 @@ pub async fn load_llm_config(pool: &sqlx::PgPool) -> Result<LlmConfig, AppError>
     .await?;
 
     let mut provider = std::env::var("IA_PROVEEDOR").unwrap_or_else(|_| "gemini".to_string());
-    let mut model = std::env::var("IA_MODELO").unwrap_or_else(|_| "gemini-1.5-flash".to_string());
+    let mut model = std::env::var("IA_MODELO").unwrap_or_else(|_| "gemini-2.5-flash".to_string());
     let mut api_url = std::env::var("IA_API_URL").unwrap_or_default();
     let mut api_key = std::env::var("IA_API_KEY").unwrap_or_default();
 
@@ -1399,7 +1399,7 @@ mod tests {
     fn test_llm_factory_create() {
         let gemini_config = LlmConfig {
             provider: "gemini".to_string(),
-            model: "gemini-1.5-flash".to_string(),
+            model: "gemini-2.5-flash".to_string(),
             api_url: "".to_string(),
             api_key: "test_key".to_string(),
         };

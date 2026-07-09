@@ -62,7 +62,7 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
     let mut periodo_revision_dias = 30;
     let mut factor_historial_corto = 0.35;
     let mut ia_proveedor = "gemini".to_string();
-    let mut ia_modelo = "gemini-1.5-flash".to_string();
+    let mut ia_modelo = "gemini-2.5-flash".to_string();
     let mut ia_api_url = String::new();
     let mut ia_api_key = String::new();
     let mut whatsapp_api_url = String::new();

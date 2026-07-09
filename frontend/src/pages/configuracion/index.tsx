@@ -78,7 +78,7 @@ export default function ConfiguracionPage() {
   const [ventanaConsumoDias, setVentanaConsumoDias] = useState(90);
   const [periodoRevisionDias, setPeriodoRevisionDias] = useState(30);
   const [iaProveedor, setIaProveedor] = useState("gemini");
-  const [iaModelo, setIaModelo] = useState("gemini-1.5-flash");
+  const [iaModelo, setIaModelo] = useState("gemini-2.5-flash");
   const [iaApiUrl, setIaApiUrl] = useState("");
   const [iaApiKey, setIaApiKey] = useState("");
   const [whatsappApiUrl, setWhatsappApiUrl] = useState("");
@@ -110,7 +110,7 @@ export default function ConfiguracionPage() {
     if (data.periodo_revision_dias != null)
       setPeriodoRevisionDias(data.periodo_revision_dias);
     setIaProveedor(data.ia_proveedor || "gemini");
-    const currentModel = data.ia_modelo || "gemini-1.5-flash";
+    const currentModel = data.ia_modelo || "gemini-2.5-flash";
     setIaModelo(currentModel);
     if ((data.ia_proveedor || "gemini") === "gemini") {
       setIsCustomModel(

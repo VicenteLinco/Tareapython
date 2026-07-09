@@ -528,28 +528,79 @@ pub async fn obtener_branding(pool: &PgPool) -> Result<BrandingResponse, AppErro
 }
 
 /// Obtiene los modelos de IA disponibles haciendo una petición a la API del proveedor configurado
-pub async fn obtener_ia_modelos(pool: &PgPool) -> Result<Vec<String>, AppError> {
+pub async fn obtener_ia_modelos(
+    pool: &PgPool,
+    provider_query: Option<String>,
+    api_key_query: Option<String>,
+    api_url_query: Option<String>,
+) -> Result<Vec<String>, AppError> {
+    let mut db_config = crate::services::llm::load_llm_config(pool).await?;
+
     let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT clave, valor_texto FROM configuracion WHERE clave IN ('ia_proveedor', 'ia_api_key', 'ia_api_url')"
+        "SELECT clave, valor_texto FROM configuracion WHERE clave LIKE 'ia_%'"
     )
     .fetch_all(pool)
     .await?;
 
-    let mut provider = std::env::var("IA_PROVEEDOR").unwrap_or_else(|_| "gemini".to_string());
-    let mut api_key = std::env::var("IA_API_KEY").unwrap_or_default();
-    let mut api_url = std::env::var("IA_API_URL").unwrap_or_default();
+    let mut key_gemini = String::new();
+    let mut key_openai = String::new();
+    let mut key_deepseek = String::new();
+    let mut key_github = String::new();
+    let mut url_openai = String::new();
+    let mut url_deepseek = String::new();
+    let mut url_github = String::new();
+    let mut url_ollama = String::new();
 
     for (clave, valor) in rows {
-        let trimmed = valor.trim();
+        let trimmed = valor.trim().to_string();
         if !trimmed.is_empty() {
             match clave.as_str() {
-                "ia_proveedor" => provider = trimmed.to_string(),
-                "ia_api_key" => api_key = trimmed.to_string(),
-                "ia_api_url" => api_url = trimmed.to_string(),
+                "ia_api_key_gemini" => key_gemini = trimmed,
+                "ia_api_key_openai" => key_openai = trimmed,
+                "ia_api_key_deepseek" => key_deepseek = trimmed,
+                "ia_api_key_github" => key_github = trimmed,
+                "ia_api_url_openai" => url_openai = trimmed,
+                "ia_api_url_deepseek" => url_deepseek = trimmed,
+                "ia_api_url_github" => url_github = trimmed,
+                "ia_api_url_ollama" => url_ollama = trimmed,
                 _ => {}
             }
         }
     }
+
+    if let Some(prov) = provider_query {
+        db_config.provider = prov;
+        db_config.api_key = match db_config.provider.to_lowercase().as_str() {
+            "gemini" => if !key_gemini.is_empty() { key_gemini } else { db_config.api_key },
+            "openai" => if !key_openai.is_empty() { key_openai } else { db_config.api_key },
+            "deepseek" => if !key_deepseek.is_empty() { key_deepseek } else { db_config.api_key },
+            "github" => if !key_github.is_empty() { key_github } else { db_config.api_key },
+            _ => db_config.api_key,
+        };
+        db_config.api_url = match db_config.provider.to_lowercase().as_str() {
+            "openai" => if !url_openai.is_empty() { url_openai } else { db_config.api_url },
+            "deepseek" => if !url_deepseek.is_empty() { url_deepseek } else { db_config.api_url },
+            "ollama" => if !url_ollama.is_empty() { url_ollama } else { db_config.api_url },
+            "github" => if !url_github.is_empty() { url_github } else { "https://models.inference.ai.azure.com".to_string() },
+            _ => db_config.api_url,
+        };
+    }
+
+    if let Some(key) = api_key_query {
+        if !key.is_empty() && key != "***" {
+            db_config.api_key = key;
+        }
+    }
+
+    if let Some(url) = api_url_query {
+        if !url.is_empty() {
+            db_config.api_url = url;
+        }
+    }
+
+    let provider = db_config.provider.to_lowercase();
+    let api_key = db_config.api_key;
+    let api_url = db_config.api_url;
 
     if provider == "gemini" {
         if api_key.is_empty() {
@@ -657,6 +708,55 @@ pub async fn obtener_ia_modelos(pool: &PgPool) -> Result<Vec<String>, AppError> 
             .map_err(|e| AppError::Internal(format!("Error al decodificar modelos de Ollama: {}", e)))?;
 
         let mut models: Vec<String> = response.models.into_iter().map(|m| m.name).collect();
+        models.sort();
+        Ok(models)
+    } else if provider == "openai" || provider == "deepseek" || provider == "github" || provider == "custom" {
+        let base_url = if api_url.is_empty() {
+            match provider.as_str() {
+                "openai" => "https://api.openai.com".to_string(),
+                "deepseek" => "https://api.deepseek.com".to_string(),
+                "github" => "https://models.inference.ai.azure.com".to_string(),
+                _ => "http://localhost:11434".to_string(),
+            }
+        } else {
+            api_url.clone()
+        };
+        let url = format!("{}/v1/models", base_url.trim_end_matches('/'));
+
+        let client = reqwest::Client::new();
+        let mut req = client.get(&url);
+        if !api_key.is_empty() && api_key != "mock" && api_key != "***" {
+            req = req.header("Authorization", format!("Bearer {}", api_key));
+        }
+        
+        let res = req.send().await.map_err(|e| {
+            AppError::Internal(format!("Error al conectar con la API de modelos ({}): {}", provider, e))
+        })?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let text = res.text().await.unwrap_or_default();
+            return Err(AppError::Internal(format!(
+                "La API de modelos ({}) retornó un código de error {}: {}",
+                provider, status, text
+            )));
+        }
+
+        #[derive(Debug, serde::Deserialize)]
+        struct OpenAiModel {
+            id: String,
+        }
+
+        #[derive(Debug, serde::Deserialize)]
+        struct OpenAiModelsResponse {
+            data: Vec<OpenAiModel>,
+        }
+
+        let response: OpenAiModelsResponse = res.json().await.map_err(|e| {
+            AppError::Internal(format!("Error al decodificar modelos de OpenAI/DeepSeek/GitHub: {}", e))
+        })?;
+
+        let mut models: Vec<String> = response.data.into_iter().map(|m| m.id).collect();
         models.sort();
         Ok(models)
     } else {

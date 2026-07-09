@@ -1,4 +1,4 @@
-use axum::extract::State;
+use axum::extract::{State, Query};
 use axum::routing::get;
 use axum::{Extension, Json, Router};
 
@@ -38,12 +38,26 @@ async fn verificar_pin(
     Ok(Json(serde_json::json!({ "valido": valido })))
 }
 
+#[derive(serde::Deserialize)]
+struct ModelosQuery {
+    provider: Option<String>,
+    api_key: Option<String>,
+    api_url: Option<String>,
+}
+
 /// GET /api/v1/configuracion/ia-modelos
 async fn obtener_ia_modelos(
     State(state): State<AppState>,
+    Query(query): Query<ModelosQuery>,
 ) -> Result<Json<Vec<String>>, AppError> {
     Ok(Json(
-        configuracion_service::obtener_ia_modelos(&state.pool).await?,
+        configuracion_service::obtener_ia_modelos(
+            &state.pool,
+            query.provider,
+            query.api_key,
+            query.api_url,
+        )
+        .await?,
     ))
 }
 

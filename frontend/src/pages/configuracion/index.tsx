@@ -114,7 +114,35 @@ export default function ConfiguracionPage() {
   const fetchModelosDisponibles = async () => {
     setCargandoModelos(true);
     try {
-      const res = await api.get("/configuracion/ia-modelos");
+      const activeKey =
+        iaProveedor === "gemini"
+          ? iaApiKeyGemini
+          : iaProveedor === "openai"
+          ? iaApiKeyOpenai
+          : iaProveedor === "deepseek"
+          ? iaApiKeyDeepseek
+          : iaProveedor === "github"
+          ? iaApiKeyGithub
+          : "";
+
+      const activeUrl =
+        iaProveedor === "openai"
+          ? iaApiUrlOpenai
+          : iaProveedor === "deepseek"
+          ? iaApiUrlDeepseek
+          : iaProveedor === "github"
+          ? iaApiUrlGithub
+          : iaProveedor === "ollama"
+          ? iaApiUrlOllama
+          : "";
+
+      const res = await api.get("/configuracion/ia-modelos", {
+        params: {
+          provider: iaProveedor,
+          api_key: activeKey,
+          api_url: activeUrl,
+        },
+      });
       setModelosDisponibles(res.data);
       notify.success("Lista de modelos actualizada correctamente");
       
@@ -776,6 +804,7 @@ export default function ConfiguracionPage() {
                 onChange={(e) => {
                   const val = e.target.value;
                   setIaProveedor(val);
+                  setModelosDisponibles([]);
                   if (val === "gemini") {
                     setIsCustomModel(false);
                     setIaModelo("gemini-2.5-flash");

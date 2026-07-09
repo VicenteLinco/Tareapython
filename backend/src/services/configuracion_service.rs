@@ -436,3 +436,130 @@ pub async fn obtener_branding(pool: &PgPool) -> Result<BrandingResponse, AppErro
         login_imagen_base64,
     })
 }
+
+/// Obtiene los modelos de IA disponibles haciendo una petición a la API del proveedor configurado
+pub async fn obtener_ia_modelos(pool: &PgPool) -> Result<Vec<String>, AppError> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT clave, valor_texto FROM configuracion WHERE clave IN ('ia_proveedor', 'ia_api_key', 'ia_api_url')"
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut provider = std::env::var("IA_PROVEEDOR").unwrap_or_else(|_| "gemini".to_string());
+    let mut api_key = std::env::var("IA_API_KEY").unwrap_or_default();
+    let mut api_url = std::env::var("IA_API_URL").unwrap_or_default();
+
+    for (clave, valor) in rows {
+        let trimmed = valor.trim();
+        if !trimmed.is_empty() {
+            match clave.as_str() {
+                "ia_proveedor" => provider = trimmed.to_string(),
+                "ia_api_key" => api_key = trimmed.to_string(),
+                "ia_api_url" => api_url = trimmed.to_string(),
+                _ => {}
+            }
+        }
+    }
+
+    if provider == "gemini" {
+        if api_key.is_empty() {
+            return Err(AppError::Validation("Por favor configure la API Key de Gemini en la sección de Inteligencia Artificial antes de buscar modelos.".to_string()));
+        }
+
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models?key={}",
+            api_key
+        );
+
+        let client = reqwest::Client::new();
+        let res = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(format!("Error de conexión con la API de Gemini: {}", e)))?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let text = res.text().await.unwrap_or_default();
+            return Err(AppError::Internal(format!(
+                "La API de Gemini retornó un código de error {}: {}",
+                status, text
+            )));
+        }
+
+        #[derive(Debug, serde::Deserialize)]
+        struct GeminiModel {
+            name: String,
+            #[serde(rename = "supportedGenerationMethods")]
+            supported_generation_methods: Option<Vec<String>>,
+        }
+
+        #[derive(Debug, serde::Deserialize)]
+        struct GeminiListModelsResponse {
+            models: Vec<GeminiModel>,
+        }
+
+        let response: GeminiListModelsResponse = res
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(format!("Error al decodificar la lista de modelos de Gemini: {}", e)))?;
+
+        let mut models = Vec::new();
+        for m in response.models {
+            let has_generate = m
+                .supported_generation_methods
+                .map(|methods| methods.contains(&"generateContent".to_string()))
+                .unwrap_or(false);
+
+            if has_generate {
+                let clean_name = m.name.strip_prefix("models/").unwrap_or(&m.name).to_string();
+                models.push(clean_name);
+            }
+        }
+        
+        models.sort();
+        Ok(models)
+    } else if provider == "ollama" {
+        let host = if api_url.is_empty() {
+            "http://localhost:11434".to_string()
+        } else {
+            api_url
+        };
+
+        let url = format!("{}/api/tags", host);
+        let client = reqwest::Client::new();
+        let res = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(format!("Error al conectar con Ollama: {}", e)))?;
+
+        if !res.status().is_success() {
+            return Err(AppError::Internal(format!(
+                "Ollama retornó código de error {}",
+                res.status()
+            )));
+        }
+
+        #[derive(Debug, serde::Deserialize)]
+        struct OllamaModelInfo {
+            name: String,
+        }
+
+        #[derive(Debug, serde::Deserialize)]
+        struct OllamaTagsResponse {
+            models: Vec<OllamaModelInfo>,
+        }
+
+        let response: OllamaTagsResponse = res
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(format!("Error al decodificar modelos de Ollama: {}", e)))?;
+
+        let mut models: Vec<String> = response.models.into_iter().map(|m| m.name).collect();
+        models.sort();
+        Ok(models)
+    } else {
+        Ok(vec![])
+    }
+}

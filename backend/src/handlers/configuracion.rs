@@ -38,6 +38,15 @@ async fn verificar_pin(
     Ok(Json(serde_json::json!({ "valido": valido })))
 }
 
+/// GET /api/v1/configuracion/ia-modelos
+async fn obtener_ia_modelos(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<String>>, AppError> {
+    Ok(Json(
+        configuracion_service::obtener_ia_modelos(&state.pool).await?,
+    ))
+}
+
 /// GET /api/v1/branding — Datos públicos para personalizar la pantalla de login.
 /// Solo expone el nombre del laboratorio y la imagen del login; nunca secretos.
 async fn obtener_branding(
@@ -52,6 +61,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(obtener).put(actualizar))
         .route("/verificar-pin", axum::routing::post(verificar_pin))
+        .route("/ia-modelos", get(obtener_ia_modelos))
 }
 
 /// Rutas públicas (sin auth) relacionadas a configuración.

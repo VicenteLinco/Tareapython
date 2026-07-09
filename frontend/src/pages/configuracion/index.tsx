@@ -9,9 +9,11 @@ import {
   Brain,
   Rocket,
   ChevronRight,
+  RefreshCw,
 } from "lucide-react";
 import { notify } from "@/lib/notify";
 import api from "@/lib/api";
+import { parseApiError } from "@/lib/api-error";
 import { PageLoading } from "@/components/ui/page-state";
 
 interface Configuracion {
@@ -90,6 +92,38 @@ export default function ConfiguracionPage() {
   const [vencimientoMargenToleranciaPct, setVencimientoMargenToleranciaPct] = useState(10);
 
   const [isCustomModel, setIsCustomModel] = useState(false);
+  const [modelosDisponibles, setModelosDisponibles] = useState<string[]>([]);
+  const [cargandoModelos, setCargandoModelos] = useState(false);
+
+  const fetchModelosDisponibles = async () => {
+    setCargandoModelos(true);
+    try {
+      const res = await api.get("/configuracion/ia-modelos");
+      setModelosDisponibles(res.data);
+      notify.success("Lista de modelos actualizada correctamente");
+      
+      if (res.data.length > 0 && !res.data.includes(iaModelo) && !isCustomModel) {
+        setIaModelo(res.data[0]);
+      }
+    } catch (err) {
+      console.error(err);
+      notify.error(parseApiError(err) || "No se pudieron obtener los modelos. Verifique su API Key.");
+    } finally {
+      setCargandoModelos(false);
+    }
+  };
+
+  useEffect(() => {
+    if (data && (data.ia_api_key || iaApiKey)) {
+      api.get("/configuracion/ia-modelos")
+        .then(res => {
+          setModelosDisponibles(res.data);
+        })
+        .catch(err => {
+          console.warn("Failed to auto-fetch models on load:", err);
+        });
+    }
+  }, [data]);
 
   useEffect(() => {
     if (!data) return;
@@ -718,58 +752,76 @@ export default function ConfiguracionPage() {
 
             <div className="space-y-1.5 flex flex-col justify-end">
               <label className="text-sm font-medium mb-1.5">Modelo de IA</label>
-              {iaProveedor === "gemini" ? (
-                <div className="flex flex-col gap-2">
-                  <select
-                    className="select select-bordered w-full"
-                    value={isCustomModel ? "custom" : iaModelo}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === "custom") {
-                        setIsCustomModel(true);
-                        setIaModelo("");
-                      } else {
-                        setIsCustomModel(false);
-                        setIaModelo(val);
-                      }
-                    }}
-                  >
-                    <option value="gemini-2.5-flash">
-                      gemini-2.5-flash (Recomendado - Rápido)
-                    </option>
-                    <option value="gemini-2.5-pro">
-                      gemini-2.5-pro (Avanzado - Razonamiento)
-                    </option>
-                    <option value="gemini-1.5-flash">
-                      gemini-1.5-flash (Básico)
-                    </option>
-                    <option value="gemini-1.5-pro">
-                      gemini-1.5-pro (Básico - Avanzado)
-                    </option>
-                    <option value="gemini-1.0-pro">
-                      gemini-1.0-pro (Legacy)
-                    </option>
-                    <option value="custom">Otro (ingresar manualmente)</option>
-                  </select>
-                  {isCustomModel && (
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  {iaProveedor === "gemini" || modelosDisponibles.length > 0 ? (
+                    <select
+                      className="select select-bordered flex-1"
+                      value={isCustomModel ? "custom" : iaModelo}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "custom") {
+                          setIsCustomModel(true);
+                          setIaModelo("");
+                        } else {
+                          setIsCustomModel(false);
+                          setIaModelo(val);
+                        }
+                      }}
+                    >
+                      {modelosDisponibles.length > 0 ? (
+                        modelosDisponibles.map((model) => (
+                          <option key={model} value={model}>
+                            {model}
+                          </option>
+                        ))
+                      ) : (
+                        <>
+                          <option value="gemini-2.5-flash">
+                            gemini-2.5-flash (Recomendado - Rápido)
+                          </option>
+                          <option value="gemini-2.5-pro">
+                            gemini-2.5-pro (Avanzado - Razonamiento)
+                          </option>
+                          <option value="gemini-1.5-flash">
+                            gemini-1.5-flash (Básico)
+                          </option>
+                          <option value="gemini-1.5-pro">
+                            gemini-1.5-pro (Básico - Avanzado)
+                          </option>
+                        </>
+                      )}
+                      <option value="custom">Otro (ingresar manualmente)</option>
+                    </select>
+                  ) : (
                     <input
                       type="text"
-                      className="input input-bordered w-full text-sm"
+                      className="input input-bordered flex-1"
                       value={iaModelo}
                       onChange={(e) => setIaModelo(e.target.value)}
-                      placeholder="Ej: gemini-2.0-flash-exp"
+                      placeholder="Ej: llama3"
                     />
                   )}
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-square"
+                    onClick={fetchModelosDisponibles}
+                    disabled={cargandoModelos}
+                    title="Obtener modelos disponibles de la API"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${cargandoModelos ? "animate-spin" : ""}`} />
+                  </button>
                 </div>
-              ) : (
-                <input
-                  type="text"
-                  className="input input-bordered w-full"
-                  value={iaModelo}
-                  onChange={(e) => setIaModelo(e.target.value)}
-                  placeholder="Ej: llama3"
-                />
-              )}
+                {isCustomModel && (
+                  <input
+                    type="text"
+                    className="input input-bordered w-full text-sm"
+                    value={iaModelo}
+                    onChange={(e) => setIaModelo(e.target.value)}
+                    placeholder={iaProveedor === "gemini" ? "Ej: gemini-2.0-flash-exp" : "Ej: llama3"}
+                  />
+                )}
+              </div>
             </div>
           </div>
 

@@ -62,6 +62,7 @@ export default function ImportadorGuiaModal({
   const [archivoUrl, setArchivoUrl] = useState<string | null>(null);
   const [providerOverride, setProviderOverride] = useState<string>("");
   const [modelOverride, setModelOverride] = useState<string>("");
+  const [apiKeyOverride, setApiKeyOverride] = useState<string>("");
   const [lastParseError, setLastParseError] = useState<string>("");
 
   // Defaults for new product creation
@@ -225,7 +226,8 @@ export default function ImportadorGuiaModal({
           setUploadProgress(progress);
         },
         providerOverride || undefined,
-        modelOverride || undefined
+        modelOverride || undefined,
+        apiKeyOverride || undefined
       );
       setProveedorDetectado(res.proveedor);
       setItems(initializeParsedItems(res.items || []));
@@ -630,13 +632,14 @@ export default function ImportadorGuiaModal({
                 <div className="bg-base-200/50 p-2.5 rounded-lg border border-base-300 space-y-2 mb-3 text-xs">
                   <div className="flex justify-between items-center">
                     <span className="font-semibold text-base-content/85 text-[10px]">Proveedor de IA (Opcional)</span>
-                    {(providerOverride || modelOverride) && (
+                    {(providerOverride || modelOverride || apiKeyOverride) && (
                       <button
                         type="button"
                         className="text-[10px] text-error font-medium hover:underline"
                         onClick={() => {
                           setProviderOverride("");
                           setModelOverride("");
+                          setApiKeyOverride("");
                         }}
                       >
                         Limpiar
@@ -720,6 +723,17 @@ export default function ImportadorGuiaModal({
                       )}
                     </div>
                   </div>
+                  {providerOverride && providerOverride !== "ollama" && (
+                    <div className="mt-2">
+                      <input
+                        type="password"
+                        className="input input-xs input-bordered w-full text-[11px]"
+                        placeholder={`API Key / Token para ${providerOverride === "github" ? "GitHub" : providerOverride.toUpperCase()} (Opcional)`}
+                        value={apiKeyOverride}
+                        onChange={(e) => setApiKeyOverride(e.target.value)}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <button

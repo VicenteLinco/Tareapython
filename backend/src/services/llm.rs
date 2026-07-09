@@ -1291,10 +1291,11 @@ pub async fn parse_guia_con_vision(
     mime_type: &str,
     provider_override: Option<String>,
     model_override: Option<String>,
+    api_key_override: Option<String>,
 ) -> Result<serde_json::Value, AppError> {
     let mut db_config = load_llm_config(pool).await?;
 
-    if provider_override.is_some() || model_override.is_some() {
+    if provider_override.is_some() || model_override.is_some() || api_key_override.is_some() {
         let rows: Vec<(String, String)> = sqlx::query_as(
             "SELECT clave, valor_texto FROM configuracion WHERE clave LIKE 'ia_%'"
         )
@@ -1347,6 +1348,12 @@ pub async fn parse_guia_con_vision(
 
         if let Some(mod_name) = model_override {
             db_config.model = mod_name;
+        }
+
+        if let Some(key) = api_key_override {
+            if !key.is_empty() {
+                db_config.api_key = key;
+            }
         }
     }
 

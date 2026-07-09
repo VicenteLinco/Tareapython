@@ -120,6 +120,7 @@ export async function parseGuiaImagen(
   onUploadProgress?: (progress: number) => void,
   providerOverride?: string,
   modelOverride?: string,
+  apiKeyOverride?: string,
 ): Promise<ParseGuiaImagenResponse> {
   const formData = new FormData();
   formData.append("file", file);
@@ -132,6 +133,9 @@ export async function parseGuiaImagen(
   }
   if (modelOverride) {
     headers["X-Model-Override"] = modelOverride;
+  }
+  if (apiKeyOverride) {
+    headers["X-Api-Key-Override"] = apiKeyOverride;
   }
 
   const res = await api.post("/recepciones/parse-guia-imagen", formData, {

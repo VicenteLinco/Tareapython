@@ -424,6 +424,9 @@ async fn parse_guia_imagen(
     let model_override = headers
         .get("x-model-override")
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+    let api_key_override = headers
+        .get("x-api-key-override")
+        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
 
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut file_mime: Option<String> = None;
@@ -479,7 +482,15 @@ async fn parse_guia_imagen(
         storage::save_file_bytes(&bytes, extension, "guias", &format!("guia_{}", claims.sub))
             .await?;
 
-    let vision_result = llm::parse_guia_con_vision(&state.pool, &bytes, &mime, provider_override, model_override).await;
+    let vision_result = llm::parse_guia_con_vision(
+        &state.pool,
+        &bytes,
+        &mime,
+        provider_override,
+        model_override,
+        api_key_override,
+    )
+    .await;
 
     match vision_result {
         Ok(parsed_json) => {

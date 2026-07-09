@@ -613,19 +613,19 @@ pub async fn obtener_ia_modelos(
         );
 
         let client = reqwest::Client::new();
-        let res = client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| AppError::Internal(format!("Error de conexión con la API de Gemini: {}", e)))?;
+        let res = match client.get(&url).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("Failed to fetch Gemini models list: {}. Returning default models.", e);
+                return Ok(get_default_models_for_provider("gemini"));
+            }
+        };
 
         if !res.status().is_success() {
             let status = res.status();
             let text = res.text().await.unwrap_or_default();
-            return Err(AppError::Internal(format!(
-                "La API de Gemini retornó un código de error {}: {}",
-                status, text
-            )));
+            tracing::warn!("Gemini API returned status code {} when fetching models: {}. Returning default models.", status, text);
+            return Ok(get_default_models_for_provider("gemini"));
         }
 
         #[derive(Debug, serde::Deserialize)]
@@ -640,10 +640,13 @@ pub async fn obtener_ia_modelos(
             models: Vec<GeminiModel>,
         }
 
-        let response: GeminiListModelsResponse = res
-            .json()
-            .await
-            .map_err(|e| AppError::Internal(format!("Error al decodificar la lista de modelos de Gemini: {}", e)))?;
+        let response: GeminiListModelsResponse = match res.json().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                tracing::warn!("Failed to decode Gemini models JSON: {}. Returning default models.", e);
+                return Ok(get_default_models_for_provider("gemini"));
+            }
+        };
 
         let deprecated_models = vec![
             "gemini-2.5-flash",
@@ -679,17 +682,17 @@ pub async fn obtener_ia_modelos(
 
         let url = format!("{}/api/tags", host);
         let client = reqwest::Client::new();
-        let res = client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| AppError::Internal(format!("Error al conectar con Ollama: {}", e)))?;
+        let res = match client.get(&url).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("Failed to fetch Ollama models: {}. Returning default models.", e);
+                return Ok(get_default_models_for_provider("ollama"));
+            }
+        };
 
         if !res.status().is_success() {
-            return Err(AppError::Internal(format!(
-                "Ollama retornó código de error {}",
-                res.status()
-            )));
+            tracing::warn!("Ollama returned status code {} when fetching models. Returning default models.", res.status());
+            return Ok(get_default_models_for_provider("ollama"));
         }
 
         #[derive(Debug, serde::Deserialize)]
@@ -702,10 +705,13 @@ pub async fn obtener_ia_modelos(
             models: Vec<OllamaModelInfo>,
         }
 
-        let response: OllamaTagsResponse = res
-            .json()
-            .await
-            .map_err(|e| AppError::Internal(format!("Error al decodificar modelos de Ollama: {}", e)))?;
+        let response: OllamaTagsResponse = match res.json().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                tracing::warn!("Failed to decode Ollama models JSON: {}. Returning default models.", e);
+                return Ok(get_default_models_for_provider("ollama"));
+            }
+        };
 
         let mut models: Vec<String> = response.models.into_iter().map(|m| m.name).collect();
         models.sort();
@@ -729,17 +735,19 @@ pub async fn obtener_ia_modelos(
             req = req.header("Authorization", format!("Bearer {}", api_key));
         }
         
-        let res = req.send().await.map_err(|e| {
-            AppError::Internal(format!("Error al conectar con la API de modelos ({}): {}", provider, e))
-        })?;
+        let res = match req.send().await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("Failed to fetch OpenAI/DeepSeek/GitHub models: {}. Returning default models.", e);
+                return Ok(get_default_models_for_provider(&provider));
+            }
+        };
 
         if !res.status().is_success() {
             let status = res.status();
             let text = res.text().await.unwrap_or_default();
-            return Err(AppError::Internal(format!(
-                "La API de modelos ({}) retornó un código de error {}: {}",
-                provider, status, text
-            )));
+            tracing::warn!("Models API for {} returned status code {}: {}. Returning default models.", provider, status, text);
+            return Ok(get_default_models_for_provider(&provider));
         }
 
         #[derive(Debug, serde::Deserialize)]
@@ -752,14 +760,37 @@ pub async fn obtener_ia_modelos(
             data: Vec<OpenAiModel>,
         }
 
-        let response: OpenAiModelsResponse = res.json().await.map_err(|e| {
-            AppError::Internal(format!("Error al decodificar modelos de OpenAI/DeepSeek/GitHub: {}", e))
-        })?;
+        let response: OpenAiModelsResponse = match res.json().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                tracing::warn!("Failed to decode OpenAI/DeepSeek/GitHub models JSON: {}. Returning default models.", e);
+                return Ok(get_default_models_for_provider(&provider));
+            }
+        };
 
         let mut models: Vec<String> = response.data.into_iter().map(|m| m.id).collect();
         models.sort();
         Ok(models)
     } else {
         Ok(vec![])
+    }
+}
+
+fn get_default_models_for_provider(provider: &str) -> Vec<String> {
+    match provider.to_lowercase().as_str() {
+        "openai" => vec!["gpt-4o-mini".to_string(), "gpt-4o".to_string()],
+        "deepseek" => vec!["deepseek-chat".to_string()],
+        "github" => vec![
+            "gpt-4o-mini".to_string(),
+            "gpt-4o".to_string(),
+            "meta-llama-3.1-405b-instruct".to_string(),
+            "cohere-command-r-plus".to_string(),
+        ],
+        "gemini" => vec![
+            "gemini-2.0-flash".to_string(),
+            "gemini-1.5-flash".to_string(),
+            "gemini-1.5-pro".to_string(),
+        ],
+        _ => vec!["gpt-4o-mini".to_string()],
     }
 }

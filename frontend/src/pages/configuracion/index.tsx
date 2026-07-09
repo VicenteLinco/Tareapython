@@ -739,6 +739,12 @@ export default function ConfiguracionPage() {
                   if (val === "gemini") {
                     setIsCustomModel(false);
                     setIaModelo("gemini-2.5-flash");
+                  } else if (val === "openai") {
+                    setIsCustomModel(false);
+                    setIaModelo("gpt-4o-mini");
+                  } else if (val === "deepseek") {
+                    setIsCustomModel(false);
+                    setIaModelo("deepseek-chat");
                   } else {
                     setIsCustomModel(true);
                     setIaModelo("llama3");
@@ -746,6 +752,8 @@ export default function ConfiguracionPage() {
                 }}
               >
                 <option value="gemini">Google Gemini</option>
+                <option value="openai">OpenAI (ChatGPT)</option>
+                <option value="deepseek">DeepSeek (IA China)</option>
                 <option value="ollama">Ollama (Local)</option>
               </select>
             </div>
@@ -754,7 +762,7 @@ export default function ConfiguracionPage() {
               <label className="text-sm font-medium mb-1.5">Modelo de IA</label>
               <div className="flex flex-col gap-2">
                 <div className="flex gap-2">
-                  {iaProveedor === "gemini" || modelosDisponibles.length > 0 ? (
+                  {["gemini", "openai", "deepseek"].includes(iaProveedor) || modelosDisponibles.length > 0 ? (
                     <select
                       className="select select-bordered flex-1"
                       value={isCustomModel ? "custom" : iaModelo}
@@ -775,6 +783,15 @@ export default function ConfiguracionPage() {
                             {model}
                           </option>
                         ))
+                      ) : iaProveedor === "openai" ? (
+                        <>
+                          <option value="gpt-4o-mini">gpt-4o-mini (Recomendado - Rápido)</option>
+                          <option value="gpt-4o">gpt-4o (Avanzado)</option>
+                        </>
+                      ) : iaProveedor === "deepseek" ? (
+                        <>
+                          <option value="deepseek-chat">deepseek-chat (Recomendado)</option>
+                        </>
                       ) : (
                         <>
                           <option value="gemini-2.5-flash">
@@ -818,7 +835,15 @@ export default function ConfiguracionPage() {
                     className="input input-bordered w-full text-sm"
                     value={iaModelo}
                     onChange={(e) => setIaModelo(e.target.value)}
-                    placeholder={iaProveedor === "gemini" ? "Ej: gemini-2.0-flash-exp" : "Ej: llama3"}
+                    placeholder={
+                      iaProveedor === "gemini" 
+                        ? "Ej: gemini-2.0-flash-exp" 
+                        : iaProveedor === "openai" 
+                        ? "Ej: gpt-4-turbo" 
+                        : iaProveedor === "deepseek" 
+                        ? "Ej: deepseek-reasoner"
+                        : "Ej: llama3"
+                    }
                   />
                 )}
               </div>
@@ -827,26 +852,26 @@ export default function ConfiguracionPage() {
 
           <div className="grid grid-cols-2 gap-5">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">IA API URL (Ollama)</label>
+              <label className="text-sm font-medium">IA API URL (Ollama / Personalizado)</label>
               <input
                 type="text"
                 className="input input-bordered w-full"
                 value={iaApiUrl}
                 onChange={(e) => setIaApiUrl(e.target.value)}
-                placeholder="Ej: http://localhost:11434"
-                disabled={iaProveedor !== "ollama"}
+                placeholder={iaProveedor === "ollama" ? "Ej: http://localhost:11434" : "Ej: https://api.deepseek.com"}
+                disabled={iaProveedor === "gemini"}
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">IA API Key (Gemini)</label>
+              <label className="text-sm font-medium">IA API Key (Gemini / OpenAI / DeepSeek)</label>
               <input
                 type="password"
                 className="input input-bordered w-full"
                 value={iaApiKey}
                 onChange={(e) => setIaApiKey(e.target.value)}
                 placeholder={iaApiKey === "***" ? "••••••••" : "API Key"}
-                disabled={iaProveedor !== "gemini"}
+                disabled={iaProveedor === "ollama"}
               />
             </div>
           </div>

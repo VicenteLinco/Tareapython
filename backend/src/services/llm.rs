@@ -722,7 +722,11 @@ impl LlmClient for OllamaClient {
         let db_config = load_llm_config(pool).await?;
         let client = reqwest::Client::new();
         let base_url = if db_config.api_url.is_empty() {
-            "http://localhost:11434".to_string()
+            match db_config.provider.to_lowercase().as_str() {
+                "openai" => "https://api.openai.com".to_string(),
+                "deepseek" => "https://api.deepseek.com".to_string(),
+                _ => "http://localhost:11434".to_string(),
+            }
         } else {
             db_config.api_url.trim_end_matches('/').to_string()
         };
@@ -793,18 +797,21 @@ impl LlmClient for OllamaClient {
                 tools: Some(get_openai_tools()),
             };
 
-            let response = client
-                .post(&url)
+            let mut req = client.post(&url);
+            if !db_config.api_key.is_empty() {
+                req = req.bearer_auth(&db_config.api_key);
+            }
+            let response = req
                 .json(&request_payload)
                 .send()
                 .await
-                .map_err(|e| AppError::Internal(format!("Ollama request failed: {}", e)))?;
+                .map_err(|e| AppError::Internal(format!("LLM request failed: {}", e)))?;
 
             if !response.status().is_success() {
                 let status_code = response.status();
                 let err_text = response.text().await.unwrap_or_default();
                 return Err(AppError::Internal(format!(
-                    "Ollama API returned error code {}: {}",
+                    "LLM API returned error code {}: {}",
                     status_code, err_text
                 )));
             }
@@ -975,7 +982,7 @@ impl LlmFactory {
     pub fn create(config: LlmConfig) -> Result<Box<dyn LlmClient + Send + Sync>, AppError> {
         match config.provider.to_lowercase().as_str() {
             "gemini" => Ok(Box::new(GeminiClient::new(config))),
-            "ollama" => Ok(Box::new(OllamaClient::new(config))),
+            "ollama" | "openai" | "deepseek" | "custom" => Ok(Box::new(OllamaClient::new(config))),
             other => Err(AppError::Internal(format!(
                 "Unsupported AI provider: {}",
                 other
@@ -1284,11 +1291,7 @@ pub async fn parse_guia_con_vision(
         }));
     }
 
-    if db_config.provider.to_lowercase() != "gemini" {
-        return Err(AppError::Validation(
-            "La extracción por imagen (Vision) solo está soportada con el proveedor Gemini".into(),
-        ));
-    }
+    let is_gemini = db_config.provider.to_lowercase() == "gemini";
 
     let client = reqwest::Client::new();
 
@@ -1321,142 +1324,297 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
 
     let base64_data = base64::engine::general_purpose::STANDARD.encode(image_bytes);
 
-    let contents = vec![GeminiContent {
-        role: "user".to_string(),
-        parts: vec![
-            GeminiContentPart {
-                text: Some(
-                    "Analiza esta imagen de guía de despacho y extrae los datos de los productos."
-                        .to_string(),
-                ),
-                function_call: None,
-                function_response: None,
-                thought_signature: None,
-                inline_data: None,
-            },
-            GeminiContentPart {
-                text: None,
-                function_call: None,
-                function_response: None,
-                thought_signature: None,
-                inline_data: Some(GeminiInlineData {
-                    mime_type: mime_type.to_string(),
-                    data: base64_data,
-                }),
-            },
-        ],
-    }];
+    let parsed_json: serde_json::Value = if is_gemini {
+        let contents = vec![GeminiContent {
+            role: "user".to_string(),
+            parts: vec![
+                GeminiContentPart {
+                    text: Some(
+                        "Analiza esta imagen de guía de despacho y extrae los datos de los productos."
+                            .to_string(),
+                    ),
+                    function_call: None,
+                    function_response: None,
+                    thought_signature: None,
+                    inline_data: None,
+                },
+                GeminiContentPart {
+                    text: None,
+                    function_call: None,
+                    function_response: None,
+                    thought_signature: None,
+                    inline_data: Some(GeminiInlineData {
+                        mime_type: mime_type.to_string(),
+                        data: base64_data,
+                    }),
+                },
+            ],
+        }];
 
-    let request_payload = GeminiParseRequest {
-        contents,
-        system_instruction: GeminiSystemInstruction {
-            parts: vec![GeminiSystemInstructionPart {
-                text: system_prompt.to_string(),
-            }],
-        },
-        generation_config: GeminiParseGenerationConfig {
-            response_mime_type: "application/json".to_string(),
-        },
-    };
+        let request_payload = GeminiParseRequest {
+            contents,
+            system_instruction: GeminiSystemInstruction {
+                parts: vec![GeminiSystemInstructionPart {
+                    text: system_prompt.to_string(),
+                }],
+            },
+            generation_config: GeminiParseGenerationConfig {
+                response_mime_type: "application/json".to_string(),
+            },
+        };
 
-    let mut models_to_try = vec![db_config.model.clone()];
-    let fallbacks = vec![
-        "gemini-1.5-flash-latest".to_string(),
-        "gemini-2.0-flash".to_string(),
-        "gemini-1.5-pro-latest".to_string(),
-    ];
-    for f in fallbacks {
-        if f != db_config.model {
-            models_to_try.push(f);
+        let mut models_to_try = vec![db_config.model.clone()];
+        let fallbacks = vec![
+            "gemini-1.5-flash-latest".to_string(),
+            "gemini-2.0-flash".to_string(),
+            "gemini-1.5-pro-latest".to_string(),
+        ];
+        for f in fallbacks {
+            if f != db_config.model {
+                models_to_try.push(f);
+            }
         }
-    }
 
-    let mut last_error = None;
-    let mut response = None;
+        let mut last_error = None;
+        let mut response = None;
 
-    for (idx, current_model) in models_to_try.iter().enumerate() {
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            current_model, db_config.api_key
-        );
+        for (idx, current_model) in models_to_try.iter().enumerate() {
+            let url = format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+                current_model, db_config.api_key
+            );
 
-        tracing::info!(
-            "Sending Vision request to Gemini (model: {}) for dispatch guide image ({} bytes, {})",
-            current_model,
-            image_bytes.len(),
-            mime_type
-        );
+            tracing::info!(
+                "Sending Vision request to Gemini (model: {}) for dispatch guide image ({} bytes, {})",
+                current_model,
+                image_bytes.len(),
+                mime_type
+            );
 
-        let res = match client
-            .post(&url)
+            let res = match client
+                .post(&url)
+                .json(&request_payload)
+                .send()
+                .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    last_error = Some(format!("Request to {} failed: {}", current_model, e));
+                    if idx < models_to_try.len() - 1 {
+                        continue;
+                    }
+                    return Err(AppError::Internal(format!("Gemini Vision request failed: {}", e)));
+                }
+            };
+
+            if !res.status().is_success() {
+                let status_code = res.status();
+                let err_text = res.text().await.unwrap_or_default();
+                
+                if (status_code == reqwest::StatusCode::NOT_FOUND 
+                    || status_code == reqwest::StatusCode::SERVICE_UNAVAILABLE
+                    || status_code == reqwest::StatusCode::TOO_MANY_REQUESTS)
+                    && idx < models_to_try.len() - 1 
+                {
+                    tracing::warn!("Gemini Vision model {} failed with {}. Trying fallback...", current_model, status_code);
+                    last_error = Some(format!("Model {} failed ({}): {}", current_model, status_code, err_text));
+                    continue;
+                }
+                return Err(AppError::Internal(format!(
+                    "Gemini Vision API returned error code {}: {}",
+                    status_code, err_text
+                )));
+            }
+
+            response = Some(res);
+            break;
+        }
+
+        let response = response.ok_or_else(|| {
+            AppError::Internal(format!("All Gemini Vision models failed. Last error: {:?}", last_error))
+        })?;
+
+        let gemini_resp: GeminiResponse = response.json().await.map_err(|e| {
+            AppError::Internal(format!("Failed to parse Gemini Vision response: {}", e))
+        })?;
+
+        let candidates = gemini_resp.candidates.ok_or_else(|| {
+            AppError::Internal("Gemini Vision response returned no candidates".to_string())
+        })?;
+
+        if candidates.is_empty() {
+            return Err(AppError::Internal(
+                "Gemini Vision response candidates list is empty".to_string(),
+                ));
+        }
+
+        let text = candidates[0].content.parts[0]
+            .text
+            .as_deref()
+            .ok_or_else(|| {
+                AppError::Internal("Gemini Vision candidate has no text content".to_string())
+            })?;
+
+        serde_json::from_str(text).map_err(|e| {
+            AppError::Internal(format!(
+                "Failed to parse Vision LLM text to JSON: {}. Text: {}",
+                e, text
+            ))
+        })?
+    } else {
+        // OpenAI-compatible implementation (OpenAI, DeepSeek, etc.)
+        let base_url = if db_config.api_url.is_empty() {
+            match db_config.provider.to_lowercase().as_str() {
+                "openai" => "https://api.openai.com".to_string(),
+                "deepseek" => "https://api.deepseek.com".to_string(),
+                _ => "http://localhost:11434".to_string(),
+            }
+        } else {
+            db_config.api_url.trim_end_matches('/').to_string()
+        };
+        let url = format!("{}/v1/chat/completions", base_url);
+
+        #[derive(Debug, Serialize)]
+        struct OpenAiVisionMessageContent {
+            r#type: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            text: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            image_url: Option<OpenAiVisionImageUrl>,
+        }
+
+        #[derive(Debug, Serialize)]
+        struct OpenAiVisionImageUrl {
+            url: String,
+        }
+
+        #[derive(Debug, Serialize)]
+        struct OpenAiVisionMessage {
+            role: String,
+            content: Vec<OpenAiVisionMessageContent>,
+        }
+
+        #[derive(Debug, Serialize)]
+        struct OpenAiVisionSystemMessage {
+            role: String,
+            content: String,
+        }
+
+        #[derive(Debug, Serialize)]
+        #[serde(untagged)]
+        enum OpenAiVisionMessageWrapper {
+            System(OpenAiVisionSystemMessage),
+            User(OpenAiVisionMessage),
+        }
+
+        #[derive(Debug, Serialize)]
+        struct OpenAiVisionResponseFormat {
+            r#type: String,
+        }
+
+        #[derive(Debug, Serialize)]
+        struct OpenAiVisionRequest {
+            model: String,
+            messages: Vec<OpenAiVisionMessageWrapper>,
+            response_format: Option<OpenAiVisionResponseFormat>,
+        }
+
+        let messages = vec![
+            OpenAiVisionMessageWrapper::System(OpenAiVisionSystemMessage {
+                role: "system".to_string(),
+                content: system_prompt.to_string(),
+            }),
+            OpenAiVisionMessageWrapper::User(OpenAiVisionMessage {
+                role: "user".to_string(),
+                content: vec![
+                    OpenAiVisionMessageContent {
+                        r#type: "text".to_string(),
+                        text: Some("Analiza esta imagen de guía de despacho y extrae los datos de los productos.".to_string()),
+                        image_url: None,
+                    },
+                    OpenAiVisionMessageContent {
+                        r#type: "image_url".to_string(),
+                        text: None,
+                        image_url: Some(OpenAiVisionImageUrl {
+                            url: format!("data:{};base64,{}", mime_type, base64_data),
+                        }),
+                    },
+                ],
+            }),
+        ];
+
+        let model_name = if db_config.model.is_empty() || db_config.model == "gemini-2.5-flash" {
+            match db_config.provider.to_lowercase().as_str() {
+                "openai" => "gpt-4o-mini".to_string(),
+                "deepseek" => "deepseek-chat".to_string(),
+                _ => "llava".to_string(),
+            }
+        } else {
+            db_config.model.clone()
+        };
+
+        let request_payload = OpenAiVisionRequest {
+            model: model_name,
+            messages,
+            response_format: Some(OpenAiVisionResponseFormat {
+                r#type: "json_object".to_string(),
+            }),
+        };
+
+        let mut req = client.post(&url);
+        if !db_config.api_key.is_empty() {
+            req = req.bearer_auth(&db_config.api_key);
+        }
+
+        let res = req
             .json(&request_payload)
             .send()
             .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                last_error = Some(format!("Request to {} failed: {}", current_model, e));
-                if idx < models_to_try.len() - 1 {
-                    continue;
-                }
-                return Err(AppError::Internal(format!("Gemini Vision request failed: {}", e)));
-            }
-        };
+            .map_err(|e| AppError::Internal(format!("OpenAI-compatible Vision request failed: {}", e)))?;
 
         if !res.status().is_success() {
             let status_code = res.status();
             let err_text = res.text().await.unwrap_or_default();
-            
-            if (status_code == reqwest::StatusCode::NOT_FOUND 
-                || status_code == reqwest::StatusCode::SERVICE_UNAVAILABLE
-                || status_code == reqwest::StatusCode::TOO_MANY_REQUESTS)
-                && idx < models_to_try.len() - 1 
-            {
-                tracing::warn!("Gemini Vision model {} failed with {}. Trying fallback...", current_model, status_code);
-                last_error = Some(format!("Model {} failed ({}): {}", current_model, status_code, err_text));
-                continue;
-            }
             return Err(AppError::Internal(format!(
-                "Gemini Vision API returned error code {}: {}",
+                "OpenAI-compatible API returned error code {}: {}",
                 status_code, err_text
             )));
         }
 
-        response = Some(res);
-        break;
-    }
+        #[derive(Debug, Deserialize)]
+        struct OpenAiVisionResponse {
+            choices: Vec<OpenAiVisionChoice>,
+        }
 
-    let response = response.ok_or_else(|| {
-        AppError::Internal(format!("All Gemini Vision models failed. Last error: {:?}", last_error))
-    })?;
+        #[derive(Debug, Deserialize)]
+        struct OpenAiVisionChoice {
+            message: OpenAiVisionChoiceMessage,
+        }
 
-    let gemini_resp: GeminiResponse = response.json().await.map_err(|e| {
-        AppError::Internal(format!("Failed to parse Gemini Vision response: {}", e))
-    })?;
+        #[derive(Debug, Deserialize)]
+        struct OpenAiVisionChoiceMessage {
+            content: Option<String>,
+        }
 
-    let candidates = gemini_resp.candidates.ok_or_else(|| {
-        AppError::Internal("Gemini Vision response returned no candidates".to_string())
-    })?;
-
-    if candidates.is_empty() {
-        return Err(AppError::Internal(
-            "Gemini Vision response candidates list is empty".to_string(),
-        ));
-    }
-
-    let text = candidates[0].content.parts[0]
-        .text
-        .as_deref()
-        .ok_or_else(|| {
-            AppError::Internal("Gemini Vision candidate has no text content".to_string())
+        let openai_resp: OpenAiVisionResponse = res.json().await.map_err(|e| {
+            AppError::Internal(format!("Failed to parse OpenAI Vision response: {}", e))
         })?;
 
-    let parsed_json: serde_json::Value = serde_json::from_str(text).map_err(|e| {
-        AppError::Internal(format!(
-            "Failed to parse Vision LLM text to JSON: {}. Text: {}",
-            e, text
-        ))
-    })?;
+        let choice = openai_resp.choices.get(0).ok_or_else(|| {
+            AppError::Internal("OpenAI Vision response returned no choices".to_string())
+        })?;
+
+        let content = choice.message.content.as_ref().ok_or_else(|| {
+            AppError::Internal("OpenAI Vision response returned empty content".to_string())
+        })?;
+
+        serde_json::from_str(content).map_err(|e| {
+            AppError::Internal(format!(
+                "Failed to parse OpenAI Vision text to JSON: {}. Text: {}",
+                e, content
+            ))
+        })?
+    };
 
     tracing::info!(
         "Vision parse successful: found {} items",

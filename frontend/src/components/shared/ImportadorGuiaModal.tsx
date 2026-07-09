@@ -621,6 +621,12 @@ export default function ImportadorGuiaModal({
                   </div>
                 )}
 
+                {selectedFile && selectedFile.type === "application/pdf" && (
+                  <div className="alert alert-warning text-[10px] py-1 px-2.5 rounded-lg border-warning/30 flex gap-2 items-start mb-2 mt-1">
+                    <span>💡 <b>Nota de PDF:</b> Las guías en formato PDF solo son compatibles de manera nativa si utilizas <b>Google Gemini</b>. Con otros proveedores (OpenAI, DeepSeek o GitHub), por favor sube una imagen (PNG, JPG, WebP) o selecciona Gemini en el panel inferior.</span>
+                  </div>
+                )}
+
                 <div className="bg-base-200/50 p-2.5 rounded-lg border border-base-300 space-y-2 mb-3 text-xs">
                   <div className="flex justify-between items-center">
                     <span className="font-semibold text-base-content/85 text-[10px]">Proveedor de IA (Opcional)</span>

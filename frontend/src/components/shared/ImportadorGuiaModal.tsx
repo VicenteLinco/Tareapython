@@ -11,7 +11,7 @@ import {
   Image as ImageIcon,
   Eye,
 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { v4 as uuidv4 } from "uuid";
 import api from "@/lib/api";
 import { notify } from "@/lib/notify";
@@ -34,7 +34,7 @@ interface ImportadorGuiaModalProps {
   onClose: () => void;
   proveedorId: number | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onImport: (itemsToAdd: any[]) => void;
+  onImport: (itemsToAdd: any[], proveedorDetectado?: string) => void;
 }
 
 export default function ImportadorGuiaModal({
@@ -62,8 +62,19 @@ export default function ImportadorGuiaModal({
   const [archivoUrl, setArchivoUrl] = useState<string | null>(null);
   const [providerOverride, setProviderOverride] = useState<string>("");
   const [modelOverride, setModelOverride] = useState<string>("");
-  const [apiKeyOverride, setApiKeyOverride] = useState<string>("");
   const [lastParseError, setLastParseError] = useState<string>("");
+
+  const { data: configData } = useQuery<any>({
+    queryKey: ["configuracion"],
+    queryFn: () => api.get("/configuracion").then((res) => res.data),
+    staleTime: 60000,
+  });
+
+  const isGeminiConfigured = configData?.ia_api_key_gemini === "***" || configData?.ia_api_key === "***";
+  const isOpenaiConfigured = configData?.ia_api_key_openai === "***";
+  const isDeepseekConfigured = configData?.ia_api_key_deepseek === "***";
+  const isGithubConfigured = configData?.ia_api_key_github === "***";
+  const isOllamaConfigured = !!configData?.ia_api_url_ollama;
 
   // Defaults for new product creation
   const [defaultAreaId, setDefaultAreaId] = useState<string>("");
@@ -226,8 +237,7 @@ export default function ImportadorGuiaModal({
           setUploadProgress(progress);
         },
         providerOverride || undefined,
-        modelOverride || undefined,
-        apiKeyOverride || undefined
+        modelOverride || undefined
       );
       setProveedorDetectado(res.proveedor);
       setItems(initializeParsedItems(res.items || []));
@@ -421,7 +431,7 @@ export default function ImportadorGuiaModal({
         finalItemsList.push(line);
       }
 
-      onImport(finalItemsList);
+      onImport(finalItemsList, proveedorDetectado);
       queryClient.invalidateQueries({ queryKey: ["productos"] });
       notify.success("Ítems cargados en la recepción");
       onClose();
@@ -632,14 +642,13 @@ export default function ImportadorGuiaModal({
                 <div className="bg-base-200/50 p-2.5 rounded-lg border border-base-300 space-y-2 mb-3 text-xs">
                   <div className="flex justify-between items-center">
                     <span className="font-semibold text-base-content/85 text-[10px]">Proveedor de IA (Opcional)</span>
-                    {(providerOverride || modelOverride || apiKeyOverride) && (
+                    {(providerOverride || modelOverride) && (
                       <button
                         type="button"
                         className="text-[10px] text-error font-medium hover:underline"
                         onClick={() => {
                           setProviderOverride("");
                           setModelOverride("");
-                          setApiKeyOverride("");
                         }}
                       >
                         Limpiar
@@ -668,11 +677,11 @@ export default function ImportadorGuiaModal({
                         }}
                       >
                         <option value="">Por defecto (Guardado)</option>
-                        <option value="gemini">Google Gemini</option>
-                        <option value="openai">OpenAI (ChatGPT)</option>
-                        <option value="deepseek">DeepSeek (China)</option>
-                        <option value="github">GitHub Models</option>
-                        <option value="ollama">Ollama (Local)</option>
+                        {isGeminiConfigured && <option value="gemini">Google Gemini</option>}
+                        {isOpenaiConfigured && <option value="openai">OpenAI (ChatGPT)</option>}
+                        {isDeepseekConfigured && <option value="deepseek">DeepSeek (China)</option>}
+                        {isGithubConfigured && <option value="github">GitHub Models</option>}
+                        {isOllamaConfigured && <option value="ollama">Ollama (Local)</option>}
                       </select>
                     </div>
 
@@ -723,17 +732,6 @@ export default function ImportadorGuiaModal({
                       )}
                     </div>
                   </div>
-                  {providerOverride && providerOverride !== "ollama" && (
-                    <div className="mt-2">
-                      <input
-                        type="password"
-                        className="input input-xs input-bordered w-full text-[11px]"
-                        placeholder={`API Key / Token para ${providerOverride === "github" ? "GitHub" : providerOverride.toUpperCase()} (Opcional)`}
-                        value={apiKeyOverride}
-                        onChange={(e) => setApiKeyOverride(e.target.value)}
-                      />
-                    </div>
-                  )}
                 </div>
 
                 <button

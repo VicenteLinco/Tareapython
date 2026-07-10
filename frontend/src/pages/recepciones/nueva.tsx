@@ -351,17 +351,15 @@ export default function NuevaRecepcionPage() {
               title="Ítems y lotes"
               done={detalles.length > 0 && itemsCompletos === detalles.length}
             />
-            {proveedorId && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5 text-xs font-semibold"
-                onClick={() => setImportModalOpen(true)}
-              >
-                <Sparkles className="h-3.5 w-3.5 text-primary" />
-                Importar Guía (PDF)
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs font-semibold"
+              onClick={() => setImportModalOpen(true)}
+            >
+              <Sparkles className="h-3.5 w-3.5 text-primary" />
+              Importar Guía (PDF)
+            </Button>
           </div>
           <ItemsStep
             wizard={wizard}
@@ -473,8 +471,21 @@ export default function NuevaRecepcionPage() {
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}
         proveedorId={proveedorId}
-        onImport={(importedItems) => {
+        onImport={(importedItems, detectedProveedorName) => {
           setDetalles((prev) => [...importedItems, ...prev]);
+          if (!proveedorId && detectedProveedorName && proveedores) {
+            const normalizedDetected = detectedProveedorName.toLowerCase().trim();
+            const match = proveedores.find((p) => {
+              const nameLower = p.nombre.toLowerCase().trim();
+              return nameLower.includes(normalizedDetected) || normalizedDetected.includes(nameLower);
+            });
+            if (match) {
+              wizard.setProveedorId(match.id);
+              notify.success(`Proveedor autodetectado y seleccionado: ${match.nombre}`);
+            } else {
+              notify.warning(`Se detectó el proveedor "${detectedProveedorName}" pero no se encontró un equivalente exacto en tu catálogo.`);
+            }
+          }
         }}
       />
     </div>

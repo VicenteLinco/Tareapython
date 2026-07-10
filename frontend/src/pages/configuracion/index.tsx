@@ -248,10 +248,10 @@ export default function ConfiguracionPage() {
       ia_api_url_deepseek?: string;
       ia_api_url_github?: string;
       ia_api_url_ollama?: string;
-      whatsapp_api_url: string;
-      whatsapp_api_key: string;
-      whatsapp_webhook_secret: string;
-      whatsapp_bot_phone: string;
+      whatsapp_api_url?: string;
+      whatsapp_api_key?: string;
+      whatsapp_webhook_secret?: string;
+      whatsapp_bot_phone?: string;
       vencimiento_alerta_activa: boolean;
       vencimiento_vida_util_minima_dias: number;
       vencimiento_margen_tolerancia_pct: number;
@@ -783,15 +783,14 @@ export default function ConfiguracionPage() {
 
         <Divider />
 
-        {/* ── ASISTENTE DE IA Y WHATSAPP ── */}
-        <SectionTitle>Asistente de IA y WhatsApp</SectionTitle>
+        {/* ── ASISTENTE DE IA ── */}
+        <SectionTitle>Asistente de IA</SectionTitle>
 
         <div className="space-y-6">
           <div className="flex items-center gap-2 mb-1">
             <Brain className="w-4 h-4 text-base-content/40" />
             <p className="text-xs text-base-content/50">
-              Configura el proveedor de IA y las credenciales para el bot de
-              WhatsApp.
+              Configura el proveedor de IA y las credenciales de los modelos.
             </p>
           </div>
 

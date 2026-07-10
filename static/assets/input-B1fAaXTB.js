@@ -1,1 +1,0 @@
-import{j as o,d as t}from"./index-BoA7BY1H.js";function a({className:r,...s}){return o.jsx("input",{className:t("input w-full border-base-300 bg-base-100 focus:border-primary focus:outline-primary/25",r),...s})}export{a as I};

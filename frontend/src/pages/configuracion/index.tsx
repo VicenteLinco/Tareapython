@@ -416,7 +416,7 @@ export default function ConfiguracionPage() {
   if (isLoading) return <PageLoading label="Cargando configuración..." />;
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-4xl">
       <div className="mb-8">
         <h1 className="t-h1 tracking-tight">Configuración</h1>
         <p className="text-sm text-base-content/50 mt-1">
@@ -478,8 +478,8 @@ export default function ConfiguracionPage() {
           )}
         >
           <Cpu className="h-4 w-4" />
-          <span className="hidden sm:inline">Integraciones (IA/WA)</span>
-          <span className="sm:hidden">Integraciones</span>
+          <span className="hidden sm:inline">Modelos de IA</span>
+          <span className="sm:hidden">IA</span>
         </button>
       </div>
 
@@ -1075,36 +1075,77 @@ export default function ConfiguracionPage() {
                 </div>
               )}
 
-              {/* LIST OF MODELS TABLE */}
-              <div className="overflow-x-auto w-full">
+              {/* LIST OF MODELS (GRID OF CARDS) */}
+              <div className="w-full">
                 {modelsList.length === 0 ? (
                   <div className="text-center py-8 text-base-content/40 bg-base-100 rounded-xl border border-dashed border-base-300">
                     <p className="text-sm">No tienes modelos de IA configurados.</p>
                     <p className="text-xs mt-1">Haz clic en "+ Agregar Modelo" para configurar tu primer modelo.</p>
                   </div>
                 ) : (
-                  <table className="table w-full text-xs border-collapse">
-                    <thead>
-                      <tr className="border-b border-base-200">
-                        <th className="text-[10px] uppercase font-bold text-base-content/50 py-3 w-16 text-center">Activo</th>
-                        <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">Nombre Identificador</th>
-                        <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">Proveedor</th>
-                        <th className="text-[10px] uppercase font-bold text-base-content/50 py-3 font-mono">Modelo</th>
-                        <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">URL del Endpoint</th>
-                        <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">Clave API</th>
-                        <th className="text-[10px] uppercase font-bold text-base-content/50 py-3 text-right">Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {modelsList.map((m) => (
-                        <tr
-                          key={m.id}
-                          className={cn(
-                            "border-b border-base-100 hover:bg-base-200/30",
-                            m.active && "bg-primary/5 font-medium"
-                          )}
-                        >
-                          <td className="text-center py-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {modelsList.map((m) => (
+                      <div
+                        key={m.id}
+                        className={cn(
+                          "p-4 rounded-xl border transition-all flex flex-col justify-between shadow-sm hover:shadow-md",
+                          m.active
+                            ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                            : "border-base-200 bg-base-100"
+                        )}
+                      >
+                        <div>
+                          <div className="flex justify-between items-start gap-2 mb-3">
+                            <div className="font-semibold text-sm truncate max-w-[180px]" title={m.name}>
+                              {m.name}
+                            </div>
+                            <span
+                              className={cn(
+                                "badge badge-xs text-[10px] px-2 py-1.5 font-bold text-white shrink-0",
+                                m.provider === "gemini" ? "bg-blue-600 border-blue-600" :
+                                m.provider === "openai" ? "bg-green-600 border-green-600" :
+                                m.provider === "deepseek" ? "bg-sky-500 border-sky-500" :
+                                m.provider === "github" ? "bg-gray-800 border-gray-800" :
+                                "bg-purple-600 border-purple-600"
+                              )}
+                            >
+                              {m.provider === "gemini" ? "Gemini" :
+                               m.provider === "openai" ? "OpenAI" :
+                               m.provider === "deepseek" ? "DeepSeek" :
+                               m.provider === "github" ? "GitHub" : "Ollama"}
+                            </span>
+                          </div>
+                          <div className="text-xs text-base-content/70 space-y-1.5 font-sans">
+                            <div className="flex justify-between gap-2">
+                              <span className="text-base-content/50">Modelo:</span>
+                              <code className="font-mono text-[11px] bg-base-200/50 px-1.5 py-0.5 rounded truncate max-w-[160px]">{m.model}</code>
+                            </div>
+                            {m.api_url && (
+                              <div className="flex justify-between gap-2">
+                                <span className="text-base-content/50">Endpoint:</span>
+                                <span className="font-mono text-[11px] truncate max-w-[160px]" title={m.api_url}>
+                                  {m.api_url}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex justify-between gap-2">
+                              <span className="text-base-content/50">API Key:</span>
+                              <span>
+                                {m.provider === "ollama" ? (
+                                  <span className="italic text-base-content/40">No requiere</span>
+                                ) : m.api_key === "***" ? (
+                                  <span className="text-success font-medium">Configurada</span>
+                                ) : m.api_key ? (
+                                  <span className="text-warning font-medium">Modificada</span>
+                                ) : (
+                                  <span className="text-base-content/40 italic">No configurada</span>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex items-center justify-between border-t border-base-200/60 pt-3">
+                          <label className="flex items-center gap-2 cursor-pointer select-none">
                             <input
                               type="radio"
                               name="active_model"
@@ -1112,58 +1153,28 @@ export default function ConfiguracionPage() {
                               checked={m.active}
                               onChange={() => handleToggleActiveModel(m.id)}
                             />
-                          </td>
-                          <td className="py-3 font-semibold">{m.name}</td>
-                          <td className="py-3">
-                            <span className={cn(
-                              "badge badge-xs text-[10px] px-2 py-1.5 font-bold text-white",
-                              m.provider === "gemini" ? "bg-blue-600" :
-                              m.provider === "openai" ? "bg-green-600" :
-                              m.provider === "deepseek" ? "bg-sky-500" :
-                              m.provider === "github" ? "bg-gray-800" :
-                              "bg-purple-600"
-                            )}>
-                              {m.provider === "gemini" ? "Gemini" :
-                               m.provider === "openai" ? "OpenAI" :
-                               m.provider === "deepseek" ? "DeepSeek" :
-                               m.provider === "github" ? "GitHub" : "Ollama"}
-                            </span>
-                          </td>
-                          <td className="py-3 font-mono text-xs text-base-content/75">{m.model}</td>
-                          <td className="py-3 font-mono text-xs text-base-content/50">
-                            {m.api_url || <span className="italic text-base-content/30">Estándar</span>}
-                          </td>
-                          <td className="py-3">
-                            {m.provider === "ollama" ? (
-                              <span className="text-base-content/30 italic">No requiere</span>
-                            ) : m.api_key === "***" ? (
-                              <span className="text-success font-semibold">Configurada</span>
-                            ) : m.api_key ? (
-                              <span className="text-warning font-semibold">Modificada</span>
-                            ) : (
-                              <span className="text-base-content/30 italic">No configurada</span>
-                            )}
-                          </td>
-                          <td className="py-3 text-right space-x-2">
+                            <span className="text-xs font-semibold">Activo</span>
+                          </label>
+                          <div className="flex gap-2">
                             <button
                               type="button"
-                              className="btn btn-outline btn-xs"
+                              className="btn btn-ghost btn-xs text-primary font-semibold hover:bg-primary/10"
                               onClick={() => handleEditModelClick(m)}
                             >
                               Editar
                             </button>
                             <button
                               type="button"
-                              className="btn btn-error btn-outline btn-xs"
+                              className="btn btn-ghost btn-xs text-error font-semibold hover:bg-error/10"
                               onClick={() => handleDeleteModel(m.id)}
                             >
                               Eliminar
                             </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>

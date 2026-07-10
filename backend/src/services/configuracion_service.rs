@@ -43,6 +43,7 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
             'ia_proveedor','ia_modelo','ia_api_url','ia_api_key',
             'ia_api_key_gemini','ia_api_key_openai','ia_api_key_deepseek','ia_api_key_github',
             'ia_api_url_openai','ia_api_url_deepseek','ia_api_url_github','ia_api_url_ollama',
+            'ia_modelos_configurados',
             'vencimiento_alerta_activa','vencimiento_vida_util_minima_dias','vencimiento_margen_tolerancia_pct'
         )",
     )
@@ -74,6 +75,7 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
     let mut ia_api_url_deepseek = String::new();
     let mut ia_api_url_github = String::new();
     let mut ia_api_url_ollama = String::new();
+    let mut ia_modelos_configurados = String::new();
     let mut vencimiento_alerta_activa = true;
     let mut vencimiento_vida_util_minima_dias = 30;
     let mut vencimiento_margen_tolerancia_pct = 10;
@@ -137,6 +139,7 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
                     "***".to_string()
                 };
             }
+            "ia_modelos_configurados" => ia_modelos_configurados = valor,
             "vencimiento_alerta_activa" => vencimiento_alerta_activa = valor == "true",
             "vencimiento_vida_util_minima_dias" => {
                 vencimiento_vida_util_minima_dias = valor.parse().unwrap_or(30)
@@ -174,6 +177,7 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
         ia_api_url_deepseek,
         ia_api_url_github,
         ia_api_url_ollama,
+        ia_modelos_configurados,
         vencimiento_alerta_activa,
         vencimiento_vida_util_minima_dias,
         vencimiento_margen_tolerancia_pct,
@@ -396,6 +400,10 @@ pub async fn actualizar(
 
     if let Some(url_ollama) = &body.ia_api_url_ollama {
         set_config(pool, "ia_api_url_ollama", url_ollama).await?;
+    }
+
+    if let Some(modelos) = &body.ia_modelos_configurados {
+        set_config(pool, "ia_modelos_configurados", modelos).await?;
     }
 
     if let Some(activa) = body.vencimiento_alerta_activa {

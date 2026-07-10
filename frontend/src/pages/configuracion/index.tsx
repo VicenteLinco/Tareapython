@@ -9,14 +9,12 @@ import {
   Brain,
   Rocket,
   ChevronRight,
-  RefreshCw,
   Sliders,
   Bell,
   Cpu,
 } from "lucide-react";
 import { notify } from "@/lib/notify";
 import api from "@/lib/api";
-import { parseApiError } from "@/lib/api-error";
 import { PageLoading } from "@/components/ui/page-state";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +46,7 @@ interface Configuracion {
   vencimiento_alerta_activa: boolean;
   vencimiento_vida_util_minima_dias: number;
   vencimiento_margen_tolerancia_pct: number;
+  ia_modelos_configurados?: string;
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -100,71 +99,31 @@ export default function ConfiguracionPage() {
   const [iaApiUrlDeepseek, setIaApiUrlDeepseek] = useState("");
   const [iaApiUrlGithub, setIaApiUrlGithub] = useState("");
   const [iaApiUrlOllama, setIaApiUrlOllama] = useState("");
+  const [iaModelosConfigurados, setIaModelosConfigurados] = useState("");
   const [vencimientoAlertaActiva, setVencimientoAlertaActiva] = useState(true);
   const [vencimientoVidaUtilMinimaDias, setVencimientoVidaUtilMinimaDias] = useState(30);
   const [vencimientoMargenToleranciaPct, setVencimientoMargenToleranciaPct] = useState(10);
 
-  const [isCustomModel, setIsCustomModel] = useState(false);
-  const [modelosDisponibles, setModelosDisponibles] = useState<string[]>([]);
-  const [cargandoModelos, setCargandoModelos] = useState(false);
+  interface CustomModel {
+    id: string;
+    name: string;
+    provider: string;
+    model: string;
+    api_url: string;
+    api_key: string;
+    active: boolean;
+  }
 
-  const fetchModelosDisponibles = async () => {
-    setCargandoModelos(true);
-    try {
-      const activeKey =
-        iaProveedor === "gemini"
-          ? iaApiKeyGemini
-          : iaProveedor === "openai"
-          ? iaApiKeyOpenai
-          : iaProveedor === "deepseek"
-          ? iaApiKeyDeepseek
-          : iaProveedor === "github"
-          ? iaApiKeyGithub
-          : "";
+  const [modelsList, setModelsList] = useState<CustomModel[]>([]);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editModelId, setEditModelId] = useState<string | null>(null);
+  const [formName, setFormName] = useState("");
+  const [formProvider, setFormProvider] = useState("gemini");
+  const [formModel, setFormModel] = useState("gemini-2.5-flash");
+  const [formApiUrl, setFormApiUrl] = useState("");
+  const [formApiKey, setFormApiKey] = useState("");
 
-      const activeUrl =
-        iaProveedor === "openai"
-          ? iaApiUrlOpenai
-          : iaProveedor === "deepseek"
-          ? iaApiUrlDeepseek
-          : iaProveedor === "github"
-          ? iaApiUrlGithub
-          : iaProveedor === "ollama"
-          ? iaApiUrlOllama
-          : "";
 
-      const res = await api.get("/configuracion/ia-modelos", {
-        params: {
-          provider: iaProveedor,
-          api_key: activeKey,
-          api_url: activeUrl,
-        },
-      });
-      setModelosDisponibles(res.data);
-      notify.success("Lista de modelos actualizada correctamente");
-      
-      if (res.data.length > 0 && !res.data.includes(iaModelo) && !isCustomModel) {
-        setIaModelo(res.data[0]);
-      }
-    } catch (err) {
-      console.error(err);
-      notify.error(parseApiError(err) || "No se pudieron obtener los modelos. Verifique su API Key.");
-    } finally {
-      setCargandoModelos(false);
-    }
-  };
-
-  useEffect(() => {
-    if (data && (data.ia_api_key || iaApiKey)) {
-      api.get("/configuracion/ia-modelos")
-        .then(res => {
-          setModelosDisponibles(res.data);
-        })
-        .catch(err => {
-          console.warn("Failed to auto-fetch models on load:", err);
-        });
-    }
-  }, [data]);
 
   useEffect(() => {
     if (!data) return;
@@ -187,19 +146,6 @@ export default function ConfiguracionPage() {
     setIaProveedor(data.ia_proveedor || "gemini");
     const currentModel = data.ia_modelo || "gemini-2.5-flash";
     setIaModelo(currentModel);
-    if ((data.ia_proveedor || "gemini") === "gemini") {
-      setIsCustomModel(
-        ![
-          "gemini-2.5-flash",
-          "gemini-2.5-pro",
-          "gemini-1.5-flash",
-          "gemini-1.5-pro",
-          "gemini-1.0-pro",
-        ].includes(currentModel),
-      );
-    } else {
-      setIsCustomModel(true);
-    }
     setIaApiUrl(data.ia_api_url || "");
     setIaApiKey(data.ia_api_key || "");
     setIaApiKeyGemini(data.ia_api_key_gemini || "");
@@ -210,6 +156,13 @@ export default function ConfiguracionPage() {
     setIaApiUrlDeepseek(data.ia_api_url_deepseek || "");
     setIaApiUrlGithub(data.ia_api_url_github || "");
     setIaApiUrlOllama(data.ia_api_url_ollama || "");
+    setIaModelosConfigurados(data.ia_modelos_configurados || "");
+    try {
+      const parsed = JSON.parse(data.ia_modelos_configurados || "[]");
+      setModelsList(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setModelsList([]);
+    }
     setVencimientoAlertaActiva(data.vencimiento_alerta_activa !== false);
     setVencimientoVidaUtilMinimaDias(data.vencimiento_vida_util_minima_dias ?? 30);
     setVencimientoMargenToleranciaPct(data.vencimiento_margen_tolerancia_pct ?? 10);
@@ -241,6 +194,7 @@ export default function ConfiguracionPage() {
       ia_api_url_deepseek?: string;
       ia_api_url_github?: string;
       ia_api_url_ollama?: string;
+      ia_modelos_configurados?: string;
       vencimiento_alerta_activa: boolean;
       vencimiento_vida_util_minima_dias: number;
       vencimiento_margen_tolerancia_pct: number;
@@ -296,6 +250,123 @@ export default function ConfiguracionPage() {
     if (loginImgRef.current) loginImgRef.current.value = "";
   }
 
+  const handleSaveModel = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formName.trim()) {
+      notify.error("El nombre identificador es requerido");
+      return;
+    }
+    if (!formModel.trim()) {
+      notify.error("El modelo es requerido");
+      return;
+    }
+
+    let updatedList: CustomModel[];
+    if (editModelId) {
+      updatedList = modelsList.map((m) =>
+        m.id === editModelId
+          ? {
+              ...m,
+              name: formName.trim(),
+              provider: formProvider,
+              model: formModel.trim(),
+              api_url: formApiUrl.trim(),
+              api_key: formApiKey.trim(),
+            }
+          : m
+      );
+      notify.success("Modelo modificado en la lista");
+    } else {
+      const newModel: CustomModel = {
+        id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(7),
+        name: formName.trim(),
+        provider: formProvider,
+        model: formModel.trim(),
+        api_url: formApiUrl.trim(),
+        api_key: formApiKey.trim(),
+        active: modelsList.length === 0,
+      };
+      updatedList = [...modelsList, newModel];
+      notify.success("Modelo agregado a la lista");
+    }
+
+    setModelsList(updatedList);
+    setIaModelosConfigurados(JSON.stringify(updatedList));
+
+    // Clear form
+    setFormName("");
+    setFormProvider("gemini");
+    setFormModel("gemini-2.5-flash");
+    setFormApiUrl("");
+    setFormApiKey("");
+    setEditModelId(null);
+    setIsFormOpen(false);
+  };
+
+  const handleEditModelClick = (model: CustomModel) => {
+    setEditModelId(model.id);
+    setFormName(model.name);
+    setFormProvider(model.provider);
+    setFormModel(model.model);
+    setFormApiUrl(model.api_url);
+    setFormApiKey(model.api_key);
+    setIsFormOpen(true);
+  };
+
+  const handleDeleteModel = (id: string) => {
+    const modelToDelete = modelsList.find((m) => m.id === id);
+    const updatedList = modelsList.filter((m) => m.id !== id);
+    
+    if (modelToDelete?.active && updatedList.length > 0) {
+      updatedList[0].active = true;
+      activateModelConfig(updatedList[0]);
+    } else if (updatedList.length === 0) {
+      setIaProveedor("gemini");
+      setIaModelo("gemini-2.5-flash");
+      setIaApiUrl("");
+      setIaApiKey("");
+    }
+    
+    setModelsList(updatedList);
+    setIaModelosConfigurados(JSON.stringify(updatedList));
+    notify.success("Modelo eliminado");
+  };
+
+  const activateModelConfig = (model: CustomModel) => {
+    setIaProveedor(model.provider);
+    setIaModelo(model.model);
+    setIaApiUrl(model.api_url);
+    setIaApiKey(model.api_key);
+
+    if (model.provider === "gemini") {
+      setIaApiKeyGemini(model.api_key);
+    } else if (model.provider === "openai") {
+      setIaApiKeyOpenai(model.api_key);
+      setIaApiUrlOpenai(model.api_url);
+    } else if (model.provider === "deepseek") {
+      setIaApiKeyDeepseek(model.api_key);
+      setIaApiUrlDeepseek(model.api_url);
+    } else if (model.provider === "github") {
+      setIaApiKeyGithub(model.api_key);
+      setIaApiUrlGithub(model.api_url);
+    } else if (model.provider === "ollama") {
+      setIaApiUrlOllama(model.api_url);
+    }
+  };
+
+  const handleToggleActiveModel = (id: string) => {
+    const updatedList = modelsList.map((m) => {
+      const active = m.id === id;
+      if (active) {
+        activateModelConfig(m);
+      }
+      return { ...m, active };
+    });
+    setModelsList(updatedList);
+    setIaModelosConfigurados(JSON.stringify(updatedList));
+    notify.success("Modelo activado como predeterminado");
+  };
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!nombre.trim()) {
@@ -335,6 +406,7 @@ export default function ConfiguracionPage() {
       ia_api_url_deepseek: iaApiUrlDeepseek,
       ia_api_url_github: iaApiUrlGithub,
       ia_api_url_ollama: iaApiUrlOllama,
+      ia_modelos_configurados: iaModelosConfigurados,
       vencimiento_alerta_activa: vencimientoAlertaActiva,
       vencimiento_vida_util_minima_dias: vencimientoVidaUtilMinimaDias,
       vencimiento_margen_tolerancia_pct: vencimientoMargenToleranciaPct,
@@ -827,462 +899,273 @@ export default function ConfiguracionPage() {
         {/* ── TAB 4: INTEGRACIONES (IA / WHATSAPP) ── */}
         {activeTab === "integraciones" && (
           <div className="space-y-8 animate-fade-in">
-            {/* IA PROVIDERS TABLE */}
+            {/* IA MODELS LIST SECTION */}
             <div className="p-4 rounded-xl bg-base-200/30 border border-base-200">
-              <div className="flex items-center gap-2 mb-4">
-                <Brain className="w-5 h-5 text-primary" />
-                <h3 className="text-sm font-semibold">Proveedores de Inteligencia Artificial (IA)</h3>
+              <div className="flex justify-between items-center mb-4">
+                <div className="flex items-center gap-2">
+                  <Brain className="w-5 h-5 text-primary" />
+                  <h3 className="text-sm font-semibold">Modelos de Inteligencia Artificial (IA)</h3>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-xs"
+                  onClick={() => {
+                    setEditModelId(null);
+                    setFormName("");
+                    setFormProvider("gemini");
+                    setFormModel("gemini-2.5-flash");
+                    setFormApiUrl("");
+                    setFormApiKey("");
+                    setIsFormOpen(true);
+                  }}
+                >
+                  + Agregar Modelo
+                </button>
               </div>
-              
-              <div className="overflow-x-auto w-full">
-                <table className="table w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-base-200">
-                      <th className="text-[10px] uppercase font-bold text-base-content/50 py-3 w-16 text-center">Activo</th>
-                      <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">Proveedor</th>
-                      <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">Modelo Predeterminado / Selección</th>
-                      <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">Endpoint API URL</th>
-                      <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">Clave de API / Token</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* Google Gemini */}
-                    <tr className={cn("border-b border-base-100 hover:bg-base-200/30", iaProveedor === "gemini" && "bg-primary/5")}>
-                      <td className="text-center py-4">
-                        <input
-                          type="radio"
-                          name="ia_proveedor"
-                          className="radio radio-primary radio-xs"
-                          checked={iaProveedor === "gemini"}
-                          onChange={() => {
-                            setIaProveedor("gemini");
-                            setIsCustomModel(false);
-                            setIaModelo("gemini-2.5-flash");
-                          }}
-                        />
-                      </td>
-                      <td className="font-semibold py-4">
-                        Google Gemini
-                      </td>
-                      <td className="py-4">
-                        {iaProveedor === "gemini" ? (
-                          <div className="flex flex-col gap-1 w-48">
-                            <select
-                              className="select select-bordered select-xs w-full font-medium"
-                              value={isCustomModel ? "custom" : iaModelo}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === "custom") {
-                                  setIsCustomModel(true);
-                                  setIaModelo("");
-                                } else {
-                                  setIsCustomModel(false);
-                                  setIaModelo(val);
-                                }
-                              }}
-                            >
-                              {modelosDisponibles.length > 0 ? (
-                                modelosDisponibles.map((model) => (
-                                  <option key={model} value={model}>
-                                    {model}
-                                  </option>
-                                ))
-                              ) : (
-                                <>
-                                  <option value="gemini-2.5-flash">gemini-2.5-flash (Rápido)</option>
-                                  <option value="gemini-2.5-pro">gemini-2.5-pro (Avanzado)</option>
-                                  <option value="gemini-1.5-flash">gemini-1.5-flash (Básico)</option>
-                                  <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-                                </>
-                              )}
-                              <option value="custom">Otro...</option>
-                            </select>
-                            {isCustomModel && (
-                              <input
-                                type="text"
-                                className="input input-bordered input-xs w-full mt-1"
-                                placeholder="Modelo personalizado"
-                                value={iaModelo}
-                                onChange={(e) => setIaModelo(e.target.value)}
-                              />
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-base-content/40 font-mono">gemini-2.5-flash</span>
-                        )}
-                      </td>
-                      <td className="text-base-content/40 py-4 italic">
-                        Estándar (Google Cloud)
-                      </td>
-                      <td className="py-4">
-                        <div className="flex flex-col gap-1 w-44">
-                          <div className="flex justify-between items-center h-4">
-                            {iaApiKeyGemini === "***" ? (
-                              <span className="text-[9px] text-success font-semibold">Configurada</span>
-                            ) : iaApiKeyGemini ? (
-                              <span className="text-[9px] text-warning font-semibold">Modificada</span>
-                            ) : (
-                              <span className="text-[9px] text-base-content/40">No configurada</span>
-                            )}
-                          </div>
-                          <input
-                            type="password"
-                            className="input input-bordered input-xs w-full"
-                            value={iaApiKeyGemini}
-                            onChange={(e) => setIaApiKeyGemini(e.target.value)}
-                            placeholder={iaApiKeyGemini === "***" ? "••••••••" : "API Key"}
-                          />
-                        </div>
-                      </td>
-                    </tr>
 
-                    {/* OpenAI */}
-                    <tr className={cn("border-b border-base-100 hover:bg-base-200/30", iaProveedor === "openai" && "bg-primary/5")}>
-                      <td className="text-center py-4">
-                        <input
-                          type="radio"
-                          name="ia_proveedor"
-                          className="radio radio-primary radio-xs"
-                          checked={iaProveedor === "openai"}
-                          onChange={() => {
-                            setIaProveedor("openai");
-                            setIsCustomModel(false);
-                            setIaModelo("gpt-4o-mini");
-                          }}
-                        />
-                      </td>
-                      <td className="font-semibold py-4">
-                        OpenAI (ChatGPT)
-                      </td>
-                      <td className="py-4">
-                        {iaProveedor === "openai" ? (
-                          <div className="flex flex-col gap-1 w-48">
-                            <select
-                              className="select select-bordered select-xs w-full font-medium"
-                              value={isCustomModel ? "custom" : iaModelo}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === "custom") {
-                                  setIsCustomModel(true);
-                                  setIaModelo("");
-                                } else {
-                                  setIsCustomModel(false);
-                                  setIaModelo(val);
-                                }
-                              }}
-                            >
-                              {modelosDisponibles.length > 0 ? (
-                                modelosDisponibles.map((model) => (
-                                  <option key={model} value={model}>
-                                    {model}
-                                  </option>
-                                ))
-                              ) : (
-                                <>
-                                  <option value="gpt-4o-mini">gpt-4o-mini (Rápido)</option>
-                                  <option value="gpt-4o">gpt-4o (Avanzado)</option>
-                                </>
-                              )}
-                              <option value="custom">Otro...</option>
-                            </select>
-                            {isCustomModel && (
-                              <input
-                                type="text"
-                                className="input input-bordered input-xs w-full mt-1"
-                                placeholder="Modelo personalizado"
-                                value={iaModelo}
-                                onChange={(e) => setIaModelo(e.target.value)}
-                              />
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-base-content/40 font-mono">gpt-4o-mini</span>
-                        )}
-                      </td>
-                      <td className="py-4">
+              {/* FORM TO ADD/EDIT MODEL */}
+              {isFormOpen && (
+                <div className="p-4 mb-6 rounded-xl bg-base-100 border border-base-200 shadow-sm animate-fade-in">
+                  <h4 className="text-xs font-bold uppercase tracking-wider mb-4 text-base-content/75">
+                    {editModelId ? "Editar Configuración de Modelo" : "Agregar Nuevo Modelo"}
+                  </h4>
+                  
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium">Nombre identificador</label>
                         <input
                           type="text"
-                          className="input input-bordered input-xs w-48 font-mono"
-                          placeholder="https://api.openai.com/v1"
-                          value={iaApiUrlOpenai}
-                          onChange={(e) => setIaApiUrlOpenai(e.target.value)}
+                          className="input input-bordered input-sm w-full"
+                          placeholder="Ej: Gemini Flash Productividad"
+                          value={formName}
+                          onChange={(e) => setFormName(e.target.value)}
                         />
-                      </td>
-                      <td className="py-4">
-                        <div className="flex flex-col gap-1 w-44">
-                          <div className="flex justify-between items-center h-4">
-                            {iaApiKeyOpenai === "***" ? (
-                              <span className="text-[9px] text-success font-semibold">Configurada</span>
-                            ) : iaApiKeyOpenai ? (
-                              <span className="text-[9px] text-warning font-semibold">Modificada</span>
-                            ) : (
-                              <span className="text-[9px] text-base-content/40">No configurada</span>
-                            )}
-                          </div>
-                          <input
-                            type="password"
-                            className="input input-bordered input-xs w-full"
-                            value={iaApiKeyOpenai}
-                            onChange={(e) => setIaApiKeyOpenai(e.target.value)}
-                            placeholder={iaApiKeyOpenai === "***" ? "••••••••" : "API Key"}
-                          />
-                        </div>
-                      </td>
-                    </tr>
+                      </div>
 
-                    {/* DeepSeek */}
-                    <tr className={cn("border-b border-base-100 hover:bg-base-200/30", iaProveedor === "deepseek" && "bg-primary/5")}>
-                      <td className="text-center py-4">
-                        <input
-                          type="radio"
-                          name="ia_proveedor"
-                          className="radio radio-primary radio-xs"
-                          checked={iaProveedor === "deepseek"}
-                          onChange={() => {
-                            setIaProveedor("deepseek");
-                            setIsCustomModel(false);
-                            setIaModelo("deepseek-chat");
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium">Proveedor de IA</label>
+                        <select
+                          className="select select-bordered select-sm w-full"
+                          value={formProvider}
+                          onChange={(e) => {
+                            const prov = e.target.value;
+                            setFormProvider(prov);
+                            if (prov === "gemini") {
+                              setFormModel("gemini-2.5-flash");
+                              setFormApiUrl("");
+                            } else if (prov === "openai") {
+                              setFormModel("gpt-4o-mini");
+                              setFormApiUrl("https://api.openai.com/v1");
+                            } else if (prov === "deepseek") {
+                              setFormModel("deepseek-chat");
+                              setFormApiUrl("https://api.deepseek.com");
+                            } else if (prov === "github") {
+                              setFormModel("gpt-4o-mini");
+                              setFormApiUrl("https://models.inference.ai.azure.com");
+                            } else if (prov === "ollama") {
+                              setFormModel("llama3");
+                              setFormApiUrl("http://localhost:11434");
+                            }
                           }}
-                        />
-                      </td>
-                      <td className="font-semibold py-4">
-                        DeepSeek (IA China)
-                      </td>
-                      <td className="py-4">
-                        {iaProveedor === "deepseek" ? (
-                          <div className="flex flex-col gap-1 w-48">
-                            <select
-                              className="select select-bordered select-xs w-full font-medium"
-                              value={isCustomModel ? "custom" : iaModelo}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === "custom") {
-                                  setIsCustomModel(true);
-                                  setIaModelo("");
-                                } else {
-                                  setIsCustomModel(false);
-                                  setIaModelo(val);
-                                }
-                              }}
-                            >
-                              {modelosDisponibles.length > 0 ? (
-                                modelosDisponibles.map((model) => (
-                                  <option key={model} value={model}>
-                                    {model}
-                                  </option>
-                                ))
-                              ) : (
-                                <>
-                                  <option value="deepseek-chat">deepseek-chat (Recomendado)</option>
-                                  <option value="deepseek-reasoner">deepseek-reasoner (R1)</option>
-                                </>
-                              )}
-                              <option value="custom">Otro...</option>
-                            </select>
-                            {isCustomModel && (
-                              <input
-                                type="text"
-                                className="input input-bordered input-xs w-full mt-1"
-                                placeholder="Modelo personalizado"
-                                value={iaModelo}
-                                onChange={(e) => setIaModelo(e.target.value)}
-                              />
+                        >
+                          <option value="gemini">Google Gemini</option>
+                          <option value="openai">OpenAI (ChatGPT)</option>
+                          <option value="deepseek">DeepSeek</option>
+                          <option value="github">GitHub Models</option>
+                          <option value="ollama">Ollama (Local)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="space-y-1.5 md:col-span-1">
+                        <label className="text-xs font-medium">Modelo</label>
+                        {["gemini", "openai", "deepseek", "github"].includes(formProvider) ? (
+                          <select
+                            className="select select-bordered select-sm w-full font-mono text-xs"
+                            value={formModel}
+                            onChange={(e) => setFormModel(e.target.value)}
+                          >
+                            {formProvider === "gemini" && (
+                              <>
+                                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                                <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                                <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                                <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                              </>
                             )}
-                          </div>
+                            {formProvider === "openai" && (
+                              <>
+                                <option value="gpt-4o-mini">gpt-4o-mini</option>
+                                <option value="gpt-4o">gpt-4o</option>
+                              </>
+                            )}
+                            {formProvider === "deepseek" && (
+                              <>
+                                <option value="deepseek-chat">deepseek-chat</option>
+                                <option value="deepseek-reasoner">deepseek-reasoner</option>
+                              </>
+                            )}
+                            {formProvider === "github" && (
+                              <>
+                                <option value="gpt-4o-mini">gpt-4o-mini</option>
+                                <option value="gpt-4o">gpt-4o</option>
+                                <option value="meta-llama-3.1-405b-instruct">Llama 3.1 405B</option>
+                                <option value="cohere-command-r-plus">Cohere Command R+</option>
+                              </>
+                            )}
+                          </select>
                         ) : (
-                          <span className="text-base-content/40 font-mono">deepseek-chat</span>
+                          <input
+                            type="text"
+                            className="input input-bordered input-sm w-full font-mono text-xs"
+                            placeholder="Ej: llama3"
+                            value={formModel}
+                            onChange={(e) => setFormModel(e.target.value)}
+                          />
                         )}
-                      </td>
-                      <td className="py-4">
+                      </div>
+
+                      <div className="space-y-1.5 md:col-span-1">
+                        <label className="text-xs font-medium">Endpoint API URL</label>
                         <input
                           type="text"
-                          className="input input-bordered input-xs w-48 font-mono"
-                          placeholder="https://api.deepseek.com"
-                          value={iaApiUrlDeepseek}
-                          onChange={(e) => setIaApiUrlDeepseek(e.target.value)}
+                          className="input input-bordered input-sm w-full font-mono text-xs"
+                          placeholder={formProvider === "gemini" ? "Predeterminado" : "Ej: https://..."}
+                          value={formApiUrl}
+                          onChange={(e) => setFormApiUrl(e.target.value)}
+                          disabled={formProvider === "gemini"}
                         />
-                      </td>
-                      <td className="py-4">
-                        <div className="flex flex-col gap-1 w-44">
-                          <div className="flex justify-between items-center h-4">
-                            {iaApiKeyDeepseek === "***" ? (
-                              <span className="text-[9px] text-success font-semibold">Configurada</span>
-                            ) : iaApiKeyDeepseek ? (
-                              <span className="text-[9px] text-warning font-semibold">Modificada</span>
-                            ) : (
-                              <span className="text-[9px] text-base-content/40">No configurada</span>
-                            )}
-                          </div>
-                          <input
-                            type="password"
-                            className="input input-bordered input-xs w-full"
-                            value={iaApiKeyDeepseek}
-                            onChange={(e) => setIaApiKeyDeepseek(e.target.value)}
-                            placeholder={iaApiKeyDeepseek === "***" ? "••••••••" : "API Key"}
-                          />
-                        </div>
-                      </td>
-                    </tr>
+                      </div>
 
-                    {/* GitHub Models */}
-                    <tr className={cn("border-b border-base-100 hover:bg-base-200/30", iaProveedor === "github" && "bg-primary/5")}>
-                      <td className="text-center py-4">
+                      <div className="space-y-1.5 md:col-span-1">
+                        <label className="text-xs font-medium">Clave de API / Token</label>
                         <input
-                          type="radio"
-                          name="ia_proveedor"
-                          className="radio radio-primary radio-xs"
-                          checked={iaProveedor === "github"}
-                          onChange={() => {
-                            setIaProveedor("github");
-                            setIsCustomModel(false);
-                            setIaModelo("gpt-4o-mini");
-                          }}
+                          type="password"
+                          className="input input-bordered input-sm w-full font-mono text-xs"
+                          placeholder={formProvider === "ollama" ? "No requerido" : formApiKey === "***" ? "••••••••" : "API Key"}
+                          value={formApiKey}
+                          onChange={(e) => setFormApiKey(e.target.value)}
+                          disabled={formProvider === "ollama"}
                         />
-                      </td>
-                      <td className="font-semibold py-4">
-                        GitHub Models (Gratuito)
-                      </td>
-                      <td className="py-4">
-                        {iaProveedor === "github" ? (
-                          <div className="flex flex-col gap-1 w-48">
-                            <select
-                              className="select select-bordered select-xs w-full font-medium"
-                              value={isCustomModel ? "custom" : iaModelo}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === "custom") {
-                                  setIsCustomModel(true);
-                                  setIaModelo("");
-                                } else {
-                                  setIsCustomModel(false);
-                                  setIaModelo(val);
-                                }
-                              }}
-                            >
-                              {modelosDisponibles.length > 0 ? (
-                                modelosDisponibles.map((model) => (
-                                  <option key={model} value={model}>
-                                    {model}
-                                  </option>
-                                ))
-                              ) : (
-                                <>
-                                  <option value="gpt-4o-mini">gpt-4o-mini</option>
-                                  <option value="gpt-4o">gpt-4o</option>
-                                  <option value="meta-llama-3.1-405b-instruct">Llama 3.1 405B</option>
-                                  <option value="cohere-command-r-plus">Cohere Command R+</option>
-                                </>
-                              )}
-                              <option value="custom">Otro...</option>
-                            </select>
-                            {isCustomModel && (
-                              <input
-                                type="text"
-                                className="input input-bordered input-xs w-full mt-1"
-                                placeholder="Modelo personalizado"
-                                value={iaModelo}
-                                onChange={(e) => setIaModelo(e.target.value)}
-                              />
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-base-content/40 font-mono">gpt-4o-mini</span>
-                        )}
-                      </td>
-                      <td className="py-4">
-                        <input
-                          type="text"
-                          className="input input-bordered input-xs w-48 font-mono"
-                          placeholder="https://models.inference.ai.azure.com"
-                          value={iaApiUrlGithub}
-                          onChange={(e) => setIaApiUrlGithub(e.target.value)}
-                        />
-                      </td>
-                      <td className="py-4">
-                        <div className="flex flex-col gap-1 w-44">
-                          <div className="flex justify-between items-center h-4">
-                            {iaApiKeyGithub === "***" ? (
-                              <span className="text-[9px] text-success font-semibold">Configurada</span>
-                            ) : iaApiKeyGithub ? (
-                              <span className="text-[9px] text-warning font-semibold">Modificada</span>
-                            ) : (
-                              <span className="text-[9px] text-base-content/40">No configurada</span>
-                            )}
-                          </div>
-                          <input
-                            type="password"
-                            className="input input-bordered input-xs w-full"
-                            value={iaApiKeyGithub}
-                            onChange={(e) => setIaApiKeyGithub(e.target.value)}
-                            placeholder={iaApiKeyGithub === "***" ? "••••••••" : "Token / PAT"}
-                          />
-                        </div>
-                      </td>
-                    </tr>
+                      </div>
+                    </div>
 
-                    {/* Ollama */}
-                    <tr className={cn("hover:bg-base-200/30", iaProveedor === "ollama" && "bg-primary/5")}>
-                      <td className="text-center py-4">
-                        <input
-                          type="radio"
-                          name="ia_proveedor"
-                          className="radio radio-primary radio-xs"
-                          checked={iaProveedor === "ollama"}
-                          onChange={() => {
-                            setIaProveedor("ollama");
-                            setIsCustomModel(true);
-                            setIaModelo("llama3");
-                          }}
-                        />
-                      </td>
-                      <td className="font-semibold py-4">
-                        Ollama (Servidor Local)
-                      </td>
-                      <td className="py-4">
-                        {iaProveedor === "ollama" ? (
-                          <div className="flex flex-col gap-1 w-48">
-                            <input
-                              type="text"
-                              className="input input-bordered input-xs w-full"
-                              placeholder="Ej: llama3"
-                              value={iaModelo}
-                              onChange={(e) => setIaModelo(e.target.value)}
-                            />
-                          </div>
-                        ) : (
-                          <span className="text-base-content/40 font-mono">llama3</span>
-                        )}
-                      </td>
-                      <td className="py-4">
-                        <input
-                          type="text"
-                          className="input input-bordered input-xs w-48 font-mono"
-                          placeholder="Ej: http://localhost:11434"
-                          value={iaApiUrlOllama}
-                          onChange={(e) => setIaApiUrlOllama(e.target.value)}
-                        />
-                      </td>
-                      <td className="py-4 text-base-content/30 italic">
-                        No requiere API Key
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              
-              {iaProveedor !== "ollama" && (
-                <div className="mt-4 flex justify-end">
-                  <button
-                    type="button"
-                    className="btn btn-outline btn-xs flex items-center gap-1.5"
-                    onClick={fetchModelosDisponibles}
-                    disabled={cargandoModelos}
-                  >
-                    <RefreshCw className={cn("h-3 w-3", cargandoModelos && "animate-spin")} />
-                    Consultar Modelos Disponibles de la API
-                  </button>
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => {
+                          setIsFormOpen(false);
+                          setEditModelId(null);
+                        }}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={handleSaveModel}
+                      >
+                        {editModelId ? "Guardar Cambios" : "Agregar a la Lista"}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
+
+              {/* LIST OF MODELS TABLE */}
+              <div className="overflow-x-auto w-full">
+                {modelsList.length === 0 ? (
+                  <div className="text-center py-8 text-base-content/40 bg-base-100 rounded-xl border border-dashed border-base-300">
+                    <p className="text-sm">No tienes modelos de IA configurados.</p>
+                    <p className="text-xs mt-1">Haz clic en "+ Agregar Modelo" para configurar tu primer modelo.</p>
+                  </div>
+                ) : (
+                  <table className="table w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-base-200">
+                        <th className="text-[10px] uppercase font-bold text-base-content/50 py-3 w-16 text-center">Activo</th>
+                        <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">Nombre Identificador</th>
+                        <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">Proveedor</th>
+                        <th className="text-[10px] uppercase font-bold text-base-content/50 py-3 font-mono">Modelo</th>
+                        <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">URL del Endpoint</th>
+                        <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">Clave API</th>
+                        <th className="text-[10px] uppercase font-bold text-base-content/50 py-3 text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {modelsList.map((m) => (
+                        <tr
+                          key={m.id}
+                          className={cn(
+                            "border-b border-base-100 hover:bg-base-200/30",
+                            m.active && "bg-primary/5 font-medium"
+                          )}
+                        >
+                          <td className="text-center py-3">
+                            <input
+                              type="radio"
+                              name="active_model"
+                              className="radio radio-primary radio-xs"
+                              checked={m.active}
+                              onChange={() => handleToggleActiveModel(m.id)}
+                            />
+                          </td>
+                          <td className="py-3 font-semibold">{m.name}</td>
+                          <td className="py-3">
+                            <span className={cn(
+                              "badge badge-xs text-[10px] px-2 py-1.5 font-bold text-white",
+                              m.provider === "gemini" ? "bg-blue-600" :
+                              m.provider === "openai" ? "bg-green-600" :
+                              m.provider === "deepseek" ? "bg-sky-500" :
+                              m.provider === "github" ? "bg-gray-800" :
+                              "bg-purple-600"
+                            )}>
+                              {m.provider === "gemini" ? "Gemini" :
+                               m.provider === "openai" ? "OpenAI" :
+                               m.provider === "deepseek" ? "DeepSeek" :
+                               m.provider === "github" ? "GitHub" : "Ollama"}
+                            </span>
+                          </td>
+                          <td className="py-3 font-mono text-xs text-base-content/75">{m.model}</td>
+                          <td className="py-3 font-mono text-xs text-base-content/50">
+                            {m.api_url || <span className="italic text-base-content/30">Estándar</span>}
+                          </td>
+                          <td className="py-3">
+                            {m.provider === "ollama" ? (
+                              <span className="text-base-content/30 italic">No requiere</span>
+                            ) : m.api_key === "***" ? (
+                              <span className="text-success font-semibold">Configurada</span>
+                            ) : m.api_key ? (
+                              <span className="text-warning font-semibold">Modificada</span>
+                            ) : (
+                              <span className="text-base-content/30 italic">No configurada</span>
+                            )}
+                          </td>
+                          <td className="py-3 text-right space-x-2">
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-xs"
+                              onClick={() => handleEditModelClick(m)}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-error btn-outline btn-xs"
+                              onClick={() => handleDeleteModel(m.id)}
+                            >
+                              Eliminar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             </div>
           </div>
         )}

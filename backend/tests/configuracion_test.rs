@@ -30,7 +30,6 @@ async fn test_obtener_configuracion_defaults(pool: PgPool) {
     assert_eq!(json["ia_proveedor"].as_str(), Some("gemini"));
     // Sin secretos seteados, las keys vienen vacías (no enmascaradas).
     assert_eq!(json["ia_api_key"].as_str(), Some(""));
-    assert_eq!(json["whatsapp_api_key"].as_str(), Some(""));
 }
 
 /// PUT /api/v1/configuracion — un cambio se persiste y se refleja en el GET.

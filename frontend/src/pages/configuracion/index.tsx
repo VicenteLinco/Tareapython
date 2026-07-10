@@ -43,6 +43,10 @@ interface Configuracion {
   ia_api_url_deepseek?: string;
   ia_api_url_github?: string;
   ia_api_url_ollama?: string;
+  ia_api_key_groq?: string;
+  ia_api_key_mistral?: string;
+  ia_api_url_groq?: string;
+  ia_api_url_mistral?: string;
   vencimiento_alerta_activa: boolean;
   vencimiento_vida_util_minima_dias: number;
   vencimiento_margen_tolerancia_pct: number;
@@ -88,7 +92,7 @@ export default function ConfiguracionPage() {
   const [ventanaConsumoDias, setVentanaConsumoDias] = useState(90);
   const [periodoRevisionDias, setPeriodoRevisionDias] = useState(30);
   const [iaProveedor, setIaProveedor] = useState("gemini");
-  const [iaModelo, setIaModelo] = useState("gemini-2.5-flash");
+  const [iaModelo, setIaModelo] = useState("gemini-2.0-flash");
   const [iaApiUrl, setIaApiUrl] = useState("");
   const [iaApiKey, setIaApiKey] = useState("");
   const [iaApiKeyGemini, setIaApiKeyGemini] = useState("");
@@ -99,6 +103,10 @@ export default function ConfiguracionPage() {
   const [iaApiUrlDeepseek, setIaApiUrlDeepseek] = useState("");
   const [iaApiUrlGithub, setIaApiUrlGithub] = useState("");
   const [iaApiUrlOllama, setIaApiUrlOllama] = useState("");
+  const [iaApiKeyGroq, setIaApiKeyGroq] = useState("");
+  const [iaApiKeyMistral, setIaApiKeyMistral] = useState("");
+  const [iaApiUrlGroq, setIaApiUrlGroq] = useState("");
+  const [iaApiUrlMistral, setIaApiUrlMistral] = useState("");
   const [iaModelosConfigurados, setIaModelosConfigurados] = useState("");
   const [vencimientoAlertaActiva, setVencimientoAlertaActiva] = useState(true);
   const [vencimientoVidaUtilMinimaDias, setVencimientoVidaUtilMinimaDias] = useState(30);
@@ -119,7 +127,7 @@ export default function ConfiguracionPage() {
   const [editModelId, setEditModelId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
   const [formProvider, setFormProvider] = useState("gemini");
-  const [formModel, setFormModel] = useState("gemini-2.5-flash");
+  const [formModel, setFormModel] = useState("gemini-2.0-flash");
   const [formApiUrl, setFormApiUrl] = useState("");
   const [formApiKey, setFormApiKey] = useState("");
 
@@ -144,7 +152,7 @@ export default function ConfiguracionPage() {
     if (data.periodo_revision_dias != null)
       setPeriodoRevisionDias(data.periodo_revision_dias);
     setIaProveedor(data.ia_proveedor || "gemini");
-    const currentModel = data.ia_modelo || "gemini-2.5-flash";
+    const currentModel = data.ia_modelo || "gemini-2.0-flash";
     setIaModelo(currentModel);
     setIaApiUrl(data.ia_api_url || "");
     setIaApiKey(data.ia_api_key || "");
@@ -156,6 +164,10 @@ export default function ConfiguracionPage() {
     setIaApiUrlDeepseek(data.ia_api_url_deepseek || "");
     setIaApiUrlGithub(data.ia_api_url_github || "");
     setIaApiUrlOllama(data.ia_api_url_ollama || "");
+    setIaApiKeyGroq(data.ia_api_key_groq || "");
+    setIaApiKeyMistral(data.ia_api_key_mistral || "");
+    setIaApiUrlGroq(data.ia_api_url_groq || "");
+    setIaApiUrlMistral(data.ia_api_url_mistral || "");
     setIaModelosConfigurados(data.ia_modelos_configurados || "");
     try {
       const parsed = JSON.parse(data.ia_modelos_configurados || "[]");
@@ -194,6 +206,10 @@ export default function ConfiguracionPage() {
       ia_api_url_deepseek?: string;
       ia_api_url_github?: string;
       ia_api_url_ollama?: string;
+      ia_api_key_groq?: string;
+      ia_api_key_mistral?: string;
+      ia_api_url_groq?: string;
+      ia_api_url_mistral?: string;
       ia_modelos_configurados?: string;
       vencimiento_alerta_activa: boolean;
       vencimiento_vida_util_minima_dias: number;
@@ -296,7 +312,7 @@ export default function ConfiguracionPage() {
     // Clear form
     setFormName("");
     setFormProvider("gemini");
-    setFormModel("gemini-2.5-flash");
+    setFormModel("gemini-2.0-flash");
     setFormApiUrl("");
     setFormApiKey("");
     setEditModelId(null);
@@ -322,7 +338,7 @@ export default function ConfiguracionPage() {
       activateModelConfig(updatedList[0]);
     } else if (updatedList.length === 0) {
       setIaProveedor("gemini");
-      setIaModelo("gemini-2.5-flash");
+      setIaModelo("gemini-2.0-flash");
       setIaApiUrl("");
       setIaApiKey("");
     }
@@ -349,6 +365,12 @@ export default function ConfiguracionPage() {
     } else if (model.provider === "github") {
       setIaApiKeyGithub(model.api_key);
       setIaApiUrlGithub(model.api_url);
+    } else if (model.provider === "groq") {
+      setIaApiKeyGroq(model.api_key);
+      setIaApiUrlGroq(model.api_url);
+    } else if (model.provider === "mistral") {
+      setIaApiKeyMistral(model.api_key);
+      setIaApiUrlMistral(model.api_url);
     } else if (model.provider === "ollama") {
       setIaApiUrlOllama(model.api_url);
     }
@@ -406,6 +428,10 @@ export default function ConfiguracionPage() {
       ia_api_url_deepseek: iaApiUrlDeepseek,
       ia_api_url_github: iaApiUrlGithub,
       ia_api_url_ollama: iaApiUrlOllama,
+      ia_api_key_groq: iaApiKeyGroq,
+      ia_api_key_mistral: iaApiKeyMistral,
+      ia_api_url_groq: iaApiUrlGroq,
+      ia_api_url_mistral: iaApiUrlMistral,
       ia_modelos_configurados: iaModelosConfigurados,
       vencimiento_alerta_activa: vencimientoAlertaActiva,
       vencimiento_vida_util_minima_dias: vencimientoVidaUtilMinimaDias,
@@ -913,7 +939,7 @@ export default function ConfiguracionPage() {
                     setEditModelId(null);
                     setFormName("");
                     setFormProvider("gemini");
-                    setFormModel("gemini-2.5-flash");
+                    setFormModel("gemini-2.0-flash");
                     setFormApiUrl("");
                     setFormApiKey("");
                     setIsFormOpen(true);
@@ -952,7 +978,7 @@ export default function ConfiguracionPage() {
                             const prov = e.target.value;
                             setFormProvider(prov);
                             if (prov === "gemini") {
-                              setFormModel("gemini-2.5-flash");
+                              setFormModel("gemini-2.0-flash");
                               setFormApiUrl("");
                             } else if (prov === "openai") {
                               setFormModel("gpt-4o-mini");
@@ -963,6 +989,12 @@ export default function ConfiguracionPage() {
                             } else if (prov === "github") {
                               setFormModel("gpt-4o-mini");
                               setFormApiUrl("https://models.inference.ai.azure.com");
+                            } else if (prov === "groq") {
+                              setFormModel("llama-3.2-11b-vision-preview");
+                              setFormApiUrl("https://api.groq.com/openai");
+                            } else if (prov === "mistral") {
+                              setFormModel("pixtral-12b");
+                              setFormApiUrl("https://api.mistral.ai");
                             } else if (prov === "ollama") {
                               setFormModel("llama3");
                               setFormApiUrl("http://localhost:11434");
@@ -973,6 +1005,8 @@ export default function ConfiguracionPage() {
                           <option value="openai">OpenAI (ChatGPT)</option>
                           <option value="deepseek">DeepSeek</option>
                           <option value="github">GitHub Models</option>
+                          <option value="groq">Groq Developer</option>
+                          <option value="mistral">Mistral AI</option>
                           <option value="ollama">Ollama (Local)</option>
                         </select>
                       </div>
@@ -981,7 +1015,7 @@ export default function ConfiguracionPage() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="space-y-1.5 md:col-span-1">
                         <label className="text-xs font-medium">Modelo</label>
-                        {["gemini", "openai", "deepseek", "github"].includes(formProvider) ? (
+                        {["gemini", "openai", "deepseek", "github", "groq", "mistral"].includes(formProvider) ? (
                           <select
                             className="select select-bordered select-sm w-full font-mono text-xs"
                             value={formModel}
@@ -989,8 +1023,8 @@ export default function ConfiguracionPage() {
                           >
                             {formProvider === "gemini" && (
                               <>
-                                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-                                <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                                <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                                <option value="gemini-2.0-pro">gemini-2.0-pro</option>
                                 <option value="gemini-1.5-flash">gemini-1.5-flash</option>
                                 <option value="gemini-1.5-pro">gemini-1.5-pro</option>
                               </>
@@ -1013,6 +1047,18 @@ export default function ConfiguracionPage() {
                                 <option value="gpt-4o">gpt-4o</option>
                                 <option value="meta-llama-3.1-405b-instruct">Llama 3.1 405B</option>
                                 <option value="cohere-command-r-plus">Cohere Command R+</option>
+                              </>
+                            )}
+                            {formProvider === "groq" && (
+                              <>
+                                <option value="llama-3.2-11b-vision-preview">Llama 3.2 11B Vision</option>
+                                <option value="llama-3.2-90b-vision-preview">Llama 3.2 90B Vision</option>
+                              </>
+                            )}
+                            {formProvider === "mistral" && (
+                              <>
+                                <option value="pixtral-12b">Pixtral 12B</option>
+                                <option value="mistral-large-latest">Mistral Large</option>
                               </>
                             )}
                           </select>
@@ -1106,13 +1152,17 @@ export default function ConfiguracionPage() {
                                 m.provider === "openai" ? "bg-green-600 border-green-600" :
                                 m.provider === "deepseek" ? "bg-sky-500 border-sky-500" :
                                 m.provider === "github" ? "bg-gray-800 border-gray-800" :
+                                m.provider === "groq" ? "bg-orange-500 border-orange-500" :
+                                m.provider === "mistral" ? "bg-red-500 border-red-500" :
                                 "bg-purple-600 border-purple-600"
                               )}
                             >
                               {m.provider === "gemini" ? "Gemini" :
                                m.provider === "openai" ? "OpenAI" :
                                m.provider === "deepseek" ? "DeepSeek" :
-                               m.provider === "github" ? "GitHub" : "Ollama"}
+                               m.provider === "github" ? "GitHub" :
+                               m.provider === "groq" ? "Groq" :
+                               m.provider === "mistral" ? "Mistral" : "Ollama"}
                             </span>
                           </div>
                           <div className="text-xs text-base-content/70 space-y-1.5 font-sans">

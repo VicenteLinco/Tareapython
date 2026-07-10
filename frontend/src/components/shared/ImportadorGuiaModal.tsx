@@ -74,6 +74,8 @@ export default function ImportadorGuiaModal({
   const isOpenaiConfigured = configData?.ia_api_key_openai === "***";
   const isDeepseekConfigured = configData?.ia_api_key_deepseek === "***";
   const isGithubConfigured = configData?.ia_api_key_github === "***";
+  const isGroqConfigured = configData?.ia_api_key_groq === "***";
+  const isMistralConfigured = configData?.ia_api_key_mistral === "***";
   const isOllamaConfigured = !!configData?.ia_api_url_ollama;
 
   // Defaults for new product creation
@@ -664,13 +666,17 @@ export default function ImportadorGuiaModal({
                           const val = e.target.value;
                           setProviderOverride(val);
                           if (val === "gemini") {
-                            setModelOverride("gemini-1.5-flash");
+                            setModelOverride("gemini-2.0-flash");
                           } else if (val === "openai") {
                             setModelOverride("gpt-4o-mini");
                           } else if (val === "deepseek") {
                             setModelOverride("deepseek-chat");
                           } else if (val === "github") {
                             setModelOverride("gpt-4o-mini");
+                          } else if (val === "groq") {
+                            setModelOverride("llama-3.2-11b-vision-preview");
+                          } else if (val === "mistral") {
+                            setModelOverride("pixtral-12b");
                           } else {
                             setModelOverride("");
                           }
@@ -681,12 +687,14 @@ export default function ImportadorGuiaModal({
                         {isOpenaiConfigured && <option value="openai">OpenAI (ChatGPT)</option>}
                         {isDeepseekConfigured && <option value="deepseek">DeepSeek (China)</option>}
                         {isGithubConfigured && <option value="github">GitHub Models</option>}
+                        {isGroqConfigured && <option value="groq">Groq Developer</option>}
+                        {isMistralConfigured && <option value="mistral">Mistral AI</option>}
                         {isOllamaConfigured && <option value="ollama">Ollama (Local)</option>}
                       </select>
                     </div>
 
                     <div>
-                      {["gemini", "openai", "deepseek", "github"].includes(providerOverride) ? (
+                      {["gemini", "openai", "deepseek", "github", "groq", "mistral"].includes(providerOverride) ? (
                         <select
                           className="select select-xs select-bordered w-full text-[11px]"
                           value={modelOverride}
@@ -695,8 +703,8 @@ export default function ImportadorGuiaModal({
                           <option value="">Por defecto (Modelo)</option>
                           {providerOverride === "gemini" && (
                             <>
-                              <option value="gemini-1.5-flash">gemini-1.5-flash</option>
                               <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                              <option value="gemini-1.5-flash">gemini-1.5-flash</option>
                               <option value="gemini-1.5-pro">gemini-1.5-pro</option>
                             </>
                           )}
@@ -717,6 +725,18 @@ export default function ImportadorGuiaModal({
                               <option value="gpt-4o">gpt-4o</option>
                               <option value="meta-llama-3.1-405b-instruct">Llama 3.1 405B</option>
                               <option value="cohere-command-r-plus">Cohere Command R+</option>
+                            </>
+                          )}
+                          {providerOverride === "groq" && (
+                            <>
+                              <option value="llama-3.2-11b-vision-preview">Llama 3.2 11B Vision</option>
+                              <option value="llama-3.2-90b-vision-preview">Llama 3.2 90B Vision</option>
+                            </>
+                          )}
+                          {providerOverride === "mistral" && (
+                            <>
+                              <option value="pixtral-12b">Pixtral 12B</option>
+                              <option value="mistral-large-latest">Mistral Large</option>
                             </>
                           )}
                         </select>

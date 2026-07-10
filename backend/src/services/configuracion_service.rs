@@ -43,6 +43,7 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
             'ia_proveedor','ia_modelo','ia_api_url','ia_api_key',
             'ia_api_key_gemini','ia_api_key_openai','ia_api_key_deepseek','ia_api_key_github',
             'ia_api_url_openai','ia_api_url_deepseek','ia_api_url_github','ia_api_url_ollama',
+            'ia_api_key_groq','ia_api_key_mistral','ia_api_url_groq','ia_api_url_mistral',
             'ia_modelos_configurados',
             'vencimiento_alerta_activa','vencimiento_vida_util_minima_dias','vencimiento_margen_tolerancia_pct'
         )",
@@ -64,7 +65,7 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
     let mut periodo_revision_dias = 30;
     let mut factor_historial_corto = 0.35;
     let mut ia_proveedor = "gemini".to_string();
-    let mut ia_modelo = "gemini-2.5-flash".to_string();
+    let mut ia_modelo = "gemini-2.0-flash".to_string();
     let mut ia_api_url = String::new();
     let mut ia_api_key = String::new();
     let mut ia_api_key_gemini = String::new();
@@ -75,6 +76,10 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
     let mut ia_api_url_deepseek = String::new();
     let mut ia_api_url_github = String::new();
     let mut ia_api_url_ollama = String::new();
+    let mut ia_api_key_groq = String::new();
+    let mut ia_api_key_mistral = String::new();
+    let mut ia_api_url_groq = String::new();
+    let mut ia_api_url_mistral = String::new();
     let mut ia_modelos_configurados = String::new();
     let mut vencimiento_alerta_activa = true;
     let mut vencimiento_vida_util_minima_dias = 30;
@@ -139,6 +144,22 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
                     "***".to_string()
                 };
             }
+            "ia_api_key_groq" => {
+                ia_api_key_groq = if valor.is_empty() {
+                    String::new()
+                } else {
+                    "***".to_string()
+                };
+            }
+            "ia_api_key_mistral" => {
+                ia_api_key_mistral = if valor.is_empty() {
+                    String::new()
+                } else {
+                    "***".to_string()
+                };
+            }
+            "ia_api_url_groq" => ia_api_url_groq = valor,
+            "ia_api_url_mistral" => ia_api_url_mistral = valor,
             "ia_modelos_configurados" => ia_modelos_configurados = valor,
             "vencimiento_alerta_activa" => vencimiento_alerta_activa = valor == "true",
             "vencimiento_vida_util_minima_dias" => {
@@ -177,6 +198,10 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
         ia_api_url_deepseek,
         ia_api_url_github,
         ia_api_url_ollama,
+        ia_api_key_groq,
+        ia_api_key_mistral,
+        ia_api_url_groq,
+        ia_api_url_mistral,
         ia_modelos_configurados,
         vencimiento_alerta_activa,
         vencimiento_vida_util_minima_dias,
@@ -402,6 +427,26 @@ pub async fn actualizar(
         set_config(pool, "ia_api_url_ollama", url_ollama).await?;
     }
 
+    if let Some(key_groq) = &body.ia_api_key_groq {
+        if key_groq != "***" {
+            set_config(pool, "ia_api_key_groq", key_groq).await?;
+        }
+    }
+
+    if let Some(key_mistral) = &body.ia_api_key_mistral {
+        if key_mistral != "***" {
+            set_config(pool, "ia_api_key_mistral", key_mistral).await?;
+        }
+    }
+
+    if let Some(url_groq) = &body.ia_api_url_groq {
+        set_config(pool, "ia_api_url_groq", url_groq).await?;
+    }
+
+    if let Some(url_mistral) = &body.ia_api_url_mistral {
+        set_config(pool, "ia_api_url_mistral", url_mistral).await?;
+    }
+
     if let Some(modelos) = &body.ia_modelos_configurados {
         set_config(pool, "ia_modelos_configurados", modelos).await?;
     }
@@ -618,13 +663,6 @@ pub async fn obtener_ia_modelos(
             }
         };
 
-        let deprecated_models = vec![
-            "gemini-2.5-flash",
-            "gemini-1.0-pro",
-            "gemini-1.5-flash-001",
-            "gemini-1.5-pro-001",
-        ];
-
         let mut models = Vec::new();
         for m in response.models {
             let has_generate = m
@@ -634,8 +672,22 @@ pub async fn obtener_ia_modelos(
 
             if has_generate {
                 let clean_name = m.name.strip_prefix("models/").unwrap_or(&m.name).to_string();
-                let is_deprecated = deprecated_models.iter().any(|&dep| clean_name == dep || clean_name.contains("gemini-1.0"));
-                if !is_deprecated {
+                
+                // Filtro inteligente para Gemini: solo modelos útiles, omitiendo snapshots y experimentales
+                let is_gemini = clean_name.starts_with("gemini-");
+                let is_noise = clean_name.contains("gemini-1.0")
+                    || clean_name.contains("vision")
+                    || clean_name.contains("-001")
+                    || clean_name.contains("-002")
+                    || clean_name.contains("-005")
+                    || clean_name.contains("-exp")
+                    || clean_name.contains("experimental")
+                    || clean_name.contains("thinking")
+                    || clean_name.contains("-latest")
+                    || clean_name.contains("tuning")
+                    || clean_name.contains("tuned");
+
+                if is_gemini && !is_noise {
                     models.push(clean_name);
                 }
             }
@@ -686,12 +738,14 @@ pub async fn obtener_ia_modelos(
         let mut models: Vec<String> = response.models.into_iter().map(|m| m.name).collect();
         models.sort();
         Ok(models)
-    } else if provider == "openai" || provider == "deepseek" || provider == "github" || provider == "custom" {
+    } else if provider == "openai" || provider == "deepseek" || provider == "github" || provider == "groq" || provider == "mistral" || provider == "custom" {
         let base_url = if api_url.is_empty() {
             match provider.as_str() {
                 "openai" => "https://api.openai.com".to_string(),
                 "deepseek" => "https://api.deepseek.com".to_string(),
                 "github" => "https://models.inference.ai.azure.com".to_string(),
+                "groq" => "https://api.groq.com/openai".to_string(),
+                "mistral" => "https://api.mistral.ai".to_string(),
                 _ => "http://localhost:11434".to_string(),
             }
         } else {
@@ -738,7 +792,64 @@ pub async fn obtener_ia_modelos(
             }
         };
 
-        let mut models: Vec<String> = response.data.into_iter().map(|m| m.id).collect();
+        let mut models = Vec::new();
+        for m in response.data {
+            let id = m.id;
+            match provider.as_str() {
+                "openai" => {
+                    // Filtro inteligente para OpenAI: solo modelos GPT/o principales y limpios
+                    let is_gpt_or_o = id.starts_with("gpt-") || id.starts_with("o1") || id.starts_with("o3");
+                    let is_noise = id.contains("-2024-") 
+                        || id.contains("-2025-") 
+                        || id.contains("-2026-") 
+                        || id.contains("realtime") 
+                        || id.contains("audio") 
+                        || id.contains("instruct")
+                        || id.contains("preview");
+                    if is_gpt_or_o && !is_noise {
+                        models.push(id);
+                    }
+                }
+                "deepseek" => {
+                    if id.starts_with("deepseek-") {
+                        models.push(id);
+                    }
+                }
+                "github" => {
+                    // Filtro para GitHub Models: modelos útiles de chat/visión
+                    let is_useful = id.starts_with("gpt-") 
+                        || id.starts_with("o1") 
+                        || id.starts_with("o3")
+                        || id.starts_with("meta-llama-")
+                        || id.starts_with("cohere-command-")
+                        || id.starts_with("mistral-")
+                        || id.starts_with("phi-");
+                    let is_noise = id.contains("-2024-")
+                        || id.contains("-2025-")
+                        || id.contains("-2026-")
+                        || id.contains("-preview")
+                        || id.contains("embed");
+                    if is_useful && !is_noise {
+                        models.push(id);
+                    }
+                }
+                "groq" => {
+                    // Groq: solo modelos vision para la lectura de guías/facturas
+                    if id.contains("vision") {
+                        models.push(id);
+                    }
+                }
+                "mistral" => {
+                    // Mistral: Pixtral es el modelo multimodal (visión) y mistral-large
+                    if id.contains("pixtral") || id.starts_with("mistral-large") {
+                        models.push(id);
+                    }
+                }
+                _ => {
+                    models.push(id);
+                }
+            }
+        }
         models.sort();
         Ok(models)
     } else {
@@ -760,6 +871,14 @@ fn get_default_models_for_provider(provider: &str) -> Vec<String> {
             "gemini-2.0-flash".to_string(),
             "gemini-1.5-flash".to_string(),
             "gemini-1.5-pro".to_string(),
+        ],
+        "groq" => vec![
+            "llama-3.2-11b-vision-preview".to_string(),
+            "llama-3.2-90b-vision-preview".to_string(),
+        ],
+        "mistral" => vec![
+            "pixtral-12b".to_string(),
+            "mistral-large-latest".to_string(),
         ],
         _ => vec!["gpt-4o-mini".to_string()],
     }

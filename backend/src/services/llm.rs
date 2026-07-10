@@ -954,7 +954,7 @@ pub async fn load_llm_config(pool: &sqlx::PgPool) -> Result<LlmConfig, AppError>
     .await?;
 
     let mut provider = std::env::var("IA_PROVEEDOR").unwrap_or_else(|_| "gemini".to_string());
-    let mut model = std::env::var("IA_MODELO").unwrap_or_else(|_| "gemini-2.5-flash".to_string());
+    let mut model = std::env::var("IA_MODELO").unwrap_or_else(|_| "gemini-2.0-flash".to_string());
     let mut api_url = std::env::var("IA_API_URL").unwrap_or_default();
     let mut api_key = std::env::var("IA_API_KEY").unwrap_or_default();
 
@@ -962,10 +962,14 @@ pub async fn load_llm_config(pool: &sqlx::PgPool) -> Result<LlmConfig, AppError>
     let mut key_openai = String::new();
     let mut key_deepseek = String::new();
     let mut key_github = String::new();
+    let mut key_groq = String::new();
+    let mut key_mistral = String::new();
     let mut url_openai = String::new();
     let mut url_deepseek = String::new();
     let mut url_github = String::new();
     let mut url_ollama = String::new();
+    let mut url_groq = String::new();
+    let mut url_mistral = String::new();
 
     for (clave, valor) in rows {
         let trimmed = valor.trim().to_string();
@@ -979,10 +983,14 @@ pub async fn load_llm_config(pool: &sqlx::PgPool) -> Result<LlmConfig, AppError>
                 "ia_api_key_openai" => key_openai = trimmed,
                 "ia_api_key_deepseek" => key_deepseek = trimmed,
                 "ia_api_key_github" => key_github = trimmed,
+                "ia_api_key_groq" => key_groq = trimmed,
+                "ia_api_key_mistral" => key_mistral = trimmed,
                 "ia_api_url_openai" => url_openai = trimmed,
                 "ia_api_url_deepseek" => url_deepseek = trimmed,
                 "ia_api_url_github" => url_github = trimmed,
                 "ia_api_url_ollama" => url_ollama = trimmed,
+                "ia_api_url_groq" => url_groq = trimmed,
+                "ia_api_url_mistral" => url_mistral = trimmed,
                 _ => {}
             }
         }
@@ -993,6 +1001,8 @@ pub async fn load_llm_config(pool: &sqlx::PgPool) -> Result<LlmConfig, AppError>
         "openai" => if !key_openai.is_empty() { key_openai } else { api_key },
         "deepseek" => if !key_deepseek.is_empty() { key_deepseek } else { api_key },
         "github" => if !key_github.is_empty() { key_github } else { api_key },
+        "groq" => if !key_groq.is_empty() { key_groq } else { api_key },
+        "mistral" => if !key_mistral.is_empty() { key_mistral } else { api_key },
         _ => api_key,
     };
 
@@ -1001,6 +1011,8 @@ pub async fn load_llm_config(pool: &sqlx::PgPool) -> Result<LlmConfig, AppError>
         "deepseek" => if !url_deepseek.is_empty() { url_deepseek } else { api_url },
         "ollama" => if !url_ollama.is_empty() { url_ollama } else { api_url },
         "github" => if !url_github.is_empty() { url_github } else { "https://models.inference.ai.azure.com".to_string() },
+        "groq" => if !url_groq.is_empty() { url_groq } else { "https://api.groq.com/openai".to_string() },
+        "mistral" => if !url_mistral.is_empty() { url_mistral } else { "https://api.mistral.ai".to_string() },
         _ => api_url,
     };
 
@@ -1018,7 +1030,7 @@ impl LlmFactory {
     pub fn create(config: LlmConfig) -> Result<Box<dyn LlmClient + Send + Sync>, AppError> {
         match config.provider.to_lowercase().as_str() {
             "gemini" => Ok(Box::new(GeminiClient::new(config))),
-            "ollama" | "openai" | "deepseek" | "github" | "custom" => Ok(Box::new(OllamaClient::new(config))),
+            "ollama" | "openai" | "deepseek" | "github" | "groq" | "mistral" | "custom" => Ok(Box::new(OllamaClient::new(config))),
             other => Err(AppError::Internal(format!(
                 "Unsupported AI provider: {}",
                 other
@@ -1306,10 +1318,14 @@ pub async fn parse_guia_con_vision(
         let mut key_openai = String::new();
         let mut key_deepseek = String::new();
         let mut key_github = String::new();
+        let mut key_groq = String::new();
+        let mut key_mistral = String::new();
         let mut url_openai = String::new();
         let mut url_deepseek = String::new();
         let mut url_github = String::new();
         let mut url_ollama = String::new();
+        let mut url_groq = String::new();
+        let mut url_mistral = String::new();
         
         for (clave, valor) in rows {
             let trimmed = valor.trim().to_string();
@@ -1319,10 +1335,14 @@ pub async fn parse_guia_con_vision(
                     "ia_api_key_openai" => key_openai = trimmed,
                     "ia_api_key_deepseek" => key_deepseek = trimmed,
                     "ia_api_key_github" => key_github = trimmed,
+                    "ia_api_key_groq" => key_groq = trimmed,
+                    "ia_api_key_mistral" => key_mistral = trimmed,
                     "ia_api_url_openai" => url_openai = trimmed,
                     "ia_api_url_deepseek" => url_deepseek = trimmed,
                     "ia_api_url_github" => url_github = trimmed,
                     "ia_api_url_ollama" => url_ollama = trimmed,
+                    "ia_api_url_groq" => url_groq = trimmed,
+                    "ia_api_url_mistral" => url_mistral = trimmed,
                     _ => {}
                 }
             }
@@ -1335,6 +1355,8 @@ pub async fn parse_guia_con_vision(
                 "openai" => if !key_openai.is_empty() { key_openai } else { db_config.api_key },
                 "deepseek" => if !key_deepseek.is_empty() { key_deepseek } else { db_config.api_key },
                 "github" => if !key_github.is_empty() { key_github } else { db_config.api_key },
+                "groq" => if !key_groq.is_empty() { key_groq } else { db_config.api_key },
+                "mistral" => if !key_mistral.is_empty() { key_mistral } else { db_config.api_key },
                 _ => db_config.api_key,
             };
             db_config.api_url = match db_config.provider.to_lowercase().as_str() {
@@ -1342,6 +1364,8 @@ pub async fn parse_guia_con_vision(
                 "deepseek" => if !url_deepseek.is_empty() { url_deepseek } else { db_config.api_url },
                 "ollama" => if !url_ollama.is_empty() { url_ollama } else { db_config.api_url },
                 "github" => if !url_github.is_empty() { url_github } else { "https://models.inference.ai.azure.com".to_string() },
+                "groq" => if !url_groq.is_empty() { url_groq } else { "https://api.groq.com/openai".to_string() },
+                "mistral" => if !url_mistral.is_empty() { url_mistral } else { "https://api.mistral.ai".to_string() },
                 _ => db_config.api_url,
             };
         }
@@ -1650,10 +1674,12 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
             }),
         ];
 
-        let model_name = if db_config.model.is_empty() || db_config.model == "gemini-2.5-flash" {
+        let model_name = if db_config.model.is_empty() || db_config.model == "gemini-2.0-flash" {
             match db_config.provider.to_lowercase().as_str() {
                 "openai" => "gpt-4o-mini".to_string(),
                 "deepseek" => "deepseek-chat".to_string(),
+                "groq" => "llama-3.2-11b-vision-preview".to_string(),
+                "mistral" => "pixtral-12b".to_string(),
                 _ => "llava".to_string(),
             }
         } else {
@@ -1743,7 +1769,7 @@ mod tests {
     fn test_llm_factory_create() {
         let gemini_config = LlmConfig {
             provider: "gemini".to_string(),
-            model: "gemini-2.5-flash".to_string(),
+            model: "gemini-2.0-flash".to_string(),
             api_url: "".to_string(),
             api_key: "test_key".to_string(),
         };

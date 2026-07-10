@@ -43,7 +43,6 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
             'ia_proveedor','ia_modelo','ia_api_url','ia_api_key',
             'ia_api_key_gemini','ia_api_key_openai','ia_api_key_deepseek','ia_api_key_github',
             'ia_api_url_openai','ia_api_url_deepseek','ia_api_url_github','ia_api_url_ollama',
-            'whatsapp_api_url','whatsapp_api_key','whatsapp_webhook_secret','whatsapp_bot_phone',
             'vencimiento_alerta_activa','vencimiento_vida_util_minima_dias','vencimiento_margen_tolerancia_pct'
         )",
     )
@@ -75,10 +74,6 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
     let mut ia_api_url_deepseek = String::new();
     let mut ia_api_url_github = String::new();
     let mut ia_api_url_ollama = String::new();
-    let mut whatsapp_api_url = String::new();
-    let mut whatsapp_api_key = String::new();
-    let mut whatsapp_webhook_secret = String::new();
-    let mut whatsapp_bot_phone = String::new();
     let mut vencimiento_alerta_activa = true;
     let mut vencimiento_vida_util_minima_dias = 30;
     let mut vencimiento_margen_tolerancia_pct = 10;
@@ -142,16 +137,6 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
                     "***".to_string()
                 };
             }
-            "whatsapp_api_url" => whatsapp_api_url = valor,
-            "whatsapp_api_key" => {
-                whatsapp_api_key = if valor.is_empty() {
-                    String::new()
-                } else {
-                    "***".to_string()
-                };
-            }
-            "whatsapp_webhook_secret" => whatsapp_webhook_secret = valor,
-            "whatsapp_bot_phone" => whatsapp_bot_phone = valor,
             "vencimiento_alerta_activa" => vencimiento_alerta_activa = valor == "true",
             "vencimiento_vida_util_minima_dias" => {
                 vencimiento_vida_util_minima_dias = valor.parse().unwrap_or(30)
@@ -189,10 +174,6 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
         ia_api_url_deepseek,
         ia_api_url_github,
         ia_api_url_ollama,
-        whatsapp_api_url,
-        whatsapp_api_key,
-        whatsapp_webhook_secret,
-        whatsapp_bot_phone,
         vencimiento_alerta_activa,
         vencimiento_vida_util_minima_dias,
         vencimiento_margen_tolerancia_pct,
@@ -415,25 +396,6 @@ pub async fn actualizar(
 
     if let Some(url_ollama) = &body.ia_api_url_ollama {
         set_config(pool, "ia_api_url_ollama", url_ollama).await?;
-    }
-
-    if let Some(wa_url) = &body.whatsapp_api_url {
-        set_config(pool, "whatsapp_api_url", wa_url).await?;
-    }
-
-    if let Some(wa_key) = &body.whatsapp_api_key {
-        if wa_key != "***" {
-            set_config(pool, "whatsapp_api_key", wa_key).await?;
-            log_changes.push(("whatsapp_api_key", "***".to_string(), "***".to_string()));
-        }
-    }
-
-    if let Some(secret) = &body.whatsapp_webhook_secret {
-        set_config(pool, "whatsapp_webhook_secret", secret).await?;
-    }
-
-    if let Some(phone) = &body.whatsapp_bot_phone {
-        set_config(pool, "whatsapp_bot_phone", phone).await?;
     }
 
     if let Some(activa) = body.vencimiento_alerta_activa {

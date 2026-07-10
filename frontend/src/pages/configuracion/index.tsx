@@ -13,7 +13,6 @@ import {
   Sliders,
   Bell,
   Cpu,
-  MessageSquare,
 } from "lucide-react";
 import { notify } from "@/lib/notify";
 import api from "@/lib/api";
@@ -46,10 +45,6 @@ interface Configuracion {
   ia_api_url_deepseek?: string;
   ia_api_url_github?: string;
   ia_api_url_ollama?: string;
-  whatsapp_api_url: string;
-  whatsapp_api_key: string;
-  whatsapp_webhook_secret: string;
-  whatsapp_bot_phone: string;
   vencimiento_alerta_activa: boolean;
   vencimiento_vida_util_minima_dias: number;
   vencimiento_margen_tolerancia_pct: number;
@@ -105,10 +100,6 @@ export default function ConfiguracionPage() {
   const [iaApiUrlDeepseek, setIaApiUrlDeepseek] = useState("");
   const [iaApiUrlGithub, setIaApiUrlGithub] = useState("");
   const [iaApiUrlOllama, setIaApiUrlOllama] = useState("");
-  const [whatsappApiUrl, setWhatsappApiUrl] = useState("");
-  const [whatsappApiKey, setWhatsappApiKey] = useState("");
-  const [whatsappWebhookSecret, setWhatsappWebhookSecret] = useState("");
-  const [whatsappBotPhone, setWhatsappBotPhone] = useState("");
   const [vencimientoAlertaActiva, setVencimientoAlertaActiva] = useState(true);
   const [vencimientoVidaUtilMinimaDias, setVencimientoVidaUtilMinimaDias] = useState(30);
   const [vencimientoMargenToleranciaPct, setVencimientoMargenToleranciaPct] = useState(10);
@@ -219,10 +210,6 @@ export default function ConfiguracionPage() {
     setIaApiUrlDeepseek(data.ia_api_url_deepseek || "");
     setIaApiUrlGithub(data.ia_api_url_github || "");
     setIaApiUrlOllama(data.ia_api_url_ollama || "");
-    setWhatsappApiUrl(data.whatsapp_api_url || "");
-    setWhatsappApiKey(data.whatsapp_api_key || "");
-    setWhatsappWebhookSecret(data.whatsapp_webhook_secret || "");
-    setWhatsappBotPhone(data.whatsapp_bot_phone || "");
     setVencimientoAlertaActiva(data.vencimiento_alerta_activa !== false);
     setVencimientoVidaUtilMinimaDias(data.vencimiento_vida_util_minima_dias ?? 30);
     setVencimientoMargenToleranciaPct(data.vencimiento_margen_tolerancia_pct ?? 10);
@@ -254,10 +241,6 @@ export default function ConfiguracionPage() {
       ia_api_url_deepseek?: string;
       ia_api_url_github?: string;
       ia_api_url_ollama?: string;
-      whatsapp_api_url?: string;
-      whatsapp_api_key?: string;
-      whatsapp_webhook_secret?: string;
-      whatsapp_bot_phone?: string;
       vencimiento_alerta_activa: boolean;
       vencimiento_vida_util_minima_dias: number;
       vencimiento_margen_tolerancia_pct: number;
@@ -352,10 +335,6 @@ export default function ConfiguracionPage() {
       ia_api_url_deepseek: iaApiUrlDeepseek,
       ia_api_url_github: iaApiUrlGithub,
       ia_api_url_ollama: iaApiUrlOllama,
-      whatsapp_api_url: whatsappApiUrl,
-      whatsapp_api_key: whatsappApiKey,
-      whatsapp_webhook_secret: whatsappWebhookSecret,
-      whatsapp_bot_phone: whatsappBotPhone,
       vencimiento_alerta_activa: vencimientoAlertaActiva,
       vencimiento_vida_util_minima_dias: vencimientoVidaUtilMinimaDias,
       vencimiento_margen_tolerancia_pct: vencimientoMargenToleranciaPct,
@@ -848,333 +827,462 @@ export default function ConfiguracionPage() {
         {/* ── TAB 4: INTEGRACIONES (IA / WHATSAPP) ── */}
         {activeTab === "integraciones" && (
           <div className="space-y-8 animate-fade-in">
-            {/* IA ASSISTANT SUB-SECTION */}
+            {/* IA PROVIDERS TABLE */}
             <div className="p-4 rounded-xl bg-base-200/30 border border-base-200">
               <div className="flex items-center gap-2 mb-4">
                 <Brain className="w-5 h-5 text-primary" />
-                <h3 className="text-sm font-semibold">Asistente de Inteligencia Artificial (IA)</h3>
+                <h3 className="text-sm font-semibold">Proveedores de Inteligencia Artificial (IA)</h3>
               </div>
-
-              <div className="space-y-5">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Proveedor de IA</label>
-                    <select
-                      className="select select-bordered w-full"
-                      value={iaProveedor}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setIaProveedor(val);
-                        setModelosDisponibles([]);
-                        if (val === "gemini") {
-                          setIsCustomModel(false);
-                          setIaModelo("gemini-2.5-flash");
-                        } else if (val === "openai") {
-                          setIsCustomModel(false);
-                          setIaModelo("gpt-4o-mini");
-                        } else if (val === "deepseek") {
-                          setIsCustomModel(false);
-                          setIaModelo("deepseek-chat");
-                        } else if (val === "github") {
-                          setIsCustomModel(false);
-                          setIaModelo("gpt-4o-mini");
-                        } else {
-                          setIsCustomModel(true);
-                          setIaModelo("llama3");
-                        }
-                      }}
-                    >
-                      <option value="gemini">Google Gemini</option>
-                      <option value="openai">OpenAI (ChatGPT)</option>
-                      <option value="deepseek">DeepSeek (IA China)</option>
-                      <option value="github">GitHub Models (Gratuito)</option>
-                      <option value="ollama">Ollama (Local)</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5 flex flex-col justify-end">
-                    <label className="text-sm font-medium mb-1.5">Modelo de IA</label>
-                    <div className="flex flex-col gap-2">
-                      <div className="flex gap-2">
-                        {["gemini", "openai", "deepseek", "github"].includes(iaProveedor) || modelosDisponibles.length > 0 ? (
-                          <select
-                            className="select select-bordered flex-1"
-                            value={isCustomModel ? "custom" : iaModelo}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === "custom") {
-                                setIsCustomModel(true);
-                                setIaModelo("");
-                              } else {
-                                setIsCustomModel(false);
-                                setIaModelo(val);
-                              }
-                            }}
-                          >
-                            {modelosDisponibles.length > 0 ? (
-                              modelosDisponibles.map((model) => (
-                                <option key={model} value={model}>
-                                  {model}
-                                </option>
-                              ))
-                            ) : iaProveedor === "openai" ? (
-                              <>
-                                <option value="gpt-4o-mini">gpt-4o-mini (Recomendado - Rápido)</option>
-                                <option value="gpt-4o">gpt-4o (Avanzado)</option>
-                              </>
-                            ) : iaProveedor === "deepseek" ? (
-                              <>
-                                <option value="deepseek-chat">deepseek-chat (Recomendado)</option>
-                              </>
-                            ) : iaProveedor === "github" ? (
-                              <>
-                                <option value="gpt-4o-mini">gpt-4o-mini (Recomendado - Rápido)</option>
-                                <option value="gpt-4o">gpt-4o (Avanzado)</option>
-                                <option value="meta-llama-3.1-405b-instruct">Llama 3.1 405B</option>
-                                <option value="cohere-command-r-plus">Cohere Command R+</option>
-                              </>
-                            ) : (
-                              <>
-                                <option value="gemini-2.5-flash">
-                                  gemini-2.5-flash (Recomendado - Rápido)
-                                </option>
-                                <option value="gemini-2.5-pro">
-                                  gemini-2.5-pro (Avanzado - Razonamiento)
-                                </option>
-                                <option value="gemini-1.5-flash">
-                                  gemini-1.5-flash (Básico)
-                                </option>
-                                <option value="gemini-1.5-pro">
-                                  gemini-1.5-pro (Básico - Avanzado)
-                                </option>
-                              </>
+              
+              <div className="overflow-x-auto w-full">
+                <table className="table w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-base-200">
+                      <th className="text-[10px] uppercase font-bold text-base-content/50 py-3 w-16 text-center">Activo</th>
+                      <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">Proveedor</th>
+                      <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">Modelo Predeterminado / Selección</th>
+                      <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">Endpoint API URL</th>
+                      <th className="text-[10px] uppercase font-bold text-base-content/50 py-3">Clave de API / Token</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {/* Google Gemini */}
+                    <tr className={cn("border-b border-base-100 hover:bg-base-200/30", iaProveedor === "gemini" && "bg-primary/5")}>
+                      <td className="text-center py-4">
+                        <input
+                          type="radio"
+                          name="ia_proveedor"
+                          className="radio radio-primary radio-xs"
+                          checked={iaProveedor === "gemini"}
+                          onChange={() => {
+                            setIaProveedor("gemini");
+                            setIsCustomModel(false);
+                            setIaModelo("gemini-2.5-flash");
+                          }}
+                        />
+                      </td>
+                      <td className="font-semibold py-4">
+                        Google Gemini
+                      </td>
+                      <td className="py-4">
+                        {iaProveedor === "gemini" ? (
+                          <div className="flex flex-col gap-1 w-48">
+                            <select
+                              className="select select-bordered select-xs w-full font-medium"
+                              value={isCustomModel ? "custom" : iaModelo}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === "custom") {
+                                  setIsCustomModel(true);
+                                  setIaModelo("");
+                                } else {
+                                  setIsCustomModel(false);
+                                  setIaModelo(val);
+                                }
+                              }}
+                            >
+                              {modelosDisponibles.length > 0 ? (
+                                modelosDisponibles.map((model) => (
+                                  <option key={model} value={model}>
+                                    {model}
+                                  </option>
+                                ))
+                              ) : (
+                                <>
+                                  <option value="gemini-2.5-flash">gemini-2.5-flash (Rápido)</option>
+                                  <option value="gemini-2.5-pro">gemini-2.5-pro (Avanzado)</option>
+                                  <option value="gemini-1.5-flash">gemini-1.5-flash (Básico)</option>
+                                  <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                                </>
+                              )}
+                              <option value="custom">Otro...</option>
+                            </select>
+                            {isCustomModel && (
+                              <input
+                                type="text"
+                                className="input input-bordered input-xs w-full mt-1"
+                                placeholder="Modelo personalizado"
+                                value={iaModelo}
+                                onChange={(e) => setIaModelo(e.target.value)}
+                              />
                             )}
-                            <option value="custom">Otro (ingresar manualmente)</option>
-                          </select>
+                          </div>
                         ) : (
-                          <input
-                            type="text"
-                            className="input input-bordered flex-1"
-                            value={iaModelo}
-                            onChange={(e) => setIaModelo(e.target.value)}
-                            placeholder="Ej: llama3"
-                          />
+                          <span className="text-base-content/40 font-mono">gemini-2.5-flash</span>
                         )}
-                        <button
-                          type="button"
-                          className="btn btn-outline btn-square"
-                          onClick={fetchModelosDisponibles}
-                          disabled={cargandoModelos}
-                          title="Obtener modelos disponibles de la API"
-                        >
-                          <RefreshCw className={`h-4 w-4 ${cargandoModelos ? "animate-spin" : ""}`} />
-                        </button>
-                      </div>
-                      {isCustomModel && (
+                      </td>
+                      <td className="text-base-content/40 py-4 italic">
+                        Estándar (Google Cloud)
+                      </td>
+                      <td className="py-4">
+                        <div className="flex flex-col gap-1 w-44">
+                          <div className="flex justify-between items-center h-4">
+                            {iaApiKeyGemini === "***" ? (
+                              <span className="text-[9px] text-success font-semibold">Configurada</span>
+                            ) : iaApiKeyGemini ? (
+                              <span className="text-[9px] text-warning font-semibold">Modificada</span>
+                            ) : (
+                              <span className="text-[9px] text-base-content/40">No configurada</span>
+                            )}
+                          </div>
+                          <input
+                            type="password"
+                            className="input input-bordered input-xs w-full"
+                            value={iaApiKeyGemini}
+                            onChange={(e) => setIaApiKeyGemini(e.target.value)}
+                            placeholder={iaApiKeyGemini === "***" ? "••••••••" : "API Key"}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* OpenAI */}
+                    <tr className={cn("border-b border-base-100 hover:bg-base-200/30", iaProveedor === "openai" && "bg-primary/5")}>
+                      <td className="text-center py-4">
+                        <input
+                          type="radio"
+                          name="ia_proveedor"
+                          className="radio radio-primary radio-xs"
+                          checked={iaProveedor === "openai"}
+                          onChange={() => {
+                            setIaProveedor("openai");
+                            setIsCustomModel(false);
+                            setIaModelo("gpt-4o-mini");
+                          }}
+                        />
+                      </td>
+                      <td className="font-semibold py-4">
+                        OpenAI (ChatGPT)
+                      </td>
+                      <td className="py-4">
+                        {iaProveedor === "openai" ? (
+                          <div className="flex flex-col gap-1 w-48">
+                            <select
+                              className="select select-bordered select-xs w-full font-medium"
+                              value={isCustomModel ? "custom" : iaModelo}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === "custom") {
+                                  setIsCustomModel(true);
+                                  setIaModelo("");
+                                } else {
+                                  setIsCustomModel(false);
+                                  setIaModelo(val);
+                                }
+                              }}
+                            >
+                              {modelosDisponibles.length > 0 ? (
+                                modelosDisponibles.map((model) => (
+                                  <option key={model} value={model}>
+                                    {model}
+                                  </option>
+                                ))
+                              ) : (
+                                <>
+                                  <option value="gpt-4o-mini">gpt-4o-mini (Rápido)</option>
+                                  <option value="gpt-4o">gpt-4o (Avanzado)</option>
+                                </>
+                              )}
+                              <option value="custom">Otro...</option>
+                            </select>
+                            {isCustomModel && (
+                              <input
+                                type="text"
+                                className="input input-bordered input-xs w-full mt-1"
+                                placeholder="Modelo personalizado"
+                                value={iaModelo}
+                                onChange={(e) => setIaModelo(e.target.value)}
+                              />
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-base-content/40 font-mono">gpt-4o-mini</span>
+                        )}
+                      </td>
+                      <td className="py-4">
                         <input
                           type="text"
-                          className="input input-bordered w-full text-sm animate-fade-in"
-                          value={iaModelo}
-                          onChange={(e) => setIaModelo(e.target.value)}
-                          placeholder={
-                            iaProveedor === "gemini" 
-                              ? "Ej: gemini-2.0-flash-exp" 
-                              : iaProveedor === "openai" 
-                              ? "Ej: gpt-4-turbo" 
-                              : iaProveedor === "deepseek" 
-                              ? "Ej: deepseek-reasoner"
-                              : "Ej: llama3"
-                          }
+                          className="input input-bordered input-xs w-48 font-mono"
+                          placeholder="https://api.openai.com/v1"
+                          value={iaApiUrlOpenai}
+                          onChange={(e) => setIaApiUrlOpenai(e.target.value)}
                         />
-                      )}
-                    </div>
-                  </div>
-                </div>
+                      </td>
+                      <td className="py-4">
+                        <div className="flex flex-col gap-1 w-44">
+                          <div className="flex justify-between items-center h-4">
+                            {iaApiKeyOpenai === "***" ? (
+                              <span className="text-[9px] text-success font-semibold">Configurada</span>
+                            ) : iaApiKeyOpenai ? (
+                              <span className="text-[9px] text-warning font-semibold">Modificada</span>
+                            ) : (
+                              <span className="text-[9px] text-base-content/40">No configurada</span>
+                            )}
+                          </div>
+                          <input
+                            type="password"
+                            className="input input-bordered input-xs w-full"
+                            value={iaApiKeyOpenai}
+                            onChange={(e) => setIaApiKeyOpenai(e.target.value)}
+                            placeholder={iaApiKeyOpenai === "***" ? "••••••••" : "API Key"}
+                          />
+                        </div>
+                      </td>
+                    </tr>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-1">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">IA API URL (Ollama / Personalizado)</label>
-                    <input
-                      type="text"
-                      className="input input-bordered w-full"
-                      value={
-                        iaProveedor === "ollama"
-                          ? iaApiUrlOllama
-                          : iaProveedor === "openai"
-                          ? iaApiUrlOpenai
-                          : iaProveedor === "deepseek"
-                          ? iaApiUrlDeepseek
-                          : iaProveedor === "github"
-                          ? iaApiUrlGithub
-                          : ""
-                      }
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (iaProveedor === "ollama") setIaApiUrlOllama(val);
-                        else if (iaProveedor === "openai") setIaApiUrlOpenai(val);
-                        else if (iaProveedor === "deepseek") setIaApiUrlDeepseek(val);
-                        else if (iaProveedor === "github") setIaApiUrlGithub(val);
-                      }}
-                      placeholder={
-                        iaProveedor === "ollama" 
-                          ? "Ej: http://localhost:11434" 
-                          : iaProveedor === "github"
-                          ? "Ej: https://models.inference.ai.azure.com (Por defecto)"
-                          : "Ej: https://api.deepseek.com"
-                      }
-                      disabled={iaProveedor === "gemini"}
-                    />
-                  </div>
+                    {/* DeepSeek */}
+                    <tr className={cn("border-b border-base-100 hover:bg-base-200/30", iaProveedor === "deepseek" && "bg-primary/5")}>
+                      <td className="text-center py-4">
+                        <input
+                          type="radio"
+                          name="ia_proveedor"
+                          className="radio radio-primary radio-xs"
+                          checked={iaProveedor === "deepseek"}
+                          onChange={() => {
+                            setIaProveedor("deepseek");
+                            setIsCustomModel(false);
+                            setIaModelo("deepseek-chat");
+                          }}
+                        />
+                      </td>
+                      <td className="font-semibold py-4">
+                        DeepSeek (IA China)
+                      </td>
+                      <td className="py-4">
+                        {iaProveedor === "deepseek" ? (
+                          <div className="flex flex-col gap-1 w-48">
+                            <select
+                              className="select select-bordered select-xs w-full font-medium"
+                              value={isCustomModel ? "custom" : iaModelo}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === "custom") {
+                                  setIsCustomModel(true);
+                                  setIaModelo("");
+                                } else {
+                                  setIsCustomModel(false);
+                                  setIaModelo(val);
+                                }
+                              }}
+                            >
+                              {modelosDisponibles.length > 0 ? (
+                                modelosDisponibles.map((model) => (
+                                  <option key={model} value={model}>
+                                    {model}
+                                  </option>
+                                ))
+                              ) : (
+                                <>
+                                  <option value="deepseek-chat">deepseek-chat (Recomendado)</option>
+                                  <option value="deepseek-reasoner">deepseek-reasoner (R1)</option>
+                                </>
+                              )}
+                              <option value="custom">Otro...</option>
+                            </select>
+                            {isCustomModel && (
+                              <input
+                                type="text"
+                                className="input input-bordered input-xs w-full mt-1"
+                                placeholder="Modelo personalizado"
+                                value={iaModelo}
+                                onChange={(e) => setIaModelo(e.target.value)}
+                              />
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-base-content/40 font-mono">deepseek-chat</span>
+                        )}
+                      </td>
+                      <td className="py-4">
+                        <input
+                          type="text"
+                          className="input input-bordered input-xs w-48 font-mono"
+                          placeholder="https://api.deepseek.com"
+                          value={iaApiUrlDeepseek}
+                          onChange={(e) => setIaApiUrlDeepseek(e.target.value)}
+                        />
+                      </td>
+                      <td className="py-4">
+                        <div className="flex flex-col gap-1 w-44">
+                          <div className="flex justify-between items-center h-4">
+                            {iaApiKeyDeepseek === "***" ? (
+                              <span className="text-[9px] text-success font-semibold">Configurada</span>
+                            ) : iaApiKeyDeepseek ? (
+                              <span className="text-[9px] text-warning font-semibold">Modificada</span>
+                            ) : (
+                              <span className="text-[9px] text-base-content/40">No configurada</span>
+                            )}
+                          </div>
+                          <input
+                            type="password"
+                            className="input input-bordered input-xs w-full"
+                            value={iaApiKeyDeepseek}
+                            onChange={(e) => setIaApiKeyDeepseek(e.target.value)}
+                            placeholder={iaApiKeyDeepseek === "***" ? "••••••••" : "API Key"}
+                          />
+                        </div>
+                      </td>
+                    </tr>
 
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-center h-6">
-                      <label className="text-sm font-medium">
-                        IA API Key ({iaProveedor === "gemini" ? "Gemini" : iaProveedor === "openai" ? "OpenAI" : iaProveedor === "deepseek" ? "DeepSeek" : "GitHub"})
-                      </label>
-                      {(() => {
-                        const activeKey =
-                          iaProveedor === "gemini"
-                            ? iaApiKeyGemini
-                            : iaProveedor === "openai"
-                            ? iaApiKeyOpenai
-                            : iaProveedor === "deepseek"
-                            ? iaApiKeyDeepseek
-                            : iaProveedor === "github"
-                            ? iaApiKeyGithub
-                            : "";
-                        if (activeKey === "***") {
-                          return (
-                            <span className="badge badge-success gap-1 text-[9px] py-1.5 px-2 font-semibold text-white">
-                              Configurada
-                            </span>
-                          );
-                        } else if (activeKey) {
-                          return (
-                            <span className="badge badge-warning gap-1 text-[9px] py-1.5 px-2 font-semibold text-white">
-                              Modificada
-                            </span>
-                          );
-                        } else {
-                          return (
-                            <span className="badge badge-ghost border-base-300 gap-1 text-[9px] py-1.5 px-2 font-medium text-base-content/40">
-                              No configurada
-                            </span>
-                          );
-                        }
-                      })()}
-                    </div>
-                    <input
-                      type="password"
-                      className="input input-bordered w-full"
-                      value={
-                        iaProveedor === "gemini"
-                          ? iaApiKeyGemini
-                          : iaProveedor === "openai"
-                          ? iaApiKeyOpenai
-                          : iaProveedor === "deepseek"
-                          ? iaApiKeyDeepseek
-                          : iaProveedor === "github"
-                          ? iaApiKeyGithub
-                          : ""
-                      }
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (iaProveedor === "gemini") setIaApiKeyGemini(val);
-                        else if (iaProveedor === "openai") setIaApiKeyOpenai(val);
-                        else if (iaProveedor === "deepseek") setIaApiKeyDeepseek(val);
-                        else if (iaProveedor === "github") setIaApiKeyGithub(val);
-                      }}
-                      placeholder={
-                        (iaProveedor === "gemini"
-                          ? iaApiKeyGemini
-                          : iaProveedor === "openai"
-                          ? iaApiKeyOpenai
-                          : iaProveedor === "deepseek"
-                          ? iaApiKeyDeepseek
-                          : iaApiKeyGithub) === "***"
-                          ? "••••••••"
-                          : iaProveedor === "github"
-                          ? "GitHub PAT (Token de Acceso)"
-                          : "API Key"
-                      }
-                      disabled={iaProveedor === "ollama"}
-                    />
-                  </div>
-                </div>
+                    {/* GitHub Models */}
+                    <tr className={cn("border-b border-base-100 hover:bg-base-200/30", iaProveedor === "github" && "bg-primary/5")}>
+                      <td className="text-center py-4">
+                        <input
+                          type="radio"
+                          name="ia_proveedor"
+                          className="radio radio-primary radio-xs"
+                          checked={iaProveedor === "github"}
+                          onChange={() => {
+                            setIaProveedor("github");
+                            setIsCustomModel(false);
+                            setIaModelo("gpt-4o-mini");
+                          }}
+                        />
+                      </td>
+                      <td className="font-semibold py-4">
+                        GitHub Models (Gratuito)
+                      </td>
+                      <td className="py-4">
+                        {iaProveedor === "github" ? (
+                          <div className="flex flex-col gap-1 w-48">
+                            <select
+                              className="select select-bordered select-xs w-full font-medium"
+                              value={isCustomModel ? "custom" : iaModelo}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === "custom") {
+                                  setIsCustomModel(true);
+                                  setIaModelo("");
+                                } else {
+                                  setIsCustomModel(false);
+                                  setIaModelo(val);
+                                }
+                              }}
+                            >
+                              {modelosDisponibles.length > 0 ? (
+                                modelosDisponibles.map((model) => (
+                                  <option key={model} value={model}>
+                                    {model}
+                                  </option>
+                                ))
+                              ) : (
+                                <>
+                                  <option value="gpt-4o-mini">gpt-4o-mini</option>
+                                  <option value="gpt-4o">gpt-4o</option>
+                                  <option value="meta-llama-3.1-405b-instruct">Llama 3.1 405B</option>
+                                  <option value="cohere-command-r-plus">Cohere Command R+</option>
+                                </>
+                              )}
+                              <option value="custom">Otro...</option>
+                            </select>
+                            {isCustomModel && (
+                              <input
+                                type="text"
+                                className="input input-bordered input-xs w-full mt-1"
+                                placeholder="Modelo personalizado"
+                                value={iaModelo}
+                                onChange={(e) => setIaModelo(e.target.value)}
+                              />
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-base-content/40 font-mono">gpt-4o-mini</span>
+                        )}
+                      </td>
+                      <td className="py-4">
+                        <input
+                          type="text"
+                          className="input input-bordered input-xs w-48 font-mono"
+                          placeholder="https://models.inference.ai.azure.com"
+                          value={iaApiUrlGithub}
+                          onChange={(e) => setIaApiUrlGithub(e.target.value)}
+                        />
+                      </td>
+                      <td className="py-4">
+                        <div className="flex flex-col gap-1 w-44">
+                          <div className="flex justify-between items-center h-4">
+                            {iaApiKeyGithub === "***" ? (
+                              <span className="text-[9px] text-success font-semibold">Configurada</span>
+                            ) : iaApiKeyGithub ? (
+                              <span className="text-[9px] text-warning font-semibold">Modificada</span>
+                            ) : (
+                              <span className="text-[9px] text-base-content/40">No configurada</span>
+                            )}
+                          </div>
+                          <input
+                            type="password"
+                            className="input input-bordered input-xs w-full"
+                            value={iaApiKeyGithub}
+                            onChange={(e) => setIaApiKeyGithub(e.target.value)}
+                            placeholder={iaApiKeyGithub === "***" ? "••••••••" : "Token / PAT"}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Ollama */}
+                    <tr className={cn("hover:bg-base-200/30", iaProveedor === "ollama" && "bg-primary/5")}>
+                      <td className="text-center py-4">
+                        <input
+                          type="radio"
+                          name="ia_proveedor"
+                          className="radio radio-primary radio-xs"
+                          checked={iaProveedor === "ollama"}
+                          onChange={() => {
+                            setIaProveedor("ollama");
+                            setIsCustomModel(true);
+                            setIaModelo("llama3");
+                          }}
+                        />
+                      </td>
+                      <td className="font-semibold py-4">
+                        Ollama (Servidor Local)
+                      </td>
+                      <td className="py-4">
+                        {iaProveedor === "ollama" ? (
+                          <div className="flex flex-col gap-1 w-48">
+                            <input
+                              type="text"
+                              className="input input-bordered input-xs w-full"
+                              placeholder="Ej: llama3"
+                              value={iaModelo}
+                              onChange={(e) => setIaModelo(e.target.value)}
+                            />
+                          </div>
+                        ) : (
+                          <span className="text-base-content/40 font-mono">llama3</span>
+                        )}
+                      </td>
+                      <td className="py-4">
+                        <input
+                          type="text"
+                          className="input input-bordered input-xs w-48 font-mono"
+                          placeholder="Ej: http://localhost:11434"
+                          value={iaApiUrlOllama}
+                          onChange={(e) => setIaApiUrlOllama(e.target.value)}
+                        />
+                      </td>
+                      <td className="py-4 text-base-content/30 italic">
+                        No requiere API Key
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
-            </div>
-
-            {/* WHATSAPP BOT SUB-SECTION */}
-            <div className="p-4 rounded-xl bg-base-200/30 border border-base-200">
-              <div className="flex items-center gap-2 mb-4">
-                <MessageSquare className="w-5 h-5 text-success" />
-                <h3 className="text-sm font-semibold">Notificaciones por WhatsApp</h3>
-              </div>
-
-              <div className="space-y-5">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">WhatsApp API URL</label>
-                    <input
-                      type="text"
-                      className="input input-bordered w-full"
-                      value={whatsappApiUrl}
-                      onChange={(e) => setWhatsappApiUrl(e.target.value)}
-                      placeholder="Ej: http://localhost:8008"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-center h-6">
-                      <label className="text-sm font-medium">WhatsApp API Key</label>
-                      {whatsappApiKey === "***" ? (
-                        <span className="badge badge-success gap-1 text-[9px] py-1.5 px-2 font-semibold text-white">
-                          Configurada
-                        </span>
-                      ) : whatsappApiKey ? (
-                        <span className="badge badge-warning gap-1 text-[9px] py-1.5 px-2 font-semibold text-white">
-                          Modificada
-                        </span>
-                      ) : (
-                        <span className="badge badge-ghost border-base-300 gap-1 text-[9px] py-1.5 px-2 font-medium text-base-content/40">
-                          No configurada
-                        </span>
-                      )}
-                    </div>
-                    <input
-                      type="password"
-                      className="input input-bordered w-full"
-                      value={whatsappApiKey}
-                      onChange={(e) => setWhatsappApiKey(e.target.value)}
-                      placeholder={whatsappApiKey === "***" ? "••••••••" : "API Key"}
-                    />
-                  </div>
+              
+              {iaProveedor !== "ollama" && (
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-xs flex items-center gap-1.5"
+                    onClick={fetchModelosDisponibles}
+                    disabled={cargandoModelos}
+                  >
+                    <RefreshCw className={cn("h-3 w-3", cargandoModelos && "animate-spin")} />
+                    Consultar Modelos Disponibles de la API
+                  </button>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Webhook Secret (Firma)</label>
-                    <input
-                      type="text"
-                      className="input input-bordered w-full"
-                      value={whatsappWebhookSecret}
-                      onChange={(e) => setWhatsappWebhookSecret(e.target.value)}
-                      placeholder="Secreto para validar firma"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Teléfono del Bot</label>
-                    <input
-                      type="text"
-                      className="input input-bordered w-full"
-                      value={whatsappBotPhone}
-                      onChange={(e) => setWhatsappBotPhone(e.target.value)}
-                      placeholder="Ej: +56912345678"
-                    />
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         )}

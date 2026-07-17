@@ -2,5 +2,5 @@
 -- Idempotent: seguro de re-ejecutar.
 
 INSERT INTO configuracion (clave, valor_texto)
-VALUES ('favicon_base64', NULL), ('login_bg_color', NULL)
+VALUES ('favicon_base64', ''), ('login_bg_color', '')
 ON CONFLICT (clave) DO NOTHING;

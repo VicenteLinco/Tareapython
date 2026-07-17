@@ -1,0 +1,16 @@
+codigofuente/
+backend/
+.env
+.atl/
+openspec/
+openspec
+AGENTS.md
+CLAUDE.md
+crear-accesos-directos.bat
+crear-accesos-directos.ps1
+database_erd_diagram.jpg
+detener-laboratorio.bat
+detener.ps1
+detener.sh
+docker-compose.yml
+dockerfile.dev

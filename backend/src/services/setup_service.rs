@@ -198,7 +198,8 @@ pub async fn importar_catalogo(
         let control_lote_str = get_val("control_lote");
         let control_lote = match control_lote_str.to_lowercase().as_str() {
             "simple" | "no" | "false" => "simple",
-            _ => "lote",
+            "trazable" | "completo" => "trazable",
+            _ => "con_vto",
         };
 
         if nombre.is_empty() {

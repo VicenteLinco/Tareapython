@@ -1,0 +1,154 @@
+use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode};
+use axum::routing::post;
+use axum::{Extension, Json, Router};
+use rust_decimal::Decimal;
+use serde::Deserialize;
+use uuid::Uuid;
+
+use crate::auth::models::Claims;
+use crate::db::AppState;
+use crate::errors::{AppError, validate_text_length};
+use crate::services::consumo_service::{
+    ConsumoBatchItemParams, ConsumoBatchParams, ConsumoParams, ConsumoService,
+};
+use crate::services::idempotency;
+use crate::services::stock_ops;
+
+#[derive(Debug, Deserialize)]
+struct ConsumoRequest {
+    producto_id: Uuid,
+    area_id: i32,
+    cantidad: Decimal,
+    unidad: String, // "base" o "presentacion"
+    presentacion_id: Option<i32>,
+    nota: Option<String>,
+    /// Lote exacto a consumir (escaneado por QR). Obligatorio para 'trazable';
+    /// si se omite, FEFO automático ('con_vto' / 'simple').
+    lote_id: Option<Uuid>,
+    /// Override clínico para permitir consumo de stock vencido
+    permitir_vencidos: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConsumoBatchRequest {
+    area_id: Option<i32>,
+    items: Vec<ConsumoBatchItem>,
+    nota: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConsumoBatchItem {
+    producto_id: Uuid,
+    cantidad: Decimal,
+    unidad: String,
+    presentacion_id: Option<i32>,
+    area_id: Option<i32>,            // NEW: per-item area override
+    lote_id: Option<Uuid>,           // NEW: specific lote override (bypasses FEFO)
+    permitir_vencidos: Option<bool>, // Override clínico
+}
+
+/// POST /api/v1/consumos — Consumo individual con FEFO
+async fn consumo(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    headers: HeaderMap,
+    Json(req): Json<ConsumoRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    // Validar longitud de campos de texto
+    if let Some(ref nota) = req.nota {
+        validate_text_length(nota, "nota", 1000)?;
+    }
+    validate_text_length(&req.unidad, "unidad", 50)?;
+
+    // Solo roles operativos mutan stock (el área ya no es barrera de permiso)
+    stock_ops::validar_puede_operar_stock(&claims.rol)?;
+
+    // Idempotency
+    let idem_key = idempotency::extract_idempotency_key(&headers)?;
+    if let Some((_status, body)) =
+        idempotency::try_claim(&state.pool, &idem_key, "POST /consumos", claims.sub).await?
+    {
+        return Ok((StatusCode::CREATED, Json(body)));
+    }
+
+    let params = ConsumoParams {
+        producto_id: req.producto_id,
+        area_id: req.area_id,
+        cantidad: req.cantidad,
+        unidad: req.unidad,
+        presentacion_id: req.presentacion_id,
+        nota: req.nota,
+        lote_id: req.lote_id,
+        permitir_vencidos: req.permitir_vencidos.unwrap_or(false),
+    };
+
+    match ConsumoService::registrar_consumo(&state.pool, params, claims.sub).await {
+        Ok(response) => {
+            idempotency::save_response(&state.pool, &idem_key, 201, &response).await?;
+            Ok((StatusCode::CREATED, Json(response)))
+        }
+        Err(err) => {
+            idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
+            Err(err)
+        }
+    }
+}
+
+/// POST /api/v1/consumos/batch — Consumo masivo, todo o nada
+async fn consumo_batch(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    headers: HeaderMap,
+    Json(req): Json<ConsumoBatchRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    if req.items.is_empty() {
+        return Err(AppError::Validation("items no puede estar vacío".into()));
+    }
+
+    // Solo roles operativos mutan stock (el área ya no es barrera de permiso)
+    stock_ops::validar_puede_operar_stock(&claims.rol)?;
+
+    // Idempotency
+    let idem_key = idempotency::extract_idempotency_key(&headers)?;
+    if let Some((_status, body)) =
+        idempotency::try_claim(&state.pool, &idem_key, "POST /consumos/batch", claims.sub).await?
+    {
+        return Ok((StatusCode::CREATED, Json(body)));
+    }
+
+    let params = ConsumoBatchParams {
+        area_id: req.area_id,
+        items: req
+            .items
+            .into_iter()
+            .map(|item| ConsumoBatchItemParams {
+                producto_id: item.producto_id,
+                cantidad: item.cantidad,
+                unidad: item.unidad,
+                presentacion_id: item.presentacion_id,
+                area_id: item.area_id,
+                lote_id: item.lote_id,
+                permitir_vencidos: item.permitir_vencidos.unwrap_or(false),
+            })
+            .collect(),
+        nota: req.nota,
+    };
+
+    match ConsumoService::registrar_consumo_batch(&state.pool, params, claims.sub).await {
+        Ok(response) => {
+            idempotency::save_response(&state.pool, &idem_key, 201, &response).await?;
+            Ok((StatusCode::CREATED, Json(response)))
+        }
+        Err(err) => {
+            idempotency::cleanup_on_error(&state.pool, &idem_key).await?;
+            Err(err)
+        }
+    }
+}
+
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/", post(consumo))
+        .route("/batch", post(consumo_batch))
+}

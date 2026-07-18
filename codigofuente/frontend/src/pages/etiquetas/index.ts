@@ -1,0 +1,1 @@
+export { EtiquetasPage } from "./EtiquetasPage";

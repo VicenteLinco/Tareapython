@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n            pr.id AS presentacion_id,\n            pr.gtin,\n            pr.nombre,\n            pr.nombre_plural,\n            pr.sku,\n            p.nombre AS producto_nombre,\n            pr.codigo_barras\n           FROM presentaciones pr\n           JOIN productos p ON p.id = pr.producto_id\n           WHERE pr.id = $1 AND pr.activa = true",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "presentacion_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "gtin",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "nombre",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "nombre_plural",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "sku",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "producto_nombre",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "codigo_barras",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "881f515b4bc7aaedf6b32b9da3282b828d329d72d1f4f511f25445d81e508f03"
+}

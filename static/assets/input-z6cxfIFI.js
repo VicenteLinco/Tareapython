@@ -1,1 +1,0 @@
-import{j as e,e as o}from"./index-DSbsrbIg.js";function u({className:r,...s}){return e.jsx("input",{className:o("input w-full border-base-300 bg-base-100 focus:border-primary focus:outline-primary/25",r),...s})}export{u as I};

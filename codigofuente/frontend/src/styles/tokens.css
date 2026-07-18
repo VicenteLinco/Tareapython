@@ -1,0 +1,94 @@
+/* Design tokens del sistema — complementan las variables de DaisyUI/Tailwind */
+
+@layer base {
+  :root {
+    /* --- Espaciado semántico --- */
+    --space-section: 2rem; /* entre secciones de página */
+    --space-card: 1.25rem; /* padding interno de cards */
+    --space-row: 0.75rem; /* gap en filas de tabla/lista */
+    --space-inline: 0.5rem; /* gap entre íconos y texto */
+
+    /* --- Tipografía jerárquica --- */
+    --text-display: 2rem;
+    --text-display-weight: 700;
+    --text-display-leading: 1.15;
+
+    --text-h1: 1.5rem;
+    --text-h1-weight: 700;
+    --text-h1-leading: 1.25;
+
+    --text-h2: 1.125rem;
+    --text-h2-weight: 600;
+    --text-h2-leading: 1.35;
+
+    --text-body: 0.9375rem; /* 15px */
+    --text-body-weight: 400;
+    --text-body-leading: 1.6;
+
+    --text-caption: 0.8125rem; /* 13px */
+    --text-caption-weight: 400;
+    --text-caption-leading: 1.5;
+
+    /* --- Sombras semánticas --- */
+    --shadow-card:
+      0 1px 3px 0 oklch(0 0 0 / 0.06), 0 1px 2px -1px oklch(0 0 0 / 0.04);
+    --shadow-card-hover:
+      0 4px 12px -2px oklch(0 0 0 / 0.08), 0 2px 6px -2px oklch(0 0 0 / 0.05);
+    --shadow-modal: 0 20px 40px -8px oklch(0 0 0 / 0.18);
+
+    /* --- Transiciones estándar --- */
+    --transition-fast: 120ms ease;
+    --transition-base: 180ms ease;
+    --transition-slow: 280ms ease;
+
+    /* --- Indicadores de urgencia (mapean a DaisyUI) --- */
+    --urgencia-critica-bg: var(--color-error);
+    --urgencia-critica-text: var(--color-error-content);
+    --urgencia-alta-bg: var(--color-warning);
+    --urgencia-alta-text: var(--color-warning-content);
+    --urgencia-media-bg: var(--color-info);
+    --urgencia-media-text: var(--color-info-content);
+    --urgencia-ok-bg: var(--color-success);
+    --urgencia-ok-text: var(--color-success-content);
+
+    /* --- Autonomía: zonas de la barra --- */
+    --autonomia-danger-max: 7; /* días: rojo */
+    --autonomia-warn-max: 30; /* días: amarillo */
+  }
+}
+
+/* Clases tipográficas de nivel */
+@layer components {
+  .t-display {
+    font-size: var(--text-display);
+    font-weight: var(--text-display-weight);
+    line-height: var(--text-display-leading);
+    letter-spacing: 0;
+  }
+
+  .t-h1 {
+    font-size: var(--text-h1);
+    font-weight: var(--text-h1-weight);
+    line-height: var(--text-h1-leading);
+    letter-spacing: 0;
+  }
+
+  .t-h2 {
+    font-size: var(--text-h2);
+    font-weight: var(--text-h2-weight);
+    line-height: var(--text-h2-leading);
+  }
+
+  .t-body {
+    font-size: var(--text-body);
+    font-weight: var(--text-body-weight);
+    line-height: var(--text-body-leading);
+  }
+
+  .t-caption {
+    font-size: var(--text-caption);
+    font-weight: var(--text-caption-weight);
+    line-height: var(--text-caption-leading);
+    color: color-mix(in oklab, var(--color-base-content), transparent 30%);
+  }
+}

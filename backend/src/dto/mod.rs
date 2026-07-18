@@ -1,0 +1,17 @@
+pub mod area;
+pub mod categoria;
+pub mod configuracion;
+pub mod descarte;
+pub mod etiqueta;
+pub mod lab_campo;
+pub mod notificacion;
+pub mod pagination;
+pub mod par_level;
+pub mod presentacion;
+pub mod producto;
+pub mod proveedor;
+pub mod recepcion;
+pub mod reportes;
+pub mod solicitud;
+pub mod unidad_basica;
+pub mod usuario;

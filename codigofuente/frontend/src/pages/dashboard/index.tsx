@@ -1,0 +1,464 @@
+import React, { useState } from "react";
+import { useQueries } from "@tanstack/react-query";
+import {
+  Activity,
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  ChevronRight,
+  ClipboardList,
+  Clock,
+  Package,
+  PackageMinus,
+  ShoppingCart,
+  TrendingDown,
+  Users,
+  X,
+  Zap,
+} from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import api from "@/lib/api";
+import type { Alerta, PaginatedResponse } from "@/types";
+import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/page-state";
+import { useAuthStore } from "@/hooks/use-auth-store";
+
+interface StatCardProps {
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+  tone: "primary" | "error" | "warning" | "info";
+  loading?: boolean;
+  alert?: boolean;
+  onClick?: () => void;
+}
+
+const statToneClasses = {
+  primary: "bg-primary/10 text-primary",
+  error: "bg-error/10 text-error",
+  warning: "bg-warning/15 text-warning",
+  info: "bg-info/10 text-info",
+} as const;
+
+function StatCard({
+  label,
+  value,
+  icon,
+  tone,
+  loading,
+  alert,
+  onClick,
+}: StatCardProps) {
+  const activeAlert = alert && value > 0;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex flex-col justify-between gap-5 rounded-box border border-base-300 bg-base-100 p-5 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/25",
+        activeAlert && "border-error/30 bg-error/5",
+      )}
+    >
+      <div className={cn("w-fit rounded-lg p-2", statToneClasses[tone])}>
+        {icon}
+      </div>
+      <div className="min-w-0">
+        {loading ? (
+          <div className="skeleton h-9 w-16" />
+        ) : (
+          <p
+            className={cn(
+              "text-3xl font-bold leading-none tabular-nums",
+              activeAlert && "text-error",
+            )}
+          >
+            {value}
+          </p>
+        )}
+        <p className="mt-2 truncate text-xs font-medium text-base-content/60">
+          {label}
+        </p>
+      </div>
+    </button>
+  );
+}
+
+interface QuickActionProps {
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+}
+
+interface AlertasResponse extends PaginatedResponse<Alerta> {
+  resumen?: {
+    sin_stock: number;
+    vencido: number;
+    bajo_minimo: number;
+    vencimiento: number;
+  };
+}
+
+function QuickAction({ label, description, icon, onClick }: QuickActionProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex items-center gap-3 rounded-box border border-base-300 bg-base-100 px-4 py-4 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/25"
+    >
+      <div className="rounded-lg bg-primary/10 p-2.5 text-primary">{icon}</div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold">{label}</p>
+        <p className="truncate text-xs text-base-content/55">{description}</p>
+      </div>
+      <ChevronRight className="h-4 w-4 text-base-content/35 transition group-hover:translate-x-0.5 group-hover:text-primary" />
+    </button>
+  );
+}
+
+export default function DashboardPage() {
+  const navigate = useNavigate();
+
+  const usuario = useAuthStore((s) => s.usuario);
+  const misAreaIds = usuario?.area_ids ?? [];
+  const tieneMisAreas = misAreaIds.length > 0;
+  const [filtrarMisAreas, setFiltrarMisAreas] = useState(true);
+
+  const areaIdsParam =
+    filtrarMisAreas && tieneMisAreas ? misAreaIds.join(",") : undefined;
+  const stockPath = (params?: Record<string, string>) => {
+    const next = new URLSearchParams(params);
+    if (areaIdsParam) next.set("area_ids", areaIdsParam);
+    const query = next.toString();
+    return query ? `/stock?${query}` : "/stock";
+  };
+
+  const [alertBannerDismissed, setAlertBannerDismissed] = useState(
+    () => sessionStorage.getItem("dashboard_alert_dismissed") === "1",
+  );
+  const dismissAlertBanner = () => {
+    sessionStorage.setItem("dashboard_alert_dismissed", "1");
+    setAlertBannerDismissed(true);
+  };
+
+  const results = useQueries({
+    queries: [
+      {
+        queryKey: ["stock-summary", areaIdsParam],
+        queryFn: () =>
+          api
+            .get<PaginatedResponse<unknown>>("/stock", {
+              params: {
+                per_page: 1,
+                ...(areaIdsParam ? { area_ids: areaIdsParam } : {}),
+              },
+            })
+            .then((r) => r.data),
+        staleTime: 30000,
+      },
+      {
+        queryKey: ["alertas", areaIdsParam],
+        queryFn: () =>
+          api
+            .get<AlertasResponse>("/stock/alertas", {
+              params: {
+                per_page: 100,
+                ...(areaIdsParam ? { area_ids: areaIdsParam } : {}),
+              },
+            })
+            .then((r) => r.data),
+        refetchInterval: 60000,
+        retry: 1,
+        staleTime: 30000,
+      },
+    ],
+  });
+
+  const [stockQ, alertasQ] = results;
+  const loading = results.some((r) => r.isLoading);
+
+  const totalItems = stockQ.data?.total ?? 0;
+  const alerts = alertasQ.data?.data ?? [];
+  const alertasResumen = alertasQ.data?.resumen;
+
+  const sinStock =
+    alertasResumen?.sin_stock ??
+    alerts.filter((a) => a.tipo_alerta === "agotado").length;
+  const vencidos =
+    alertasResumen?.vencido ??
+    alerts.filter((a) => a.tipo_alerta === "vencido").length;
+  const stockBajo =
+    alertasResumen?.bajo_minimo ??
+    alerts.filter((a) => ["critico", "reponer"].includes(a.tipo_alerta)).length;
+  const porVencer =
+    alertasResumen?.vencimiento ??
+    alerts.filter(
+      (a) => a.tipo_alerta === "riesgo_venc" || a.tipo_alerta === "por_vencer",
+    ).length;
+
+  const alertasCriticas = alerts.filter((a) =>
+    ["agotado", "vencido", "critico"].includes(a.tipo_alerta),
+  );
+  const alertasWarning = alerts.filter((a) =>
+    ["reponer", "riesgo_venc", "por_vencer"].includes(a.tipo_alerta),
+  );
+  const hayUrgencias = alerts.length > 0;
+  const severidadBanner = alertasCriticas.length > 0 ? "critica" : "warning";
+  const alertasMostradas = Array.from(
+    new Map(
+      [...alertasCriticas, ...alertasWarning].map((a) => [a.producto_id, a]),
+    ).values(),
+  );
+  const totalAlertasPrioritarias = alertasQ.data?.total ?? alerts.length;
+
+  return (
+    <div className="space-y-6">
+      <section className="flex flex-col gap-3 border-b border-base-300 pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-primary">
+            <Activity className="h-4 w-4" />
+            Inventario laboratorio
+          </div>
+          <h1 className="t-h1 text-base-content">Panel de control</h1>
+          <p className="mt-1 max-w-2xl text-sm text-base-content/60">
+            Estado operativo del inventario, alertas y accesos directos para las
+            tareas del día.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {tieneMisAreas && (
+            <button
+              type="button"
+              onClick={() => setFiltrarMisAreas((prev) => !prev)}
+              className={cn(
+                "btn btn-outline btn-sm gap-2",
+                filtrarMisAreas && "btn-primary border-primary",
+              )}
+            >
+              <Users className="h-4 w-4" />
+              {filtrarMisAreas ? "Mis áreas" : "Todo el lab"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => navigate(stockPath())}
+            className="btn btn-outline btn-sm gap-2"
+          >
+            <Package className="h-4 w-4" />
+            Stock
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("/solicitudes-compra")}
+            className="btn btn-primary btn-sm gap-2"
+          >
+            <ShoppingCart className="h-4 w-4" />
+            Nuevo pedido
+          </button>
+        </div>
+      </section>
+
+      {hayUrgencias && !alertBannerDismissed && (
+        <div className="relative overflow-hidden rounded-box border border-base-300 bg-base-100 shadow-sm">
+          <div
+            className={cn(
+              "absolute inset-y-0 left-0 w-1",
+              severidadBanner === "critica" ? "bg-error" : "bg-warning",
+            )}
+          />
+          <div className="flex items-start gap-3 px-4 py-3 pl-5">
+            <div
+              className={cn(
+                "mt-0.5 rounded-lg p-2",
+                severidadBanner === "critica"
+                  ? "bg-error/10 text-error"
+                  : "bg-warning/15 text-warning",
+              )}
+            >
+              <AlertTriangle className="h-4 w-4" />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="t-h2 text-base-content">
+                  {`${totalAlertasPrioritarias} alerta${totalAlertasPrioritarias !== 1 ? "s" : ""} activa${totalAlertasPrioritarias !== 1 ? "s" : ""}`}
+                </h2>
+                <span className="text-xs text-base-content/55">
+                  requiere revisión
+                </span>
+              </div>
+
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {alertasMostradas.slice(0, 4).map((a, i) => {
+                  const esVenc =
+                    a.tipo_alerta === "riesgo_venc" ||
+                    a.tipo_alerta === "por_vencer";
+                  const pct = esVenc ? (a.pct_por_vencer ?? null) : null;
+                  return (
+                    <button
+                      type="button"
+                      key={`${a.nombre}-${i}`}
+                      onClick={() => navigate(stockPath({ alertas: "true" }))}
+                      className="max-w-full truncate rounded-full border border-base-300 bg-base-200/50 px-2.5 py-1 text-xs font-medium text-base-content/75 transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
+                    >
+                      {a.nombre}
+                      {pct !== null && (
+                        <span className="ml-1 text-base-content/50">
+                          · ~{pct}% vence
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+                {alertasMostradas.length > 4 && (
+                  <button
+                    type="button"
+                    onClick={() => navigate(stockPath({ alertas: "true" }))}
+                    className="rounded-full border border-base-300 bg-base-200/50 px-2.5 py-1 text-xs font-medium text-base-content/65 transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
+                  >
+                    +{alertasMostradas.length - 4} más
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => navigate(stockPath({ alertas: "true" }))}
+              className="btn btn-ghost btn-xs hidden shrink-0 gap-1 sm:inline-flex"
+            >
+              Ver
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={dismissAlertBanner}
+              className="btn btn-ghost btn-xs btn-square shrink-0"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <StatCard
+          label="Insumos activos"
+          value={totalItems}
+          icon={<Package className="h-4 w-4" />}
+          tone="primary"
+          loading={stockQ.isLoading}
+          onClick={() => navigate(stockPath())}
+        />
+        <StatCard
+          label="Alertas"
+          value={totalAlertasPrioritarias}
+          icon={<AlertTriangle className="h-4 w-4" />}
+          tone={totalAlertasPrioritarias > 0 ? "warning" : "info"}
+          loading={alertasQ.isLoading}
+          alert
+          onClick={() => navigate(stockPath({ alertas: "true" }))}
+        />
+        <StatCard
+          label="Sin stock"
+          value={sinStock}
+          icon={<AlertCircle className="h-4 w-4" />}
+          tone="error"
+          loading={alertasQ.isLoading}
+          alert
+          onClick={() => navigate(stockPath({ estado: "agotado" }))}
+        />
+        <StatCard
+          label="Stock bajo"
+          value={stockBajo}
+          icon={<TrendingDown className="h-4 w-4" />}
+          tone="warning"
+          loading={alertasQ.isLoading}
+          alert
+          onClick={() => navigate(stockPath({ estado: "bajo" }))}
+        />
+        <StatCard
+          label="Vencido"
+          value={vencidos}
+          icon={<Clock className="h-4 w-4" />}
+          tone="error"
+          loading={alertasQ.isLoading}
+          alert
+          onClick={() => navigate(stockPath({ estado: "vencido" }))}
+        />
+        <StatCard
+          label="Por vencer"
+          value={porVencer}
+          icon={<Clock className="h-4 w-4" />}
+          tone="info"
+          loading={alertasQ.isLoading}
+          alert
+          onClick={() => navigate(stockPath({ estado: "vence_pronto" }))}
+        />
+      </section>
+
+      <section>
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="t-h2 text-base-content">Acciones frecuentes</h2>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <QuickAction
+            label="Registrar consumo"
+            description="Salida por uso"
+            icon={<Zap className="h-5 w-5" />}
+            onClick={() => navigate("/consumos")}
+          />
+          <QuickAction
+            label="Nueva recepción"
+            description="Ingreso de insumos"
+            icon={<PackageMinus className="h-5 w-5" />}
+            onClick={() => navigate("/recepciones")}
+          />
+          <QuickAction
+            label="Nuevo descarte"
+            description="Merma o vencimiento"
+            icon={<TrendingDown className="h-5 w-5" />}
+            onClick={() => navigate("/descartes")}
+          />
+          <QuickAction
+            label="Nueva solicitud"
+            description="Pedido a proveedor"
+            icon={<ClipboardList className="h-5 w-5" />}
+            onClick={() => navigate("/solicitudes-compra")}
+          />
+        </div>
+      </section>
+
+      {alertasQ.isError && (
+        <div className="alert alert-warning rounded-box">
+          <AlertTriangle className="h-5 w-5" />
+          <span className="text-sm">
+            No se pudo cargar el servicio de alertas. Verifica que el backend
+            esté disponible.
+          </span>
+          <button
+            className="btn btn-ghost btn-xs"
+            onClick={() => window.location.reload()}
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {!loading &&
+        alerts.length === 0 &&
+        !stockQ.isError &&
+        !alertasQ.isError && (
+          <EmptyState
+            icon={<CheckCircle2 className="h-6 w-6 text-success" />}
+            title="Inventario en buen estado"
+            description="No hay alertas activas en ningún área."
+            className="border-success/20 bg-success/5"
+          />
+        )}
+    </div>
+  );
+}

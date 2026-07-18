@@ -1,0 +1,15 @@
+pub mod area;
+pub mod categoria;
+pub mod lab_campo;
+pub mod lote;
+pub mod movimiento;
+pub mod presentacion;
+pub mod producto;
+pub mod proveedor;
+pub mod recepcion;
+pub mod solicitud;
+pub mod stock;
+pub mod stock_snapshot;
+pub mod unidad_basica;
+pub mod usuario;
+pub mod oferta_proveedor;

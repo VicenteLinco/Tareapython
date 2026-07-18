@@ -1,0 +1,552 @@
+export * from "./generated";
+import type {
+  Presentacion,
+  EstadoSolicitud,
+  EstadoRecepcion,
+  EstadoOrdenCompra,
+  ControlLote,
+  Categoria as GeneratedCategoria,
+  SolicitudResumen as GeneratedSolicitudResumen,
+  SolicitudDetalle as GeneratedSolicitudDetalle,
+  Usuario as GeneratedUsuario,
+} from "./generated";
+
+// Usuario extendido con area_ids (viene de /auth/me y se persiste en el store)
+export type Usuario = GeneratedUsuario & { area_ids?: number[] };
+
+// Categoria — use generated type directly (no per-category EAV)
+export type Categoria = GeneratedCategoria;
+
+// --- Type Overrides (Narrowing) ---
+// Los tipos generados usan `estado: string`, pero aquí los especificamos con los enums correctos
+export type SolicitudResumen = Omit<GeneratedSolicitudResumen, "estado"> & {
+  estado: EstadoSolicitud;
+};
+export type SolicitudDetalle = Omit<GeneratedSolicitudDetalle, "estado"> & {
+  estado: EstadoSolicitud;
+};
+
+// --- Auth (Frontend Specific or Not Yet Generated) ---
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in: number;
+}
+
+export interface MeResponse {
+  id: string;
+  nombre: string;
+  email: string;
+  whatsapp_phone: string | null;
+  rol: string;
+  area_ids: number[];
+  version: number;
+}
+
+export interface UpdateProfileRequest {
+  nombre?: string;
+  email?: string;
+  whatsapp_phone?: string | null;
+}
+
+// --- Frontend Specific Models or Complex Joins ---
+
+// Estado de stock — fuente única: fn_estado_stock en el backend (modelo días de cobertura).
+export type EstadoAlerta =
+  | "normal"
+  | "agotado"
+  | "no_gestionado"
+  | "vencido"
+  | "critico"
+  | "reponer"
+  | "riesgo_venc"
+  | "por_vencer"
+  | "sin_datos";
+
+// Tipos de alerta que devuelve /stock/alertas (subconjunto accionable de EstadoAlerta).
+export type TipoAlerta =
+  | "vencido"
+  | "agotado"
+  | "critico"
+  | "reponer"
+  | "riesgo_venc"
+  | "por_vencer";
+
+// Modelo de dos ejes ortogonales (migration 002). Nunca se pisan: cascada dentro
+// de cada eje, jamás entre ejes.
+// Eje cantidad ("¿comprar?") — se calcula sobre el stock usable (no vencido).
+export type EstadoCantidad =
+  | "agotado"
+  | "critico"
+  | "reponer"
+  | "normal"
+  | "exceso"
+  | "sin_datos"
+  | "no_gestionado";
+
+// Eje vencimiento ("¿descartar?") — cascada interna de urgencia.
+export type EstadoVencimiento = "vencido" | "riesgo_venc" | "por_vencer" | "vencido_descartado" | "ok";
+
+export interface StockItem {
+  producto_id: string;
+  codigo_interno: string;
+  // SKU comercial (opcional). Código de negocio preferido sobre codigo_interno.
+  sku?: string | null;
+  producto_nombre: string;
+  categoria: string | null;
+  unidad: string;
+  unidad_plural: string | null;
+  stock_total: number | null;
+  lotes_count?: number;
+  // Valorización: valor del stock del producto (Σ cantidad × costo del lote).
+  valor_stock?: number;
+  // Unidades del producto cuyo lote no tiene costo cargado.
+  unidades_sin_costo?: number;
+  dias_autonomia?: number | null;
+  dias_autonomia_pico?: number | null;
+  dias_con_consumo?: number;
+  lead_time_propio?: number;
+  proximo_vencimiento: string | null;
+  proveedor_nombre: string | null;
+  proveedor_icono: string | null;
+  estado_alerta?: EstadoAlerta;
+  // Modelo de dos ejes ortogonales (migration 002).
+  estado_cantidad?: EstadoCantidad;
+  estado_vencimiento?: EstadoVencimiento;
+  // Stock usable (no vencido) vs vencido (sólo apto para descarte). El titular que
+  // ve el usuario es stock_usable; stock_vencido se muestra como "X por descartar".
+  stock_usable?: number;
+  stock_vencido?: number;
+  // % del stock total en el/los lote(s) que vencen en la fecha más próxima.
+  pct_por_vencer?: number | null;
+  imagen_url?: string | null;
+  area_id?: number;
+  area_nombre?: string;
+  control_lote?: ControlLote;
+}
+
+export interface StockPorArea {
+  lote_id: string;
+  producto_id: string;
+  producto_nombre: string;
+  codigo_lote: string;
+  fecha_vencimiento: string;
+  area_id: number;
+  area_nombre: string;
+  cantidad: number;
+  unidad_base_nombre: string;
+  unidad_base_nombre_plural: string;
+}
+
+export interface Alerta {
+  tipo_alerta: TipoAlerta;
+  producto_id: string;
+  nombre: string;
+  proxima_fecha_venc: string | null;
+  // Días hasta el lote que vence antes y % del total en el/los lote(s) de esa fecha.
+  dias_para_vencer?: number | null;
+  pct_por_vencer?: number | null;
+  total: number | null;
+  unidad: string | null;
+  unidad_plural: string | null;
+  dias_inactivo?: number;
+  dias_autonomia?: number;
+  consumo_diario_30d?: number;
+  dias_con_consumo?: number;
+  es_anomalia?: boolean;
+  total_en_camino?: number;
+  tiene_pedido_pendiente?: boolean;
+  dias_despacho?: number;
+  proveedor_id?: number | null;
+  proveedor_nombre?: string | null;
+}
+
+export interface Movimiento {
+  id: number;
+  tipo:
+    | "entrada"
+    | "salida"
+    | "descarte"
+    | "ajuste"
+    | "ajuste_pos"
+    | "ajuste_neg"
+    | "transferencia_entrada"
+    | "transferencia_salida";
+  producto_id: string;
+  producto_nombre?: string;
+  lote_id: number;
+  codigo_lote?: string;
+  area_id: number;
+  area_nombre?: string;
+  cantidad: number;
+  unidad_base_nombre?: string;
+  unidad_base_nombre_plural?: string;
+  referencia: string | null;
+  numero_documento: string | null;
+  grupo_movimiento: string | null;
+  usuario_id: number;
+  usuario_nombre?: string;
+  notas: string | null;
+  created_at: string;
+}
+
+export interface Recepcion {
+  id: number;
+  numero_documento: string;
+  proveedor_id: number;
+  proveedor_nombre?: string;
+  guia_despacho?: string | null;
+  fecha_recepcion: string;
+  estado: EstadoRecepcion;
+  nota: string | null;
+  usuario_id: number;
+  usuario_nombre?: string;
+  created_at: string;
+  detalles?: RecepcionDetalle[];
+}
+
+export interface RecepcionDetalle {
+  id: number;
+  recepcion_id: number;
+  producto_id: string;
+  producto_nombre?: string;
+  presentacion_id: number | null;
+  presentacion_nombre?: string;
+  cantidad_presentacion: number;
+  factor_conversion: number;
+  cantidad_base: number;
+  codigo_lote: string;
+  fecha_vencimiento: string;
+  area_destino_id: number;
+  area_destino_nombre?: string;
+}
+
+// --- Solicitudes de Compra (Local/Extended) ---
+
+// Ítem en el borrador (estado local del componente)
+export interface SolicitudItem {
+  producto_id: string;
+  producto_nombre: string;
+  codigo_proveedor: string | null;
+  codigo_maestro: string | null;
+  proveedor_id: number | null;
+  proveedor_nombre: string;
+  lead_time: number;
+  presentacion_id: number | null;
+  presentacion_nombre: string | null;
+  presentacion_nombre_plural: string | null;
+  factor_conversion: number | null;
+  unidad_base: string;
+  unidad_base_plural: string | null;
+  unidad_basica_id: number | null;
+  cantidad: number;
+  precio_unitario: number;
+  imagen_url?: string | null;
+  // Datos necesarios para recalcular cantidad al cambiar horizonte
+  consumo_diario: number;
+  stock_actual: number;
+  stock_minimo: number;
+  // Horizonte de cobertura
+  horizonte_dias: number | null; // null = chip desactivado (cantidad manual)
+  horizonte_sugerido: number | null; // calculado al agregar, no cambia
+  horizonte_razon: string | null; // texto del badge, no cambia
+  tipo_estimacion_demanda?:
+    | "forecast"
+    | "historial_corto"
+    | "sin_historial"
+    | "sin_proveedor";
+  horizonte_personalizado?: boolean; // true = override del global; undefined/false = sigue el global
+}
+
+// --- Pagination ---
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+}
+
+// --- Producto DTOs ---
+export interface CreateProducto {
+  nombre: string;
+  descripcion?: string | null;
+  categoria_id?: number | null;
+  unidad_base_id: number;
+  ubicacion?: string | null;
+  temperatura_almacenamiento?: string | null;
+  requiere_cadena_frio?: boolean;
+  dias_estabilidad_abierto?: number | null;
+  clase_riesgo?: string | null;
+  fabricante?: string | null;
+  control_lote?: ControlLote;
+  pres_codigo_barras?: string | null;
+  imagen_data_url?: string | null;
+  area_ids?: number[];
+  mpn?: string | null;
+  alias_unidad_clinica?: string | null;
+  codigo_loinc_cpt?: string | null;
+  es_kit?: boolean;
+  stock_minimo_global?: number;
+  es_cenabas?: boolean;
+  promedio_uso_mensual_inicial?: number | null;
+}
+
+export interface UpdateProducto {
+  nombre?: string;
+  descripcion?: string | null;
+  categoria_id?: number | null;
+  ubicacion?: string | null;
+  temperatura_almacenamiento?: string | null;
+  requiere_cadena_frio?: boolean;
+  dias_estabilidad_abierto?: number | null;
+  clase_riesgo?: string | null;
+  fabricante?: string | null;
+  control_lote?: ControlLote;
+  pres_codigo_barras?: string | null;
+  imagen_data_url?: string | null;
+  area_ids?: number[];
+  mpn?: string | null;
+  alias_unidad_clinica?: string | null;
+  codigo_loinc_cpt?: string | null;
+  es_kit?: boolean;
+  stock_minimo_global?: number;
+  version: number;
+  es_cenabas?: boolean;
+  promedio_uso_mensual_inicial?: number | null;
+}
+
+export type ProductFieldType =
+  | "text"
+  | "integer"
+  | "decimal"
+  | "boolean"
+  | "catalog"
+  | "multi_catalog"
+  | "enum"
+  | "barcode"
+  | "image";
+
+export interface ProductFieldSchema {
+  key: string;
+  label: string;
+  type: ProductFieldType;
+  section: string;
+  order: number;
+  domain_required: boolean;
+  import_supported: boolean;
+  aliases: string[];
+  catalog_endpoint: string | null;
+  allowed_values: string[];
+}
+
+export interface ProductSchema {
+  version: string;
+  limits: {
+    max_file_bytes: number;
+    max_rows: number;
+    max_columns: number;
+    max_cell_bytes: number;
+  };
+  fields: ProductFieldSchema[];
+}
+
+export interface ProductImportMappingConfig {
+  mapping: Record<string, string>;
+  required_fields: string[];
+}
+
+export interface ProductImportMapperConfig extends ProductImportMappingConfig {
+  valid: boolean;
+  errors: string[];
+}
+
+// --- Request DTOs (Specific complex ones) ---
+export interface ConsumoBatchRequest {
+  area_id?: number;
+  items: {
+    producto_id: string;
+    cantidad: number;
+    unidad: "base" | "presentacion";
+    presentacion_id?: number;
+    lote_id?: string;
+    area_id?: number;
+  }[];
+  nota?: string;
+}
+
+export interface RecepcionCreateRequest {
+  proveedor_id: number;
+  guia_despacho?: string;
+  fecha_recepcion: string;
+  nota?: string;
+  detalles: {
+    producto_id: string;
+    presentacion_id?: number;
+    cantidad_presentacion: number;
+    codigo_lote: string;
+    fecha_vencimiento: string;
+    area_destino_id: number;
+  }[];
+}
+
+// DescarteRequest is re-exported from generated.ts (nota: string | null)
+
+// --- Conteo de Inventario ---
+export interface SesionConteo {
+  id: string;
+  area_id: number;
+  area_nombre: string;
+  estado: "borrador" | "en_progreso" | "confirmado" | "cancelado";
+  usuario_creador_nombre: string;
+  created_at: string;
+  confirmed_at: string | null;
+  total_items: number;
+  items_contados: number;
+}
+
+export interface ConteoItem {
+  id: string;
+  lote_id: string;
+  numero_lote: string;
+  fecha_vencimiento: string;
+  producto_id: string;
+  producto_nombre: string;
+  unidad_base_nombre: string;
+  unidad_base_nombre_plural: string;
+  stock_sistema: number;
+  cantidad_contada: number | null;
+  estado_item: "pendiente" | "contado" | "no_contado";
+  version: number;
+  imagen_url?: string | null;
+}
+
+export interface ConteoDetalle {
+  sesion: SesionConteo;
+  nota: string | null;
+  items: ConteoItem[];
+  presentaciones: Presentacion[];
+}
+
+export interface PaginatedSesiones {
+  data: SesionConteo[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+}
+
+export interface DescarteVencidoItem {
+  lote_id: string;
+  producto_id: string;
+  producto_nombre: string;
+  codigo_lote: string;
+  fecha_vencimiento: string;
+  area_id: number;
+  area_nombre: string;
+  proveedor_id: number | null;
+  proveedor_nombre: string | null;
+  cantidad: number;
+  unidad_base_nombre: string;
+  unidad_base_nombre_plural: string;
+}
+
+export interface DescarteSessionItem {
+  producto_nombre: string;
+  codigo_lote: string;
+  area_nombre: string;
+  tipo: "DESCARTE_VENCIDO" | "DESCARTE_DAÑADO";
+  cantidad: number;
+  unidad_base_nombre: string;
+  unidad_base_nombre_plural: string;
+  fecha_vencimiento: string;
+  nota: string | null;
+}
+
+export interface DescarteSession {
+  grupo_movimiento: string;
+  fecha: string;
+  usuario_nombre: string;
+  total_items: number;
+  areas: string[];
+  items: DescarteSessionItem[];
+}
+
+// ============================================================
+// Órdenes de Compra
+// ============================================================
+
+export interface OrdenCompraResumen {
+  id: string;
+  numero_documento: string;
+  proveedor_nombre: string;
+  estado: EstadoOrdenCompra;
+  fecha_emision: string;
+  fecha_entrega_esperada: string | null;
+  items_count: number;
+  solicitud_numero: string | null;
+  usuario_nombre: string;
+}
+
+export interface OrdenCompraItem {
+  id: number;
+  producto_id: string;
+  producto_nombre: string;
+  presentacion_nombre: string | null;
+  cantidad_solicitada: number;
+  cantidad_recibida: number;
+  precio_unitario: number | null;
+  unidad: string;
+  area_destino_nombre: string | null;
+}
+
+export interface RecepcionVinculada {
+  id: string;
+  numero_documento: string;
+  estado: string;
+  fecha_recepcion: string;
+  usuario_nombre: string;
+  guia_despacho?: string | null;
+  guia_despacho_archivo?: string | null;
+}
+
+export interface OrdenCompraDetalle {
+  orden_compra: {
+    id: string;
+    numero_documento: string;
+    proveedor_id: number;
+    proveedor_nombre: string;
+    estado: OrdenCompraResumen["estado"];
+    fecha_emision: string;
+    fecha_entrega_esperada: string | null;
+    nota: string | null;
+    solicitud_id: string | null;
+    solicitud_numero: string | null;
+    usuario_nombre: string;
+  };
+  items: OrdenCompraItem[];
+  recepciones: RecepcionVinculada[];
+}
+
+export interface CreateOrdenCompraRequest {
+  solicitud_id?: string;
+  proveedor_id: number;
+  fecha_entrega_esperada?: string;
+  nota?: string;
+  items: {
+    producto_id: string;
+    presentacion_id?: number;
+    cantidad_solicitada: number;
+    precio_unitario?: number;
+    unidad: string;
+    area_destino_id?: number;
+  }[];
+}
+
+// --- Campos Personalizados (EAV) ---

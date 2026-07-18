@@ -1,6 +1,32 @@
-codigofuente/
-backend/
+# Active source code
+codigofuente/*
+!codigofuente/frontend/
+
+# Build outputs and dependencies
+backend/target/
+backend/migrations/
+codigofuente/frontend/node_modules/
+codigofuente/frontend/dist/
+codigofuente/frontend/.vite/
+*.log
+.codegraph/
+
+# Secrets and local credentials
 .env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+**/*.key
+**/*.pem
+**/credentials.json
+**/secrets/
+**/.credentials/
+**/.aws/credentials
+**/.ssh/
+
+# Local agent artifacts
 .atl/
 openspec/
 openspec

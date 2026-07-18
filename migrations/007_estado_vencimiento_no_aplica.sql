@@ -27,14 +27,14 @@ CREATE FUNCTION public.fn_estado_vencimiento(
             THEN 'no_aplica'
         WHEN COALESCE(p_tiene_vencido, false)
             THEN 'vencido'
-        WHEN COALESCE(p_recientemente_descartado, false)
-            THEN 'vencido_descartado'
         WHEN p_proxima_venc_usable IS NOT NULL
              AND p_proxima_venc_usable <= CURRENT_DATE + p_riesgo_dias
             THEN 'riesgo_venc'
         WHEN p_proxima_venc_usable IS NOT NULL
              AND p_proxima_venc_usable <= CURRENT_DATE + p_proximo_dias
             THEN 'por_vencer'
+        WHEN COALESCE(p_recientemente_descartado, false)
+            THEN 'vencido_descartado'
         ELSE 'ok'
     END;
 $$;

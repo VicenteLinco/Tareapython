@@ -25,7 +25,6 @@ async fn setup_base(pool: &PgPool, token: &str, app: &axum::Router) -> (i32, Uui
         serde_json::json!({
             "nombre": format!("Prod-{}", &Uuid::new_v4().to_string()[..8]),
             "unidad_base_id": 1,
-            "proveedor_id": proveedor_id,
             "stock_minimo": 5,
             "presentaciones": [{
                 "nombre": "Caja",
@@ -43,6 +42,15 @@ async fn setup_base(pool: &PgPool, token: &str, app: &axum::Router) -> (i32, Uui
             .fetch_one(pool)
             .await
             .unwrap();
+
+    sqlx::query(
+        "INSERT INTO ofertas_proveedor (presentacion_id, proveedor_id, precio_adquisicion) VALUES ($1, $2, 100.0)"
+    )
+    .bind(presentacion_id)
+    .bind(proveedor_id)
+    .execute(pool)
+    .await
+    .unwrap();
 
     (proveedor_id, producto_id, presentacion_id)
 }

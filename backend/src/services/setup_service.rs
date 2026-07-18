@@ -318,19 +318,32 @@ pub async fn importar_catalogo(
         .execute(pool)
         .await?;
 
+        let pres_id: i32 = sqlx::query_scalar(
+            "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, sku, activa) \
+             VALUES ($1, 'Unidad', 'Unidades', 1.0, $2, true) RETURNING id",
+        )
+        .bind(p_id)
+        .bind(if cod_proveedor.is_empty() {
+            None
+        } else {
+            Some(cod_proveedor)
+        })
+        .fetch_one(pool)
+        .await?;
+
         if let Some(proveedor_id) = prov_id {
             sqlx::query(
-                "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, sku, proveedor_id, precio_adquisicion, activa) \
-                 VALUES ($1, 'Unidad', 'Unidades', 1.0, $2, $3, $4, true)",
+                "INSERT INTO ofertas_proveedor (presentacion_id, proveedor_id, precio_adquisicion, sku_proveedor) \
+                 VALUES ($1, $2, $3, $4)",
             )
-            .bind(p_id)
+            .bind(pres_id)
+            .bind(proveedor_id)
+            .bind(precio)
             .bind(if cod_proveedor.is_empty() {
                 None
             } else {
                 Some(cod_proveedor)
             })
-            .bind(proveedor_id)
-            .bind(precio)
             .execute(pool)
             .await?;
         }

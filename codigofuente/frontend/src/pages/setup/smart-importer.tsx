@@ -32,6 +32,15 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
     nombre: "",
     descripcion: "",
     unidad: "",
+    codigo_interno: "",
+    unidad_plural: "",
+    stock_minimo: "",
+    precio_unitario: "",
+    codigo_proveedor: "",
+    proveedor: "",
+    categoria: "",
+    es_cenabas: "",
+    promedio_uso_mensual_inicial: "",
   });
   const [previewData, setPreviewData] = useState<ImportPreviewRow[]>([]);
   const [errors, setErrors] = useState<ImportErrorRow[]>([]);
@@ -50,13 +59,67 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
       key: "unidad",
       label: "Unidad de Medida",
       required: true,
-      desc: "Debe coincidir con las creadas",
+      desc: "Debe coincidir con las creadas (ej: unidad, mililitro)",
     },
     {
       key: "descripcion",
       label: "Descripción",
       required: false,
-      desc: "Detalles adicionales",
+      desc: "Detalles adicionales del producto",
+    },
+    {
+      key: "codigo_interno",
+      label: "Código Interno (SKU)",
+      required: false,
+      desc: "Código de inventario único",
+    },
+    {
+      key: "unidad_plural",
+      label: "Unidad Plural",
+      required: false,
+      desc: "Plural de la unidad (ej: unidades)",
+    },
+    {
+      key: "stock_minimo",
+      label: "Stock Mínimo",
+      required: false,
+      desc: "Nivel de alerta crítica",
+    },
+    {
+      key: "precio_unitario",
+      label: "Precio Unitario",
+      required: false,
+      desc: "Costo de adquisición de la unidad",
+    },
+    {
+      key: "proveedor",
+      label: "Proveedor",
+      required: false,
+      desc: "Nombre del proveedor principal",
+    },
+    {
+      key: "codigo_proveedor",
+      label: "Código Proveedor",
+      required: false,
+      desc: "Código del ítem para el proveedor",
+    },
+    {
+      key: "categoria",
+      label: "Categoría",
+      required: false,
+      desc: "Categoría para agrupar",
+    },
+    {
+      key: "es_cenabas",
+      label: "¿Es Cenabas?",
+      required: false,
+      desc: "Indica convenio Cenabas (si/no/true/false)",
+    },
+    {
+      key: "promedio_uso_mensual_inicial",
+      label: "Promedio Uso Mensual",
+      required: false,
+      desc: "Consumo mensual estimado inicial",
     },
   ];
 
@@ -88,6 +151,15 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
         if (lower.includes("nom") || lower.includes("prd")) newMap.nombre = col;
         if (lower.includes("uni") || lower.includes("med")) newMap.unidad = col;
         if (lower.includes("desc")) newMap.descripcion = col;
+        if (lower.includes("cod_int") || lower.includes("sku") || lower.includes("codigo_interno")) newMap.codigo_interno = col;
+        if (lower.includes("plural")) newMap.unidad_plural = col;
+        if (lower.includes("min") || lower.includes("seg")) newMap.stock_minimo = col;
+        if (lower.includes("prec") || lower.includes("cost")) newMap.precio_unitario = col;
+        if (lower.includes("prov")) newMap.proveedor = col;
+        if (lower.includes("cod_prov")) newMap.codigo_proveedor = col;
+        if (lower.includes("cat")) newMap.categoria = col;
+        if (lower.includes("cenabas")) newMap.es_cenabas = col;
+        if (lower.includes("uso") || lower.includes("prom")) newMap.promedio_uso_mensual_inicial = col;
       });
       setMapping(newMap);
       setStep("MAP");

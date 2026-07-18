@@ -1158,7 +1158,7 @@ impl SolicitudService {
                 ), 0.0)                                                           AS ya_pedido,
                 COALESCE(
                     up.precio_unitario,
-                    (SELECT pr.precio_adquisicion FROM presentaciones pr WHERE pr.producto_id = p.id AND pr.activa = true ORDER BY pr.id ASC LIMIT 1)
+                    (SELECT op.precio_adquisicion FROM ofertas_proveedor op JOIN presentaciones pr ON pr.id = op.presentacion_id WHERE pr.producto_id = p.id AND pr.activa = true ORDER BY pr.id ASC LIMIT 1)
                 )::FLOAT8                                                         AS precio_ultimo
             FROM productos p
             LEFT JOIN proveedores prov ON prov.id = $3

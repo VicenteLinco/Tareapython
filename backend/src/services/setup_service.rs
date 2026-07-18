@@ -147,7 +147,12 @@ pub async fn importar_catalogo(
         let nombre = get_val("nombre");
         let descripcion = get_val("descripcion");
         let codigo_interno_csv = get_val("codigo_interno");
-        let unidad_nombre = get_first_val(&["unidad_base", "unidad"]);
+        let unidad_nombre_raw = get_first_val(&["unidad_base", "unidad"]);
+        let unidad_nombre = if unidad_nombre_raw.is_empty() {
+            "unidad"
+        } else {
+            unidad_nombre_raw
+        };
         let unidad_plural = get_first_val(&["unidad_base_plural", "unidad_plural"]);
         let stock_minimo_str = get_first_val(&["stock_seguridad", "stock_minimo"]);
         let precio_str = get_first_val(&["precio_unitario", "precio_unidad"]);
@@ -169,6 +174,32 @@ pub async fn importar_catalogo(
             };
         let promedio_uso_mensual_inicial =
             Decimal::from_str(promedio_uso_mensual_inicial_str).unwrap_or(Decimal::ZERO);
+
+        // Nuevos atributos de diseño de producto
+        let ubicacion = get_val("ubicacion");
+        let temp_almacenamiento = get_val("temperatura_almacenamiento");
+        let requiere_cadena_frio_str = get_val("requiere_cadena_frio");
+        let requiere_cadena_frio = match requiere_cadena_frio_str.to_lowercase().as_str() {
+            "true" | "1" | "si" | "sí" | "yes" => true,
+            _ => false,
+        };
+        let dias_estabilidad_str = get_val("dias_estabilidad_abierto");
+        let dias_estabilidad = dias_estabilidad_str.parse::<i32>().ok();
+        let clase_riesgo = get_val("clase_riesgo");
+        let fabricante = get_val("fabricante");
+        let mpn = get_val("mpn");
+        let alias_clinica = get_val("alias_unidad_clinica");
+        let es_kit_str = get_val("es_kit");
+        let es_kit = match es_kit_str.to_lowercase().as_str() {
+            "true" | "1" | "si" | "sí" | "yes" => true,
+            _ => false,
+        };
+        let codigo_loinc = get_val("codigo_loinc_cpt");
+        let control_lote_str = get_val("control_lote");
+        let control_lote = match control_lote_str.to_lowercase().as_str() {
+            "simple" | "no" | "false" => "simple",
+            _ => "lote",
+        };
 
         if nombre.is_empty() {
             errores.push(ImportError {
@@ -299,8 +330,9 @@ pub async fn importar_catalogo(
         let p_id = uuid::Uuid::new_v4();
         sqlx::query(
             "INSERT INTO productos
-             (id, codigo_interno, nombre, descripcion, unidad_base_id, categoria_id, es_cenabas, promedio_uso_mensual_inicial, promedio_uso_mensual)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+             (id, codigo_interno, nombre, descripcion, unidad_base_id, categoria_id, es_cenabas, promedio_uso_mensual_inicial, promedio_uso_mensual,
+              ubicacion, temperatura_almacenamiento, requiere_cadena_frio, dias_estabilidad_abierto, clase_riesgo, fabricante, mpn, alias_unidad_clinica, es_kit, codigo_loinc_cpt, control_lote)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)",
         )
         .bind(p_id)
         .bind(codigo_interno)
@@ -315,6 +347,17 @@ pub async fn importar_catalogo(
         .bind(es_cenabas)
         .bind(promedio_uso_mensual_inicial)
         .bind(promedio_uso_mensual_inicial)
+        .bind(if ubicacion.is_empty() { None } else { Some(ubicacion) })
+        .bind(if temp_almacenamiento.is_empty() { None } else { Some(temp_almacenamiento) })
+        .bind(requiere_cadena_frio)
+        .bind(dias_estabilidad)
+        .bind(if clase_riesgo.is_empty() { None } else { Some(clase_riesgo) })
+        .bind(if fabricante.is_empty() { None } else { Some(fabricante) })
+        .bind(if mpn.is_empty() { None } else { Some(mpn) })
+        .bind(if alias_clinica.is_empty() { None } else { Some(alias_clinica) })
+        .bind(es_kit)
+        .bind(if codigo_loinc.is_empty() { None } else { Some(codigo_loinc) })
+        .bind(control_lote)
         .execute(pool)
         .await?;
 

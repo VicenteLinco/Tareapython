@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   FileUp,
   ArrowRight,
@@ -9,6 +9,10 @@ import {
   X,
   Database,
   Info,
+  Eye,
+  PlusCircle,
+  Search,
+  Sliders,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { notify } from "@/lib/notify";
@@ -24,10 +28,21 @@ type ImportCellValue = string | number | boolean | null | undefined;
 type ImportPreviewRow = Record<string, ImportCellValue>;
 type ImportErrorRow = Record<string, ImportCellValue>;
 
+interface LabCampoDefinicion {
+  id: string;
+  nombre: string;
+  tipo_dato: string;
+  requerido: boolean;
+  considerar_filtro: boolean;
+}
+
 export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
   const [step, setStep] = useState<Step>("UPLOAD");
   const [file, setFile] = useState<File | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
+  const [rawCsvRows, setRawCsvRows] = useState<string[][]>([]);
+  const [showExplorer, setShowExplorer] = useState(false);
+
   const [mapping, setMapping] = useState<Record<string, string>>({
     nombre: "",
     descripcion: "",
@@ -41,11 +56,33 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
     categoria: "",
     es_cenabas: "",
     promedio_uso_mensual_inicial: "",
+    control_lote: "",
+    ubicacion: "",
+    temperatura_almacenamiento: "",
+    requiere_cadena_frio: "",
+    dias_estabilidad_abierto: "",
+    clase_riesgo: "",
+    fabricante: "",
+    mpn: "",
+    alias_unidad_clinica: "",
+    es_kit: "",
+    codigo_loinc_cpt: "",
   });
+
   const [previewData, setPreviewData] = useState<ImportPreviewRow[]>([]);
   const [errors, setErrors] = useState<ImportErrorRow[]>([]);
   const [isValidating, setIsValidating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+
+  // Custom Fields States
+  const [showCustomFieldsCreator, setShowCustomFieldsCreator] = useState(false);
+  const [newFieldName, setNewFieldName] = useState("");
+  const [newFieldType, setNewFieldType] = useState("texto");
+  const [customFields, setCustomFields] = useState<LabCampoDefinicion[]>([]);
+  const [isCreatingField, setIsCreatingField] = useState(false);
+
+  // Search input to filter mapping fields
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Campos que requiere el sistema
   const systemFields = [
@@ -53,77 +90,194 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
       key: "nombre",
       label: "Nombre del Producto",
       required: true,
-      desc: "Identificador principal",
+      category: "Básicos",
+      desc: "Identificador principal del insumo",
     },
     {
       key: "unidad",
       label: "Unidad de Medida",
-      required: true,
-      desc: "Debe coincidir con las creadas (ej: unidad, mililitro)",
+      required: false,
+      category: "Básicos",
+      desc: "Debe coincidir con las creadas (ej: unidad, mililitro). Opcional, por defecto 'unidad'",
     },
     {
       key: "descripcion",
       label: "Descripción",
       required: false,
+      category: "Básicos",
       desc: "Detalles adicionales del producto",
     },
     {
       key: "codigo_interno",
       label: "Código Interno (SKU)",
       required: false,
+      category: "Básicos",
       desc: "Código de inventario único",
     },
     {
-      key: "unidad_plural",
-      label: "Unidad Plural",
+      key: "categoria",
+      label: "Categoría",
       required: false,
-      desc: "Plural de la unidad (ej: unidades)",
+      category: "Básicos",
+      desc: "Categoría para agrupar en el catálogo",
+    },
+    {
+      key: "control_lote",
+      label: "Control de Lotes",
+      required: false,
+      category: "Trazabilidad",
+      desc: "Método de trazabilidad (lote / simple)",
     },
     {
       key: "stock_minimo",
       label: "Stock Mínimo",
       required: false,
-      desc: "Nivel de alerta crítica",
+      category: "Inventario",
+      desc: "Nivel de alerta crítica global",
+    },
+    {
+      key: "promedio_uso_mensual_inicial",
+      label: "Promedio Uso Mensual",
+      required: false,
+      category: "Inventario",
+      desc: "Consumo mensual estimado inicial",
     },
     {
       key: "precio_unitario",
       label: "Precio Unitario",
       required: false,
+      category: "Comercial",
       desc: "Costo de adquisición de la unidad",
     },
     {
       key: "proveedor",
       label: "Proveedor",
       required: false,
+      category: "Comercial",
       desc: "Nombre del proveedor principal",
     },
     {
       key: "codigo_proveedor",
       label: "Código Proveedor",
       required: false,
+      category: "Comercial",
       desc: "Código del ítem para el proveedor",
-    },
-    {
-      key: "categoria",
-      label: "Categoría",
-      required: false,
-      desc: "Categoría para agrupar",
     },
     {
       key: "es_cenabas",
       label: "¿Es Cenabas?",
       required: false,
+      category: "Clínicos",
       desc: "Indica convenio Cenabas (si/no/true/false)",
     },
     {
-      key: "promedio_uso_mensual_inicial",
-      label: "Promedio Uso Mensual",
+      key: "alias_unidad_clinica",
+      label: "Alias Unidad Clínica",
       required: false,
-      desc: "Consumo mensual estimado inicial",
+      category: "Clínicos",
+      desc: "Nombre clínico o alias del insumo",
+    },
+    {
+      key: "codigo_loinc_cpt",
+      label: "Código LOINC/CPT",
+      required: false,
+      category: "Clínicos",
+      desc: "Estándar clínico LOINC o CPT",
+    },
+    {
+      key: "ubicacion",
+      label: "Ubicación",
+      required: false,
+      category: "Almacén",
+      desc: "Estantería o lugar físico en bodega",
+    },
+    {
+      key: "temperatura_almacenamiento",
+      label: "Temperatura de Almacenamiento",
+      required: false,
+      category: "Almacén",
+      desc: "Ej: 2-8°C, Temperatura ambiente",
+    },
+    {
+      key: "requiere_cadena_frio",
+      label: "Requiere Cadena de Frío",
+      required: false,
+      category: "Almacén",
+      desc: "Indica refrigeración obligatoria (si/no)",
+    },
+    {
+      key: "dias_estabilidad_abierto",
+      label: "Días de Estabilidad Abierto",
+      required: false,
+      category: "Almacén",
+      desc: "Días útil tras apertura",
+    },
+    {
+      key: "clase_riesgo",
+      label: "Clase de Riesgo",
+      required: false,
+      category: "Fabricante",
+      desc: "Clase de riesgo del dispositivo médico",
+    },
+    {
+      key: "fabricante",
+      label: "Fabricante",
+      required: false,
+      category: "Fabricante",
+      desc: "Nombre del fabricante",
+    },
+    {
+      key: "mpn",
+      label: "MPN (Código fabricante)",
+      required: false,
+      category: "Fabricante",
+      desc: "Manufacturer Part Number",
+    },
+    {
+      key: "es_kit",
+      label: "¿Es Kit?",
+      required: false,
+      category: "Básicos",
+      desc: "Indica si es un kit de varios insumos (si/no)",
     },
   ];
 
-  // --- Lógica de Procesamiento ---
+  const fetchCustomFields = async () => {
+    try {
+      const res = await api.get("/admin/lab-campos");
+      setCustomFields(res.data || []);
+    } catch {
+      notify.error("Error al obtener campos personalizados");
+    }
+  };
+
+  useEffect(() => {
+    if (step === "MAP") {
+      fetchCustomFields();
+    }
+  }, [step]);
+
+  const handleCreateCustomField = async () => {
+    if (!newFieldName.trim()) return;
+    setIsCreatingField(true);
+    try {
+      await api.post("/admin/lab-campos", {
+        nombre: newFieldName.trim(),
+        tipo_dato: newFieldType,
+        requerido: false,
+        considerar_filtro: true,
+        orden: 10,
+      });
+      notify.success(`Campo "${newFieldName.trim()}" creado exitosamente.`);
+      setNewFieldName("");
+      setShowCustomFieldsCreator(false);
+      fetchCustomFields();
+    } catch (err: any) {
+      notify.error(err.response?.data?.mensaje || "Error al crear campo personalizado");
+    } finally {
+      setIsCreatingField(false);
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -137,29 +291,77 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      const firstLine = text.split("\n")[0];
-      const cols = firstLine
+      const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+
+      if (lines.length === 0) {
+        notify.error("El archivo CSV está vacío");
+        return;
+      }
+
+      // Parse headers
+      const cols = lines[0]
         .split(",")
         .map((c) => c.trim().replace(/^"|"$/g, ""));
       setHeaders(cols);
       setFile(selectedFile);
 
-      // Auto-mapeo inteligente por nombre
+      // Parse raw rows for explorer view
+      const parsedRows = lines.map((line) => {
+        const result = [];
+        let current = "";
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+            result.push(current.trim().replace(/^"|"$/g, ""));
+            current = "";
+          } else {
+            current += char;
+          }
+        }
+        result.push(current.trim().replace(/^"|"$/g, ""));
+        return result;
+      });
+      setRawCsvRows(parsedRows);
+
+      // Auto-mapeo inteligente por nombre con tolerancia extendida
       const newMap = { ...mapping };
       cols.forEach((col) => {
         const lower = col.toLowerCase();
-        if (lower.includes("nom") || lower.includes("prd")) newMap.nombre = col;
-        if (lower.includes("uni") || lower.includes("med")) newMap.unidad = col;
-        if (lower.includes("desc")) newMap.descripcion = col;
+        if (lower.includes("nom") || lower.includes("prd") || lower === "item") newMap.nombre = col;
+        if (lower.includes("uni") || lower.includes("med") || lower === "u") newMap.unidad = col;
+        if (lower.includes("desc") || lower.includes("detall")) newMap.descripcion = col;
         if (lower.includes("cod_int") || lower.includes("sku") || lower.includes("codigo_interno")) newMap.codigo_interno = col;
         if (lower.includes("plural")) newMap.unidad_plural = col;
-        if (lower.includes("min") || lower.includes("seg")) newMap.stock_minimo = col;
-        if (lower.includes("prec") || lower.includes("cost")) newMap.precio_unitario = col;
+        if (lower.includes("min") || lower.includes("seg") || lower.includes("seguridad")) newMap.stock_minimo = col;
+        if (lower.includes("prec") || lower.includes("cost") || lower.includes("adquisicion")) newMap.precio_unitario = col;
         if (lower.includes("prov")) newMap.proveedor = col;
         if (lower.includes("cod_prov")) newMap.codigo_proveedor = col;
-        if (lower.includes("cat")) newMap.categoria = col;
-        if (lower.includes("cenabas")) newMap.es_cenabas = col;
-        if (lower.includes("uso") || lower.includes("prom")) newMap.promedio_uso_mensual_inicial = col;
+        if (lower.includes("cat") || lower.includes("grupo")) newMap.categoria = col;
+        if (
+          lower.includes("cena") ||
+          lower.includes("cenab") ||
+          lower.includes("cenabast") ||
+          lower.includes("cenabas") ||
+          lower.includes("cenb") ||
+          lower.includes("cnabas")
+        ) {
+          newMap.es_cenabas = col;
+        }
+        if (lower.includes("uso") || lower.includes("prom") || lower.includes("demanda")) newMap.promedio_uso_mensual_inicial = col;
+        if (lower.includes("ctrl") || lower.includes("traz") || lower.includes("control")) newMap.control_lote = col;
+        if (lower.includes("ubica") || lower.includes("estant") || lower.includes("bodeg")) newMap.ubicacion = col;
+        if (lower.includes("temp") || lower.includes("almacen")) newMap.temperatura_almacenamiento = col;
+        if (lower.includes("frio") || lower.includes("refrig") || lower.includes("cadena")) newMap.requiere_cadena_frio = col;
+        if (lower.includes("estabil") || lower.includes("abiert")) newMap.dias_estabilidad_abierto = col;
+        if (lower.includes("riesg")) newMap.clase_riesgo = col;
+        if (lower.includes("fabr") || lower.includes("marca")) newMap.fabricante = col;
+        if (lower.includes("mpn") || lower.includes("part")) newMap.mpn = col;
+        if (lower.includes("alias") || lower.includes("clin")) newMap.alias_unidad_clinica = col;
+        if (lower.includes("kit")) newMap.es_kit = col;
+        if (lower.includes("loinc") || lower.includes("cpt")) newMap.codigo_loinc_cpt = col;
       });
       setMapping(newMap);
       setStep("MAP");
@@ -168,8 +370,8 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
   };
 
   const validateMapping = async () => {
-    if (!mapping.nombre || !mapping.unidad) {
-      notify.error("Debes mapear al menos el Nombre y la Unidad");
+    if (!mapping.nombre) {
+      notify.error("Debes mapear al menos el campo Nombre del Producto");
       return;
     }
 
@@ -224,7 +426,12 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
     }
   };
 
-  // --- Renderizado ---
+  // Filter fields based on search query
+  const filteredFields = systemFields.filter(
+    (f) =>
+      f.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      f.desc.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="fixed inset-0 bg-base-100 z-[60] flex flex-col animate-in fade-in duration-300">
@@ -239,13 +446,24 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
               Importador Inteligente
             </h1>
             <p className="text-xs opacity-50 font-bold uppercase tracking-widest">
-              Carga de Productos v2.0
+              Carga de Productos v2.1 (Diseño Completo)
             </p>
           </div>
         </div>
-        <button onClick={onCancel} className="btn btn-circle btn-ghost btn-sm">
-          <X className="h-6 w-6" />
-        </button>
+        <div className="flex items-center gap-3">
+          {file && (
+            <button
+              onClick={() => setShowExplorer(true)}
+              className="btn btn-sm btn-outline rounded-xl gap-2 font-bold"
+            >
+              <Eye className="w-4 h-4" />
+              Explorar CSV
+            </button>
+          )}
+          <button onClick={onCancel} className="btn btn-circle btn-ghost btn-sm">
+            <X className="h-6 w-6" />
+          </button>
+        </div>
       </header>
 
       {/* Progress Stepper */}
@@ -321,16 +539,68 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
           {/* STEP 2: MAPPING */}
           {step === "MAP" && (
             <div className="space-y-8 animate-in slide-in-from-bottom duration-500">
-              <div className="flex items-center gap-3 p-4 bg-info/10 text-info rounded-3xl border border-info/20 mb-8">
-                <Info className="h-5 w-5 flex-shrink-0" />
-                <p className="text-sm font-medium">
-                  Relaciona las columnas de tu archivo con los campos que
-                  requiere el sistema.
-                </p>
+              <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+                <div className="flex items-center gap-3 p-4 bg-info/10 text-info rounded-3xl border border-info/20 flex-1 w-full">
+                  <Info className="h-5 w-5 flex-shrink-0" />
+                  <p className="text-sm font-medium">
+                    Relaciona las columnas de tu archivo con los campos de diseño de producto y almacén.
+                  </p>
+                </div>
+                <div className="flex gap-2 w-full md:w-auto">
+                  <button
+                    onClick={() => setShowExplorer(true)}
+                    className="btn btn-outline rounded-2xl gap-2 h-14"
+                  >
+                    <Eye className="w-4 h-4" /> Explorar CSV
+                  </button>
+                  <button
+                    onClick={() => setShowCustomFieldsCreator(true)}
+                    className="btn btn-secondary rounded-2xl gap-2 h-14"
+                  >
+                    <PlusCircle className="w-4 h-4" /> Crear Campo Personalizado
+                  </button>
+                </div>
               </div>
 
+              {/* Custom Fields Registry Info */}
+              {customFields.length > 0 && (
+                <div className="p-4 bg-base-200 rounded-3xl border border-base-300">
+                  <span className="text-[10px] font-black opacity-40 uppercase tracking-widest block mb-2">
+                    Campos Personalizados Registrados en el Lab:
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {customFields.map((cf) => (
+                      <span key={cf.id} className="badge badge-ghost gap-1 font-bold py-3 px-3">
+                        <Sliders className="w-3 h-3 opacity-60" /> {cf.nombre} ({cf.tipo_dato})
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Filter controls */}
+              <div className="relative w-full">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-40" />
+                <input
+                  type="text"
+                  placeholder="Buscar campos de producto por nombre o descripción..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="input input-bordered w-full pl-11 rounded-2xl font-bold bg-base-200/50 focus:bg-base-100"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 btn btn-xs btn-circle btn-ghost"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
+              {/* Mapping grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {systemFields.map((field) => (
+                {filteredFields.map((field) => (
                   <div
                     key={field.key}
                     className="p-6 bg-base-200/50 rounded-3xl border border-base-200 flex flex-col gap-4"
@@ -345,6 +615,9 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                             Obligatorio
                           </span>
                         )}
+                        <span className="badge badge-ghost badge-xs uppercase font-bold text-[9px]">
+                          {field.category}
+                        </span>
                       </div>
                       <p className="text-[10px] opacity-40 font-bold uppercase tracking-widest">
                         {field.desc}
@@ -374,6 +647,13 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                 ))}
               </div>
 
+              {filteredFields.length === 0 && (
+                <div className="text-center py-12 border border-base-200 border-dashed rounded-3xl bg-base-200/20">
+                  <Sliders className="w-12 h-12 opacity-20 mx-auto mb-3" />
+                  <p className="font-bold opacity-45">No se encontraron campos para "{searchQuery}"</p>
+                </div>
+              )}
+
               <div className="flex justify-between items-center mt-12 pt-8 border-t border-base-200">
                 <button
                   onClick={() => setStep("UPLOAD")}
@@ -383,7 +663,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                 </button>
                 <button
                   onClick={validateMapping}
-                  disabled={!mapping.nombre || !mapping.unidad || isValidating}
+                  disabled={!mapping.nombre || isValidating}
                   className="btn btn-primary rounded-2xl px-12 gap-2 h-14 shadow-lg shadow-primary/20"
                 >
                   {isValidating ? (
@@ -495,7 +775,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                           <td className="font-bold text-sm">{row.nombre}</td>
                           <td>
                             <span className="badge badge-ghost font-bold text-[10px] uppercase tracking-tighter">
-                              {row.unidad}
+                              {row.unidad || "unidad"}
                             </span>
                           </td>
                         </tr>
@@ -532,6 +812,133 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
           )}
         </div>
       </main>
+
+      {/* CSV EXPLORER MODAL */}
+      {showExplorer && (
+        <div className="modal modal-open z-[70]">
+          <div className="modal-box max-w-5xl rounded-[2.5rem] p-8 border border-base-300">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="font-black text-xl flex items-center gap-2">
+                  <Eye className="text-primary w-6 h-6" /> Explorador de Archivo CSV
+                </h3>
+                <p className="text-xs opacity-50">Vista de las primeras 50 filas del archivo cargado.</p>
+              </div>
+              <button
+                onClick={() => setShowExplorer(false)}
+                className="btn btn-circle btn-ghost btn-sm"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-x-auto border border-base-200 rounded-3xl max-h-[60vh]">
+              <table className="table table-zebra table-sm">
+                <thead>
+                  <tr className="bg-base-200">
+                    {headers.map((h, i) => (
+                      <th key={i} className="font-black uppercase tracking-tight text-xs py-3">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rawCsvRows.slice(1, 51).map((row, rowIndex) => (
+                    <tr key={rowIndex}>
+                      {row.map((cell, colIndex) => (
+                        <td key={colIndex} className="text-xs font-medium max-w-[200px] truncate">
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="modal-action mt-6">
+              <button onClick={() => setShowExplorer(false)} className="btn btn-primary rounded-2xl px-8">
+                Cerrar Explorador
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CUSTOM FIELDS CREATOR MODAL */}
+      {showCustomFieldsCreator && (
+        <div className="modal modal-open z-[70]">
+          <div className="modal-box max-w-md rounded-[2.5rem] p-8 border border-base-300">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="font-black text-xl flex items-center gap-2">
+                  <PlusCircle className="text-secondary w-6 h-6" /> Nuevo Campo Lab
+                </h3>
+                <p className="text-xs opacity-50">Crea campos personalizados a nivel global.</p>
+              </div>
+              <button
+                onClick={() => setShowCustomFieldsCreator(false)}
+                className="btn btn-circle btn-ghost btn-sm"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-bold">Nombre del Campo</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: Lote Interno, Temperatura, etc."
+                  value={newFieldName}
+                  onChange={(e) => setNewFieldName(e.target.value)}
+                  className="input input-bordered rounded-2xl font-bold"
+                />
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-bold">Tipo de Dato</span>
+                </label>
+                <select
+                  value={newFieldType}
+                  onChange={(e) => setNewFieldType(e.target.value)}
+                  className="select select-bordered rounded-2xl font-bold"
+                >
+                  <option value="texto">Texto</option>
+                  <option value="entero">Entero</option>
+                  <option value="booleano">Booleano (Sí/No)</option>
+                  <option value="fecha">Fecha</option>
+                  <option value="lista">Lista de Opciones</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="modal-action gap-2 mt-8">
+              <button
+                onClick={() => setShowCustomFieldsCreator(false)}
+                className="btn btn-ghost rounded-2xl"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleCreateCustomField}
+                disabled={!newFieldName || isCreatingField}
+                className="btn btn-primary rounded-2xl px-6"
+              >
+                {isCreatingField ? (
+                  <span className="loading loading-spinner" />
+                ) : (
+                  "Crear e Integrar"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

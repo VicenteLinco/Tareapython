@@ -799,7 +799,6 @@ async fn horizonte_devuelve_ultimo_precio_de_recepcion(pool: PgPool) {
         serde_json::json!({
             "nombre": format!("Prod {}", Uuid::new_v4()),
             "unidad_base_id": 1,
-            "proveedor_id": proveedor_id,
             "stock_minimo": 10,
             "presentaciones": [
                 { "nombre": "Unidad", "nombre_plural": "Unidades", "factor_conversion": 1 }

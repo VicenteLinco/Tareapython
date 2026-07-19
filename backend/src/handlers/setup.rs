@@ -130,6 +130,13 @@ async fn finalizar(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
+    let blockers = setup_service::setup_blockers(&state.pool).await?;
+    if blockers["can_finish"] != true {
+        return Err(AppError::BusinessLogic(
+            format!("La carga inicial todavía tiene pendientes: {blockers}"),
+            "SETUP_BLOCKED".into(),
+        ));
+    }
     setup_service::finalizar_setup(&state.pool).await?;
     Ok(Json(
         serde_json::json!({ "mensaje": "Configuración finalizada" }),
@@ -143,4 +150,20 @@ pub fn routes() -> Router<AppState> {
         .route("/importar-stock", post(importar_stock))
         .route("/resumen", get(resumen))
         .route("/finalizar", post(finalizar))
+        // Import batches: register both parent spellings explicitly. Axum's
+        // nested-root matcher only recognizes the trailing-slash variant.
+        .route(
+            "/import-batches",
+            post(crate::handlers::import_batches::create)
+                .get(crate::handlers::import_batches::list),
+        )
+        .route(
+            "/import-batches/",
+            post(crate::handlers::import_batches::create)
+                .get(crate::handlers::import_batches::list),
+        )
+        .nest(
+            "/import-batches",
+            crate::handlers::import_batches::child_routes(),
+        )
 }

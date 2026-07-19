@@ -50,7 +50,7 @@ fn product_schema_matches_the_shared_product_contract() {
         .filter(|field| field.domain_required)
         .map(|field| field.key.as_str())
         .collect();
-    assert_eq!(required, vec!["nombre", "unidad_base_id"]);
+    assert_eq!(required, vec!["nombre"]);
 
     let image = schema
         .fields
@@ -62,6 +62,17 @@ fn product_schema_matches_the_shared_product_contract() {
     assert!(schema.fields.iter().all(|field| {
         !field.key.contains("lab_campo") && !field.label.to_lowercase().contains("laboratorio")
     }));
+}
+
+#[test]
+fn product_create_dto_accepts_name_without_unit() {
+    let product = serde_json::from_value::<CreateProducto>(serde_json::json!({
+        "nombre": "Reactivo sin unidad"
+    }))
+    .expect("only nombre is mandatory");
+
+    assert_eq!(product.nombre, "Reactivo sin unidad");
+    assert_eq!(product.unidad_base_id, None);
 }
 
 #[test]

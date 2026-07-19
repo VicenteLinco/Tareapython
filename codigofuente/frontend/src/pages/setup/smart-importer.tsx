@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import {
   FileUp,
   ArrowRight,
@@ -13,6 +13,8 @@ import {
   PlusCircle,
   Search,
   Sliders,
+  Download,
+  WandSparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { notify } from "@/lib/notify";
@@ -42,6 +44,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
   const [headers, setHeaders] = useState<string[]>([]);
   const [rawCsvRows, setRawCsvRows] = useState<string[][]>([]);
   const [showExplorer, setShowExplorer] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [mapping, setMapping] = useState<Record<string, string>>({
     nombre: "",
@@ -51,6 +54,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
     unidad_plural: "",
     stock_minimo: "",
     precio_unitario: "",
+    contenido: "",
     codigo_proveedor: "",
     proveedor: "",
     categoria: "",
@@ -70,6 +74,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
 
   const [previewData, setPreviewData] = useState<ImportPreviewRow[]>([]);
   const [errors, setErrors] = useState<ImportErrorRow[]>([]);
+  const [warnings, setWarnings] = useState<ImportErrorRow[]>([]);
   const [isValidating, setIsValidating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
 
@@ -82,6 +87,28 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
 
   // Search input to filter mapping fields
   const [searchQuery, setSearchQuery] = useState("");
+  const [bulkField, setBulkField] = useState("unidad");
+  const [bulkValue, setBulkValue] = useState("");
+  const [bulkMode, setBulkMode] = useState<"blank_only" | "overwrite_all">("blank_only");
+
+  const effectiveFile = () => {
+    if (!file || !bulkValue.trim()) return file;
+    const targetHeader = mapping[bulkField] || bulkField;
+    const nextHeaders = headers.includes(targetHeader) ? [...headers] : [...headers, targetHeader];
+    const targetIndex = nextHeaders.indexOf(targetHeader);
+    const escaped = (value: string) => /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+    const lines = [nextHeaders, ...rawCsvRows.slice(1).map((row) => {
+      const next = [...row]; while (next.length < nextHeaders.length) next.push("");
+      if (bulkMode === "overwrite_all" || !next[targetIndex]?.trim()) next[targetIndex] = bulkValue.trim();
+      return next;
+    })].map((row) => row.map(escaped).join(","));
+    return new File([lines.join("\n")], file.name, { type: "text/csv;charset=utf-8" });
+  };
+
+  const downloadTemplate = () => {
+    const blob = new Blob([["nombre,unidad,descripcion,codigo_interno,categoria,proveedor,precio_unitario"].join("\n")], { type: "text/csv;charset=utf-8" });
+    const anchor = document.createElement("a"); anchor.href = URL.createObjectURL(blob); anchor.download = "plantilla-productos.csv"; anchor.click(); URL.revokeObjectURL(anchor.href);
+  };
 
   // Campos que requiere el sistema
   const systemFields = [
@@ -97,7 +124,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
       label: "Unidad de Medida",
       required: false,
       category: "Básicos",
-      desc: "Debe coincidir con las creadas (ej: unidad, mililitro). Opcional, por defecto 'unidad'",
+      desc: "Debe coincidir con las creadas (ej: unidad, mililitro). Opcional",
     },
     {
       key: "descripcion",
@@ -147,6 +174,13 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
       required: false,
       category: "Comercial",
       desc: "Costo de adquisición de la unidad",
+    },
+    {
+      key: "contenido",
+      label: "Contenido por Presentación",
+      required: false,
+      category: "Comercial",
+      desc: "Cantidad de unidades base contenidas en la presentación",
     },
     {
       key: "proveedor",
@@ -329,6 +363,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
         if (lower.includes("plural")) newMap.unidad_plural = col;
         if (lower.includes("min") || lower.includes("seg") || lower.includes("seguridad")) newMap.stock_minimo = col;
         if (lower.includes("prec") || lower.includes("cost") || lower.includes("adquisicion")) newMap.precio_unitario = col;
+        if (lower.includes("contenido") || lower.includes("factor_conversion")) newMap.contenido = col;
         if (lower.includes("prov")) newMap.proveedor = col;
         if (lower.includes("cod_prov")) newMap.codigo_proveedor = col;
         if (lower.includes("cat") || lower.includes("grupo")) newMap.categoria = col;
@@ -359,7 +394,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
 
     setIsValidating(true);
     const formData = new FormData();
-    formData.append("file", file!);
+    formData.append("file", effectiveFile()!);
     formData.append(
       "config",
       JSON.stringify({
@@ -372,9 +407,14 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
       const res = await api.post("/setup/importar-productos", formData);
       setPreviewData(res.data.preview || []);
       setErrors(res.data.errores || []);
+      setWarnings(res.data.advertencias || []);
       setStep("PREVIEW");
-    } catch {
-      notify.error("Error al validar el archivo");
+    } catch (error: any) {
+      notify.error(
+        error.response?.data?.mensaje ||
+          error.response?.data?.message ||
+          "Error al validar el archivo",
+      );
     } finally {
       setIsValidating(false);
     }
@@ -383,7 +423,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
   const runImport = async () => {
     setIsImporting(true);
     const formData = new FormData();
-    formData.append("file", file!);
+    formData.append("file", effectiveFile()!);
     formData.append(
       "config",
       JSON.stringify({
@@ -394,6 +434,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
 
     try {
       const res = await api.post("/setup/importar-productos", formData);
+      setWarnings(res.data.advertencias || []);
       if (res.data.valido) {
         notify.success("Importación completada con éxito");
         onComplete();
@@ -401,8 +442,12 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
         notify.error("Hubo errores durante la importación real");
         setErrors(res.data.errores);
       }
-    } catch {
-      notify.error("Error crítico en el servidor");
+    } catch (error: any) {
+      notify.error(
+        error.response?.data?.mensaje ||
+          error.response?.data?.message ||
+          "Error crítico en el servidor",
+      );
     } finally {
       setIsImporting(false);
     }
@@ -493,10 +538,13 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
           {step === "UPLOAD" && (
             <div className="h-[60vh] flex flex-col items-center justify-center border-2 border-dashed border-base-300 rounded-[3rem] bg-base-200/30 hover:bg-base-200/50 transition-all group relative">
               <input
+                ref={fileInputRef}
+                id="smart-importer-csv-file"
                 type="file"
-                accept=".csv"
+                accept=".csv,text/csv"
                 onChange={handleFileChange}
-                className="absolute inset-0 opacity-0 cursor-pointer"
+                className="sr-only"
+                aria-label="Seleccionar archivo CSV"
               />
               <div className="p-8 bg-primary/10 rounded-full mb-6 group-hover:scale-110 transition-transform">
                 <FileUp className="h-16 w-16 text-primary" />
@@ -504,9 +552,16 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
               <h3 className="text-2xl font-black mb-2">
                 Suelte su archivo aquí
               </h3>
-              <p className="text-sm opacity-40 font-medium mb-8">
+              <p className="text-sm opacity-40 font-medium mb-4">
                 O haga clic para buscar en su ordenador (CSV)
               </p>
+              <label
+                htmlFor="smart-importer-csv-file"
+                className="btn btn-primary rounded-2xl gap-2 mb-8 z-10 cursor-pointer"
+              >
+                <FileUp className="w-4 h-4" />
+                Explorar CSV
+              </label>
               <div className="flex gap-4">
                 <div className="badge badge-outline h-8 px-4 opacity-40 font-bold">
                   Máximo 5MB
@@ -515,6 +570,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                   Codificación UTF-8
                 </div>
               </div>
+              <button type="button" onClick={(event) => { event.stopPropagation(); downloadTemplate(); }} className="btn btn-outline mt-6 z-10 gap-2"><Download className="w-4 h-4"/>Descargar plantilla</button>
             </div>
           )}
 
@@ -561,6 +617,17 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
               )}
 
               {/* Filter controls */}
+              <section className="p-5 rounded-3xl border border-primary/20 bg-primary/5 space-y-4">
+                <div className="flex items-center gap-2 font-black"><WandSparkles className="w-5 h-5 text-primary"/>Rellenar un campo para todas las filas</div>
+                <p className="text-sm opacity-60">El valor se aplica antes de validar. Puedes completar solo vacíos o reemplazar todos los valores.</p>
+                <div className="grid md:grid-cols-[1fr_1fr_auto] gap-3">
+                  <select className="select select-bordered" value={bulkField} onChange={(e)=>setBulkField(e.target.value)}>{systemFields.map((field)=><option key={field.key} value={field.key}>{field.label}</option>)}</select>
+                  <input className="input input-bordered" value={bulkValue} onChange={(e)=>setBulkValue(e.target.value)} placeholder="Valor para aplicar"/>
+                  <select className="select select-bordered" value={bulkMode} onChange={(e)=>setBulkMode(e.target.value as typeof bulkMode)}><option value="blank_only">Solo vacíos</option><option value="overwrite_all">Reemplazar todos</option></select>
+                </div>
+                {bulkValue && <div className="alert alert-warning py-2 text-sm">Se afectarán hasta {Math.max(0, rawCsvRows.length - 1)} filas. Revisa la vista previa antes de confirmar.</div>}
+              </section>
+
               <div className="relative w-full">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-40" />
                 <input
@@ -732,6 +799,30 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                 </div>
               )}
 
+              {warnings.length > 0 && (
+                <div className="p-6 bg-warning/5 border border-warning/20 rounded-[2.5rem] space-y-4">
+                  <div className="flex items-center gap-2 text-warning mb-2">
+                    <AlertCircle className="h-5 w-5" />
+                    <h4 className="font-black uppercase tracking-tight">
+                      Datos opcionales omitidos
+                    </h4>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
+                    {warnings.map((warning, i) => (
+                      <div
+                        key={i}
+                        className="flex gap-4 text-xs font-bold p-3 bg-base-100 rounded-xl"
+                      >
+                        <span className="text-warning w-16">
+                          Fila {warning.fila}
+                        </span>
+                        <span className="opacity-60">{warning.mensaje}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Vista Previa de Datos */}
               <div className="rounded-[2.5rem] border border-base-200 overflow-hidden bg-base-100 shadow-sm">
                 <div className="px-8 py-4 bg-base-200/50 border-b border-base-200">
@@ -757,7 +848,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                           <td className="font-bold text-sm">{row.nombre}</td>
                           <td>
                             <span className="badge badge-ghost font-bold text-[10px] uppercase tracking-tighter">
-                              {row.unidad || "unidad"}
+                              {row.unidad_base || "Sin unidad"}
                             </span>
                           </td>
                         </tr>

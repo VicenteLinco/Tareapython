@@ -15,6 +15,7 @@ mod dto;
 mod errors;
 mod handlers;
 mod middleware;
+mod migration_recovery;
 mod models;
 mod routes;
 mod services;
@@ -110,8 +111,12 @@ async fn main() {
 
     tracing::info!("Conectado a PostgreSQL");
 
-    sqlx::migrate!("./migrations")
-        .run(&pool)
+    let migration_recovery_enabled = migration_recovery::legacy_reset_authorized(
+        std::env::var("LEGACY_MIGRATION_RESET_TOKEN")
+            .ok()
+            .as_deref(),
+    );
+    migration_recovery::run_startup_migrations(&pool, migration_recovery_enabled)
         .await
         .expect("Error ejecutando migraciones");
 

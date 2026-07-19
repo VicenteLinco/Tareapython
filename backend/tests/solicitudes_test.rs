@@ -29,22 +29,23 @@ async fn setup_producto(pool: &PgPool, token: &str, app: &axum::Router) -> Uuid 
     )
     .await;
     let producto_id = prod_json["id"].as_str().unwrap().to_string();
-    
+
     // Create oferta_proveedor
     let prod_uuid: Uuid = producto_id.parse().unwrap();
-    let presentacion_id: i32 = sqlx::query_scalar("SELECT id FROM presentaciones WHERE producto_id = $1 LIMIT 1")
-        .bind(prod_uuid)
-        .fetch_one(pool)
-        .await
-        .unwrap();
-        
+    let presentacion_id: i32 =
+        sqlx::query_scalar("SELECT id FROM presentaciones WHERE producto_id = $1 LIMIT 1")
+            .bind(prod_uuid)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+
     sqlx::query("INSERT INTO ofertas_proveedor (proveedor_id, presentacion_id, precio_adquisicion) VALUES ($1, $2, 50.0)")
         .bind(proveedor_id as i32)
         .bind(presentacion_id)
         .execute(pool)
         .await
         .unwrap();
-        
+
     prod_uuid
 }
 

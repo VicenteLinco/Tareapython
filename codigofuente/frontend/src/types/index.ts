@@ -278,7 +278,7 @@ export interface CreateProducto {
   nombre: string;
   descripcion?: string | null;
   categoria_id?: number | null;
-  unidad_base_id: number;
+  unidad_base_id?: number | null;
   ubicacion?: string | null;
   temperatura_almacenamiento?: string | null;
   requiere_cadena_frio?: boolean;

@@ -12,7 +12,7 @@ pub struct Producto {
     pub nombre: String,
     pub descripcion: Option<String>,
     pub categoria_id: Option<i32>,
-    pub unidad_base_id: i32,
+    pub unidad_base_id: Option<i32>,
     pub ubicacion: Option<String>,
     pub temperatura_almacenamiento: Option<String>,
     pub requiere_cadena_frio: bool,

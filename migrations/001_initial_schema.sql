@@ -1025,7 +1025,7 @@ CREATE TABLE public.productos (
     nombre character varying(300) NOT NULL,
     descripcion text,
     categoria_id integer,
-    unidad_base_id integer NOT NULL,
+    unidad_base_id integer,
     activo boolean DEFAULT true NOT NULL,
     version integer DEFAULT 1 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -1051,8 +1051,9 @@ CREATE TABLE public.productos (
     codigo_loinc_cpt character varying(100),
     promedio_uso_mensual numeric(12,4) DEFAULT 0.0000 NOT NULL,
     promedio_uso_mensual_inicial numeric(12,4) DEFAULT 0.0000 NOT NULL,
-    CONSTRAINT chk_productos_estado_catalogo CHECK ((estado_catalogo = ANY (ARRAY['pendiente_aprobacion'::text, 'aprobado'::text]))),
-    CONSTRAINT chk_productos_origen_registro CHECK ((origen_registro = ANY (ARRAY['manual'::text, 'api_regulatoria'::text, 'guia_pdf'::text]))),
+    motivo_rechazo text,
+    CONSTRAINT chk_productos_estado_catalogo CHECK ((estado_catalogo = ANY (ARRAY['incompleto'::text, 'pendiente_aprobacion'::text, 'aprobado'::text, 'rechazado'::text]))),
+    CONSTRAINT chk_productos_origen_registro CHECK ((origen_registro = ANY (ARRAY['manual'::text, 'api_regulatoria'::text, 'guia_pdf'::text, 'importacion_csv'::text]))),
     CONSTRAINT productos_clase_riesgo_check CHECK (((clase_riesgo)::text = ANY (ARRAY[('biologico'::character varying)::text, ('quimico'::character varying)::text, ('radiactivo'::character varying)::text, ('inflamable'::character varying)::text, ('corrosivo'::character varying)::text, ('ninguno'::character varying)::text]))),
     CONSTRAINT productos_control_lote_check CHECK ((control_lote = ANY (ARRAY['trazable'::text, 'con_vto'::text, 'simple'::text]))),
     CONSTRAINT productos_temperatura_almacenamiento_check CHECK (((temperatura_almacenamiento)::text = ANY (ARRAY[('ambiente'::character varying)::text, ('refrigerado'::character varying)::text, ('congelado'::character varying)::text, ('ultra_frio'::character varying)::text, ('no_aplica'::character varying)::text])))
@@ -1587,7 +1588,7 @@ CREATE VIEW public.v_stock_por_producto_area AS
      JOIN public.lotes l ON ((l.id = s.lote_id)))
      JOIN public.productos p ON ((p.id = l.producto_id)))
      JOIN public.areas a ON ((a.id = s.area_id)))
-     JOIN public.unidades_basicas um ON ((um.id = p.unidad_base_id)))
+     LEFT JOIN public.unidades_basicas um ON ((um.id = p.unidad_base_id)))
   WHERE ((s.cantidad > (0)::numeric) AND (p.activo = true) AND (p.estado_catalogo = 'aprobado'::text))
   GROUP BY p.id, p.codigo_interno, p.nombre, a.id, a.nombre, um.nombre, um.nombre_plural;
 
@@ -3387,6 +3388,78 @@ ALTER TABLE ONLY public.whatsapp_webhook_logs
 INSERT INTO public.configuracion (clave, valor_texto)
 VALUES ('favicon_base64', ''), ('login_bg_color', '')
 ON CONFLICT (clave) DO NOTHING;
+
+-- Durable initial-load staging. Catalog writes are linked to their source batch so
+-- imports can be resumed, audited and safely rolled back.
+CREATE TABLE public.import_batches (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_name text NOT NULL,
+    source_sha256 text NOT NULL,
+    source_bytes bytea NOT NULL,
+    status text NOT NULL DEFAULT 'uploaded' CHECK (status IN ('uploaded','mapped','validated','committing','committed','failed','rolled_back','cancelled')),
+    mapping jsonb NOT NULL DEFAULT '{}'::jsonb,
+    duplicate_strategy text NOT NULL DEFAULT 'review' CHECK (duplicate_strategy IN ('skip','fill_blank','review')),
+    idempotency_key text NOT NULL,
+    revision bigint NOT NULL DEFAULT 1,
+    counts jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_by uuid NOT NULL REFERENCES public.usuarios(id),
+    error_message text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    committed_at timestamptz,
+    UNIQUE(created_by, idempotency_key)
+);
+CREATE INDEX idx_import_batches_status ON public.import_batches(status, created_at DESC);
+CREATE INDEX idx_import_batches_source_hash ON public.import_batches(source_sha256);
+
+CREATE TABLE public.import_rows (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    batch_id uuid NOT NULL REFERENCES public.import_batches(id) ON DELETE CASCADE,
+    row_number integer NOT NULL CHECK (row_number > 1),
+    raw jsonb NOT NULL,
+    normalized jsonb NOT NULL DEFAULT '{}'::jsonb,
+    diagnostics jsonb NOT NULL DEFAULT '[]'::jsonb,
+    status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','valid','incomplete','duplicate','error','committed','skipped','rolled_back')),
+    matched_product_id uuid REFERENCES public.productos(id),
+    outcome jsonb NOT NULL DEFAULT '{}'::jsonb,
+    UNIQUE(batch_id,row_number)
+);
+CREATE INDEX idx_import_rows_batch_status ON public.import_rows(batch_id,status);
+
+CREATE TABLE public.import_transforms (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    batch_id uuid NOT NULL REFERENCES public.import_batches(id) ON DELETE CASCADE,
+    field text NOT NULL,
+    mode text NOT NULL CHECK (mode IN ('blank_only','overwrite_all')),
+    typed_value jsonb NOT NULL,
+    affected_count integer NOT NULL CHECK (affected_count >= 0),
+    created_by uuid NOT NULL REFERENCES public.usuarios(id),
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE VIEW public.product_readiness AS
+SELECT p.id AS producto_id,
+       p.estado_catalogo,
+       (p.activo AND p.estado_catalogo = 'aprobado' AND p.unidad_base_id IS NOT NULL) AS inventory_ready,
+       CASE WHEN p.unidad_base_id IS NULL THEN ARRAY['unidad_base']::text[] ELSE ARRAY[]::text[] END AS missing_fields
+FROM public.productos p WHERE p.deleted_at IS NULL;
+
+CREATE VIEW public.productos_operativos AS
+SELECT p.* FROM public.productos p JOIN public.product_readiness r ON r.producto_id=p.id
+WHERE r.inventory_ready;
+
+CREATE FUNCTION public.require_product_readiness() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE target uuid;
+BEGIN
+  IF TG_TABLE_NAME = 'lotes' THEN target := NEW.producto_id;
+  ELSE SELECT producto_id INTO target FROM public.lotes WHERE id=NEW.lote_id; END IF;
+  IF target IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.product_readiness WHERE producto_id=target AND inventory_ready) THEN
+    RAISE EXCEPTION 'PRODUCT_NOT_READY: %', target USING ERRCODE='P0001';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER gate_lotes_product_readiness BEFORE INSERT OR UPDATE ON public.lotes FOR EACH ROW EXECUTE FUNCTION public.require_product_readiness();
+CREATE TRIGGER gate_movimientos_product_readiness BEFORE INSERT OR UPDATE ON public.movimientos FOR EACH ROW EXECUTE FUNCTION public.require_product_readiness();
 
 -- PostgreSQL database dump complete
 --

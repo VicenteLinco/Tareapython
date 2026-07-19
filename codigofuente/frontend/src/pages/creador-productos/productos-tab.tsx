@@ -49,7 +49,7 @@ interface ProductoListItem {
   codigo_interno: string | null;
   nombre: string;
   categoria: { id: number; nombre: string } | null;
-  unidad_base: { id: number; nombre: string; nombre_plural: string };
+  unidad_base: { id: number; nombre: string; nombre_plural: string } | null;
   area: { id: number; nombre: string } | null;
   lead_time_propio: number | null;
   activo: boolean;
@@ -281,7 +281,7 @@ export default function ProductosTab() {
         <span
           className={`font-mono text-sm bg-base-200 px-2 py-0.5 rounded ${!item.activo ? "opacity-50" : ""}`}
         >
-          {item.unidad_base.nombre}
+          {item.unidad_base?.nombre || "--"}
         </span>
       ),
     },
@@ -383,7 +383,7 @@ export default function ProductosTab() {
         p.nombre,
         p.categoria?.nombre,
         p.area?.nombre,
-        p.unidad_base.nombre,
+        p.unidad_base?.nombre,
         productoEstadoTexto(p),
       ]
         .map(csvEscape)

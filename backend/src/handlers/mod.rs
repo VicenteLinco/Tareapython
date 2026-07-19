@@ -8,6 +8,7 @@ pub mod conteo;
 pub mod descartes;
 pub mod etiquetas;
 pub mod health;
+pub mod import_batches;
 pub mod lab_campo;
 pub mod lotes;
 pub mod movimientos;

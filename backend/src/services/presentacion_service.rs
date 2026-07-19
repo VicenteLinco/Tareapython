@@ -73,14 +73,18 @@ impl PresentacionService {
             ));
         }
 
-        // Verificar que el producto existe
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE id = $1)")
+        // A presentation converts quantities into the product's base unit.
+        let unidad_base_id: Option<Option<i32>> =
+            sqlx::query_scalar("SELECT unidad_base_id FROM productos WHERE id = $1")
                 .bind(producto_id)
-                .fetch_one(pool)
+                .fetch_optional(pool)
                 .await?;
-        if !exists {
-            return Err(AppError::NotFound("Producto no encontrado".into()));
+        match unidad_base_id {
+            None => return Err(AppError::NotFound("Producto no encontrado".into())),
+            Some(None) => return Err(AppError::Validation(
+                "El producto no tiene unidad de medida; asígnela antes de crear presentaciones u operar stock".into(),
+            )),
+            Some(Some(_)) => {}
         }
 
         let presentacion = sqlx::query_as::<_, Presentacion>(

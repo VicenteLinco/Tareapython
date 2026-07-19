@@ -1,0 +1,5 @@
+nombre,unidad,proveedor,codigo_proveedor,precio_unitario,contenido,promedio_uso_mensual_inicial,dias_estabilidad_abierto,stock_minimo
+Solo nombre,,,,,,,,
+Opcionales vacíos,,,,,,,,
+Reactivo completo,mililitro,Proveedor Demo,SKU-DEMO,1250.50,100,25.5,30,5
+Comercial sin unidad,,Proveedor Omitido,SKU-OMIT,99.9,10,,,

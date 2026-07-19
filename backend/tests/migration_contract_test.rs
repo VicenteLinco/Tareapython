@@ -26,10 +26,8 @@ fn migrations_are_a_single_clean_baseline() {
     let canonical_sql = fs::read_to_string(canonical.join(&expected[0])).unwrap();
     let embedded_sql = fs::read_to_string(embedded.join(&expected[0])).unwrap();
     assert_eq!(embedded_sql, canonical_sql, "embedded migrations drifted");
-    let gitignore = fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../.gitignore"),
-    )
-    .unwrap();
+    let gitignore =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.gitignore")).unwrap();
     assert!(
         gitignore.lines().any(|line| line == "!backend/migrations/"),
         "embedded migration directory must be tracked for clean-checkout builds"
@@ -41,8 +39,7 @@ fn migrations_are_a_single_clean_baseline() {
         "embedded SQL migrations must be tracked for clean-checkout builds"
     );
 
-    let obsolete_signature =
-        "fn_estado_vencimiento(p_tiene_vencido boolean, p_proxima_venc_usable date, p_rastrea_vencimiento boolean DEFAULT true, p_riesgo_dias integer DEFAULT 30, p_proximo_dias integer DEFAULT 90)";
+    let obsolete_signature = "fn_estado_vencimiento(p_tiene_vencido boolean, p_proxima_venc_usable date, p_rastrea_vencimiento boolean DEFAULT true, p_riesgo_dias integer DEFAULT 30, p_proximo_dias integer DEFAULT 90)";
     assert!(
         !canonical_sql.contains(obsolete_signature),
         "obsolete five-argument fn_estado_vencimiento overload remains"

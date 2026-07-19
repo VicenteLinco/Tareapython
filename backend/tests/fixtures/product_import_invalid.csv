@@ -1,0 +1,7 @@
+nombre,unidad,precio_unitario,contenido,promedio_uso_mensual_inicial,dias_estabilidad_abierto,stock_minimo
+Fila válida,unidad,10,1,2,3,4
+Precio inválido,unidad,barato,1,2,3,4
+Factor inválido,unidad,10,0,2,3,4
+Uso inválido,unidad,10,1,mucho,3,4
+Días inválidos,unidad,10,1,2,muchos,4
+Stock inválido,unidad,10,1,2,3,bajo

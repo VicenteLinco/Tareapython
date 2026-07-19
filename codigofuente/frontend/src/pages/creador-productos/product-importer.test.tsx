@@ -41,6 +41,18 @@ const schema: ProductSchema = {
       allowed_values: [],
     },
     {
+      key: "unidad_base_id",
+      label: "Unidad base",
+      type: "catalog",
+      section: "classification",
+      order: 25,
+      domain_required: false,
+      import_supported: true,
+      aliases: ["unidad"],
+      catalog_endpoint: "/unidades-basicas",
+      allowed_values: [],
+    },
+    {
       key: "imagen",
       label: "Imagen",
       type: "image",
@@ -58,6 +70,21 @@ const schema: ProductSchema = {
 afterEach(cleanup);
 
 describe("ProductImporter schema-driven mapper", () => {
+  it("requires only nombre when unidad is optional in the schema", () => {
+    const optionalUnitSchema: ProductSchema = {
+      ...schema,
+      fields: schema.fields.map((field) =>
+        field.key === "unidad_base_id"
+          ? { ...field, domain_required: false }
+          : field,
+      ),
+    };
+
+    expect(validateProductMapping(optionalUnitSchema, { nombre: "Nombre" })).toEqual({
+      valid: true,
+      errors: [],
+    });
+  });
   it("renders every import-supported schema field and locks domain requirements", () => {
     render(
       <ProductImporter

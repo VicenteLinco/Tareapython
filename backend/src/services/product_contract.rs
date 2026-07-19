@@ -11,6 +11,17 @@ const MAX_ROWS: usize = 5_000;
 const MAX_COLUMNS: usize = 64;
 const MAX_CELL_BYTES: usize = 4 * 1024;
 
+pub fn normalize_header(value: &str) -> String {
+    value.trim().to_lowercase().replace(['_', '-'], " ")
+}
+
+pub fn importable_fields() -> Vec<&'static ProductFieldDefinition> {
+    PRODUCT_FIELD_REGISTRY
+        .iter()
+        .filter(|field| field.import_supported)
+        .collect()
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ProductFieldDefinition {
     pub key: &'static str,
@@ -85,7 +96,7 @@ pub static PRODUCT_FIELD_REGISTRY: &[ProductFieldDefinition] = &[
             Catalog,
             "classification",
             40,
-            true,
+            false,
             true,
             ["unidad", "unidad base", "unidad medida"]
         )

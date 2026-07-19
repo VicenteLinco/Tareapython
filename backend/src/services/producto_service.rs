@@ -196,7 +196,7 @@ pub struct CrearProductoParams {
     pub nombre: String,
     pub descripcion: Option<String>,
     pub categoria_id: Option<i32>,
-    pub unidad_base_id: i32,
+    pub unidad_base_id: Option<i32>,
     pub ubicacion: Option<String>,
     pub temperatura_almacenamiento: Option<String>,
     pub requiere_cadena_frio: bool,
@@ -262,9 +262,9 @@ pub struct ProductoRow {
     pub estado_stock: String,
     pub cat_id: Option<i32>,
     pub cat_nombre: Option<String>,
-    pub um_id: i32,
-    pub um_nombre: String,
-    pub um_nombre_plural: String,
+    pub um_id: Option<i32>,
+    pub um_nombre: Option<String>,
+    pub um_nombre_plural: Option<String>,
     pub area_id: Option<i32>,
     pub area_nombre: Option<String>,
     pub imagen_url: Option<String>,
@@ -430,11 +430,11 @@ impl ProductoService {
                     THEN json_build_object('id', c.id, 'nombre', c.nombre)
                     ELSE NULL
                 END,
-                'unidad_base', json_build_object(
+                'unidad_base', CASE WHEN ub.id IS NOT NULL THEN json_build_object(
                     'id', ub.id,
                     'nombre', ub.nombre,
                     'nombre_plural', ub.nombre_plural
-                ),
+                ) ELSE NULL END,
 
                 'presentaciones', COALESCE(
                     (SELECT json_agg(
@@ -467,7 +467,7 @@ impl ProductoService {
             )
             FROM productos p
             LEFT JOIN categorias c ON c.id = p.categoria_id
-            JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
+            LEFT JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
             WHERE p.id = $1"#,
         )
         .bind(id)
@@ -997,7 +997,7 @@ impl ProductoService {
                     nombre: dispositivo.nombre,
                     descripcion: dispositivo.descripcion,
                     categoria_id: None,
-                    unidad_base_id: base_unit.0,
+                    unidad_base_id: Some(base_unit.0),
                     ubicacion: Some("Estantería de cuarentena".to_string()),
                     temperatura_almacenamiento: None,
                     requiere_cadena_frio: false,
@@ -1214,7 +1214,7 @@ impl ProductoService {
                       p.promedio_uso_mensual_inicial
                FROM productos p
                LEFT JOIN categorias c ON c.id = p.categoria_id
-               JOIN unidades_basicas um ON um.id = p.unidad_base_id
+               LEFT JOIN unidades_basicas um ON um.id = p.unidad_base_id
                WHERE {}
                ORDER BY {} {} NULLS LAST, p.nombre ASC
                LIMIT ${} OFFSET ${}"#,

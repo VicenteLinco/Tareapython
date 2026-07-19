@@ -17,6 +17,7 @@ pub mod product_contract;
 pub mod producto_service;
 pub mod promedio_job;
 pub mod proveedor_service;
+pub mod readiness_service;
 pub mod recepcion_service;
 pub mod setup_service;
 pub mod solicitud_service;

@@ -63,7 +63,7 @@ async fn test_integridad_stock_y_servicios_refactorizados(pool: sqlx::PgPool) {
 
     let presentacion_id: i32 = sqlx::query_scalar(
         "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion) \
-         VALUES ($1, 'Unidad', 'Unidades', 1.0) RETURNING id"
+         VALUES ($1, 'Unidad', 'Unidades', 1.0) RETURNING id",
     )
     .bind(producto_id)
     .fetch_one(&pool)

@@ -456,9 +456,13 @@ async fn test_promedio_uso_mensual_completo(pool: PgPool) {
     let mut mapping = std::collections::HashMap::new();
     mapping.insert("nombre".to_string(), "nombre".to_string());
     mapping.insert("unidad_base".to_string(), "unidad_base".to_string());
-    mapping.insert("promedio_uso_mensual_inicial".to_string(), "promedio_uso".to_string());
+    mapping.insert(
+        "promedio_uso_mensual_inicial".to_string(),
+        "promedio_uso".to_string(),
+    );
     let config = inventario_lab_backend::services::setup_service::ImportConfig {
         mapping,
+        required_fields: vec![],
         dry_run: false,
     };
 

@@ -35,7 +35,7 @@ struct ProductoListItem {
     codigo_interno: String,
     nombre: String,
     categoria: Option<CategoriaRef>,
-    unidad_base: UnidadRef,
+    unidad_base: Option<UnidadRef>,
     area: Option<AreaRef>,
     lead_time_propio: Option<i32>,
     activo: bool,
@@ -125,11 +125,11 @@ async fn listar(
                 id,
                 nombre: r.cat_nombre.unwrap_or_default(),
             }),
-            unidad_base: UnidadRef {
-                id: r.um_id,
-                nombre: r.um_nombre,
-                nombre_plural: r.um_nombre_plural,
-            },
+            unidad_base: r.um_id.map(|id| UnidadRef {
+                id,
+                nombre: r.um_nombre.unwrap_or_default(),
+                nombre_plural: r.um_nombre_plural.unwrap_or_default(),
+            }),
             area: r.area_id.map(|id| AreaRef {
                 id,
                 nombre: r.area_nombre.unwrap_or_default(),

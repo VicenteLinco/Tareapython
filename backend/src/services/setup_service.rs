@@ -8,6 +8,8 @@ use std::str::FromStr;
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ImportConfig {
     pub mapping: HashMap<String, String>,
+    #[serde(default)]
+    pub required_fields: Vec<String>,
     pub dry_run: bool,
 }
 
@@ -15,6 +17,10 @@ pub struct ImportConfig {
 pub struct ImportError {
     pub fila: usize,
     pub mensaje: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub campo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub codigo: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -23,6 +29,7 @@ pub struct ImportResult {
     pub importados: usize,
     pub omitidos: usize,
     pub errores: Vec<ImportError>,
+    pub advertencias: Vec<ImportError>,
     pub preview: Vec<serde_json::Value>,
     pub valido: bool,
 }
@@ -74,13 +81,103 @@ pub async fn verificar_estado(pool: &PgPool) -> Result<EstadoSetup, AppError> {
     })
 }
 
+pub async fn setup_blockers(pool: &PgPool) -> Result<serde_json::Value, AppError> {
+    let unresolved: i64 = sqlx::query_scalar("SELECT count(*) FROM import_batches WHERE status IN ('uploaded','mapped','validated','committing','failed')").fetch_one(pool).await.unwrap_or(0);
+    let incomplete: i64 = sqlx::query_scalar("SELECT count(*) FROM productos WHERE activo AND estado_catalogo IN ('incompleto','pendiente_aprobacion')").fetch_one(pool).await?;
+    Ok(
+        serde_json::json!({"unresolved_batches":unresolved,"incomplete_products":incomplete,"can_finish":unresolved==0 && incomplete==0}),
+    )
+}
+
+fn diagnostic(
+    fila: usize,
+    campo: impl Into<String>,
+    codigo: impl Into<String>,
+    mensaje: impl Into<String>,
+) -> ImportError {
+    ImportError {
+        fila,
+        campo: Some(campo.into()),
+        codigo: Some(codigo.into()),
+        mensaje: mensaje.into(),
+    }
+}
+
+fn parse_optional_decimal(
+    value: &str,
+    fila: usize,
+    campo: &str,
+    errors: &mut Vec<ImportError>,
+) -> Option<Decimal> {
+    if value.is_empty() {
+        return None;
+    }
+    match Decimal::from_str(value) {
+        Ok(parsed) => Some(parsed),
+        Err(_) => {
+            errors.push(diagnostic(
+                fila,
+                campo,
+                "INVALID_NUMBER",
+                format!("{campo} debe ser un número válido; se recibió '{value}'"),
+            ));
+            None
+        }
+    }
+}
+
+fn parse_optional_i32(
+    value: &str,
+    fila: usize,
+    campo: &str,
+    errors: &mut Vec<ImportError>,
+) -> Option<i32> {
+    if value.is_empty() {
+        return None;
+    }
+    match value.parse::<i32>() {
+        Ok(parsed) => Some(parsed),
+        Err(_) => {
+            errors.push(diagnostic(
+                fila,
+                campo,
+                "INVALID_INTEGER",
+                format!("{campo} debe ser un entero válido; se recibió '{value}'"),
+            ));
+            None
+        }
+    }
+}
+
 pub async fn importar_catalogo(
     pool: &PgPool,
     bytes: &[u8],
     config: ImportConfig,
 ) -> Result<ImportResult, AppError> {
     require_setup_mode(pool).await?;
+    let mut tx = pool.begin().await?;
+    let mut result = importar_catalogo_en_tx(&mut tx, bytes, config).await?;
+    if result.valido && !result.preview.is_empty() {
+        // Preview never mutates; commit only when the caller did not request dry-run.
+    }
+    // The core performs no writes in dry-run. Commit/rollback is decided from the request.
+    // Invalid input always rolls back, which also proves zero partial catalog writes.
+    if result.valido {
+        tx.commit().await?;
+    } else {
+        tx.rollback().await?;
+        // Report the committed effect, not the number of rows tentatively
+        // processed before validation discovered a later error.
+        result.importados = 0;
+    }
+    Ok(result)
+}
 
+pub(crate) async fn importar_catalogo_en_tx(
+    conn: &mut sqlx::PgConnection,
+    bytes: &[u8],
+    config: ImportConfig,
+) -> Result<ImportResult, AppError> {
     let mut reader = csv::ReaderBuilder::new()
         .trim(csv::Trim::All)
         .from_reader(bytes);
@@ -113,6 +210,7 @@ pub async fn importar_catalogo(
     let mut importados = 0usize;
     let mut omitidos = 0usize;
     let mut errores = Vec::new();
+    let mut advertencias = Vec::new();
     let mut preview = Vec::new();
     let mut total_filas = 0usize;
 
@@ -125,6 +223,8 @@ pub async fn importar_catalogo(
                 errores.push(ImportError {
                     fila: fila_num,
                     mensaje: format!("Error de formato: {}", e),
+                    campo: None,
+                    codigo: None,
                 });
                 continue;
             }
@@ -147,15 +247,11 @@ pub async fn importar_catalogo(
         let nombre = get_val("nombre");
         let descripcion = get_val("descripcion");
         let codigo_interno_csv = get_val("codigo_interno");
-        let unidad_nombre_raw = get_first_val(&["unidad_base", "unidad"]);
-        let unidad_nombre = if unidad_nombre_raw.is_empty() {
-            "unidad"
-        } else {
-            unidad_nombre_raw
-        };
+        let unidad_nombre = get_first_val(&["unidad_base", "unidad"]);
         let unidad_plural = get_first_val(&["unidad_base_plural", "unidad_plural"]);
         let stock_minimo_str = get_first_val(&["stock_seguridad", "stock_minimo"]);
         let precio_str = get_first_val(&["precio_unitario", "precio_unidad"]);
+        let contenido_str = get_first_val(&["contenido", "factor_conversion"]);
         let cod_proveedor = get_val("codigo_proveedor");
         let proveedor_nombre = get_val("proveedor");
         let categoria_nombre = get_val("categoria");
@@ -167,8 +263,13 @@ pub async fn importar_catalogo(
             } else {
                 ""
             };
-        let promedio_uso_mensual_inicial =
-            Decimal::from_str(promedio_uso_mensual_inicial_str).unwrap_or(Decimal::ZERO);
+        let promedio_uso_mensual_inicial = parse_optional_decimal(
+            promedio_uso_mensual_inicial_str,
+            fila_num,
+            "promedio_uso_mensual_inicial",
+            &mut errores,
+        )
+        .unwrap_or(Decimal::ZERO);
 
         // Nuevos atributos de diseño de producto
         let ubicacion = get_val("ubicacion");
@@ -179,7 +280,12 @@ pub async fn importar_catalogo(
             _ => false,
         };
         let dias_estabilidad_str = get_val("dias_estabilidad_abierto");
-        let dias_estabilidad = dias_estabilidad_str.parse::<i32>().ok();
+        let dias_estabilidad = parse_optional_i32(
+            dias_estabilidad_str,
+            fila_num,
+            "dias_estabilidad_abierto",
+            &mut errores,
+        );
         let clase_riesgo = get_val("clase_riesgo");
         let fabricante = get_val("fabricante");
         let mpn = get_val("mpn");
@@ -196,12 +302,48 @@ pub async fn importar_catalogo(
             "trazable" | "completo" => "trazable",
             _ => "con_vto",
         };
+        let _stock_minimo =
+            parse_optional_decimal(stock_minimo_str, fila_num, "stock_minimo", &mut errores);
+        let precio = parse_optional_decimal(precio_str, fila_num, "precio_unitario", &mut errores);
+        let factor_conversion =
+            parse_optional_decimal(contenido_str, fila_num, "factor_conversion", &mut errores);
+        if factor_conversion.is_some_and(|value| value <= Decimal::ZERO) {
+            errores.push(diagnostic(
+                fila_num,
+                "factor_conversion",
+                "NON_POSITIVE_FACTOR",
+                "factor_conversion debe ser mayor a cero",
+            ));
+        }
 
         if nombre.is_empty() {
             errores.push(ImportError {
                 fila: fila_num,
                 mensaje: "nombre es obligatorio".into(),
+                campo: None,
+                codigo: None,
             });
+            continue;
+        }
+
+        if let Some(required_key) = config
+            .required_fields
+            .iter()
+            .find(|key| key.as_str() != "nombre" && get_val(key).is_empty())
+        {
+            errores.push(ImportError {
+                fila: fila_num,
+                mensaje: format!(
+                    "el campo '{}' fue marcado como obligatorio para esta importación",
+                    required_key
+                ),
+                campo: Some(required_key.clone()),
+                codigo: Some("REQUIRED_FIELD".into()),
+            });
+            continue;
+        }
+
+        if errores.iter().any(|error| error.fila == fila_num) {
             continue;
         }
 
@@ -226,6 +368,24 @@ pub async fn importar_catalogo(
             }));
         }
 
+        let commercial_without_unit = [
+            (!proveedor_nombre.is_empty()).then_some("proveedor"),
+            (!cod_proveedor.is_empty()).then_some("código de proveedor"),
+            (!precio_str.is_empty()).then_some("precio"),
+            (!contenido_str.is_empty()).then_some("contenido"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+        if unidad_nombre.is_empty() && !commercial_without_unit.is_empty() {
+            advertencias.push(diagnostic(
+                fila_num,
+                "unidad_base",
+                "COMMERCIAL_DATA_REQUIRES_UNIT",
+                format!("Se importó el producto, pero se omitió {} porque falta la unidad necesaria para crear una presentación válida.", commercial_without_unit.join(", ")),
+            ));
+        }
+
         if config.dry_run {
             continue;
         }
@@ -233,7 +393,7 @@ pub async fn importar_catalogo(
         let existe: bool =
             sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM productos WHERE codigo_interno = $1)")
                 .bind(codigo_interno)
-                .fetch_one(pool)
+                .fetch_one(&mut *conn)
                 .await?;
 
         if existe {
@@ -252,49 +412,48 @@ pub async fn importar_catalogo(
             other => other,
         };
 
-        let unidad_id: Option<i32> = sqlx::query_scalar(
-            "SELECT id FROM unidades_basicas WHERE nombre = $1 OR nombre_plural = $1",
-        )
-        .bind(normalized_unidad_nombre)
-        .fetch_optional(pool)
-        .await?;
+        let unidad_id: Option<i32> = if unidad_nombre.is_empty() {
+            None
+        } else {
+            sqlx::query_scalar(
+                "SELECT id FROM unidades_basicas WHERE nombre = $1 OR nombre_plural = $1",
+            )
+            .bind(normalized_unidad_nombre)
+            .fetch_optional(&mut *conn)
+            .await?
+        };
 
         let u_id = match unidad_id {
-            Some(id) => id,
+            Some(id) => Some(id),
             None if !unidad_nombre.is_empty() => {
                 let plural_val = if unidad_plural.is_empty() {
                     format!("{}s", normalized_unidad_nombre)
                 } else {
                     unidad_plural.to_string()
                 };
-                sqlx::query_scalar(
+                sqlx::query_scalar::<_, i32>(
                     "INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ($1, $2) RETURNING id",
                 )
                 .bind(normalized_unidad_nombre)
                 .bind(plural_val)
-                .fetch_one(pool)
+                .fetch_one(&mut *conn)
                 .await?
+                .into()
             }
-            None => {
-                errores.push(ImportError {
-                    fila: fila_num,
-                    mensaje: "unidad_base es obligatoria".into(),
-                });
-                continue;
-            }
+            None => None,
         };
 
         let cat_id: Option<i32> = if !categoria_nombre.is_empty() {
             let id: Option<i32> = sqlx::query_scalar("SELECT id FROM categorias WHERE nombre = $1")
                 .bind(categoria_nombre)
-                .fetch_optional(pool)
+                .fetch_optional(&mut *conn)
                 .await?;
             match id {
                 Some(id) => Some(id),
                 None => Some(
                     sqlx::query_scalar("INSERT INTO categorias (nombre) VALUES ($1) RETURNING id")
                         .bind(categoria_nombre)
-                        .fetch_one(pool)
+                        .fetch_one(&mut *conn)
                         .await?,
                 ),
             }
@@ -302,18 +461,18 @@ pub async fn importar_catalogo(
             None
         };
 
-        let prov_id: Option<i32> = if !proveedor_nombre.is_empty() {
+        let prov_id: Option<i32> = if !proveedor_nombre.is_empty() && !unidad_nombre.is_empty() {
             let id: Option<i32> =
                 sqlx::query_scalar("SELECT id FROM proveedores WHERE nombre = $1")
                     .bind(proveedor_nombre)
-                    .fetch_optional(pool)
+                    .fetch_optional(&mut *conn)
                     .await?;
             match id {
                 Some(id) => Some(id),
                 None => Some(
                     sqlx::query_scalar("INSERT INTO proveedores (nombre) VALUES ($1) RETURNING id")
                         .bind(proveedor_nombre)
-                        .fetch_one(pool)
+                        .fetch_one(&mut *conn)
                         .await?,
                 ),
             }
@@ -321,14 +480,12 @@ pub async fn importar_catalogo(
             None
         };
 
-        let precio = Decimal::from_str(precio_str).ok();
-
         let p_id = uuid::Uuid::new_v4();
         sqlx::query(
             "INSERT INTO productos
              (id, codigo_interno, nombre, descripcion, unidad_base_id, categoria_id, promedio_uso_mensual_inicial, promedio_uso_mensual,
-              ubicacion, temperatura_almacenamiento, requiere_cadena_frio, dias_estabilidad_abierto, clase_riesgo, fabricante, mpn, alias_unidad_clinica, es_kit, codigo_loinc_cpt, control_lote)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)",
+              ubicacion, temperatura_almacenamiento, requiere_cadena_frio, dias_estabilidad_abierto, clase_riesgo, fabricante, mpn, alias_unidad_clinica, es_kit, codigo_loinc_cpt, control_lote, estado_catalogo, origen_registro)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 'importacion_csv')",
         )
         .bind(p_id)
         .bind(codigo_interno)
@@ -353,23 +510,34 @@ pub async fn importar_catalogo(
         .bind(es_kit)
         .bind(if codigo_loinc.is_empty() { None } else { Some(codigo_loinc) })
         .bind(control_lote)
-        .execute(pool)
+        .bind(if u_id.is_some() { "pendiente_aprobacion" } else { "incompleto" })
+        .execute(&mut *conn)
         .await?;
 
-        let pres_id: i32 = sqlx::query_scalar(
-            "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, sku, activa) \
-             VALUES ($1, 'Unidad', 'Unidades', 1.0, $2, true) RETURNING id",
-        )
-        .bind(p_id)
-        .bind(if cod_proveedor.is_empty() {
-            None
+        let pres_id: Option<i32> = if !unidad_nombre.is_empty() {
+            let factor_conversion = factor_conversion.unwrap_or(Decimal::ONE);
+            Some(
+                sqlx::query_scalar(
+                    "INSERT INTO presentaciones (producto_id, nombre, nombre_plural, factor_conversion, sku, activa) \
+                     VALUES ($1, $2, $3, $4, $5, true) RETURNING id",
+                )
+                .bind(p_id)
+                .bind(unidad_nombre)
+                .bind(if unidad_plural.is_empty() {
+                    format!("{}s", unidad_nombre)
+                } else {
+                    unidad_plural.to_string()
+                })
+                .bind(factor_conversion)
+                .bind((!cod_proveedor.is_empty()).then_some(cod_proveedor))
+                .fetch_one(&mut *conn)
+                .await?,
+            )
         } else {
-            Some(cod_proveedor)
-        })
-        .fetch_one(pool)
-        .await?;
+            None
+        };
 
-        if let Some(proveedor_id) = prov_id {
+        if let (Some(proveedor_id), Some(pres_id)) = (prov_id, pres_id) {
             sqlx::query(
                 "INSERT INTO ofertas_proveedor (presentacion_id, proveedor_id, precio_adquisicion, sku_proveedor) \
                  VALUES ($1, $2, $3, $4)",
@@ -382,7 +550,7 @@ pub async fn importar_catalogo(
             } else {
                 Some(cod_proveedor)
             })
-            .execute(pool)
+            .execute(&mut *conn)
             .await?;
         }
 
@@ -394,6 +562,7 @@ pub async fn importar_catalogo(
         importados,
         omitidos,
         errores: errores.clone(),
+        advertencias,
         preview,
         valido: total_filas > 0 && errores.is_empty(),
     })
@@ -452,6 +621,25 @@ pub async fn importar_inventario(
                 continue;
             }
         };
+
+        // Do not invoke the lot trigger for products that are still incomplete.
+        // The trigger raises PRODUCT_NOT_READY and aborts the transaction; during
+        // import we instead quarantine the row as a regular validation error so
+        // the caller receives a durable report and the batch remains atomic.
+        let inventory_ready: bool = sqlx::query_scalar(
+            "SELECT activo AND estado_catalogo = 'aprobado' AND unidad_base_id IS NOT NULL FROM productos WHERE id = $1",
+        )
+        .bind(p_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if !inventory_ready {
+            errores.push(serde_json::json!({
+                "fila": fila_num,
+                "codigo": "PRODUCT_NOT_READY",
+                "error": format!("Producto '{}' no está listo para recibir stock", prod_ref)
+            }));
+            continue;
+        }
 
         let area_id: i32 = match sqlx::query_scalar("SELECT id FROM areas WHERE nombre = $1")
             .bind(area_nombre)

@@ -284,6 +284,82 @@ pub struct LlmConfig {
     pub api_key: String,  // API Key for Gemini
 }
 
+#[derive(Debug, Deserialize)]
+struct StoredAiModelConfig {
+    provider: String,
+    model: String,
+    #[serde(default)]
+    api_url: String,
+    #[serde(default)]
+    api_key: String,
+}
+
+fn resolve_configured_vision_model(raw: &str, configured_id: &str) -> Result<LlmConfig, AppError> {
+    let entries: Vec<serde_json::Value> = serde_json::from_str(raw).map_err(|_| {
+        AppError::BusinessLogic(
+            "La lista de modelos de IA guardada es inválida. Corríjala en Configuración."
+                .to_string(),
+            "AI_MODEL_CONFIG_INVALID".to_string(),
+        )
+    })?;
+    let requested_id = configured_id.trim();
+    if requested_id.is_empty() {
+        return Err(AppError::BusinessLogic(
+            "El ID del modelo de IA seleccionado es inválido.".to_string(),
+            "AI_MODEL_CONFIG_INVALID".to_string(),
+        ));
+    }
+
+    let mut seen_ids = std::collections::HashSet::new();
+    let mut selected = None;
+    for entry in entries {
+        let Some(id) = entry
+            .as_object()
+            .and_then(|object| object.get("id"))
+            .and_then(|id| id.as_str())
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+        else {
+            continue;
+        };
+        if !seen_ids.insert(id.to_string()) {
+            return Err(AppError::BusinessLogic(
+                "La lista de modelos de IA contiene IDs duplicados.".to_string(),
+                "AI_MODEL_CONFIG_INVALID".to_string(),
+            ));
+        }
+        if id == requested_id {
+            selected = Some(
+                serde_json::from_value::<StoredAiModelConfig>(entry).map_err(|_| {
+                    AppError::BusinessLogic(
+                        "El modelo de IA seleccionado está incompleto. Corríjalo en Configuración."
+                            .to_string(),
+                        "AI_MODEL_CONFIG_INVALID".to_string(),
+                    )
+                })?,
+            );
+        }
+    }
+    let selected = selected.ok_or_else(|| {
+        AppError::BusinessLogic(
+            "El modelo de IA seleccionado ya no existe. Seleccione otro modelo.".to_string(),
+            "AI_MODEL_CONFIG_NOT_FOUND".to_string(),
+        )
+    })?;
+    if selected.provider.trim().is_empty() || selected.model.trim().is_empty() {
+        return Err(AppError::BusinessLogic(
+            "El modelo de IA seleccionado está incompleto. Corríjalo en Configuración.".to_string(),
+            "AI_MODEL_CONFIG_INVALID".to_string(),
+        ));
+    }
+    Ok(LlmConfig {
+        provider: selected.provider.trim().to_string(),
+        model: selected.model.trim().to_string(),
+        api_url: selected.api_url.trim().to_string(),
+        api_key: selected.api_key.trim().to_string(),
+    })
+}
+
 #[derive(sqlx::FromRow, Debug)]
 pub struct ChatHistoryRow {
     pub request_body: String,
@@ -1722,6 +1798,10 @@ Para cada ítem, extrae:
 - cantidad (Cantidad física recibida, número positivo)
 - precio_unitario (Precio unitario si está presente; de lo contrario null)
 
+Los campos proveedor, nombre_producto y sku_ref siempre deben ser strings JSON, nunca null.
+Si proveedor o nombre_producto no pueden identificarse, usa una cadena vacía. Si no hay SKU/REF, usa "".
+Solo lote, fecha_vencimiento y precio_unitario pueden ser null.
+
 Debes retornar obligatoriamente un objeto JSON que cumpla con el siguiente esquema:
 {
   "proveedor": "Nombre del Proveedor",
@@ -1898,178 +1978,20 @@ pub async fn parse_guia_con_vision(
     pool: &sqlx::PgPool,
     image_bytes: &[u8],
     mime_type: &str,
-    provider_override: Option<String>,
-    model_override: Option<String>,
-    api_key_override: Option<String>,
+    configured_model_id: Option<String>,
 ) -> Result<serde_json::Value, AppError> {
     let mut db_config = load_llm_config_for_discovery(pool).await?;
 
-    if provider_override.is_some() || model_override.is_some() || api_key_override.is_some() {
-        let rows: Vec<(String, String)> =
-            sqlx::query_as("SELECT clave, valor_texto FROM configuracion WHERE clave LIKE 'ia_%'")
-                .fetch_all(pool)
-                .await?;
-
-        let mut key_gemini = String::new();
-        let mut key_openai = String::new();
-        let mut key_deepseek = String::new();
-        let mut key_github = String::new();
-        let mut key_groq = String::new();
-        let mut key_mistral = String::new();
-        let mut url_openai = String::new();
-        let mut url_deepseek = String::new();
-        let mut url_github = String::new();
-        let mut url_ollama = String::new();
-        let mut url_groq = String::new();
-        let mut url_mistral = String::new();
-
-        for (clave, valor) in rows {
-            let trimmed = valor.trim().to_string();
-            if !trimmed.is_empty() {
-                match clave.as_str() {
-                    "ia_api_key_gemini" => key_gemini = trimmed,
-                    "ia_api_key_openai" => key_openai = trimmed,
-                    "ia_api_key_deepseek" => key_deepseek = trimmed,
-                    "ia_api_key_github" => key_github = trimmed,
-                    "ia_api_key_groq" => key_groq = trimmed,
-                    "ia_api_key_mistral" => key_mistral = trimmed,
-                    "ia_api_url_openai" => url_openai = trimmed,
-                    "ia_api_url_deepseek" => url_deepseek = trimmed,
-                    "ia_api_url_github" => url_github = trimmed,
-                    "ia_api_url_ollama" => url_ollama = trimmed,
-                    "ia_api_url_groq" => url_groq = trimmed,
-                    "ia_api_url_mistral" => url_mistral = trimmed,
-                    _ => {}
-                }
-            }
-        }
-
-        if let Some(prov) = provider_override {
-            db_config.provider = prov;
-            db_config.api_key = match db_config.provider.to_lowercase().as_str() {
-                "gemini" => {
-                    if !key_gemini.is_empty() {
-                        key_gemini
-                    } else {
-                        db_config.api_key
-                    }
-                }
-                "openai" => {
-                    if !key_openai.is_empty() {
-                        key_openai
-                    } else {
-                        db_config.api_key
-                    }
-                }
-                "deepseek" => {
-                    if !key_deepseek.is_empty() {
-                        key_deepseek
-                    } else {
-                        db_config.api_key
-                    }
-                }
-                "github" => {
-                    if !key_github.is_empty() {
-                        key_github
-                    } else {
-                        db_config.api_key
-                    }
-                }
-                "groq" => {
-                    if !key_groq.is_empty() {
-                        key_groq
-                    } else {
-                        db_config.api_key
-                    }
-                }
-                "mistral" => {
-                    if !key_mistral.is_empty() {
-                        key_mistral
-                    } else {
-                        db_config.api_key
-                    }
-                }
-                _ => db_config.api_key,
-            };
-            db_config.api_url = match db_config.provider.to_lowercase().as_str() {
-                "openai" => {
-                    if !url_openai.is_empty() {
-                        url_openai
-                    } else {
-                        db_config.api_url
-                    }
-                }
-                "deepseek" => {
-                    if !url_deepseek.is_empty() {
-                        url_deepseek
-                    } else {
-                        db_config.api_url
-                    }
-                }
-                "ollama" => {
-                    if !url_ollama.is_empty() {
-                        url_ollama
-                    } else {
-                        db_config.api_url
-                    }
-                }
-                "github" => {
-                    if !url_github.is_empty() {
-                        url_github
-                    } else {
-                        "https://models.inference.ai.azure.com".to_string()
-                    }
-                }
-                "groq" => {
-                    if !url_groq.is_empty() {
-                        url_groq
-                    } else {
-                        "https://api.groq.com/openai".to_string()
-                    }
-                }
-                "mistral" => {
-                    if !url_mistral.is_empty() {
-                        url_mistral
-                    } else {
-                        "https://api.mistral.ai".to_string()
-                    }
-                }
-                _ => db_config.api_url,
-            };
-        }
-
-        if let Some(key) = api_key_override {
-            if !key.is_empty() && key != "***" {
-                db_config.api_key = key;
-            }
-        }
-
-        if let Some(mod_name) = model_override {
-            db_config.model = if mod_name.is_empty() || mod_name.eq_ignore_ascii_case("auto") {
-                match resolve_auto_model(
-                    &db_config.provider,
-                    &db_config.api_key,
-                    &db_config.api_url,
-                    ModelCapability::Vision,
-                )
-                .await
-                {
-                    Ok(m) => m,
-                    Err(e) => {
-                        tracing::warn!("Auto model resolution failed for override: {}", e);
-                        return Err(AppError::BusinessLogic(
-                            format!(
-                                "No se pudo seleccionar automáticamente un modelo multimodal: {}",
-                                e
-                            ),
-                            "AI_NO_VISION_MODEL".to_string(),
-                        ));
-                    }
-                }
-            } else {
-                mod_name
-            };
-        }
+    if let Some(configured_id) = configured_model_id.filter(|id| !id.trim().is_empty()) {
+        let raw_models: Option<String> = sqlx::query_scalar(
+            "SELECT valor_texto FROM configuracion WHERE clave = 'ia_modelos_configurados'",
+        )
+        .fetch_optional(pool)
+        .await?;
+        db_config = resolve_configured_vision_model(
+            raw_models.as_deref().unwrap_or("[]"),
+            configured_id.trim(),
+        )?;
     }
 
     if image_bytes.is_empty() {
@@ -2126,6 +2048,10 @@ Para cada ítem, extrae:
 - fecha_vencimiento (Fecha de vencimiento en formato YYYY-MM-DD si está presente; de lo contrario null)
 - cantidad (Cantidad física recibida, número positivo)
 - precio_unitario (Precio unitario si está presente; de lo contrario null)
+
+Los campos proveedor, nombre_producto y sku_ref siempre deben ser strings JSON, nunca null.
+Si proveedor o nombre_producto no pueden identificarse, usa una cadena vacía. Si no hay SKU/REF, usa "".
+Solo lote, fecha_vencimiento y precio_unitario pueden ser null.
 
 Debes retornar obligatoriamente un objeto JSON que cumpla con el siguiente esquema:
 {
@@ -2568,6 +2494,63 @@ mod tests {
 
         validate_vision_configuration("gemini", "gemini-2.5-flash", "real-key", "application/pdf")
             .expect("Gemini inline_data supports PDF bytes");
+    }
+
+    #[test]
+    fn configured_model_id_resolves_complete_stored_configuration() {
+        let config = resolve_configured_vision_model(
+            r#"[{"id":"vision-a","name":"Visión","provider":"openai","model":"gpt-4o-mini","api_url":"https://example.test","api_key":"secret","active":false}]"#,
+            "vision-a",
+        )
+        .expect("stored model ID should resolve");
+
+        assert_eq!(config.provider, "openai");
+        assert_eq!(config.model, "gpt-4o-mini");
+        assert_eq!(config.api_url, "https://example.test");
+        assert_eq!(config.api_key, "secret");
+    }
+
+    #[test]
+    fn configured_model_id_rejects_missing_or_malformed_entries() {
+        for (json, id, expected_code) in [
+            ("not-json", "vision-a", "AI_MODEL_CONFIG_INVALID"),
+            ("[]", "vision-a", "AI_MODEL_CONFIG_NOT_FOUND"),
+            (
+                r#"[{"id":"vision-a"}]"#,
+                "vision-a",
+                "AI_MODEL_CONFIG_INVALID",
+            ),
+        ] {
+            assert!(matches!(
+                resolve_configured_vision_model(json, id),
+                Err(AppError::BusinessLogic(_, ref code)) if code == expected_code
+            ));
+        }
+    }
+
+    #[test]
+    fn configured_model_id_is_trimmed_and_ignores_malformed_siblings() {
+        let config = resolve_configured_vision_model(
+            r#"[{"id":42},{"id":"  vision-a  ","provider":"openai","model":"gpt-4o-mini","api_url":"https://example.test","api_key":"secret"}]"#,
+            "  vision-a ",
+        )
+        .expect("valid requested entry should survive malformed siblings");
+        assert_eq!(config.provider, "openai");
+    }
+
+    #[test]
+    fn configured_model_id_rejects_empty_and_normalized_duplicates() {
+        assert!(matches!(
+            resolve_configured_vision_model("[]", "   "),
+            Err(AppError::BusinessLogic(_, ref code)) if code == "AI_MODEL_CONFIG_INVALID"
+        ));
+        assert!(matches!(
+            resolve_configured_vision_model(
+                r#"[{"id":"vision-a","provider":"openai","model":"gpt-4o-mini"},{"id":" vision-a ","provider":"gemini","model":"gemini-2.5-flash"}]"#,
+                "vision-a",
+            ),
+            Err(AppError::BusinessLogic(_, ref code)) if code == "AI_MODEL_CONFIG_INVALID"
+        ));
     }
 
     #[test]

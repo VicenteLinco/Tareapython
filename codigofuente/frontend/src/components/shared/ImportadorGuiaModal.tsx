@@ -26,6 +26,8 @@ import {
 } from "@/hooks/dominio";
 import { parseGuiaImagen } from "@/api/recepciones";
 import { APP_LOCALE } from "@/lib/utils";
+import { parseConfiguredAiModels } from "./ai-model-options";
+import { validateImportedGuideItem } from "./importador-guia-validation";
 
 export interface ParsedItem {
   nombre_producto: string;
@@ -129,8 +131,7 @@ export default function ImportadorGuiaModal({
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [archivoUrl, setArchivoUrl] = useState<string | null>(null);
-  const [providerOverride, setProviderOverride] = useState<string>("");
-  const [modelOverride, setModelOverride] = useState<string>("");
+  const [selectedModelId, setSelectedModelId] = useState<string>("");
   const [lastParseError, setLastParseError] = useState<string>("");
   const [quarantineEnabled, setQuarantineEnabled] = useState(true);
   const [focusedPriceIndex, setFocusedPriceIndex] = useState<number | null>(null);
@@ -141,13 +142,16 @@ export default function ImportadorGuiaModal({
     staleTime: 60000,
   });
 
-  const isGeminiConfigured = configData?.ia_api_key_gemini === "***" || configData?.ia_api_key === "***";
-  const isOpenaiConfigured = configData?.ia_api_key_openai === "***";
-  const isDeepseekConfigured = configData?.ia_api_key_deepseek === "***";
-  const isGithubConfigured = configData?.ia_api_key_github === "***";
-  const isGroqConfigured = configData?.ia_api_key_groq === "***";
-  const isMistralConfigured = configData?.ia_api_key_mistral === "***";
-  const isOllamaConfigured = !!configData?.ia_api_url_ollama;
+  const configuredModelOptions = useMemo(
+    () => parseConfiguredAiModels(configData?.ia_modelos_configurados),
+    [configData?.ia_modelos_configurados],
+  );
+
+  useEffect(() => {
+    if (selectedModelId && !configuredModelOptions.some((option) => option.id === selectedModelId)) {
+      setSelectedModelId("");
+    }
+  }, [configuredModelOptions, selectedModelId]);
 
   // Load existing products to check for catalog matches
   const [existingSkus, setExistingSkus] = useState<Set<string>>(new Set());
@@ -291,8 +295,7 @@ export default function ImportadorGuiaModal({
         (progress) => {
           setUploadProgress(progress);
         },
-        providerOverride || undefined,
-        modelOverride || undefined
+        selectedModelId || undefined,
       );
       setProveedorDetectado(res.proveedor);
       setItems(initializeParsedItems(res.items || []));
@@ -314,23 +317,7 @@ export default function ImportadorGuiaModal({
   };
 
   // Row validation rules
-  const validateItem = (item: ParsedItem) => {
-    const errors: Record<string, boolean> = {};
-    const isSimple = item.control_lote === "simple";
-
-    if (!isSimple) {
-      if (!item.lote || !item.lote.trim()) {
-        errors.lote = true;
-      }
-      if (
-        !item.fecha_vencimiento ||
-        !/^\d{4}-\d{2}-\d{2}$/.test(item.fecha_vencimiento)
-      ) {
-        errors.fecha_vencimiento = true;
-      }
-    }
-    return errors;
-  };
+  const validateItem = validateImportedGuideItem;
 
   // Check if any item in the grid has errors
   const hasErrors = useMemo(() => {
@@ -706,65 +693,34 @@ export default function ImportadorGuiaModal({
                 <div className="bg-base-200/50 p-2.5 rounded-lg border border-base-300 space-y-2 mb-3 text-xs">
                   <div className="flex justify-between items-center">
                     <span className="font-semibold text-base-content/85 text-[10px]">Proveedor de IA (Opcional)</span>
-                    {(providerOverride || modelOverride) && (
+                    {selectedModelId && (
                       <button
                         type="button"
                         className="text-[10px] text-error font-medium hover:underline"
                         onClick={() => {
-                          setProviderOverride("");
-                          setModelOverride("");
+                          setSelectedModelId("");
                         }}
                       >
                         Limpiar
                       </button>
                     )}
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
+                  <div>
                       <select
                         className="select select-xs select-bordered w-full text-[11px]"
-                        value={providerOverride}
+                        value={selectedModelId}
                         onChange={(e) => {
-                          const val = e.target.value;
-                          setProviderOverride(val);
-                          if (val === "gemini") {
-                            setModelOverride("gemini-2.0-flash");
-                          } else if (val === "openai") {
-                            setModelOverride("gpt-4o-mini");
-                          } else if (val === "deepseek") {
-                            setModelOverride("deepseek-chat");
-                          } else if (val === "github") {
-                            setModelOverride("gpt-4o-mini");
-                          } else if (val === "groq") {
-                            setModelOverride("llama-3.2-11b-vision-preview");
-                          } else if (val === "mistral") {
-                            setModelOverride("pixtral-12b");
-                          } else {
-                            setModelOverride("");
-                          }
+                          const id = e.target.value;
+                          setSelectedModelId(id);
                         }}
                       >
                         <option value="">Por defecto (Guardado)</option>
-                        {isGeminiConfigured && <option value="gemini">Google Gemini</option>}
-                        {isOpenaiConfigured && <option value="openai">OpenAI (ChatGPT)</option>}
-                        {isDeepseekConfigured && <option value="deepseek">DeepSeek (China)</option>}
-                        {isGithubConfigured && <option value="github">GitHub Models</option>}
-                        {isGroqConfigured && <option value="groq">Groq Developer</option>}
-                        {isMistralConfigured && <option value="mistral">Mistral AI</option>}
-                        {isOllamaConfigured && <option value="ollama">Ollama (Local)</option>}
+                        {configuredModelOptions.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
                       </select>
-                    </div>
-
-                    <div>
-                      <input
-                        type="text"
-                        className="input input-xs input-bordered w-full text-[11px]"
-                        placeholder="auto — el proveedor elige el modelo"
-                        value={modelOverride}
-                        onChange={(e) => setModelOverride(e.target.value)}
-                        disabled={!providerOverride}
-                      />
-                    </div>
                   </div>
                 </div>
 
@@ -921,7 +877,7 @@ export default function ImportadorGuiaModal({
                           <div className="flex-1">
                             <input
                               type="text"
-                              className="input input-bordered input-sm font-semibold w-full text-xs px-2"
+                              className={`input input-bordered input-sm font-semibold w-full text-xs px-2 ${itemErrors.nombre_producto ? "input-error" : ""}`}
                               value={item.nombre_producto}
                               onChange={(e) =>
                                 handleUpdateItem(
@@ -932,6 +888,11 @@ export default function ImportadorGuiaModal({
                               }
                               placeholder="Nombre del producto"
                             />
+                            {itemErrors.nombre_producto && (
+                              <p className="text-error text-[10px] mt-1">
+                                El nombre del producto es obligatorio
+                              </p>
+                            )}
                           </div>
                           {isNewProduct && (
                             <span className={`badge badge-xs gap-1 py-2 px-2 shrink-0 select-none ${itemQuarantine ? "badge-warning" : "badge-success"}`}>

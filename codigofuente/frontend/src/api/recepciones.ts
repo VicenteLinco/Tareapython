@@ -118,9 +118,7 @@ export interface ParseGuiaImagenResponse {
 export async function parseGuiaImagen(
   file: File,
   onUploadProgress?: (progress: number) => void,
-  providerOverride?: string,
-  modelOverride?: string,
-  apiKeyOverride?: string,
+  configuredModelId?: string,
 ): Promise<ParseGuiaImagenResponse> {
   const formData = new FormData();
   formData.append("file", file);
@@ -128,14 +126,8 @@ export async function parseGuiaImagen(
   const headers: Record<string, string> = {
     "Content-Type": "multipart/form-data",
   };
-  if (providerOverride) {
-    headers["X-Provider-Override"] = providerOverride;
-  }
-  if (modelOverride) {
-    headers["X-Model-Override"] = modelOverride;
-  }
-  if (apiKeyOverride) {
-    headers["X-Api-Key-Override"] = apiKeyOverride;
+  if (configuredModelId) {
+    headers["X-AI-Model-Config-ID"] = configuredModelId;
   }
 
   const res = await api.post("/recepciones/parse-guia-imagen", formData, {

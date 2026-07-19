@@ -15,6 +15,108 @@ fn is_valid_hex_color(s: &str) -> bool {
     s.len() == 7 && s.starts_with('#') && s[1..].chars().all(|c| c.is_ascii_hexdigit())
 }
 
+#[cfg(test)]
+mod configured_model_secret_tests {
+    use super::{mask_configured_model_secrets, merge_configured_model_secrets};
+
+    #[test]
+    fn configured_model_secrets_are_masked_and_preserved_on_save() {
+        let stored = r#"[{"id":"vision-a","name":"Visión","provider":"openai","model":"gpt-4o-mini","api_url":"https://example.test","api_key":"secret"}]"#;
+        let masked = mask_configured_model_secrets(stored);
+        assert!(!masked.contains("secret"));
+        assert!(masked.contains(r#""api_key":"***""#));
+
+        let merged = merge_configured_model_secrets(&masked, stored)
+            .expect("masked save should preserve secret");
+        assert!(merged.contains(r#""api_key":"secret""#));
+    }
+
+    #[test]
+    fn persistence_trims_ids_and_rejects_empty_or_normalized_duplicates() {
+        let normalized =
+            merge_configured_model_secrets(r#"[{"id":" vision-a ","api_key":"new"}]"#, "[]")
+                .expect("whitespace should be canonicalized");
+        assert!(normalized.contains(r#""id":"vision-a""#));
+
+        for invalid in [
+            r#"[{"id":"   "}]"#,
+            r#"[{"id":"vision-a"},{"id":" vision-a "}]"#,
+        ] {
+            assert!(merge_configured_model_secrets(invalid, "[]").is_err());
+        }
+    }
+}
+
+fn mask_configured_model_secrets(raw: &str) -> String {
+    let Ok(mut models) = serde_json::from_str::<Vec<serde_json::Value>>(raw) else {
+        return "[]".to_string();
+    };
+    if models.iter().any(|model| !model.is_object()) {
+        return "[]".to_string();
+    }
+    for model in &mut models {
+        if let Some(object) = model.as_object_mut() {
+            let has_secret = object
+                .get("api_key")
+                .and_then(|value| value.as_str())
+                .is_some_and(|value| !value.is_empty());
+            object.insert(
+                "api_key".to_string(),
+                serde_json::Value::String(if has_secret { "***" } else { "" }.to_string()),
+            );
+        }
+    }
+    serde_json::to_string(&models).unwrap_or_else(|_| "[]".to_string())
+}
+
+fn merge_configured_model_secrets(incoming: &str, existing: &str) -> Result<String, AppError> {
+    let mut incoming_models: Vec<serde_json::Value> =
+        serde_json::from_str(incoming).map_err(|_| {
+            AppError::Validation("La lista de modelos de IA no contiene JSON válido.".to_string())
+        })?;
+    let existing_models: Vec<serde_json::Value> =
+        serde_json::from_str(existing).unwrap_or_default();
+    let mut seen_ids = std::collections::HashSet::new();
+
+    for model in &mut incoming_models {
+        let Some(object) = model.as_object_mut() else {
+            return Err(AppError::Validation(
+                "La lista de modelos de IA contiene una entrada inválida.".to_string(),
+            ));
+        };
+        let id = object
+            .get("id")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| AppError::Validation("Un modelo de IA no tiene ID válido.".to_string()))?
+            .to_string();
+        if !seen_ids.insert(id.clone()) {
+            return Err(AppError::Validation(
+                "La lista de modelos de IA contiene IDs duplicados.".to_string(),
+            ));
+        }
+        object.insert("id".to_string(), serde_json::Value::String(id.clone()));
+        let submitted_secret = object.get("api_key").and_then(|value| value.as_str());
+        if submitted_secret.is_none() || submitted_secret == Some("***") {
+            let previous_secret = existing_models.iter().find_map(|previous| {
+                let previous = previous.as_object()?;
+                (previous.get("id")?.as_str()?.trim() == id)
+                    .then(|| previous.get("api_key")?.as_str().map(str::to_string))
+                    .flatten()
+            });
+            object.insert(
+                "api_key".to_string(),
+                serde_json::Value::String(previous_secret.unwrap_or_default()),
+            );
+        }
+    }
+
+    serde_json::to_string(&incoming_models).map_err(|_| {
+        AppError::Validation("No se pudo guardar la lista de modelos de IA.".to_string())
+    })
+}
+
 /// Upsert de una clave de configuración.
 async fn set_config(pool: &PgPool, clave: &str, valor: &str) -> Result<(), AppError> {
     sqlx::query(
@@ -170,7 +272,9 @@ pub async fn obtener(pool: &PgPool) -> Result<ConfiguracionResponse, AppError> {
             }
             "ia_api_url_groq" => ia_api_url_groq = valor,
             "ia_api_url_mistral" => ia_api_url_mistral = valor,
-            "ia_modelos_configurados" => ia_modelos_configurados = valor,
+            "ia_modelos_configurados" => {
+                ia_modelos_configurados = mask_configured_model_secrets(&valor)
+            }
             "vencimiento_alerta_activa" => vencimiento_alerta_activa = valor == "true",
             "vencimiento_vida_util_minima_dias" => {
                 vencimiento_vida_util_minima_dias = valor.parse().unwrap_or(30)
@@ -536,7 +640,11 @@ pub async fn actualizar(
     }
 
     if let Some(modelos) = &body.ia_modelos_configurados {
-        set_config(pool, "ia_modelos_configurados", modelos).await?;
+        let existing = get_config(pool, "ia_modelos_configurados")
+            .await?
+            .unwrap_or_else(|| "[]".to_string());
+        let merged = merge_configured_model_secrets(modelos, &existing)?;
+        set_config(pool, "ia_modelos_configurados", &merged).await?;
     }
 
     if let Some(activa) = body.vencimiento_alerta_activa {

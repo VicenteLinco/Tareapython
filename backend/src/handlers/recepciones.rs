@@ -282,9 +282,20 @@ pub struct ParseGuiaInput {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ItemGuiaParseado {
-    #[serde(alias = "nombreProducto", alias = "nombre")]
+    #[serde(
+        default = "default_product_name",
+        deserialize_with = "deserialize_product_name",
+        alias = "nombreProducto",
+        alias = "nombre"
+    )]
     pub nombre_producto: String,
-    #[serde(alias = "skuRef", alias = "sku", alias = "referencia")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable_string",
+        alias = "skuRef",
+        alias = "sku",
+        alias = "referencia"
+    )]
     pub sku_ref: String,
     pub lote: Option<String>,
     #[serde(
@@ -301,8 +312,56 @@ pub struct ItemGuiaParseado {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GuiaParseada {
+    #[serde(
+        default = "default_provider_name",
+        deserialize_with = "deserialize_provider_name"
+    )]
     pub proveedor: String,
     pub items: Vec<ItemGuiaParseado>,
+}
+
+fn default_provider_name() -> String {
+    "Proveedor no identificado".to_string()
+}
+
+fn default_product_name() -> String {
+    String::new()
+}
+
+fn deserialize_provider_name<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    let normalized = value.unwrap_or_default().trim().to_string();
+    Ok(if normalized.is_empty() {
+        default_provider_name()
+    } else {
+        normalized
+    })
+}
+
+fn deserialize_product_name<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    let normalized = value.unwrap_or_default().trim().to_string();
+    Ok(if normalized.is_empty() {
+        default_product_name()
+    } else {
+        normalized
+    })
+}
+
+fn deserialize_nullable_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?
+        .unwrap_or_default()
+        .trim()
+        .to_string())
 }
 
 pub fn parse_guia_regex(raw_text: &str) -> Option<GuiaParseada> {
@@ -418,14 +477,8 @@ async fn parse_guia_imagen(
 ) -> Result<Json<GuiaParseadaConArchivo>, AppError> {
     crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
 
-    let provider_override = headers
-        .get("x-provider-override")
-        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
-    let model_override = headers
-        .get("x-model-override")
-        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
-    let api_key_override = headers
-        .get("x-api-key-override")
+    let configured_model_id = headers
+        .get("x-ai-model-config-id")
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
 
     let mut file_bytes: Option<Vec<u8>> = None;
@@ -482,15 +535,8 @@ async fn parse_guia_imagen(
         storage::save_file_bytes(&bytes, extension, "guias", &format!("guia_{}", claims.sub))
             .await?;
 
-    let vision_result = llm::parse_guia_con_vision(
-        &state.pool,
-        &bytes,
-        &mime,
-        provider_override,
-        model_override,
-        api_key_override,
-    )
-    .await;
+    let vision_result =
+        llm::parse_guia_con_vision(&state.pool, &bytes, &mime, configured_model_id).await;
 
     match vision_result {
         Ok(parsed_json) => {
@@ -545,4 +591,46 @@ async fn validar_vencimiento_handler(
     crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
     let res = recepcion_service::validar_vencimiento(&state.pool, input).await?;
     Ok(Json(res))
+}
+
+#[cfg(test)]
+mod vision_schema_tests {
+    use super::GuiaParseada;
+
+    #[test]
+    fn normalizes_null_required_strings_without_losing_optional_nulls() {
+        let parsed: GuiaParseada = serde_json::from_value(serde_json::json!({
+            "proveedor": null,
+            "items": [{
+                "nombre_producto": null,
+                "sku_ref": null,
+                "lote": null,
+                "fecha_vencimiento": null,
+                "cantidad": 2,
+                "precio_unitario": null
+            }]
+        }))
+        .expect("nullable provider strings should be normalized");
+
+        assert_eq!(parsed.proveedor, "Proveedor no identificado");
+        assert_eq!(parsed.items[0].nombre_producto, "");
+        assert_eq!(parsed.items[0].sku_ref, "");
+        assert_eq!(parsed.items[0].lote, None);
+        assert_eq!(parsed.items[0].fecha_vencimiento, None);
+    }
+
+    #[test]
+    fn normalizes_missing_and_blank_required_strings() {
+        let parsed: GuiaParseada = serde_json::from_value(serde_json::json!({
+            "items": [{
+                "nombre_producto": "   ",
+                "cantidad": 1
+            }]
+        }))
+        .expect("missing provider strings should be normalized");
+
+        assert_eq!(parsed.proveedor, "Proveedor no identificado");
+        assert_eq!(parsed.items[0].nombre_producto, "");
+        assert_eq!(parsed.items[0].sku_ref, "");
+    }
 }

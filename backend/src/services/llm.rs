@@ -8,9 +8,273 @@ use crate::handlers::whatsapp::{
 };
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 static MODEL_CACHE: Mutex<Option<HashMap<String, (String, Instant)>>> = Mutex::new(None);
 const CACHE_TTL_SECS: u64 = 300; // 5 minutos
+
+/// Conservative capability check for the document analyzer. Provider model-list APIs
+/// generally do not expose input modalities, so discovery is intersected with known
+/// multimodal model families instead of treating an arbitrary chat model as vision-capable.
+pub(crate) fn vision_model_rank(provider: &str, model: &str) -> Option<u8> {
+    let id = model.to_ascii_lowercase();
+    let excluded = [
+        "audio",
+        "realtime",
+        "transcribe",
+        "tts",
+        "search",
+        "embedding",
+        "embed",
+        "codex",
+        "image-generation",
+        "gpt-image",
+        "imagen",
+        "-image",
+        "dall-e",
+        "sora",
+        "preview",
+        "experimental",
+        "-exp",
+        "computer-use",
+        "moderation",
+    ];
+    if excluded.iter().any(|token| id.contains(token)) {
+        return None;
+    }
+
+    match provider.to_ascii_lowercase().as_str() {
+        "gemini" if id.starts_with("gemini-") && !id.starts_with("gemini-1.0") => {
+            if id.starts_with("gemini-2.5-flash") {
+                Some(0)
+            } else if id.starts_with("gemini-2.5-pro") {
+                Some(1)
+            } else if id.contains("flash") {
+                Some(2)
+            } else {
+                Some(3)
+            }
+        }
+        "openai" | "github" if id.starts_with("gpt-") => {
+            let family_or_snapshot = |family: &str| {
+                id == family
+                    || id
+                        .strip_prefix(&format!("{}-", family))
+                        .and_then(|suffix| suffix.chars().next())
+                        .is_some_and(|first| first.is_ascii_digit())
+            };
+            if family_or_snapshot("gpt-4.1-mini") {
+                Some(0)
+            } else if family_or_snapshot("gpt-4o-mini") {
+                Some(1)
+            } else if family_or_snapshot("gpt-4.1") {
+                Some(2)
+            } else if family_or_snapshot("gpt-4o") {
+                Some(3)
+            } else if family_or_snapshot("gpt-5-mini") {
+                Some(4)
+            } else if family_or_snapshot("gpt-5") {
+                Some(5)
+            } else {
+                None
+            }
+        }
+        "github" => {
+            if id.contains("vision") || id.contains("multimodal") || id.contains("pixtral") {
+                Some(10)
+            } else {
+                None
+            }
+        }
+        "deepseek" => None,
+        "groq" if id.contains("vision") => Some(10),
+        "mistral" => {
+            if id.contains("pixtral") {
+                Some(0)
+            } else if id.contains("mistral-small-3.1") || id.contains("mistral-medium-3") {
+                Some(1)
+            } else {
+                None
+            }
+        }
+        "ollama" | "custom" => {
+            if id.contains("vision")
+                || id.contains("llava")
+                || id.contains("bakllava")
+                || id.contains("minicpm-v")
+                || id.contains("qwen2.5vl")
+                || id.contains("qwen3-vl")
+                || id.starts_with("gemma3")
+                || id.contains("pixtral")
+            {
+                Some(10)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn is_vision_capable_model(provider: &str, model: &str) -> bool {
+    vision_model_rank(provider, model).is_some()
+}
+
+fn select_best_vision_model(provider: &str, models: &[String]) -> Option<String> {
+    select_best_model(provider, models, ModelCapability::Vision)
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ModelCapability {
+    Text,
+    Vision,
+}
+
+fn text_model_rank(provider: &str, model: &str) -> Option<u8> {
+    let id = model.to_ascii_lowercase();
+    if [
+        "embed",
+        "moderation",
+        "rerank",
+        "tts",
+        "transcribe",
+        "realtime",
+        "audio",
+    ]
+    .iter()
+    .any(|token| id.contains(token))
+    {
+        return None;
+    }
+    match provider.to_ascii_lowercase().as_str() {
+        "deepseek" if id == "deepseek-chat" => Some(0),
+        "deepseek" if id == "deepseek-reasoner" => Some(1),
+        "ollama" | "custom" => Some(0),
+        "groq" if id.contains("llama") || id.contains("mixtral") || id.contains("gemma") => Some(0),
+        "mistral" if id.starts_with("mistral-") || id.contains("pixtral") => Some(0),
+        _ => vision_model_rank(provider, model),
+    }
+}
+
+fn select_best_model(
+    provider: &str,
+    models: &[String],
+    capability: ModelCapability,
+) -> Option<String> {
+    models
+        .iter()
+        .filter_map(|model| {
+            let rank = match capability {
+                ModelCapability::Text => text_model_rank(provider, model),
+                ModelCapability::Vision => vision_model_rank(provider, model),
+            }?;
+            Some((rank, model))
+        })
+        .min_by(|(rank_a, model_a), (rank_b, model_b)| {
+            rank_a.cmp(rank_b).then_with(|| model_a.cmp(model_b))
+        })
+        .map(|(_, model)| model.clone())
+}
+
+pub(crate) fn provider_http_error(provider: &str, status: reqwest::StatusCode) -> AppError {
+    let (message, code) = match status.as_u16() {
+        401 | 403 => (
+            format!(
+                "{} rechazó la credencial configurada. Verifique la API Key.",
+                provider
+            ),
+            "AI_PROVIDER_AUTH_ERROR",
+        ),
+        429 => (
+            format!(
+                "{} limitó temporalmente las solicitudes. Intente más tarde.",
+                provider
+            ),
+            "AI_PROVIDER_RATE_LIMITED",
+        ),
+        500..=599 => (
+            format!(
+                "{} no está disponible temporalmente. Intente más tarde.",
+                provider
+            ),
+            "AI_PROVIDER_UNAVAILABLE",
+        ),
+        _ => (
+            format!("{} rechazó la solicitud de modelos multimodales.", provider),
+            "AI_PROVIDER_REQUEST_FAILED",
+        ),
+    };
+    AppError::BusinessLogic(message, code.to_string())
+}
+
+pub(crate) fn provider_unavailable(provider: &str) -> AppError {
+    AppError::BusinessLogic(
+        format!(
+            "No se pudo conectar con {}. Verifique el endpoint e intente nuevamente.",
+            provider
+        ),
+        "AI_PROVIDER_UNAVAILABLE".to_string(),
+    )
+}
+
+pub(crate) fn provider_invalid_response(provider: &str) -> AppError {
+    AppError::BusinessLogic(
+        format!("{} devolvió una respuesta de modelos inválida.", provider),
+        "AI_PROVIDER_INVALID_RESPONSE".to_string(),
+    )
+}
+
+fn validate_vision_configuration(
+    provider: &str,
+    model: &str,
+    api_key: &str,
+    mime_type: &str,
+) -> Result<(), AppError> {
+    let provider = provider.trim().to_ascii_lowercase();
+    let api_key = api_key.trim();
+    if provider != "ollama"
+        && provider != "custom"
+        && (api_key.is_empty() || api_key.eq_ignore_ascii_case("mock"))
+    {
+        return Err(AppError::BusinessLogic(
+            "Configure una API Key real antes de analizar documentos. No se generó ningún resultado simulado."
+                .to_string(),
+            "AI_CONFIGURATION_ERROR".to_string(),
+        ));
+    }
+
+    if mime_type == "application/pdf" && provider != "gemini" {
+        return Err(AppError::BusinessLogic(
+            format!(
+                "El proveedor '{}' no admite PDF mediante este analizador. Use Gemini para PDF o cargue una imagen.",
+                provider
+            ),
+            "AI_UNSUPPORTED_DOCUMENT".to_string(),
+        ));
+    }
+
+    if mime_type != "application/pdf" && !mime_type.starts_with("image/") {
+        return Err(AppError::BusinessLogic(
+            format!(
+                "Tipo de archivo no soportado por el analizador: {}",
+                mime_type
+            ),
+            "AI_UNSUPPORTED_DOCUMENT".to_string(),
+        ));
+    }
+
+    if !is_vision_capable_model(&provider, model) {
+        return Err(AppError::BusinessLogic(
+            format!(
+                "El modelo '{}' de '{}' no está verificado para leer imágenes o PDF. Seleccione Automático o un modelo multimodal disponible.",
+                model, provider
+            ),
+            "AI_MODEL_NOT_VISION_CAPABLE".to_string(),
+        ));
+    }
+
+    Ok(())
+}
 
 #[derive(Debug, Clone)]
 pub struct LlmConfig {
@@ -748,7 +1012,11 @@ impl LlmClient for OllamaClient {
                 _ => "http://localhost:11434".to_string(),
             }
         } else {
-            db_config.api_url.trim_end_matches('/').to_string()
+            db_config
+                .api_url
+                .trim_end_matches('/')
+                .trim_end_matches("/v1")
+                .to_string()
         };
         let url = format!("{}/v1/chat/completions", base_url);
 
@@ -963,7 +1231,10 @@ impl LlmClient for OllamaClient {
     }
 }
 
-pub async fn load_llm_config(pool: &sqlx::PgPool) -> Result<LlmConfig, AppError> {
+async fn load_llm_config_inner(
+    pool: &sqlx::PgPool,
+    resolve_model: bool,
+) -> Result<LlmConfig, AppError> {
     let rows: Vec<(String, String)> =
         sqlx::query_as("SELECT clave, valor_texto FROM configuracion WHERE clave LIKE 'ia_%'")
             .fetch_all(pool)
@@ -1104,21 +1375,9 @@ pub async fn load_llm_config(pool: &sqlx::PgPool) -> Result<LlmConfig, AppError>
         _ => api_url,
     };
 
-    if model.is_empty() || model.eq_ignore_ascii_case("auto") {
-        model = resolve_auto_model(&provider, &active_key, &active_url)
-            .await
-            .unwrap_or_else(|e| {
-                tracing::warn!("Auto model resolution failed, using fallback: {}", e);
-                match provider.to_lowercase().as_str() {
-                    "gemini" => "gemini-2.0-flash".to_string(),
-                    "openai" => "gpt-4o-mini".to_string(),
-                    "deepseek" => "deepseek-chat".to_string(),
-                    "github" => "gpt-4o-mini".to_string(),
-                    "groq" => "llama-3.2-11b-vision-preview".to_string(),
-                    "mistral" => "pixtral-12b".to_string(),
-                    _ => model,
-                }
-            });
+    if resolve_model && (model.is_empty() || model.eq_ignore_ascii_case("auto")) {
+        model =
+            resolve_auto_model(&provider, &active_key, &active_url, ModelCapability::Text).await?;
     }
 
     Ok(LlmConfig {
@@ -1127,6 +1386,16 @@ pub async fn load_llm_config(pool: &sqlx::PgPool) -> Result<LlmConfig, AppError>
         api_url: active_url,
         api_key: active_key,
     })
+}
+
+pub async fn load_llm_config(pool: &sqlx::PgPool) -> Result<LlmConfig, AppError> {
+    load_llm_config_inner(pool, true).await
+}
+
+pub(crate) async fn load_llm_config_for_discovery(
+    pool: &sqlx::PgPool,
+) -> Result<LlmConfig, AppError> {
+    load_llm_config_inner(pool, false).await
 }
 
 /// Response from Gemini models list API
@@ -1156,7 +1425,8 @@ struct OpenAiModelEntry {
 }
 
 fn get_cache_key(provider: &str, base_url: &str, api_key: &str) -> String {
-    format!("{}|{}|{}", provider, base_url, api_key.len())
+    let fingerprint = Sha256::digest(api_key.as_bytes());
+    format!("{}|{}|{:x}", provider, base_url, fingerprint)
 }
 
 fn get_cached_model(cache_key: &str) -> Option<String> {
@@ -1178,14 +1448,14 @@ fn set_cached_model(cache_key: String, model: String) {
     }
 }
 
-/// Resolve the best available model by querying the provider's model list API.
-/// Falls back to a hardcoded default if the API call fails.
+/// Resolve the best available multimodal model by querying the provider's model list API.
 async fn resolve_auto_model(
     provider: &str,
     api_key: &str,
     base_url: &str,
+    capability: ModelCapability,
 ) -> Result<String, AppError> {
-    let cache_key = get_cache_key(provider, base_url, api_key);
+    let cache_key = get_cache_key(&format!("{}|{:?}", provider, capability), base_url, api_key);
     if let Some(cached) = get_cached_model(&cache_key) {
         tracing::info!("Using cached auto model: {}", cached);
         return Ok(cached);
@@ -1202,24 +1472,24 @@ async fn resolve_auto_model(
                 "https://generativelanguage.googleapis.com/v1beta/models?key={}",
                 api_key
             );
-            let resp = client.get(&url).send().await.map_err(|e| {
-                AppError::Internal(format!("Gemini models list request failed: {}", e))
+            let resp = client.get(&url).send().await.map_err(|_| {
+                tracing::warn!("Gemini models list request failed");
+                provider_unavailable("Gemini")
             })?;
 
             if !resp.status().is_success() {
                 let status = resp.status();
                 let text = resp.text().await.unwrap_or_default();
-                return Err(AppError::Internal(format!(
-                    "Gemini models list returned {}: {}",
-                    status, text
-                )));
+                tracing::warn!("Gemini models list returned {}: {}", status, text);
+                return Err(provider_http_error("Gemini", status));
             }
 
             let body: GeminiModelsResponse = resp.json().await.map_err(|e| {
-                AppError::Internal(format!("Failed to parse Gemini models list: {}", e))
+                tracing::warn!("Failed to parse Gemini models list: {}", e);
+                provider_invalid_response("Gemini")
             })?;
 
-            let mut candidates: Vec<&str> = body
+            let candidates: Vec<String> = body
                 .models
                 .iter()
                 .filter(|m| {
@@ -1229,25 +1499,57 @@ async fn resolve_auto_model(
                             .any(|m| m == "generateContent")
                 })
                 .map(|m| m.name.strip_prefix("models/").unwrap_or(&m.name))
+                .map(str::to_string)
                 .collect();
 
-            // Sort: prefer flash over pro, prefer higher version
-            candidates.sort_by(|a, b| {
-                let a_is_flash = a.contains("flash") as u8;
-                let b_is_flash = b.contains("flash") as u8;
-                b_is_flash.cmp(&a_is_flash).then(b.cmp(a))
-            });
-
-            candidates
-                .first()
-                .ok_or_else(|| {
-                    AppError::Internal(
-                        "No Gemini models with generateContent support found".to_string(),
-                    )
-                })?
-                .to_string()
+            select_best_model("gemini", &candidates, capability).ok_or_else(|| {
+                AppError::BusinessLogic(
+                    "Gemini no devolvió modelos multimodales compatibles".to_string(),
+                    "AI_NO_VISION_MODEL".to_string(),
+                )
+            })?
         }
-        "openai" | "deepseek" | "github" | "groq" | "mistral" => {
+        "ollama" => {
+            #[derive(Deserialize)]
+            struct OllamaModel {
+                name: String,
+            }
+            #[derive(Deserialize)]
+            struct OllamaModelsResponse {
+                models: Vec<OllamaModel>,
+            }
+
+            let api_base = if base_url.is_empty() {
+                "http://localhost:11434"
+            } else {
+                base_url.trim_end_matches('/')
+            };
+            let resp = client
+                .get(format!("{}/api/tags", api_base))
+                .send()
+                .await
+                .map_err(|e| {
+                    tracing::warn!("Ollama models request failed: {}", e);
+                    provider_unavailable("Ollama")
+                })?;
+            if !resp.status().is_success() {
+                let status = resp.status();
+                tracing::warn!("Ollama models list returned {}", status);
+                return Err(provider_http_error("Ollama", status));
+            }
+            let body: OllamaModelsResponse = resp.json().await.map_err(|e| {
+                tracing::warn!("Failed to parse Ollama models list: {}", e);
+                provider_invalid_response("Ollama")
+            })?;
+            let candidates: Vec<String> = body.models.into_iter().map(|model| model.name).collect();
+            select_best_model("ollama", &candidates, capability).ok_or_else(|| {
+                AppError::BusinessLogic(
+                    "Ollama no tiene instalado un modelo multimodal compatible".to_string(),
+                    "AI_NO_VISION_MODEL".to_string(),
+                )
+            })?
+        }
+        "openai" | "deepseek" | "github" | "groq" | "mistral" | "custom" => {
             let api_base = if base_url.is_empty() {
                 match provider.to_lowercase().as_str() {
                     "openai" => "https://api.openai.com",
@@ -1255,10 +1557,15 @@ async fn resolve_auto_model(
                     "github" => "https://models.inference.ai.azure.com",
                     "groq" => "https://api.groq.com/openai",
                     "mistral" => "https://api.mistral.ai",
+                    "custom" => {
+                        return Err(AppError::Validation(
+                            "Custom provider requires an API URL".to_string(),
+                        ));
+                    }
                     _ => return Err(AppError::Internal("Unknown provider".to_string())),
                 }
             } else {
-                base_url.trim_end_matches('/')
+                base_url.trim_end_matches('/').trim_end_matches("/v1")
             };
 
             let url = format!("{}/v1/models", api_base);
@@ -1268,39 +1575,32 @@ async fn resolve_auto_model(
                 .send()
                 .await
                 .map_err(|e| {
-                    AppError::Internal(format!("{} models list request failed: {}", provider, e))
+                    tracing::warn!("{} models list request failed: {}", provider, e);
+                    provider_unavailable(provider)
                 })?;
 
             if !resp.status().is_success() {
                 let status = resp.status();
                 let text = resp.text().await.unwrap_or_default();
-                return Err(AppError::Internal(format!(
-                    "{} models list returned {}: {}",
-                    provider, status, text
-                )));
+                tracing::warn!("{} models list returned {}: {}", provider, status, text);
+                return Err(provider_http_error(provider, status));
             }
 
             let body: OpenAiModelsResponse = resp.json().await.map_err(|e| {
-                AppError::Internal(format!("Failed to parse {} models list: {}", provider, e))
+                tracing::warn!("Failed to parse {} models list: {}", provider, e);
+                provider_invalid_response(provider)
             })?;
 
-            let model = body
-                .data
-                .iter()
-                .map(|m| m.id.as_str())
-                .find(|id| {
-                    // Prefer vision-capable or latest models
-                    id.contains("vision")
-                        || id.contains("4o")
-                        || id.contains("latest")
-                        || id.contains("flash")
-                })
-                .or_else(|| body.data.first().map(|m| m.id.as_str()))
-                .ok_or_else(|| {
-                    AppError::Internal(format!("No models returned by {} API", provider))
-                })?;
-
-            model.to_string()
+            let candidates: Vec<String> = body.data.into_iter().map(|model| model.id).collect();
+            select_best_model(provider, &candidates, capability).ok_or_else(|| {
+                AppError::BusinessLogic(
+                    format!(
+                        "{} no devolvió modelos compatibles con imágenes o PDF",
+                        provider
+                    ),
+                    "AI_NO_VISION_MODEL".to_string(),
+                )
+            })?
         }
         _ => {
             return Err(AppError::Internal(format!(
@@ -1519,7 +1819,11 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
         let base_url = if db_config.api_url.is_empty() {
             "http://localhost:11434".to_string()
         } else {
-            db_config.api_url.trim_end_matches('/').to_string()
+            db_config
+                .api_url
+                .trim_end_matches('/')
+                .trim_end_matches("/v1")
+                .to_string()
         };
         let url = format!("{}/v1/chat/completions", base_url);
 
@@ -1598,7 +1902,7 @@ pub async fn parse_guia_con_vision(
     model_override: Option<String>,
     api_key_override: Option<String>,
 ) -> Result<serde_json::Value, AppError> {
-    let mut db_config = load_llm_config(pool).await?;
+    let mut db_config = load_llm_config_for_discovery(pool).await?;
 
     if provider_override.is_some() || model_override.is_some() || api_key_override.is_some() {
         let rows: Vec<(String, String)> =
@@ -1734,75 +2038,80 @@ pub async fn parse_guia_con_vision(
             };
         }
 
+        if let Some(key) = api_key_override {
+            if !key.is_empty() && key != "***" {
+                db_config.api_key = key;
+            }
+        }
+
         if let Some(mod_name) = model_override {
             db_config.model = if mod_name.is_empty() || mod_name.eq_ignore_ascii_case("auto") {
                 match resolve_auto_model(
                     &db_config.provider,
                     &db_config.api_key,
                     &db_config.api_url,
+                    ModelCapability::Vision,
                 )
                 .await
                 {
                     Ok(m) => m,
                     Err(e) => {
                         tracing::warn!("Auto model resolution failed for override: {}", e);
-                        match db_config.provider.to_lowercase().as_str() {
-                            "gemini" => "gemini-2.0-flash".to_string(),
-                            "openai" => "gpt-4o-mini".to_string(),
-                            "deepseek" => "deepseek-chat".to_string(),
-                            "github" => "gpt-4o-mini".to_string(),
-                            "groq" => "llama-3.2-11b-vision-preview".to_string(),
-                            "mistral" => "pixtral-12b".to_string(),
-                            _ => mod_name,
-                        }
+                        return Err(AppError::BusinessLogic(
+                            format!(
+                                "No se pudo seleccionar automáticamente un modelo multimodal: {}",
+                                e
+                            ),
+                            "AI_NO_VISION_MODEL".to_string(),
+                        ));
                     }
                 }
             } else {
                 mod_name
             };
         }
-
-        if let Some(key) = api_key_override {
-            if !key.is_empty() {
-                db_config.api_key = key;
-            }
-        }
     }
 
-    if db_config.api_key.is_empty() || db_config.api_key == "mock" {
-        tracing::warn!(
-            "Gemini API key is empty/not configured. Returning mock parsed guide for developer testing."
-        );
-        return Ok(serde_json::json!({
-            "proveedor": "VICENTE LAB SOLUTIONS SpA",
-            "items": [
-                {
-                    "nombre_producto": "Kit Reactivo PCR Multiplex (Liofilizado, 96 reacciones)",
-                    "sku_ref": "PCR-092",
-                    "lote": "PCR-2026-06A",
-                    "fecha_vencimiento": "2027-12-31",
-                    "cantidad": 5.0,
-                    "precio_unitario": 120000.0
-                },
-                {
-                    "nombre_producto": "Placas Preparadas Agar Sangre de Cordero 5% (Caja x 100 und)",
-                    "sku_ref": "AGARSB",
-                    "lote": "AS-9942",
-                    "fecha_vencimiento": "2026-09-30",
-                    "cantidad": 10.0,
-                    "precio_unitario": 45000.0
-                },
-                {
-                    "nombre_producto": "Puntas de Pipeta con Filtro Barrera Estériles (100 - 1000 µL, Rack x 96)",
-                    "sku_ref": "PIP-100F",
-                    "lote": "P1000-8831",
-                    "fecha_vencimiento": null,
-                    "cantidad": 25.0,
-                    "precio_unitario": 8500.0
-                }
-            ]
-        }));
+    if image_bytes.is_empty() {
+        return Err(AppError::BusinessLogic(
+            "El documento está vacío; no hay bytes que enviar al modelo.".to_string(),
+            "AI_EMPTY_DOCUMENT".to_string(),
+        ));
     }
+
+    if db_config.model.is_empty() || db_config.model.eq_ignore_ascii_case("auto") {
+        // Validate credentials before discovery so a missing key is reported clearly
+        // instead of becoming a provider-specific HTTP error.
+        validate_vision_configuration(&db_config.provider, "auto", &db_config.api_key, mime_type)
+            .or_else(|error| match error {
+            AppError::BusinessLogic(_, ref code) if code == "AI_MODEL_NOT_VISION_CAPABLE" => Ok(()),
+            _ => Err(error),
+        })?;
+
+        db_config.model = resolve_auto_model(
+            &db_config.provider,
+            &db_config.api_key,
+            &db_config.api_url,
+            ModelCapability::Vision,
+        )
+        .await
+        .map_err(|error| {
+            AppError::BusinessLogic(
+                format!(
+                    "No se pudo seleccionar un modelo multimodal automáticamente: {}",
+                    error
+                ),
+                "AI_NO_VISION_MODEL".to_string(),
+            )
+        })?;
+    }
+
+    validate_vision_configuration(
+        &db_config.provider,
+        &db_config.model,
+        &db_config.api_key,
+        mime_type,
+    )?;
 
     let is_gemini = db_config.provider.to_lowercase() == "gemini";
 
@@ -1876,20 +2185,10 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
             },
         };
 
-        let mut models_to_try = vec![db_config.model.clone()];
-        let fallbacks = vec![
-            "gemini-2.5-flash".to_string(),
-            "gemini-2.5-pro".to_string(),
-            "gemini-2.0-flash".to_string(),
-        ];
-        for f in fallbacks {
-            if f != db_config.model {
-                models_to_try.push(f);
-            }
-        }
+        let models_to_try = vec![db_config.model.clone()];
 
-        let mut errors_collected = Vec::new();
         let mut response = None;
+        let mut last_status = None;
 
         for (idx, current_model) in models_to_try.iter().enumerate() {
             let url = format!(
@@ -1906,25 +2205,25 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
 
             let res = match client.post(&url).json(&request_payload).send().await {
                 Ok(r) => r,
-                Err(e) => {
-                    errors_collected.push(format!("Request to {} failed: {}", current_model, e));
+                Err(_) => {
+                    tracing::warn!("Gemini Vision request to {} failed", current_model);
                     if idx < models_to_try.len() - 1 {
                         continue;
                     }
-                    return Err(AppError::Internal(format!(
-                        "Gemini Vision request failures: {}",
-                        errors_collected.join(" | ")
-                    )));
+                    return Err(provider_unavailable("Gemini"));
                 }
             };
 
             if !res.status().is_success() {
                 let status_code = res.status();
                 let err_text = res.text().await.unwrap_or_default();
-                errors_collected.push(format!(
-                    "Model {} failed ({}): {}",
-                    current_model, status_code, err_text
-                ));
+                tracing::warn!(
+                    "Gemini Vision model {} failed ({}): {}",
+                    current_model,
+                    status_code,
+                    err_text
+                );
+                last_status = Some(status_code);
 
                 if (status_code == reqwest::StatusCode::NOT_FOUND
                     || status_code == reqwest::StatusCode::SERVICE_UNAVAILABLE
@@ -1938,10 +2237,7 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
                     );
                     continue;
                 }
-                return Err(AppError::Internal(format!(
-                    "Gemini Vision API failures: {}",
-                    errors_collected.join(" | ")
-                )));
+                return Err(provider_http_error("Gemini", status_code));
             }
 
             response = Some(res);
@@ -1949,39 +2245,30 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
         }
 
         let response = response.ok_or_else(|| {
-            AppError::Internal(format!(
-                "All Gemini Vision models failed. Failures: {}",
-                errors_collected.join(" | ")
-            ))
+            last_status
+                .map(|status| provider_http_error("Gemini", status))
+                .unwrap_or_else(|| provider_unavailable("Gemini"))
         })?;
 
         let gemini_resp: GeminiResponse = response.json().await.map_err(|e| {
-            AppError::Internal(format!("Failed to parse Gemini Vision response: {}", e))
+            tracing::warn!("Failed to parse Gemini Vision response: {}", e);
+            provider_invalid_response("Gemini")
         })?;
 
-        let candidates = gemini_resp.candidates.ok_or_else(|| {
-            AppError::Internal("Gemini Vision response returned no candidates".to_string())
-        })?;
+        let candidates = gemini_resp
+            .candidates
+            .ok_or_else(|| provider_invalid_response("Gemini"))?;
 
         if candidates.is_empty() {
-            return Err(AppError::Internal(
-                "Gemini Vision response candidates list is empty".to_string(),
-            ));
+            return Err(provider_invalid_response("Gemini"));
         }
 
         let text = candidates[0].content.parts[0]
             .text
             .as_deref()
-            .ok_or_else(|| {
-                AppError::Internal("Gemini Vision candidate has no text content".to_string())
-            })?;
+            .ok_or_else(|| provider_invalid_response("Gemini"))?;
 
-        serde_json::from_str(text).map_err(|e| {
-            AppError::Internal(format!(
-                "Failed to parse Vision LLM text to JSON: {}. Text: {}",
-                e, text
-            ))
-        })?
+        serde_json::from_str(text).map_err(|_| provider_invalid_response("Gemini"))?
     } else {
         // OpenAI-compatible implementation (OpenAI, DeepSeek, etc.)
         let base_url = if db_config.api_url.is_empty() {
@@ -1991,7 +2278,11 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
                 _ => "http://localhost:11434".to_string(),
             }
         } else {
-            db_config.api_url.trim_end_matches('/').to_string()
+            db_config
+                .api_url
+                .trim_end_matches('/')
+                .trim_end_matches("/v1")
+                .to_string()
         };
         let url = format!("{}/v1/chat/completions", base_url);
 
@@ -2064,17 +2355,7 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
             }),
         ];
 
-        let model_name = if db_config.model.is_empty() || db_config.model == "gemini-2.0-flash" {
-            match db_config.provider.to_lowercase().as_str() {
-                "openai" => "gpt-4o-mini".to_string(),
-                "deepseek" => "deepseek-chat".to_string(),
-                "groq" => "llama-3.2-11b-vision-preview".to_string(),
-                "mistral" => "pixtral-12b".to_string(),
-                _ => "llava".to_string(),
-            }
-        } else {
-            db_config.model.clone()
-        };
+        let model_name = db_config.model.clone();
 
         let request_payload = OpenAiVisionRequest {
             model: model_name,
@@ -2090,16 +2371,20 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
         }
 
         let res = req.json(&request_payload).send().await.map_err(|e| {
-            AppError::Internal(format!("OpenAI-compatible Vision request failed: {}", e))
+            tracing::warn!("{} Vision request failed: {}", db_config.provider, e);
+            provider_unavailable(&db_config.provider)
         })?;
 
         if !res.status().is_success() {
             let status_code = res.status();
             let err_text = res.text().await.unwrap_or_default();
-            return Err(AppError::Internal(format!(
-                "OpenAI-compatible API returned error code {}: {}",
-                status_code, err_text
-            )));
+            tracing::warn!(
+                "{} Vision API returned {}: {}",
+                db_config.provider,
+                status_code,
+                err_text
+            );
+            return Err(provider_http_error(&db_config.provider, status_code));
         }
 
         #[derive(Debug, Deserialize)]
@@ -2118,23 +2403,26 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
         }
 
         let openai_resp: OpenAiVisionResponse = res.json().await.map_err(|e| {
-            AppError::Internal(format!("Failed to parse OpenAI Vision response: {}", e))
+            tracing::warn!(
+                "Failed to parse {} Vision response: {}",
+                db_config.provider,
+                e
+            );
+            provider_invalid_response(&db_config.provider)
         })?;
 
-        let choice = openai_resp.choices.get(0).ok_or_else(|| {
-            AppError::Internal("OpenAI Vision response returned no choices".to_string())
-        })?;
+        let choice = openai_resp
+            .choices
+            .first()
+            .ok_or_else(|| provider_invalid_response(&db_config.provider))?;
 
-        let content = choice.message.content.as_ref().ok_or_else(|| {
-            AppError::Internal("OpenAI Vision response returned empty content".to_string())
-        })?;
+        let content = choice
+            .message
+            .content
+            .as_ref()
+            .ok_or_else(|| provider_invalid_response(&db_config.provider))?;
 
-        serde_json::from_str(content).map_err(|e| {
-            AppError::Internal(format!(
-                "Failed to parse OpenAI Vision text to JSON: {}. Text: {}",
-                e, content
-            ))
-        })?
+        serde_json::from_str(content).map_err(|_| provider_invalid_response(&db_config.provider))?
     };
 
     tracing::info!(
@@ -2152,6 +2440,135 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vision_analysis_rejects_missing_or_mock_credentials() {
+        for api_key in ["", "mock", " MOCK "] {
+            let error =
+                validate_vision_configuration("openai", "gpt-4o-mini", api_key, "image/png")
+                    .expect_err("missing credentials must never produce a fake analysis");
+            assert!(matches!(
+                error,
+                AppError::BusinessLogic(_, ref code) if code == "AI_CONFIGURATION_ERROR"
+            ));
+        }
+    }
+
+    #[test]
+    fn vision_model_filter_excludes_text_only_and_retired_defaults() {
+        assert!(is_vision_capable_model("openai", "gpt-4o-mini"));
+        assert!(is_vision_capable_model("gemini", "gemini-2.5-flash"));
+        assert!(is_vision_capable_model("ollama", "qwen2.5vl:7b"));
+        assert!(!is_vision_capable_model("deepseek", "deepseek-chat"));
+        assert!(!is_vision_capable_model(
+            "groq",
+            "llama-3.2-11b-vision-preview"
+        ));
+        assert!(!is_vision_capable_model("openai", "gpt-3.5-turbo"));
+    }
+
+    #[test]
+    fn vision_model_filter_rejects_specialized_false_positives() {
+        for model in [
+            "gpt-5-codex",
+            "gpt-4o-audio-preview",
+            "gpt-4o-realtime-preview",
+            "gpt-4o-search-preview",
+            "gpt-4o-transcribe",
+            "gpt-4o-mini-tts",
+            "gpt-4o-embedding",
+            "gpt-4o-special-purpose",
+            "gpt-image-1",
+        ] {
+            assert!(!is_vision_capable_model("openai", model), "{model}");
+        }
+    }
+
+    #[test]
+    fn auto_selection_is_deterministic_and_prefers_general_vision_models() {
+        let first = vec![
+            "gpt-5-codex".to_string(),
+            "gpt-4o".to_string(),
+            "gpt-4.1-mini".to_string(),
+            "gpt-4o-mini".to_string(),
+        ];
+        let mut reversed = first.clone();
+        reversed.reverse();
+
+        assert_eq!(
+            select_best_vision_model("openai", &first).as_deref(),
+            Some("gpt-4.1-mini")
+        );
+        assert_eq!(
+            select_best_vision_model("openai", &first),
+            select_best_vision_model("openai", &reversed)
+        );
+    }
+
+    #[test]
+    fn text_auto_accepts_text_only_models_but_vision_auto_rejects_them() {
+        let deepseek = vec!["deepseek-reasoner".to_string(), "deepseek-chat".to_string()];
+        assert_eq!(
+            select_best_model("deepseek", &deepseek, ModelCapability::Text).as_deref(),
+            Some("deepseek-chat")
+        );
+        assert_eq!(
+            select_best_model("deepseek", &deepseek, ModelCapability::Vision),
+            None
+        );
+
+        let ollama = vec![
+            "nomic-embed-text".to_string(),
+            "llama3.2:latest".to_string(),
+        ];
+        assert_eq!(
+            select_best_model("ollama", &ollama, ModelCapability::Text).as_deref(),
+            Some("llama3.2:latest")
+        );
+    }
+
+    #[test]
+    fn model_cache_key_fingerprints_credentials() {
+        let first = get_cache_key("openai", "https://api.openai.com", "secret-one");
+        let second = get_cache_key("openai", "https://api.openai.com", "secret-two");
+        assert_ne!(first, second);
+        assert!(!first.contains("secret-one"));
+        assert!(!second.contains("secret-two"));
+    }
+
+    #[test]
+    fn provider_http_errors_are_stable_and_do_not_include_response_bodies() {
+        for (status, expected_code) in [
+            (reqwest::StatusCode::UNAUTHORIZED, "AI_PROVIDER_AUTH_ERROR"),
+            (
+                reqwest::StatusCode::TOO_MANY_REQUESTS,
+                "AI_PROVIDER_RATE_LIMITED",
+            ),
+            (
+                reqwest::StatusCode::SERVICE_UNAVAILABLE,
+                "AI_PROVIDER_UNAVAILABLE",
+            ),
+        ] {
+            assert!(matches!(
+                provider_http_error("OpenAI", status),
+                AppError::BusinessLogic(_, ref code) if code == expected_code
+            ));
+        }
+    }
+
+    #[test]
+    fn vision_analysis_rejects_pdf_for_openai_compatible_image_url_transport() {
+        let error =
+            validate_vision_configuration("openai", "gpt-4o-mini", "real-key", "application/pdf")
+                .expect_err("PDF bytes cannot be sent as an image_url");
+        assert!(matches!(
+            error,
+            AppError::BusinessLogic(_, ref code) if code == "AI_UNSUPPORTED_DOCUMENT"
+        ));
+
+        validate_vision_configuration("gemini", "gemini-2.5-flash", "real-key", "application/pdf")
+            .expect("Gemini inline_data supports PDF bytes");
+    }
 
     #[test]
     fn test_llm_factory_create() {

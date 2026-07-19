@@ -177,8 +177,33 @@ async fn historial_precios(
     Ok(Json(historial))
 }
 
-async fn schema() -> Json<crate::dto::producto::ProductSchemaResponse> {
-    Json(crate::services::product_contract::product_schema())
+async fn schema(
+    State(state): State<AppState>,
+) -> Result<Json<crate::dto::producto::ProductSchemaResponse>, AppError> {
+    let definitions = sqlx::query_as::<_, crate::models::lab_campo::LabCampoDefinicion>(
+        "SELECT id, nombre, tipo_dato, opciones_lista, requerido, considerar_filtro, orden, activo, alcance, created_at, updated_at \
+         FROM lab_campo_definicion WHERE activo = true AND alcance = 'producto' ORDER BY orden, nombre",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    let custom = definitions
+        .into_iter()
+        .map(
+            |field| crate::services::product_contract::ProductCustomFieldDefinition {
+                id: field.id,
+                name: field.nombre,
+                data_type: field.tipo_dato,
+                options: field.opciones_lista,
+                required: field.requerido,
+                order: field.orden,
+                active: field.activo,
+                scope: field.alcance,
+            },
+        )
+        .collect::<Vec<_>>();
+    Ok(Json(
+        crate::services::product_contract::product_schema_with_custom_fields(&custom),
+    ))
 }
 
 async fn crear(

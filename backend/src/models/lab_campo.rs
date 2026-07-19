@@ -11,6 +11,7 @@ pub struct LabCampoDefinicion {
     pub considerar_filtro: bool,
     pub orden: i32,
     pub activo: bool,
+    pub alcance: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -18,6 +19,19 @@ pub struct LabCampoDefinicion {
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct LabCampoValor {
     pub id: uuid::Uuid,
+    pub definicion_id: uuid::Uuid,
+    pub valor_entero: Option<i32>,
+    pub valor_booleano: Option<bool>,
+    pub valor_fecha: Option<chrono::NaiveDate>,
+    pub valor_texto: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct LabCampoProductoValor {
+    pub id: uuid::Uuid,
+    pub producto_id: uuid::Uuid,
     pub definicion_id: uuid::Uuid,
     pub valor_entero: Option<i32>,
     pub valor_booleano: Option<bool>,

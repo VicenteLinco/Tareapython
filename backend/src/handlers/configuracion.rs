@@ -1,5 +1,5 @@
-use axum::extract::{Query, State};
-use axum::routing::get;
+use axum::extract::State;
+use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 
 use crate::auth::models::Claims;
@@ -39,23 +39,23 @@ async fn verificar_pin(
 }
 
 #[derive(serde::Deserialize)]
-struct ModelosQuery {
+struct ModelosRequest {
     provider: Option<String>,
     api_key: Option<String>,
     api_url: Option<String>,
 }
 
-/// GET /api/v1/configuracion/ia-modelos
+/// POST /api/v1/configuracion/ia-modelos
 async fn obtener_ia_modelos(
     State(state): State<AppState>,
-    Query(query): Query<ModelosQuery>,
+    Json(request): Json<ModelosRequest>,
 ) -> Result<Json<Vec<String>>, AppError> {
     Ok(Json(
         configuracion_service::obtener_ia_modelos(
             &state.pool,
-            query.provider,
-            query.api_key,
-            query.api_url,
+            request.provider,
+            request.api_key,
+            request.api_url,
         )
         .await?,
     ))
@@ -75,7 +75,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(obtener).put(actualizar))
         .route("/verificar-pin", axum::routing::post(verificar_pin))
-        .route("/ia-modelos", get(obtener_ia_modelos))
+        .route("/ia-modelos", post(obtener_ia_modelos))
 }
 
 /// Rutas públicas (sin auth) relacionadas a configuración.

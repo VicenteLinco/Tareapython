@@ -515,10 +515,24 @@ async fn parse_guia_imagen(
                 e,
                 archivo_url
             );
-            Err(AppError::Internal(format!(
-                "No se pudo extraer datos de la imagen. El archivo fue guardado en {}. Error: {}",
-                archivo_url, e
-            )))
+            let (message, code) = match e {
+                AppError::BusinessLogic(message, code) => (message, code),
+                AppError::TooManyRequests => (
+                    "El proveedor de IA limitó temporalmente las solicitudes. Intente nuevamente más tarde."
+                        .to_string(),
+                    "AI_PROVIDER_RATE_LIMITED".to_string(),
+                ),
+                _ => (
+                    "No se pudo analizar el documento con el proveedor de IA configurado."
+                        .to_string(),
+                    "AI_ANALYSIS_FAILED".to_string(),
+                ),
+            };
+            Err(AppError::AiAnalysisFailure {
+                message,
+                code,
+                archivo_url,
+            })
         }
     }
 }

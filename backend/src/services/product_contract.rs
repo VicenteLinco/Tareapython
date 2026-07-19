@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use crate::dto::producto::{
     ProductFieldSchema, ProductFieldType, ProductImportLimits, ProductSchemaResponse,
 };
+use uuid::Uuid;
 
 pub const PRODUCT_SCHEMA_VERSION: &str = "1";
 
@@ -34,6 +35,18 @@ pub struct ProductFieldDefinition {
     pub aliases: &'static [&'static str],
     pub catalog_endpoint: Option<&'static str>,
     pub allowed_values: &'static [&'static str],
+}
+
+#[derive(Debug, Clone)]
+pub struct ProductCustomFieldDefinition {
+    pub id: Uuid,
+    pub name: String,
+    pub data_type: String,
+    pub options: Option<serde_json::Value>,
+    pub required: bool,
+    pub order: i32,
+    pub active: bool,
+    pub scope: String,
 }
 
 macro_rules! field {
@@ -307,6 +320,53 @@ pub fn product_schema() -> ProductSchemaResponse {
         },
         fields,
     }
+}
+
+pub fn product_schema_with_custom_fields(
+    custom_fields: &[ProductCustomFieldDefinition],
+) -> ProductSchemaResponse {
+    let mut schema = product_schema();
+    schema.fields.extend(
+        custom_fields
+            .iter()
+            .filter(|field| field.active && field.scope == "producto")
+            .map(|field| {
+                let field_type = match field.data_type.as_str() {
+                    "entero" => ProductFieldType::Integer,
+                    "booleano" => ProductFieldType::Boolean,
+                    "fecha" => ProductFieldType::Date,
+                    "lista" => ProductFieldType::Enum,
+                    _ => ProductFieldType::Text,
+                };
+                let allowed_values = field
+                    .options
+                    .as_ref()
+                    .and_then(serde_json::Value::as_array)
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(serde_json::Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                ProductFieldSchema {
+                    key: format!("lab_{}", field.id),
+                    label: field.name.clone(),
+                    field_type,
+                    section: "custom".into(),
+                    order: (1_000_i32.saturating_add(field.order)).clamp(1_000, u16::MAX as i32)
+                        as u16,
+                    domain_required: field.required,
+                    import_supported: true,
+                    aliases: vec![field.name.clone()],
+                    catalog_endpoint: None,
+                    allowed_values,
+                }
+            }),
+    );
+    schema.fields.sort_by_key(|field| field.order);
+    schema
 }
 
 fn registry_is_valid() -> bool {

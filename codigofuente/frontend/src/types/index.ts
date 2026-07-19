@@ -325,6 +325,7 @@ export type ProductFieldType =
   | "integer"
   | "decimal"
   | "boolean"
+  | "date"
   | "catalog"
   | "multi_catalog"
   | "enum"

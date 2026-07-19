@@ -41,7 +41,8 @@ use std::path::Path;
 
 fn main() {
     let conf = Typescript::default();
-    let out_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../frontend/src/types/generated.ts");
+    let out_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../codigofuente/frontend/src/types/generated.ts");
 
     let mut output = String::new();
     writeln!(

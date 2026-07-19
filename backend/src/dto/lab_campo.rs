@@ -8,6 +8,7 @@ pub struct CreateLabCampoDefinicion {
     pub requerido: Option<bool>,
     pub considerar_filtro: Option<bool>,
     pub orden: Option<i32>,
+    pub alcance: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -19,6 +20,7 @@ pub struct UpdateLabCampoDefinicion {
     pub considerar_filtro: Option<bool>,
     pub orden: Option<i32>,
     pub activo: Option<bool>,
+    pub alcance: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,6 +42,7 @@ pub struct LabCampoDetalle {
     pub considerar_filtro: bool,
     pub orden: i32,
     pub activo: bool,
+    pub alcance: String,
     pub valor_entero: Option<i32>,
     pub valor_booleano: Option<bool>,
     pub valor_fecha: Option<chrono::NaiveDate>,

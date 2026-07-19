@@ -1448,6 +1448,50 @@ impl ProductoService {
             ));
         }
 
+        // Mark the product ready inside the transaction before touching gated
+        // inventory history. Any later failure rolls this update back together
+        // with the stock and presentation changes.
+        sqlx::query(
+            r#"UPDATE productos
+               SET nombre = $1, descripcion = $2, categoria_id = $3, unidad_base_id = $4,
+                   control_lote = $5, fabricante = $6, ubicacion = $7,
+                   mpn = COALESCE($8, mpn),
+                   alias_unidad_clinica = COALESCE($9, alias_unidad_clinica),
+                   es_kit = COALESCE($10, es_kit),
+                   stock_minimo_global = COALESCE($11, stock_minimo_global),
+                   codigo_loinc_cpt = COALESCE($12, codigo_loinc_cpt),
+                   estado_catalogo = 'aprobado', updated_at = NOW()
+               WHERE id = $13"#,
+        )
+        .bind(&input.nombre)
+        .bind(&input.descripcion)
+        .bind(input.categoria_id)
+        .bind(input.unidad_base_id)
+        .bind(&input.control_lote)
+        .bind(&input.fabricante)
+        .bind(&input.ubicacion)
+        .bind(&input.mpn)
+        .bind(&input.alias_unidad_clinica)
+        .bind(input.es_kit)
+        .bind(input.stock_minimo_global)
+        .bind(&input.codigo_loinc_cpt)
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| match &e {
+            sqlx::Error::Database(db_err) if db_err.is_foreign_key_violation() => {
+                let msg = db_err.message();
+                if msg.contains("categoria_id") {
+                    AppError::Validation("Categoría no válida".into())
+                } else if msg.contains("unidad_base_id") {
+                    AppError::Validation("Unidad base no válida".into())
+                } else {
+                    AppError::Validation("Categoría o unidad base no válida".into())
+                }
+            }
+            _ => e.into(),
+        })?;
+
         // Stock scaling logic based on the existing presentation factor conversion
         let old_factor = sqlx::query_scalar::<_, Decimal>(
             "SELECT factor_conversion FROM presentaciones WHERE producto_id = $1 LIMIT 1",
@@ -1492,48 +1536,6 @@ impl ProductoService {
                 .map_err(|e| AppError::Internal(format!("Error al escalar stock: {}", e)))?;
             }
         }
-
-        // Update product metadata in single update
-        sqlx::query(
-            r#"UPDATE productos 
-               SET nombre = $1, descripcion = $2, categoria_id = $3, unidad_base_id = $4,
-                   control_lote = $5, fabricante = $6, ubicacion = $7,
-                   mpn = COALESCE($8, mpn),
-                   alias_unidad_clinica = COALESCE($9, alias_unidad_clinica),
-                   es_kit = COALESCE($10, es_kit),
-                   stock_minimo_global = COALESCE($11, stock_minimo_global),
-                   codigo_loinc_cpt = COALESCE($12, codigo_loinc_cpt),
-                   estado_catalogo = 'aprobado', updated_at = NOW()
-               WHERE id = $13"#,
-        )
-        .bind(&input.nombre)
-        .bind(&input.descripcion)
-        .bind(input.categoria_id)
-        .bind(input.unidad_base_id)
-        .bind(&input.control_lote)
-        .bind(&input.fabricante)
-        .bind(&input.ubicacion)
-        .bind(&input.mpn)
-        .bind(&input.alias_unidad_clinica)
-        .bind(input.es_kit)
-        .bind(input.stock_minimo_global)
-        .bind(&input.codigo_loinc_cpt)
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| match &e {
-            sqlx::Error::Database(db_err) if db_err.is_foreign_key_violation() => {
-                let msg = db_err.message();
-                if msg.contains("categoria_id") {
-                    AppError::Validation("Categoría no válida".into())
-                } else if msg.contains("unidad_base_id") {
-                    AppError::Validation("Unidad base no válida".into())
-                } else {
-                    AppError::Validation("Categoría o unidad base no válida".into())
-                }
-            }
-            _ => e.into(),
-        })?;
 
         // Presentations sync
         if let (Some(pres_nombre), Some(pres_factor)) = (&input.pres_nombre, input.pres_factor) {

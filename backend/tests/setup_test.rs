@@ -7,6 +7,171 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 
 #[sqlx::test(migrations = "./migrations")]
+async fn setup_import_persists_typed_product_custom_fields(pool: PgPool) {
+    let definition_id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO lab_campo_definicion (nombre, tipo_dato, alcance, activo) \
+         VALUES ('Número de registro', 'entero', 'producto', true) RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let key = format!("lab_{definition_id}");
+    let result = inventario_lab_backend::services::setup_service::importar_catalogo(
+        &pool,
+        b"nombre,registro\nReactivo personalizado,42\n",
+        inventario_lab_backend::services::setup_service::ImportConfig {
+            mapping: [("nombre".into(), "nombre".into()), (key, "registro".into())]
+                .into_iter()
+                .collect(),
+            required_fields: vec![],
+            dry_run: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(result.valido);
+    let value: i32 = sqlx::query_scalar(
+        "SELECT v.valor_entero FROM lab_campo_producto_valor v \
+         JOIN productos p ON p.id = v.producto_id \
+         WHERE p.nombre = 'Reactivo personalizado' AND v.definicion_id = $1",
+    )
+    .bind(definition_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(value, 42);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn setup_import_rejects_invalid_product_custom_values_atomically(pool: PgPool) {
+    let definition_id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO lab_campo_definicion (nombre, tipo_dato, alcance, activo) \
+         VALUES ('Fecha sanitaria', 'fecha', 'producto', true) RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let result = inventario_lab_backend::services::setup_service::importar_catalogo(
+        &pool,
+        b"nombre [tipo=texto; requerido=si],lab_fecha [nombre=Fecha sanitaria; tipo=fecha; requerido=no]\nReactivo invalido,19/07/2026\n",
+        inventario_lab_backend::services::setup_service::ImportConfig {
+            mapping: [
+                ("nombre".into(), "nombre [tipo=texto; requerido=si]".into()),
+                (
+                    format!("lab_{definition_id}"),
+                    "lab_fecha [nombre=Fecha sanitaria; tipo=fecha; requerido=no]".into(),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            required_fields: vec![],
+            dry_run: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(!result.valido);
+    assert_eq!(result.importados, 0);
+    assert_eq!(
+        result.errores[0].codigo.as_deref(),
+        Some("INVALID_CUSTOM_DATE")
+    );
+    assert_eq!(
+        result.errores[0].campo.as_deref(),
+        Some(format!("lab_{definition_id}").as_str())
+    );
+    assert!(result.errores[0].mensaje.contains("Fecha sanitaria"));
+    assert!(
+        result.errores[0]
+            .mensaje
+            .contains("tipo fecha (AAAA-MM-DD)")
+    );
+    assert!(result.errores[0].mensaje.contains("19/07/2026"));
+    let persisted: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM productos WHERE nombre = 'Reactivo invalido')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(!persisted);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn setup_import_custom_list_error_names_type_received_value_and_valid_options(pool: PgPool) {
+    let definition_id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO lab_campo_definicion (nombre, tipo_dato, opciones_lista, alcance, activo) \
+         VALUES ('Clasificación sanitaria', 'lista', '[\"A\", \"B\"]', 'producto', true) RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let key = format!("lab_{definition_id}");
+    let result = inventario_lab_backend::services::setup_service::importar_catalogo(
+        &pool,
+        b"nombre [tipo=texto; requerido=si],clasificacion [tipo=lista; opciones=A|B]\nReactivo lista,C\n",
+        inventario_lab_backend::services::setup_service::ImportConfig {
+            mapping: [
+                ("nombre".into(), "nombre [tipo=texto; requerido=si]".into()),
+                (key.clone(), "clasificacion [tipo=lista; opciones=A|B]".into()),
+            ]
+            .into_iter()
+            .collect(),
+            required_fields: vec![],
+            dry_run: true,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(!result.valido);
+    let error = &result.errores[0];
+    assert_eq!(error.campo.as_deref(), Some(key.as_str()));
+    assert_eq!(error.codigo.as_deref(), Some("INVALID_CUSTOM_OPTION"));
+    assert!(error.mensaje.contains("Clasificación sanitaria"));
+    assert!(error.mensaje.contains("tipo lista"));
+    assert!(error.mensaje.contains("valor recibido: 'C'"));
+    assert!(error.mensaje.contains("opciones válidas: A, B"));
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn setup_import_reports_required_custom_field_only_once(pool: PgPool) {
+    let definition_id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO lab_campo_definicion (nombre, tipo_dato, alcance, requerido, activo) \
+         VALUES ('Registro obligatorio', 'texto', 'producto', true, true) RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let key = format!("lab_{definition_id}");
+    let result = inventario_lab_backend::services::setup_service::importar_catalogo(
+        &pool,
+        b"nombre,registro\nReactivo sin registro,\n",
+        inventario_lab_backend::services::setup_service::ImportConfig {
+            mapping: [
+                ("nombre".into(), "nombre".into()),
+                (key.clone(), "registro".into()),
+            ]
+            .into_iter()
+            .collect(),
+            required_fields: vec![key.clone()],
+            dry_run: true,
+        },
+    )
+    .await
+    .unwrap();
+
+    let matching: Vec<_> = result
+        .errores
+        .iter()
+        .filter(|error| error.campo.as_deref() == Some(key.as_str()))
+        .collect();
+    assert_eq!(matching.len(), 1, "{:?}", result.errores);
+    assert_eq!(matching[0].codigo.as_deref(), Some("REQUIRED_CUSTOM_FIELD"));
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn setup_estado_inicial(pool: PgPool) {
     let token = common::admin_access_token(&pool).await;
     let app = common::test_app(pool);

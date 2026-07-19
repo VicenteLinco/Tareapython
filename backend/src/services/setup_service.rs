@@ -34,6 +34,23 @@ pub struct ImportResult {
     pub valido: bool,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+struct ProductCustomImportField {
+    id: uuid::Uuid,
+    nombre: String,
+    tipo_dato: String,
+    opciones_lista: Option<serde_json::Value>,
+    requerido: bool,
+}
+
+struct ProductCustomImportValue {
+    definicion_id: uuid::Uuid,
+    entero: Option<i32>,
+    booleano: Option<bool>,
+    fecha: Option<chrono::NaiveDate>,
+    texto: Option<String>,
+}
+
 #[derive(Debug, Serialize, Clone)]
 pub struct ResumenSetup {
     pub productos: i64,
@@ -194,6 +211,13 @@ pub(crate) async fn importar_catalogo_en_tx(
         }
     }
 
+    let custom_fields = sqlx::query_as::<_, ProductCustomImportField>(
+        "SELECT id, nombre, tipo_dato, opciones_lista, requerido \
+         FROM lab_campo_definicion WHERE activo = true AND alcance = 'producto' ORDER BY orden, nombre",
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+
     let mut promedio_uso_inicial_idx = None;
     for (idx, h) in headers.iter().enumerate() {
         let h_lower = h.to_lowercase();
@@ -302,6 +326,89 @@ pub(crate) async fn importar_catalogo_en_tx(
             "trazable" | "completo" => "trazable",
             _ => "con_vto",
         };
+        let mut custom_values = Vec::new();
+        for field in &custom_fields {
+            let key = format!("lab_{}", field.id);
+            let raw = get_val(&key);
+            if raw.is_empty() {
+                if field.requerido {
+                    errores.push(diagnostic(
+                        fila_num,
+                        &key,
+                        "REQUIRED_CUSTOM_FIELD",
+                        format!("{} es obligatorio", field.nombre),
+                    ));
+                }
+                continue;
+            }
+
+            let mut value = ProductCustomImportValue {
+                definicion_id: field.id,
+                entero: None,
+                booleano: None,
+                fecha: None,
+                texto: None,
+            };
+            match field.tipo_dato.as_str() {
+                "entero" => match raw.parse::<i32>() {
+                    Ok(parsed) => value.entero = Some(parsed),
+                    Err(_) => errores.push(diagnostic(
+                        fila_num,
+                        &key,
+                        "INVALID_CUSTOM_INTEGER",
+                        format!("El campo '{}' espera tipo entero; valor recibido: '{raw}'.", field.nombre),
+                    )),
+                },
+                "booleano" => match raw.to_lowercase().as_str() {
+                    "true" | "1" | "si" | "sí" | "yes" => value.booleano = Some(true),
+                    "false" | "0" | "no" => value.booleano = Some(false),
+                    _ => errores.push(diagnostic(
+                        fila_num,
+                        &key,
+                        "INVALID_CUSTOM_BOOLEAN",
+                        format!("El campo '{}' espera tipo booleano (si/no o true/false); valor recibido: '{raw}'.", field.nombre),
+                    )),
+                },
+                "fecha" => match chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d") {
+                    Ok(parsed) => value.fecha = Some(parsed),
+                    Err(_) => errores.push(diagnostic(
+                        fila_num,
+                        &key,
+                        "INVALID_CUSTOM_DATE",
+                        format!("El campo '{}' espera tipo fecha (AAAA-MM-DD); valor recibido: '{raw}'.", field.nombre),
+                    )),
+                },
+                "lista" => {
+                    let allowed = field
+                        .opciones_lista
+                        .as_ref()
+                        .and_then(serde_json::Value::as_array)
+                        .map(|options| {
+                            options
+                                .iter()
+                                .filter_map(serde_json::Value::as_str)
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    if !allowed.is_empty() && !allowed.contains(&raw) {
+                        errores.push(diagnostic(
+                            fila_num,
+                            &key,
+                            "INVALID_CUSTOM_OPTION",
+                            format!(
+                                "El campo '{}' espera tipo lista; valor recibido: '{raw}'. opciones válidas: {}.",
+                                field.nombre,
+                                allowed.join(", ")
+                            ),
+                        ));
+                    } else {
+                        value.texto = Some(raw.to_owned());
+                    }
+                }
+                _ => value.texto = Some(raw.to_owned()),
+            }
+            custom_values.push(value);
+        }
         let _stock_minimo =
             parse_optional_decimal(stock_minimo_str, fila_num, "stock_minimo", &mut errores);
         let precio = parse_optional_decimal(precio_str, fila_num, "precio_unitario", &mut errores);
@@ -326,11 +433,9 @@ pub(crate) async fn importar_catalogo_en_tx(
             continue;
         }
 
-        if let Some(required_key) = config
-            .required_fields
-            .iter()
-            .find(|key| key.as_str() != "nombre" && get_val(key).is_empty())
-        {
+        if let Some(required_key) = config.required_fields.iter().find(|key| {
+            key.as_str() != "nombre" && !key.starts_with("lab_") && get_val(key).is_empty()
+        }) {
             errores.push(ImportError {
                 fila: fila_num,
                 mensaje: format!(
@@ -513,6 +618,22 @@ pub(crate) async fn importar_catalogo_en_tx(
         .bind(if u_id.is_some() { "pendiente_aprobacion" } else { "incompleto" })
         .execute(&mut *conn)
         .await?;
+
+        for value in custom_values {
+            sqlx::query(
+                "INSERT INTO lab_campo_producto_valor \
+                 (producto_id, definicion_id, valor_entero, valor_booleano, valor_fecha, valor_texto) \
+                 VALUES ($1, $2, $3, $4, $5, $6)",
+            )
+            .bind(p_id)
+            .bind(value.definicion_id)
+            .bind(value.entero)
+            .bind(value.booleano)
+            .bind(value.fecha)
+            .bind(value.texto)
+            .execute(&mut *conn)
+            .await?;
+        }
 
         let pres_id: Option<i32> = if !unidad_nombre.is_empty() {
             let factor_conversion = factor_conversion.unwrap_or(Decimal::ONE);

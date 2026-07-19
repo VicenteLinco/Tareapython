@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 pub async fn listar_definiciones(pool: &PgPool) -> Result<Vec<LabCampoDefinicion>, AppError> {
     sqlx::query_as::<_, LabCampoDefinicion>(
-        "SELECT id, nombre, tipo_dato, opciones_lista, requerido, considerar_filtro, orden, activo, created_at, updated_at \
+        "SELECT id, nombre, tipo_dato, opciones_lista, requerido, considerar_filtro, orden, activo, alcance, created_at, updated_at \
          FROM lab_campo_definicion ORDER BY orden, nombre",
     )
     .fetch_all(pool)
@@ -28,11 +28,17 @@ pub async fn crear_definicion(
     let opciones_json = req
         .opciones_lista
         .map(|opts| serde_json::to_value(opts).unwrap_or(serde_json::Value::Null));
+    let alcance = req.alcance.as_deref().unwrap_or("laboratorio");
+    if !matches!(alcance, "laboratorio" | "producto") {
+        return Err(AppError::Validation(
+            "alcance debe ser 'laboratorio' o 'producto'".into(),
+        ));
+    }
 
     let def = sqlx::query_as::<_, LabCampoDefinicion>(
-        "INSERT INTO lab_campo_definicion (nombre, tipo_dato, opciones_lista, requerido, considerar_filtro, orden) \
-         VALUES ($1, $2, $3, $4, $5, $6) \
-         RETURNING id, nombre, tipo_dato, opciones_lista, requerido, considerar_filtro, orden, activo, created_at, updated_at",
+        "INSERT INTO lab_campo_definicion (nombre, tipo_dato, opciones_lista, requerido, considerar_filtro, orden, alcance) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7) \
+         RETURNING id, nombre, tipo_dato, opciones_lista, requerido, considerar_filtro, orden, activo, alcance, created_at, updated_at",
     )
     .bind(&nombre)
     .bind(&req.tipo_dato)
@@ -40,6 +46,7 @@ pub async fn crear_definicion(
     .bind(req.requerido.unwrap_or(false))
     .bind(req.considerar_filtro.unwrap_or(false))
     .bind(req.orden.unwrap_or(0))
+    .bind(alcance)
     .fetch_one(pool)
     .await
     .map_err(|e| match &e {
@@ -58,7 +65,7 @@ pub async fn actualizar_definicion(
     req: UpdateLabCampoDefinicion,
 ) -> Result<LabCampoDefinicion, AppError> {
     let anterior = sqlx::query_as::<_, LabCampoDefinicion>(
-        "SELECT id, nombre, tipo_dato, opciones_lista, requerido, considerar_filtro, orden, activo, created_at, updated_at \
+        "SELECT id, nombre, tipo_dato, opciones_lista, requerido, considerar_filtro, orden, activo, alcance, created_at, updated_at \
          FROM lab_campo_definicion WHERE id = $1",
     )
     .bind(id)
@@ -80,12 +87,18 @@ pub async fn actualizar_definicion(
     let considerar_filtro = req.considerar_filtro.unwrap_or(anterior.considerar_filtro);
     let orden = req.orden.unwrap_or(anterior.orden);
     let activo = req.activo.unwrap_or(anterior.activo);
+    let alcance = req.alcance.as_deref().unwrap_or(&anterior.alcance);
+    if !matches!(alcance, "laboratorio" | "producto") {
+        return Err(AppError::Validation(
+            "alcance debe ser 'laboratorio' o 'producto'".into(),
+        ));
+    }
 
     let def = sqlx::query_as::<_, LabCampoDefinicion>(
         "UPDATE lab_campo_definicion \
-         SET nombre = $1, tipo_dato = $2, opciones_lista = $3, requerido = $4, considerar_filtro = $5, orden = $6, activo = $7, updated_at = NOW() \
-         WHERE id = $8 \
-         RETURNING id, nombre, tipo_dato, opciones_lista, requerido, considerar_filtro, orden, activo, created_at, updated_at",
+         SET nombre = $1, tipo_dato = $2, opciones_lista = $3, requerido = $4, considerar_filtro = $5, orden = $6, activo = $7, alcance = $8, updated_at = NOW() \
+         WHERE id = $9 \
+         RETURNING id, nombre, tipo_dato, opciones_lista, requerido, considerar_filtro, orden, activo, alcance, created_at, updated_at",
     )
     .bind(nombre)
     .bind(tipo_dato)
@@ -94,6 +107,7 @@ pub async fn actualizar_definicion(
     .bind(considerar_filtro)
     .bind(orden)
     .bind(activo)
+    .bind(alcance)
     .bind(id)
     .fetch_optional(pool)
     .await?
@@ -117,11 +131,11 @@ pub async fn eliminar_definicion(pool: &PgPool, id: Uuid) -> Result<(), AppError
 
 pub async fn obtener_detalles(pool: &PgPool) -> Result<Vec<LabCampoDetalle>, AppError> {
     sqlx::query_as::<_, LabCampoDetalle>(
-        "SELECT d.id, d.nombre, d.tipo_dato, d.opciones_lista, d.requerido, d.considerar_filtro, d.orden, d.activo, \
+        "SELECT d.id, d.nombre, d.tipo_dato, d.opciones_lista, d.requerido, d.considerar_filtro, d.orden, d.activo, d.alcance, \
                 v.valor_entero, v.valor_booleano, v.valor_fecha, v.valor_texto \
          FROM lab_campo_definicion d \
          LEFT JOIN lab_campo_valor v ON v.definicion_id = d.id \
-         WHERE d.activo = true \
+         WHERE d.activo = true AND d.alcance = 'laboratorio' \
          ORDER BY d.orden, d.nombre",
     )
     .fetch_all(pool)

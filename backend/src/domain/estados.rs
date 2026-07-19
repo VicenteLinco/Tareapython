@@ -121,4 +121,5 @@ pub enum OrigenRegistro {
     Manual,
     ApiRegulatoria,
     GuiaPdf,
+    ImportacionCsv,
 }

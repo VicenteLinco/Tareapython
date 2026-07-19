@@ -664,7 +664,7 @@ pub async fn obtener_ia_modelos(
     api_key_query: Option<String>,
     api_url_query: Option<String>,
 ) -> Result<Vec<String>, AppError> {
-    let mut db_config = crate::services::llm::load_llm_config(pool).await?;
+    let mut db_config = crate::services::llm::load_llm_config_for_discovery(pool).await?;
 
     let rows: Vec<(String, String)> =
         sqlx::query_as("SELECT clave, valor_texto FROM configuracion WHERE clave LIKE 'ia_%'")
@@ -675,10 +675,14 @@ pub async fn obtener_ia_modelos(
     let mut key_openai = String::new();
     let mut key_deepseek = String::new();
     let mut key_github = String::new();
+    let mut key_groq = String::new();
+    let mut key_mistral = String::new();
     let mut url_openai = String::new();
     let mut url_deepseek = String::new();
     let mut url_github = String::new();
     let mut url_ollama = String::new();
+    let mut url_groq = String::new();
+    let mut url_mistral = String::new();
 
     for (clave, valor) in rows {
         let trimmed = valor.trim().to_string();
@@ -688,10 +692,14 @@ pub async fn obtener_ia_modelos(
                 "ia_api_key_openai" => key_openai = trimmed,
                 "ia_api_key_deepseek" => key_deepseek = trimmed,
                 "ia_api_key_github" => key_github = trimmed,
+                "ia_api_key_groq" => key_groq = trimmed,
+                "ia_api_key_mistral" => key_mistral = trimmed,
                 "ia_api_url_openai" => url_openai = trimmed,
                 "ia_api_url_deepseek" => url_deepseek = trimmed,
                 "ia_api_url_github" => url_github = trimmed,
                 "ia_api_url_ollama" => url_ollama = trimmed,
+                "ia_api_url_groq" => url_groq = trimmed,
+                "ia_api_url_mistral" => url_mistral = trimmed,
                 _ => {}
             }
         }
@@ -728,6 +736,20 @@ pub async fn obtener_ia_modelos(
                     db_config.api_key
                 }
             }
+            "groq" => {
+                if !key_groq.is_empty() {
+                    key_groq
+                } else {
+                    db_config.api_key
+                }
+            }
+            "mistral" => {
+                if !key_mistral.is_empty() {
+                    key_mistral
+                } else {
+                    db_config.api_key
+                }
+            }
             _ => db_config.api_key,
         };
         db_config.api_url = match db_config.provider.to_lowercase().as_str() {
@@ -759,6 +781,20 @@ pub async fn obtener_ia_modelos(
                     "https://models.inference.ai.azure.com".to_string()
                 }
             }
+            "groq" => {
+                if !url_groq.is_empty() {
+                    url_groq
+                } else {
+                    "https://api.groq.com/openai".to_string()
+                }
+            }
+            "mistral" => {
+                if !url_mistral.is_empty() {
+                    url_mistral
+                } else {
+                    "https://api.mistral.ai".to_string()
+                }
+            }
             _ => db_config.api_url,
         };
     }
@@ -778,6 +814,20 @@ pub async fn obtener_ia_modelos(
     let provider = db_config.provider.to_lowercase();
     let api_key = db_config.api_key;
     let api_url = db_config.api_url;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|_| AppError::Internal("No se pudo crear el cliente HTTP de IA".to_string()))?;
+
+    if provider != "ollama"
+        && provider != "custom"
+        && (api_key.trim().is_empty() || api_key.eq_ignore_ascii_case("mock"))
+    {
+        return Err(AppError::BusinessLogic(
+            "Configure una API Key real antes de consultar modelos multimodales.".to_string(),
+            "AI_CONFIGURATION_ERROR".to_string(),
+        ));
+    }
 
     if provider == "gemini" {
         if api_key.is_empty() {
@@ -789,27 +839,19 @@ pub async fn obtener_ia_modelos(
             api_key
         );
 
-        let client = reqwest::Client::new();
         let res = match client.get(&url).send().await {
             Ok(r) => r,
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to fetch Gemini models list: {}. Returning default models.",
-                    e
-                );
-                return Ok(get_default_models_for_provider("gemini"));
+            Err(_) => {
+                tracing::warn!("Failed to fetch Gemini models list");
+                return Err(crate::services::llm::provider_unavailable("Gemini"));
             }
         };
 
         if !res.status().is_success() {
             let status = res.status();
             let text = res.text().await.unwrap_or_default();
-            tracing::warn!(
-                "Gemini API returned status code {} when fetching models: {}. Returning default models.",
-                status,
-                text
-            );
-            return Ok(get_default_models_for_provider("gemini"));
+            tracing::warn!("Gemini models API returned {}: {}", status, text);
+            return Err(crate::services::llm::provider_http_error("Gemini", status));
         }
 
         #[derive(Debug, serde::Deserialize)]
@@ -827,11 +869,8 @@ pub async fn obtener_ia_modelos(
         let response: GeminiListModelsResponse = match res.json().await {
             Ok(resp) => resp,
             Err(e) => {
-                tracing::warn!(
-                    "Failed to decode Gemini models JSON: {}. Returning default models.",
-                    e
-                );
-                return Ok(get_default_models_for_provider("gemini"));
+                tracing::warn!("Failed to decode Gemini models JSON: {}", e);
+                return Err(crate::services::llm::provider_invalid_response("Gemini"));
             }
         };
 
@@ -849,8 +888,10 @@ pub async fn obtener_ia_modelos(
                     .unwrap_or(&m.name)
                     .to_string();
 
-                // Filtro inteligente para Gemini: solo modelos útiles, omitiendo snapshots y experimentales
-                let is_gemini = clean_name.starts_with("gemini-");
+                // The API does not expose input modalities. Intersect discovery with
+                // the document analyzer's conservative multimodal capability policy.
+                let is_gemini =
+                    crate::services::llm::is_vision_capable_model("gemini", &clean_name);
                 let is_noise = clean_name.contains("gemini-1.0")
                     || clean_name.contains("vision")
                     || clean_name.contains("-001")
@@ -869,7 +910,18 @@ pub async fn obtener_ia_modelos(
             }
         }
 
-        models.sort();
+        models.sort_by_key(|model| {
+            (
+                crate::services::llm::vision_model_rank("gemini", model).unwrap_or(u8::MAX),
+                model.clone(),
+            )
+        });
+        if models.is_empty() {
+            return Err(AppError::BusinessLogic(
+                "Gemini no informó modelos multimodales compatibles.".to_string(),
+                "AI_NO_VISION_MODEL".to_string(),
+            ));
+        }
         Ok(models)
     } else if provider == "ollama" {
         let host = if api_url.is_empty() {
@@ -879,24 +931,18 @@ pub async fn obtener_ia_modelos(
         };
 
         let url = format!("{}/api/tags", host);
-        let client = reqwest::Client::new();
         let res = match client.get(&url).send().await {
             Ok(r) => r,
             Err(e) => {
-                tracing::warn!(
-                    "Failed to fetch Ollama models: {}. Returning default models.",
-                    e
-                );
-                return Ok(get_default_models_for_provider("ollama"));
+                tracing::warn!("Failed to fetch Ollama models: {}", e);
+                return Err(crate::services::llm::provider_unavailable("Ollama"));
             }
         };
 
         if !res.status().is_success() {
-            tracing::warn!(
-                "Ollama returned status code {} when fetching models. Returning default models.",
-                res.status()
-            );
-            return Ok(get_default_models_for_provider("ollama"));
+            let status = res.status();
+            tracing::warn!("Ollama models API returned {}", status);
+            return Err(crate::services::llm::provider_http_error("Ollama", status));
         }
 
         #[derive(Debug, serde::Deserialize)]
@@ -912,16 +958,29 @@ pub async fn obtener_ia_modelos(
         let response: OllamaTagsResponse = match res.json().await {
             Ok(resp) => resp,
             Err(e) => {
-                tracing::warn!(
-                    "Failed to decode Ollama models JSON: {}. Returning default models.",
-                    e
-                );
-                return Ok(get_default_models_for_provider("ollama"));
+                tracing::warn!("Failed to decode Ollama models JSON: {}", e);
+                return Err(crate::services::llm::provider_invalid_response("Ollama"));
             }
         };
 
-        let mut models: Vec<String> = response.models.into_iter().map(|m| m.name).collect();
-        models.sort();
+        let mut models: Vec<String> = response
+            .models
+            .into_iter()
+            .map(|m| m.name)
+            .filter(|name| crate::services::llm::is_vision_capable_model("ollama", name))
+            .collect();
+        models.sort_by_key(|model| {
+            (
+                crate::services::llm::vision_model_rank("ollama", model).unwrap_or(u8::MAX),
+                model.clone(),
+            )
+        });
+        if models.is_empty() {
+            return Err(AppError::BusinessLogic(
+                "Ollama no tiene modelos multimodales compatibles instalados.".to_string(),
+                "AI_NO_VISION_MODEL".to_string(),
+            ));
+        }
         Ok(models)
     } else if provider == "openai"
         || provider == "deepseek"
@@ -942,9 +1001,9 @@ pub async fn obtener_ia_modelos(
         } else {
             api_url.clone()
         };
-        let url = format!("{}/v1/models", base_url.trim_end_matches('/'));
+        let api_root = base_url.trim_end_matches('/').trim_end_matches("/v1");
+        let url = format!("{}/v1/models", api_root);
 
-        let client = reqwest::Client::new();
         let mut req = client.get(&url);
         if !api_key.is_empty() && api_key != "mock" && api_key != "***" {
             req = req.header("Authorization", format!("Bearer {}", api_key));
@@ -953,24 +1012,16 @@ pub async fn obtener_ia_modelos(
         let res = match req.send().await {
             Ok(r) => r,
             Err(e) => {
-                tracing::warn!(
-                    "Failed to fetch OpenAI/DeepSeek/GitHub models: {}. Returning default models.",
-                    e
-                );
-                return Ok(get_default_models_for_provider(&provider));
+                tracing::warn!("Failed to fetch {} models: {}", provider, e);
+                return Err(crate::services::llm::provider_unavailable(&provider));
             }
         };
 
         if !res.status().is_success() {
             let status = res.status();
             let text = res.text().await.unwrap_or_default();
-            tracing::warn!(
-                "Models API for {} returned status code {}: {}. Returning default models.",
-                provider,
-                status,
-                text
-            );
-            return Ok(get_default_models_for_provider(&provider));
+            tracing::warn!("Models API for {} returned {}: {}", provider, status, text);
+            return Err(crate::services::llm::provider_http_error(&provider, status));
         }
 
         #[derive(Debug, serde::Deserialize)]
@@ -986,103 +1037,35 @@ pub async fn obtener_ia_modelos(
         let response: OpenAiModelsResponse = match res.json().await {
             Ok(resp) => resp,
             Err(e) => {
-                tracing::warn!(
-                    "Failed to decode OpenAI/DeepSeek/GitHub models JSON: {}. Returning default models.",
-                    e
-                );
-                return Ok(get_default_models_for_provider(&provider));
+                tracing::warn!("Failed to decode {} models JSON: {}", provider, e);
+                return Err(crate::services::llm::provider_invalid_response(&provider));
             }
         };
 
         let mut models = Vec::new();
         for m in response.data {
             let id = m.id;
-            match provider.as_str() {
-                "openai" => {
-                    // Filtro inteligente para OpenAI: solo modelos GPT/o principales y limpios
-                    let is_gpt_or_o =
-                        id.starts_with("gpt-") || id.starts_with("o1") || id.starts_with("o3");
-                    let is_noise = id.contains("-2024-")
-                        || id.contains("-2025-")
-                        || id.contains("-2026-")
-                        || id.contains("realtime")
-                        || id.contains("audio")
-                        || id.contains("instruct")
-                        || id.contains("preview");
-                    if is_gpt_or_o && !is_noise {
-                        models.push(id);
-                    }
-                }
-                "deepseek" => {
-                    if id.starts_with("deepseek-") {
-                        models.push(id);
-                    }
-                }
-                "github" => {
-                    // Filtro para GitHub Models: modelos útiles de chat/visión
-                    let is_useful = id.starts_with("gpt-")
-                        || id.starts_with("o1")
-                        || id.starts_with("o3")
-                        || id.starts_with("meta-llama-")
-                        || id.starts_with("cohere-command-")
-                        || id.starts_with("mistral-")
-                        || id.starts_with("phi-");
-                    let is_noise = id.contains("-2024-")
-                        || id.contains("-2025-")
-                        || id.contains("-2026-")
-                        || id.contains("-preview")
-                        || id.contains("embed");
-                    if is_useful && !is_noise {
-                        models.push(id);
-                    }
-                }
-                "groq" => {
-                    // Groq: solo modelos vision para la lectura de guías/facturas
-                    if id.contains("vision") {
-                        models.push(id);
-                    }
-                }
-                "mistral" => {
-                    // Mistral: Pixtral es el modelo multimodal (visión) y mistral-large
-                    if id.contains("pixtral") || id.starts_with("mistral-large") {
-                        models.push(id);
-                    }
-                }
-                _ => {
-                    models.push(id);
-                }
+            if crate::services::llm::is_vision_capable_model(&provider, &id) {
+                models.push(id);
             }
         }
-        models.sort();
+        models.sort_by_key(|model| {
+            (
+                crate::services::llm::vision_model_rank(&provider, model).unwrap_or(u8::MAX),
+                model.clone(),
+            )
+        });
+        if models.is_empty() {
+            return Err(AppError::BusinessLogic(
+                format!("{} no informó modelos multimodales compatibles.", provider),
+                "AI_NO_VISION_MODEL".to_string(),
+            ));
+        }
         Ok(models)
     } else {
-        Ok(vec![])
-    }
-}
-
-fn get_default_models_for_provider(provider: &str) -> Vec<String> {
-    match provider.to_lowercase().as_str() {
-        "openai" => vec!["gpt-4o-mini".to_string(), "gpt-4o".to_string()],
-        "deepseek" => vec!["deepseek-chat".to_string()],
-        "github" => vec![
-            "gpt-4o-mini".to_string(),
-            "gpt-4o".to_string(),
-            "meta-llama-3.1-405b-instruct".to_string(),
-            "cohere-command-r-plus".to_string(),
-        ],
-        "gemini" => vec![
-            "gemini-2.0-flash".to_string(),
-            "gemini-1.5-flash".to_string(),
-            "gemini-1.5-pro".to_string(),
-        ],
-        "groq" => vec![
-            "llama-3.2-11b-vision-preview".to_string(),
-            "llama-3.2-90b-vision-preview".to_string(),
-        ],
-        "mistral" => vec![
-            "pixtral-12b".to_string(),
-            "mistral-large-latest".to_string(),
-        ],
-        _ => vec!["gpt-4o-mini".to_string()],
+        Err(AppError::BusinessLogic(
+            format!("El proveedor de IA '{}' no está soportado.", provider),
+            "AI_PROVIDER_UNSUPPORTED".to_string(),
+        ))
     }
 }

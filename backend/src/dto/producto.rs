@@ -10,6 +10,7 @@ pub enum ProductFieldType {
     Integer,
     Decimal,
     Boolean,
+    Date,
     Catalog,
     MultiCatalog,
     Enum,

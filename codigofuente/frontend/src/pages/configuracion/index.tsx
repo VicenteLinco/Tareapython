@@ -100,7 +100,7 @@ export default function ConfiguracionPage() {
   const [ventanaConsumoDias, setVentanaConsumoDias] = useState(90);
   const [periodoRevisionDias, setPeriodoRevisionDias] = useState(30);
   const [iaProveedor, setIaProveedor] = useState("gemini");
-  const [iaModelo, setIaModelo] = useState("gemini-2.0-flash");
+  const [iaModelo, setIaModelo] = useState("auto");
   const [iaApiUrl, setIaApiUrl] = useState("");
   const [iaApiKey, setIaApiKey] = useState("");
   const [iaApiKeyGemini, setIaApiKeyGemini] = useState("");
@@ -136,9 +136,52 @@ export default function ConfiguracionPage() {
   const [editModelId, setEditModelId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
   const [formProvider, setFormProvider] = useState("gemini");
-  const [formModel, setFormModel] = useState("");
+  const [formModel, setFormModel] = useState("auto");
+  const [manualModelOverride, setManualModelOverride] = useState(false);
   const [formApiUrl, setFormApiUrl] = useState("");
   const [formApiKey, setFormApiKey] = useState("");
+  const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
+  const [isDiscoveringModels, setIsDiscoveringModels] = useState(false);
+  const [modelDiscoveryMessage, setModelDiscoveryMessage] = useState("");
+  const discoveryAbortRef = useRef<AbortController | null>(null);
+
+  async function handleDiscoverModels() {
+    discoveryAbortRef.current?.abort();
+    const controller = new AbortController();
+    discoveryAbortRef.current = controller;
+    setIsDiscoveringModels(true);
+    setModelDiscoveryMessage("");
+    try {
+      const response = await api.post<string[]>(
+        "/configuracion/ia-modelos",
+        {
+          provider: formProvider,
+          api_key: formApiKey || undefined,
+          api_url: formApiUrl || undefined,
+        },
+        { signal: controller.signal, timeout: 12_000 },
+      );
+      setDiscoveredModels(response.data);
+      setModelDiscoveryMessage(
+        response.data.length > 0
+          ? `${response.data.length} modelo(s) compatible(s) detectado(s).`
+          : "El proveedor no informó modelos multimodales compatibles.",
+      );
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setDiscoveredModels([]);
+      const message = (error as { response?: { data?: { message?: string } } })
+        .response?.data?.message;
+      setModelDiscoveryMessage(
+        message || "No se pudo consultar el proveedor. Revise la credencial y el endpoint.",
+      );
+    } finally {
+      if (discoveryAbortRef.current === controller) {
+        discoveryAbortRef.current = null;
+        setIsDiscoveringModels(false);
+      }
+    }
+  }
 
 
 
@@ -163,7 +206,7 @@ export default function ConfiguracionPage() {
     if (data.periodo_revision_dias != null)
       setPeriodoRevisionDias(data.periodo_revision_dias);
     setIaProveedor(data.ia_proveedor || "gemini");
-    const currentModel = data.ia_modelo || "";
+    const currentModel = data.ia_modelo || "auto";
     setIaModelo(currentModel);
     setIaApiUrl(data.ia_api_url || "");
     setIaApiKey(data.ia_api_key || "");
@@ -191,6 +234,8 @@ export default function ConfiguracionPage() {
     setVencimientoMargenToleranciaPct(data.vencimiento_margen_tolerancia_pct ?? 10);
     if (data.quarantine_default != null) setQuarantineDefault(data.quarantine_default);
   }, [data]);
+
+  useEffect(() => () => discoveryAbortRef.current?.abort(), []);
 
   const mutation = useMutation({
     mutationFn: (payload: {
@@ -306,10 +351,7 @@ export default function ConfiguracionPage() {
       notify.error("El nombre identificador es requerido");
       return;
     }
-    if (!formModel.trim()) {
-      notify.error("El modelo es requerido");
-      return;
-    }
+    const selectedModel = formModel.trim() || "auto";
 
     let updatedList: CustomModel[];
     if (editModelId) {
@@ -319,7 +361,7 @@ export default function ConfiguracionPage() {
               ...m,
               name: formName.trim(),
               provider: formProvider,
-              model: formModel.trim(),
+              model: selectedModel,
               api_url: formApiUrl.trim(),
               api_key: formApiKey.trim(),
             }
@@ -331,7 +373,7 @@ export default function ConfiguracionPage() {
         id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(7),
         name: formName.trim(),
         provider: formProvider,
-        model: formModel.trim(),
+        model: selectedModel,
         api_url: formApiUrl.trim(),
         api_key: formApiKey.trim(),
         active: modelsList.length === 0,
@@ -346,7 +388,8 @@ export default function ConfiguracionPage() {
     // Clear form
     setFormName("");
     setFormProvider("gemini");
-    setFormModel("gemini-2.0-flash");
+    setFormModel("auto");
+    setManualModelOverride(false);
     setFormApiUrl("");
     setFormApiKey("");
     setEditModelId(null);
@@ -358,6 +401,9 @@ export default function ConfiguracionPage() {
     setFormName(model.name);
     setFormProvider(model.provider);
     setFormModel(model.model);
+    setManualModelOverride(model.model !== "auto");
+    setDiscoveredModels([]);
+    setModelDiscoveryMessage("");
     setFormApiUrl(model.api_url);
     setFormApiKey(model.api_key);
     setIsFormOpen(true);
@@ -372,7 +418,7 @@ export default function ConfiguracionPage() {
       activateModelConfig(updatedList[0]);
     } else if (updatedList.length === 0) {
       setIaProveedor("gemini");
-      setIaModelo("");
+      setIaModelo("auto");
       setIaApiUrl("");
       setIaApiKey("");
     }
@@ -1033,7 +1079,10 @@ export default function ConfiguracionPage() {
                     setEditModelId(null);
                     setFormName("");
                     setFormProvider("gemini");
-                    setFormModel("");
+                    setFormModel("auto");
+                    setManualModelOverride(false);
+                    setDiscoveredModels([]);
+                    setModelDiscoveryMessage("");
                     setFormApiUrl("");
                     setFormApiKey("");
                     setIsFormOpen(true);
@@ -1071,7 +1120,10 @@ export default function ConfiguracionPage() {
                           onChange={(e) => {
                             const prov = e.target.value;
                             setFormProvider(prov);
-                            setFormModel("");
+                            setFormModel("auto");
+                            setManualModelOverride(false);
+                            setDiscoveredModels([]);
+                            setModelDiscoveryMessage("");
                             if (prov === "gemini") {
                               setFormApiUrl("");
                             } else if (prov === "openai") {
@@ -1102,15 +1154,52 @@ export default function ConfiguracionPage() {
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="space-y-1.5 md:col-span-1">
-                        <label className="text-xs font-medium">Modelo</label>
-                        <input
-                          type="text"
-                          className="input input-bordered input-sm w-full font-mono text-xs"
-                          placeholder="auto — el proveedor elige el mejor modelo"
-                          value={formModel}
-                          onChange={(e) => setFormModel(e.target.value)}
-                        />
-                        <span className="text-[10px] text-base-content/50">Vacío = automático según proveedor</span>
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-xs font-medium">Modelo multimodal</label>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            onClick={() => {
+                              setManualModelOverride((value) => !value);
+                              setFormModel("auto");
+                            }}
+                          >
+                            {manualModelOverride ? "Usar automático" : "Avanzado"}
+                          </button>
+                        </div>
+                        {manualModelOverride ? (
+                          <input
+                            type="text"
+                            className="input input-bordered input-sm w-full font-mono text-xs"
+                            placeholder="Nombre exacto del modelo multimodal"
+                            value={formModel === "auto" ? "" : formModel}
+                            onChange={(e) => setFormModel(e.target.value)}
+                          />
+                        ) : (
+                          <select
+                            className="select select-bordered select-sm w-full font-mono text-xs"
+                            value={discoveredModels.includes(formModel) ? formModel : "auto"}
+                            onChange={(e) => setFormModel(e.target.value)}
+                          >
+                            <option value="auto">Automático (recomendado)</option>
+                            {discoveredModels.map((model) => (
+                              <option key={model} value={model}>{model}</option>
+                            ))}
+                          </select>
+                        )}
+                        {!manualModelOverride && (
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-xs w-full"
+                            onClick={handleDiscoverModels}
+                            disabled={isDiscoveringModels}
+                          >
+                            {isDiscoveringModels ? "Consultando proveedor…" : "Actualizar modelos disponibles"}
+                          </button>
+                        )}
+                        <span className="text-[10px] text-base-content/50">
+                          {modelDiscoveryMessage || "Automático validará el mejor modelo al analizar."}
+                        </span>
                       </div>
 
                       <div className="space-y-1.5 md:col-span-1">
@@ -1120,7 +1209,11 @@ export default function ConfiguracionPage() {
                           className="input input-bordered input-sm w-full font-mono text-xs"
                           placeholder={formProvider === "gemini" ? "Predeterminado" : "Ej: https://..."}
                           value={formApiUrl}
-                          onChange={(e) => setFormApiUrl(e.target.value)}
+                          onChange={(e) => {
+                            setFormApiUrl(e.target.value);
+                            setDiscoveredModels([]);
+                            setModelDiscoveryMessage("");
+                          }}
                           disabled={formProvider === "gemini"}
                         />
                       </div>
@@ -1132,7 +1225,11 @@ export default function ConfiguracionPage() {
                           className="input input-bordered input-sm w-full font-mono text-xs"
                           placeholder={formProvider === "ollama" ? "No requerido" : formApiKey === "***" ? "••••••••" : "API Key"}
                           value={formApiKey}
-                          onChange={(e) => setFormApiKey(e.target.value)}
+                          onChange={(e) => {
+                            setFormApiKey(e.target.value);
+                            setDiscoveredModels([]);
+                            setModelDiscoveryMessage("");
+                          }}
                           disabled={formProvider === "ollama"}
                         />
                       </div>
@@ -1208,7 +1305,7 @@ export default function ConfiguracionPage() {
                           <div className="text-xs text-base-content/70 space-y-1.5 font-sans">
                             <div className="flex justify-between gap-2">
                               <span className="text-base-content/50">Modelo:</span>
-                              <code className="font-mono text-[11px] bg-base-200/50 px-1.5 py-0.5 rounded truncate max-w-[160px]">{m.model}</code>
+                              <code className="font-mono text-[11px] bg-base-200/50 px-1.5 py-0.5 rounded truncate max-w-[160px]">{m.model === "auto" ? "Automático" : m.model}</code>
                             </div>
                             {m.api_url && (
                               <div className="flex justify-between gap-2">

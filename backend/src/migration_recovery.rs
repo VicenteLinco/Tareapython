@@ -22,12 +22,24 @@ pub fn is_exact_legacy_history(versions: &[(i64, bool)]) -> bool {
             .all(|(index, (version, success))| *version == (index as i64 + 1) && *success)
 }
 
+fn legacy_missing_version_for_migrator(migrator: &Migrator) -> Option<i64> {
+    (1..=19).find(|legacy_version| {
+        !migrator
+            .iter()
+            .any(|migration| migration.version == *legacy_version)
+    })
+}
+
 pub fn recovery_decision(
     error: &MigrateError,
     authorized: bool,
     exact_legacy: bool,
 ) -> RecoveryDecision {
-    if authorized && exact_legacy && matches!(error, MigrateError::VersionMissing(2)) {
+    let expected_missing = legacy_missing_version_for_migrator(&MIGRATOR);
+    if authorized
+        && exact_legacy
+        && matches!(error, MigrateError::VersionMissing(version) if Some(*version) == expected_missing)
+    {
         RecoveryDecision::ResetPublicSchema
     } else {
         RecoveryDecision::Fail
@@ -106,13 +118,18 @@ mod tests {
     }
 
     #[test]
-    fn future_or_arbitrary_conflicts_fail_closed() {
+    fn exact_legacy_history_uses_the_first_version_missing_from_candidate_migrations() {
+        assert_eq!(legacy_missing_version_for_migrator(&MIGRATOR), Some(3));
         assert_eq!(
-            recovery_decision(&MigrateError::VersionMissing(2), true, true),
+            recovery_decision(&MigrateError::VersionMissing(3), true, true),
             RecoveryDecision::ResetPublicSchema
         );
         assert_eq!(
-            recovery_decision(&MigrateError::VersionMissing(3), true, true),
+            recovery_decision(&MigrateError::VersionMissing(2), true, true),
+            RecoveryDecision::Fail
+        );
+        assert_eq!(
+            recovery_decision(&MigrateError::VersionMissing(4), true, true),
             RecoveryDecision::Fail
         );
         assert_eq!(
@@ -120,7 +137,11 @@ mod tests {
             RecoveryDecision::Fail
         );
         assert_eq!(
-            recovery_decision(&MigrateError::VersionMissing(2), true, false),
+            recovery_decision(&MigrateError::VersionMissing(3), true, false),
+            RecoveryDecision::Fail
+        );
+        assert_eq!(
+            recovery_decision(&MigrateError::VersionMissing(3), false, true),
             RecoveryDecision::Fail
         );
     }

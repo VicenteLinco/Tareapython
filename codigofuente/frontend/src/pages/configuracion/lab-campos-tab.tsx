@@ -23,6 +23,7 @@ interface LabCampoDefinicion {
   considerar_filtro: boolean;
   orden: number;
   activo: boolean;
+  alcance: "laboratorio" | "producto";
 }
 
 interface LabCampoDetalle {
@@ -34,6 +35,7 @@ interface LabCampoDetalle {
   considerar_filtro: boolean;
   orden: number;
   activo: boolean;
+  alcance: "laboratorio" | "producto";
   valor_entero: number | null;
   valor_booleano: boolean | null;
   valor_fecha: string | null;
@@ -76,6 +78,7 @@ export default function LabCamposTab() {
   const [formRequerido, setFormRequerido] = useState(false);
   const [formConsiderarFiltro, setFormConsiderarFiltro] = useState(false);
   const [formOrden, setFormOrden] = useState(0);
+  const [formAlcance, setFormAlcance] = useState<"laboratorio" | "producto">("laboratorio");
   const [editId, setEditId] = useState<string | null>(null);
 
   // --- Value form state ---
@@ -119,6 +122,7 @@ export default function LabCamposTab() {
       requerido: boolean;
       considerar_filtro: boolean;
       orden: number;
+      alcance: "laboratorio" | "producto";
     }) => api.post("/admin/lab-campos", payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["lab-campos"] });
@@ -142,6 +146,7 @@ export default function LabCamposTab() {
       considerar_filtro?: boolean;
       orden?: number;
       activo?: boolean;
+      alcance?: "laboratorio" | "producto";
     }) => api.put(`/admin/lab-campos/${id}`, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["lab-campos"] });
@@ -180,6 +185,7 @@ export default function LabCamposTab() {
     setFormRequerido(false);
     setFormConsiderarFiltro(false);
     setFormOrden(0);
+    setFormAlcance("laboratorio");
     setEditId(null);
   }
 
@@ -193,6 +199,7 @@ export default function LabCamposTab() {
     setFormRequerido(def.requerido);
     setFormConsiderarFiltro(def.considerar_filtro);
     setFormOrden(def.orden);
+    setFormAlcance(def.alcance);
   }
 
   function handleDelete(id: string) {
@@ -222,6 +229,7 @@ export default function LabCamposTab() {
       requerido: formRequerido,
       considerar_filtro: formConsiderarFiltro,
       orden: formOrden,
+      alcance: formAlcance,
     };
 
     if (editId) {
@@ -375,6 +383,18 @@ export default function LabCamposTab() {
                 </select>
               </div>
 
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Alcance</label>
+                <select
+                  className="select select-bordered select-sm w-full"
+                  value={formAlcance}
+                  onChange={(e) => setFormAlcance(e.target.value as "laboratorio" | "producto")}
+                >
+                  <option value="laboratorio">Valor global del laboratorio</option>
+                  <option value="producto">Atributo por producto (importable)</option>
+                </select>
+              </div>
+
               {formTipoDato === "lista" && (
                 <div className="space-y-1">
                   <label className="text-xs font-medium">
@@ -455,6 +475,7 @@ export default function LabCamposTab() {
                     <th>Orden</th>
                     <th>Nombre</th>
                     <th>Tipo</th>
+                    <th>Alcance</th>
                     <th>Req.</th>
                     <th>Filtro</th>
                     <th>Activo</th>
@@ -477,6 +498,11 @@ export default function LabCamposTab() {
                             )}
                           >
                             {def.tipo_dato}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="badge badge-sm badge-outline">
+                            {def.alcance === "producto" ? "Producto" : "Laboratorio"}
                           </span>
                         </td>
                         <td>

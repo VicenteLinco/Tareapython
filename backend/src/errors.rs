@@ -98,6 +98,13 @@ pub enum AppError {
     #[error("Regla de negocio: {0}")]
     BusinessLogic(String, String),
 
+    #[error("Error de análisis IA: {message}")]
+    AiAnalysisFailure {
+        message: String,
+        code: String,
+        archivo_url: String,
+    },
+
     #[error("Acceso denegado: {0}")]
     Forbidden(String),
 
@@ -184,6 +191,20 @@ mod tests {
         assert_eq!(body["details"]["actual"], 3);
     }
 
+    #[tokio::test]
+    async fn ai_analysis_failure_preserves_saved_upload_context() {
+        let (status, body) = response_json(AppError::AiAnalysisFailure {
+            message: "Configure una API Key real".to_string(),
+            code: "AI_CONFIGURATION_ERROR".to_string(),
+            archivo_url: "guias/guide.pdf".to_string(),
+        })
+        .await;
+
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body["code"], "AI_CONFIGURATION_ERROR");
+        assert_eq!(body["details"]["archivo_url"], "guias/guide.pdf");
+    }
+
     #[test]
     fn mensajes_sql_tipados_para_restricciones_conocidas() {
         assert_eq!(
@@ -251,6 +272,18 @@ impl IntoResponse for AppError {
             }
             AppError::BusinessLogic(msg, code) => {
                 let body = json!({ "code": code, "message": msg });
+                return (StatusCode::UNPROCESSABLE_ENTITY, axum::Json(body)).into_response();
+            }
+            AppError::AiAnalysisFailure {
+                message,
+                code,
+                archivo_url,
+            } => {
+                let body = json!({
+                    "code": code,
+                    "message": message,
+                    "details": { "archivo_url": archivo_url }
+                });
                 return (StatusCode::UNPROCESSABLE_ENTITY, axum::Json(body)).into_response();
             }
             AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, "FORBIDDEN", msg, None),

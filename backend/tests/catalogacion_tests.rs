@@ -200,11 +200,12 @@ async fn test_api_regulatoria_cascada_y_timeout(pool: PgPool) {
 async fn test_cuarentena_excluye_stock_usable(pool: PgPool) {
     common::seed_base_data(&pool).await;
 
-    // Create a quarantined product
+    // Create a ready product so its initial inventory can pass the database gate.
+    // Quarantine it after the historical stock exists.
     let prod_pendiente_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO productos (id, codigo_interno, nombre, unidad_base_id, estado_catalogo, origen_registro, control_lote) \
-         VALUES ($1, 'TEST-PEND', 'Producto Pendiente', 1, 'pendiente_aprobacion', 'api_regulatoria', 'con_vto')"
+         VALUES ($1, 'TEST-PEND', 'Producto Pendiente', 1, 'aprobado', 'api_regulatoria', 'con_vto')"
     )
     .bind(prod_pendiente_id)
     .execute(&pool)
@@ -254,6 +255,12 @@ async fn test_cuarentena_excluye_stock_usable(pool: PgPool) {
     .await
     .unwrap();
 
+    sqlx::query("UPDATE productos SET estado_catalogo = 'pendiente_aprobacion' WHERE id = $1")
+        .bind(prod_pendiente_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
     // Query stock stats via stock_service
     let params = stock_service::ListarParams {
         area_id: Some(1),
@@ -298,11 +305,12 @@ async fn test_cuarentena_excluye_stock_usable(pool: PgPool) {
 async fn test_bloqueo_consumo_cuarentena(pool: PgPool) {
     let admin_id = common::ensure_test_admin(&pool).await;
 
-    // Create a quarantined product
+    // Create a ready product so its initial inventory can pass the database gate.
+    // Quarantine it after the historical stock exists.
     let prod_pendiente_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO productos (id, codigo_interno, nombre, unidad_base_id, estado_catalogo, origen_registro, control_lote) \
-         VALUES ($1, 'TEST-PEND-CONS', 'Producto Pendiente Consumo', 1, 'pendiente_aprobacion', 'api_regulatoria', 'con_vto')"
+         VALUES ($1, 'TEST-PEND-CONS', 'Producto Pendiente Consumo', 1, 'aprobado', 'api_regulatoria', 'con_vto')"
     )
     .bind(prod_pendiente_id)
     .execute(&pool)
@@ -323,6 +331,12 @@ async fn test_bloqueo_consumo_cuarentena(pool: PgPool) {
     // Add stock in area 1 (Microbiología, from seed)
     sqlx::query("INSERT INTO stock (lote_id, area_id, cantidad) VALUES ($1, 1, 10.0)")
         .bind(lote_pend_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    sqlx::query("UPDATE productos SET estado_catalogo = 'pendiente_aprobacion' WHERE id = $1")
+        .bind(prod_pendiente_id)
         .execute(&pool)
         .await
         .unwrap();
@@ -570,12 +584,13 @@ async fn test_stock_scaling_on_approval_and_lookup(pool: PgPool) {
     let app = common::test_app(pool.clone());
     let token = common::admin_access_token(&pool).await;
 
-    // 1. Create a quarantined product with pres_factor = 1.0
+    // 1. Create a ready product with pres_factor = 1.0 so historical inventory
+    // can pass the database gate, then quarantine it before the approval flow.
     let prod_id = Uuid::new_v4();
     sqlx::query(
         r#"INSERT INTO productos 
            (id, codigo_interno, nombre, unidad_base_id, estado_catalogo, origen_registro, control_lote) 
-           VALUES ($1, 'TEST-SCALE-VAL', 'Producto Escalar', 1, 'pendiente_aprobacion', 'api_regulatoria', 'con_vto')"#
+           VALUES ($1, 'TEST-SCALE-VAL', 'Producto Escalar', 1, 'aprobado', 'api_regulatoria', 'con_vto')"#
     )
     .bind(prod_id)
     .execute(&pool)
@@ -613,6 +628,12 @@ async fn test_stock_scaling_on_approval_and_lookup(pool: PgPool) {
     .execute(&pool)
     .await
     .unwrap();
+
+    sqlx::query("UPDATE productos SET estado_catalogo = 'pendiente_aprobacion' WHERE id = $1")
+        .bind(prod_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     // 2. Call lookup endpoint
     let (status_look, res_look) = common::get_json(

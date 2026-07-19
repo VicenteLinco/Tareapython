@@ -1,5 +1,7 @@
 use std::{fs, path::Path};
 
+use sha2::{Digest, Sha256};
+
 fn sql_files(directory: &Path) -> Vec<String> {
     let mut files = fs::read_dir(directory)
         .unwrap_or_else(|error| panic!("cannot read {}: {error}", directory.display()))
@@ -14,18 +16,38 @@ fn sql_files(directory: &Path) -> Vec<String> {
     files
 }
 
+fn sha256_hex(contents: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(contents))
+}
+
 #[test]
-fn migrations_are_a_single_clean_baseline() {
+fn migrations_preserve_the_baseline_and_append_only_history() {
     let embedded = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
     let canonical = Path::new(env!("CARGO_MANIFEST_DIR")).join("../migrations");
 
-    let expected = vec!["001_initial_schema.sql".to_owned()];
-    assert_eq!(sql_files(&canonical), expected);
-    assert_eq!(sql_files(&embedded), expected);
+    let canonical_files = vec!["001_initial_schema.sql".to_owned()];
+    let embedded_files = vec![
+        "001_initial_schema.sql".to_owned(),
+        "002_product_scoped_lab_fields.sql".to_owned(),
+    ];
+    assert_eq!(sql_files(&canonical), canonical_files);
+    assert_eq!(sql_files(&embedded), embedded_files);
 
-    let canonical_sql = fs::read_to_string(canonical.join(&expected[0])).unwrap();
-    let embedded_sql = fs::read_to_string(embedded.join(&expected[0])).unwrap();
+    let canonical_sql = fs::read_to_string(canonical.join(&canonical_files[0])).unwrap();
+    let embedded_sql = fs::read_to_string(embedded.join(&embedded_files[0])).unwrap();
     assert_eq!(embedded_sql, canonical_sql, "embedded migrations drifted");
+    assert_eq!(
+        sha256_hex(canonical_sql.as_bytes()),
+        "a22a9bff9442dac7233ca96b725f5a5359605961b600a1c03a0d43181e522bf9",
+        "the already-applied 001 baseline must never be rewritten"
+    );
+
+    let product_fields_sql = fs::read(embedded.join(&embedded_files[1])).unwrap();
+    assert_eq!(
+        sha256_hex(&product_fields_sql),
+        "146a6a3633b19df50dd7d5ba0a3f2501f7baee51bc75526a2ecc3ec7762b6a5d",
+        "the append-only 002 migration drifted"
+    );
     let gitignore =
         fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.gitignore")).unwrap();
     assert!(

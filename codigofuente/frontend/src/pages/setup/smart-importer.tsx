@@ -36,6 +36,85 @@ interface LabCampoDefinicion {
   tipo_dato: string;
   requerido: boolean;
   considerar_filtro: boolean;
+  activo: boolean;
+  alcance: "laboratorio" | "producto";
+  opciones_lista?: string[] | null;
+}
+
+interface BulkFill {
+  id: number;
+  field: string;
+  value: string;
+  mode: "blank_only" | "overwrite_all";
+}
+
+const TEMPLATE_BASE_COLUMNS = [
+  "nombre [tipo=texto; requerido=si]",
+  "unidad [tipo=texto; requerido=no]",
+  "descripcion [tipo=texto; requerido=no]",
+  "codigo_interno [tipo=texto; requerido=no]",
+  "categoria [tipo=texto; requerido=no]",
+  "proveedor [tipo=texto; requerido=no]",
+  "precio_unitario [tipo=decimal; requerido=no]",
+];
+
+const escapeCsvCell = (value: string) =>
+  /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuotes = false;
+
+  const finishRow = () => {
+    row.push(cell);
+    if (row.some((value) => value.trim() !== "")) rows.push(row);
+    row = [];
+    cell = "";
+  };
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '"') {
+      if (inQuotes && text[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === "," && !inQuotes) {
+      row.push(cell);
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && text[index + 1] === "\n") index += 1;
+      finishRow();
+    } else {
+      cell += char;
+    }
+  }
+
+  if (inQuotes) throw new Error("El archivo CSV contiene comillas sin cerrar");
+  if (cell.length > 0 || row.length > 0) finishRow();
+  if (rows[0]?.[0]) rows[0][0] = rows[0][0].replace(/^\uFEFF/, "");
+  return rows;
+}
+
+export function buildProductImportTemplate(
+  customFields: LabCampoDefinicion[],
+): string {
+  const customColumns = customFields
+    .filter((field) => field.activo && field.alcance === "producto")
+    .map((field) => {
+      const options =
+        field.tipo_dato === "lista" && field.opciones_lista?.length
+          ? `; opciones=${field.opciones_lista.join("|")}`
+          : "";
+      return `lab_${field.id} [nombre=${field.nombre}; tipo=${field.tipo_dato}; requerido=${field.requerido ? "si" : "no"}${options}]`;
+    });
+  return [...TEMPLATE_BASE_COLUMNS, ...customColumns]
+    .map(escapeCsvCell)
+    .join(",");
 }
 
 export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
@@ -75,6 +154,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
   const [previewData, setPreviewData] = useState<ImportPreviewRow[]>([]);
   const [errors, setErrors] = useState<ImportErrorRow[]>([]);
   const [warnings, setWarnings] = useState<ImportErrorRow[]>([]);
+  const [rejectionReason, setRejectionReason] = useState("");
   const [isValidating, setIsValidating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
 
@@ -83,30 +163,52 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
   const [newFieldName, setNewFieldName] = useState("");
   const [newFieldType, setNewFieldType] = useState("texto");
   const [customFields, setCustomFields] = useState<LabCampoDefinicion[]>([]);
+  const [customFieldsLoaded, setCustomFieldsLoaded] = useState(false);
+  const [customFieldsLoadFailed, setCustomFieldsLoadFailed] = useState(false);
   const [isCreatingField, setIsCreatingField] = useState(false);
 
   // Search input to filter mapping fields
   const [searchQuery, setSearchQuery] = useState("");
-  const [bulkField, setBulkField] = useState("unidad");
-  const [bulkValue, setBulkValue] = useState("");
-  const [bulkMode, setBulkMode] = useState<"blank_only" | "overwrite_all">("blank_only");
+  const [bulkFills, setBulkFills] = useState<BulkFill[]>([
+    { id: 1, field: "unidad", value: "", mode: "blank_only" },
+  ]);
+  const nextBulkFillId = useRef(2);
+
+  const effectiveMapping = () => {
+    const next = { ...mapping };
+    for (const fill of bulkFills) {
+      if (fill.value.trim() && !next[fill.field]) {
+        next[fill.field] = fill.field;
+      }
+    }
+    return next;
+  };
 
   const effectiveFile = () => {
-    if (!file || !bulkValue.trim()) return file;
-    const targetHeader = mapping[bulkField] || bulkField;
-    const nextHeaders = headers.includes(targetHeader) ? [...headers] : [...headers, targetHeader];
-    const targetIndex = nextHeaders.indexOf(targetHeader);
-    const escaped = (value: string) => /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+    if (!file) return file;
+    const activeFills = bulkFills.filter((fill) => fill.value.trim());
+    if (activeFills.length === 0) return file;
+    const nextHeaders = [...headers];
+    for (const fill of activeFills) {
+      const targetHeader = mapping[fill.field] || fill.field;
+      if (!nextHeaders.includes(targetHeader)) nextHeaders.push(targetHeader);
+    }
     const lines = [nextHeaders, ...rawCsvRows.slice(1).map((row) => {
       const next = [...row]; while (next.length < nextHeaders.length) next.push("");
-      if (bulkMode === "overwrite_all" || !next[targetIndex]?.trim()) next[targetIndex] = bulkValue.trim();
+      for (const fill of activeFills) {
+        const targetHeader = mapping[fill.field] || fill.field;
+        const targetIndex = nextHeaders.indexOf(targetHeader);
+        if (fill.mode === "overwrite_all" || !next[targetIndex]?.trim()) {
+          next[targetIndex] = fill.value.trim();
+        }
+      }
       return next;
-    })].map((row) => row.map(escaped).join(","));
+    })].map((row) => row.map(escapeCsvCell).join(","));
     return new File([lines.join("\n")], file.name, { type: "text/csv;charset=utf-8" });
   };
 
   const downloadTemplate = () => {
-    const blob = new Blob([["nombre,unidad,descripcion,codigo_interno,categoria,proveedor,precio_unitario"].join("\n")], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob([buildProductImportTemplate(customFields)], { type: "text/csv;charset=utf-8" });
     const anchor = document.createElement("a"); anchor.href = URL.createObjectURL(blob); anchor.download = "plantilla-productos.csv"; anchor.click(); URL.revokeObjectURL(anchor.href);
   };
 
@@ -269,19 +371,27 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
   ];
 
   const fetchCustomFields = async () => {
+    setCustomFieldsLoaded(false);
+    setCustomFieldsLoadFailed(false);
     try {
       const res = await api.get("/admin/lab-campos");
-      setCustomFields(res.data || []);
+      setCustomFields(
+        (res.data || []).filter(
+          (field: LabCampoDefinicion) => field.activo && field.alcance === "producto",
+        ),
+      );
+      setCustomFieldsLoaded(true);
     } catch {
+      setCustomFields([]);
+      setCustomFieldsLoaded(true);
+      setCustomFieldsLoadFailed(true);
       notify.error("Error al obtener campos personalizados");
     }
   };
 
   useEffect(() => {
-    if (step === "MAP") {
-      fetchCustomFields();
-    }
-  }, [step]);
+    fetchCustomFields();
+  }, []);
 
   const handleCreateCustomField = async () => {
     if (!newFieldName.trim()) return;
@@ -293,6 +403,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
         requerido: false,
         considerar_filtro: true,
         orden: 10,
+        alcance: "producto",
       });
       notify.success(`Campo "${newFieldName.trim()}" creado exitosamente.`);
       setNewFieldName("");
@@ -310,52 +421,55 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
     if (!selectedFile) return;
 
     if (!selectedFile.name.endsWith(".csv")) {
-      notify.error("Por favor, sube un archivo CSV válido");
+      const message = "Por favor, sube un archivo CSV válido";
+      setRejectionReason(message);
+      notify.error(message);
       return;
     }
 
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+      let parsedRows: string[][];
+      try {
+        parsedRows = parseCsv(text);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "El archivo CSV no es válido";
+        setRejectionReason(message);
+        notify.error(message);
+        return;
+      }
 
-      if (lines.length === 0) {
-        notify.error("El archivo CSV está vacío");
+      if (parsedRows.length === 0) {
+        const message = "El archivo CSV está vacío";
+        setRejectionReason(message);
+        notify.error(message);
         return;
       }
 
       // Parse headers
-      const cols = lines[0]
-        .split(",")
-        .map((c) => c.trim().replace(/^"|"$/g, ""));
+      const cols = parsedRows[0];
       setHeaders(cols);
       setFile(selectedFile);
 
-      // Parse raw rows for explorer view
-      const parsedRows = lines.map((line) => {
-        const result = [];
-        let current = "";
-        let inQuotes = false;
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          if (char === '"') {
-            inQuotes = !inQuotes;
-          } else if (char === ',' && !inQuotes) {
-            result.push(current.trim().replace(/^"|"$/g, ""));
-            current = "";
-          } else {
-            current += char;
-          }
-        }
-        result.push(current.trim().replace(/^"|"$/g, ""));
-        return result;
-      });
       setRawCsvRows(parsedRows);
+      setRejectionReason("");
 
       // Auto-mapeo inteligente por nombre con tolerancia extendida
       const newMap = { ...mapping };
       cols.forEach((col) => {
         const lower = col.toLowerCase();
+        const customKey = lower.match(/^(lab_[0-9a-f-]{36})\s*\[/)?.[1];
+        if (customKey) {
+          newMap[customKey] = col;
+          return;
+        }
+        const canonicalKey = lower.match(/^([a-z_]+)\s*\[/)?.[1];
+        if (canonicalKey && Object.prototype.hasOwnProperty.call(newMap, canonicalKey)) {
+          newMap[canonicalKey] = col;
+          return;
+        }
         if (lower.includes("nom") || lower.includes("prd") || lower === "item") newMap.nombre = col;
         if (lower.includes("uni") || lower.includes("med") || lower === "u") newMap.unidad = col;
         if (lower.includes("desc") || lower.includes("detall")) newMap.descripcion = col;
@@ -398,7 +512,8 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
     formData.append(
       "config",
       JSON.stringify({
-        mapping,
+        mapping: effectiveMapping(),
+        required_fields: [],
         dry_run: true,
       }),
     );
@@ -408,13 +523,14 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
       setPreviewData(res.data.preview || []);
       setErrors(res.data.errores || []);
       setWarnings(res.data.advertencias || []);
+      setRejectionReason("");
       setStep("PREVIEW");
     } catch (error: any) {
-      notify.error(
-        error.response?.data?.mensaje ||
+      const message = error.response?.data?.mensaje ||
           error.response?.data?.message ||
-          "Error al validar el archivo",
-      );
+          "Error al validar el archivo";
+      setRejectionReason(message);
+      notify.error(message);
     } finally {
       setIsValidating(false);
     }
@@ -427,7 +543,8 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
     formData.append(
       "config",
       JSON.stringify({
-        mapping,
+        mapping: effectiveMapping(),
+        required_fields: [],
         dry_run: false,
       }),
     );
@@ -436,6 +553,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
       const res = await api.post("/setup/importar-productos", formData);
       setWarnings(res.data.advertencias || []);
       if (res.data.valido) {
+        setRejectionReason("");
         notify.success("Importación completada con éxito");
         onComplete();
       } else {
@@ -443,18 +561,26 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
         setErrors(res.data.errores);
       }
     } catch (error: any) {
-      notify.error(
-        error.response?.data?.mensaje ||
+      const message = error.response?.data?.mensaje ||
           error.response?.data?.message ||
-          "Error crítico en el servidor",
-      );
+          "Error crítico en el servidor";
+      setRejectionReason(message);
+      notify.error(message);
     } finally {
       setIsImporting(false);
     }
   };
 
   // Filter fields based on search query
-  const filteredFields = systemFields.filter(
+  const customMappingFields = customFields.map((field) => ({
+    key: `lab_${field.id}`,
+    label: field.nombre,
+    required: field.requerido,
+    category: "Campos del Laboratorio",
+    desc: `Campo personalizado de producto (${field.tipo_dato})`,
+  }));
+  const allFields = [...systemFields, ...customMappingFields];
+  const filteredFields = allFields.filter(
     (f) =>
       f.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
       f.desc.toLowerCase().includes(searchQuery.toLowerCase())
@@ -534,6 +660,12 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
 
       <main className="flex-1 overflow-y-auto p-8 flex justify-center">
         <div className="max-w-4xl w-full">
+          {rejectionReason && (
+            <div role="alert" className="alert alert-error mb-6">
+              <AlertCircle className="h-5 w-5" />
+              <span><strong>Archivo rechazado:</strong> {rejectionReason}</span>
+            </div>
+          )}
           {/* STEP 1: UPLOAD */}
           {step === "UPLOAD" && (
             <div className="h-[60vh] flex flex-col items-center justify-center border-2 border-dashed border-base-300 rounded-[3rem] bg-base-200/30 hover:bg-base-200/50 transition-all group relative">
@@ -570,7 +702,12 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                   Codificación UTF-8
                 </div>
               </div>
-              <button type="button" onClick={(event) => { event.stopPropagation(); downloadTemplate(); }} className="btn btn-outline mt-6 z-10 gap-2"><Download className="w-4 h-4"/>Descargar plantilla</button>
+              <button type="button" disabled={!customFieldsLoaded} onClick={(event) => { event.stopPropagation(); downloadTemplate(); }} className="btn btn-outline mt-6 z-10 gap-2"><Download className="w-4 h-4"/>{!customFieldsLoaded ? "Preparando plantilla..." : customFieldsLoadFailed ? "Descargar plantilla base" : "Descargar plantilla"}</button>
+              {customFieldsLoadFailed && (
+                <button type="button" onClick={(event) => { event.stopPropagation(); fetchCustomFields(); }} className="btn btn-ghost btn-sm mt-2 z-10">
+                  Reintentar campos personalizados
+                </button>
+              )}
             </div>
           )}
 
@@ -620,12 +757,18 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
               <section className="p-5 rounded-3xl border border-primary/20 bg-primary/5 space-y-4">
                 <div className="flex items-center gap-2 font-black"><WandSparkles className="w-5 h-5 text-primary"/>Rellenar un campo para todas las filas</div>
                 <p className="text-sm opacity-60">El valor se aplica antes de validar. Puedes completar solo vacíos o reemplazar todos los valores.</p>
-                <div className="grid md:grid-cols-[1fr_1fr_auto] gap-3">
-                  <select className="select select-bordered" value={bulkField} onChange={(e)=>setBulkField(e.target.value)}>{systemFields.map((field)=><option key={field.key} value={field.key}>{field.label}</option>)}</select>
-                  <input className="input input-bordered" value={bulkValue} onChange={(e)=>setBulkValue(e.target.value)} placeholder="Valor para aplicar"/>
-                  <select className="select select-bordered" value={bulkMode} onChange={(e)=>setBulkMode(e.target.value as typeof bulkMode)}><option value="blank_only">Solo vacíos</option><option value="overwrite_all">Reemplazar todos</option></select>
+                <div className="space-y-3">
+                  {bulkFills.map((fill) => (
+                    <div key={fill.id} className="grid md:grid-cols-[1fr_1fr_auto_auto] gap-3">
+                      <select aria-label="Campo de relleno global" className="select select-bordered" value={fill.field} onChange={(e) => setBulkFills((rows) => rows.map((row) => row.id === fill.id ? { ...row, field: e.target.value } : row))}>{allFields.map((field)=><option key={field.key} value={field.key}>{field.label}</option>)}</select>
+                      <input aria-label="Valor de relleno global" className="input input-bordered" value={fill.value} onChange={(e) => setBulkFills((rows) => rows.map((row) => row.id === fill.id ? { ...row, value: e.target.value } : row))} placeholder="Valor para aplicar"/>
+                      <select aria-label="Modo de relleno global" className="select select-bordered" value={fill.mode} onChange={(e) => setBulkFills((rows) => rows.map((row) => row.id === fill.id ? { ...row, mode: e.target.value as BulkFill["mode"] } : row))}><option value="blank_only">Solo vacíos</option><option value="overwrite_all">Reemplazar todos</option></select>
+                      <button type="button" aria-label="Eliminar relleno global" className="btn btn-ghost btn-square" disabled={bulkFills.length === 1} onClick={() => setBulkFills((rows) => rows.filter((row) => row.id !== fill.id))}><X className="w-4 h-4" /></button>
+                    </div>
+                  ))}
+                  <button type="button" aria-label="Agregar relleno global" className="btn btn-outline btn-sm gap-2" onClick={() => { const id = nextBulkFillId.current++; setBulkFills((rows) => [...rows, { id, field: "unidad", value: "", mode: "blank_only" }]); }}><PlusCircle className="w-4 h-4" />Agregar campo</button>
                 </div>
-                {bulkValue && <div className="alert alert-warning py-2 text-sm">Se afectarán hasta {Math.max(0, rawCsvRows.length - 1)} filas. Revisa la vista previa antes de confirmar.</div>}
+                {bulkFills.some((fill) => fill.value.trim()) && <div className="alert alert-warning py-2 text-sm">Se afectarán hasta {Math.max(0, rawCsvRows.length - 1)} filas. Revisa la vista previa antes de confirmar.</div>}
               </section>
 
               <div className="relative w-full">
@@ -674,6 +817,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                     </div>
 
                     <select
+                      aria-label={`Columna CSV para ${field.label}`}
                       className={cn(
                         "select select-bordered w-full rounded-2xl bg-base-100 font-bold",
                         !mapping[field.key] && field.required

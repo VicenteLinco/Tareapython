@@ -3463,3 +3463,6 @@ CREATE TRIGGER gate_movimientos_product_readiness BEFORE INSERT OR UPDATE ON pub
 
 -- PostgreSQL database dump complete
 --
+ALTER TABLE lotes ADD COLUMN IF NOT EXISTS import_batch_id uuid REFERENCES import_batches(id);
+ALTER TABLE lotes ADD COLUMN IF NOT EXISTS fecha_recepcion date NOT NULL DEFAULT CURRENT_DATE;
+CREATE UNIQUE INDEX IF NOT EXISTS lotes_initial_batch_product_uq ON lotes(import_batch_id, producto_id) WHERE import_batch_id IS NOT NULL;

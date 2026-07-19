@@ -86,6 +86,8 @@ async fn importar_stock(
     crate::auth::middleware::require_role(&["admin"])(&claims)?;
 
     let mut file_bytes = None;
+    let mut initial_mode = false;
+    let mut batch_id: Option<uuid::Uuid> = None;
     while let Some(field) = multipart
         .next_field()
         .await
@@ -99,11 +101,30 @@ async fn importar_stock(
                     .map_err(|e| AppError::Validation(e.to_string()))?
                     .to_vec(),
             );
+        } else if field.name() == Some("mode") {
+            initial_mode = field
+                .text()
+                .await
+                .map_err(|e| AppError::Validation(e.to_string()))?
+                == "initial_stock";
+        } else if field.name() == Some("import_batch_id") {
+            batch_id = field
+                .text()
+                .await
+                .ok()
+                .and_then(|v| uuid::Uuid::parse_str(&v).ok());
         }
     }
 
     let bytes = file_bytes.ok_or(AppError::Validation("Archivo no encontrado".into()))?;
-    let res = setup_service::importar_inventario(&state.pool, &bytes, claims.sub).await?;
+    let res = setup_service::importar_inventario_mode(
+        &state.pool,
+        &bytes,
+        claims.sub,
+        initial_mode,
+        batch_id,
+    )
+    .await?;
     Ok(Json(res))
 }
 

@@ -573,6 +573,16 @@ pub async fn importar_inventario(
     bytes: &[u8],
     usuario_id: uuid::Uuid,
 ) -> Result<serde_json::Value, AppError> {
+    importar_inventario_mode(pool, bytes, usuario_id, false, None).await
+}
+
+pub async fn importar_inventario_mode(
+    pool: &PgPool,
+    bytes: &[u8],
+    usuario_id: uuid::Uuid,
+    initial_mode: bool,
+    import_batch_id: Option<uuid::Uuid>,
+) -> Result<serde_json::Value, AppError> {
     require_setup_mode(pool).await?;
 
     let mut reader = csv::ReaderBuilder::new()
@@ -580,11 +590,21 @@ pub async fn importar_inventario(
         .from_reader(bytes);
 
     let mut importados = 0;
+    let mut omitidos = 0;
     let mut errores = Vec::new();
     let mut total_filas = 0;
 
     let mut tx = pool.begin().await?;
 
+    let headers = reader.headers().cloned().unwrap_or_default();
+    let cantidad_idx = headers
+        .iter()
+        .position(|h| {
+            h.eq_ignore_ascii_case("cantidad")
+                || h.eq_ignore_ascii_case("cantidad_base")
+                || h.eq_ignore_ascii_case("cantidad_unidades_base")
+        })
+        .unwrap_or(4);
     for (idx, result) in reader.records().enumerate() {
         total_filas += 1;
         let fila_num = idx + 2;
@@ -600,7 +620,7 @@ pub async fn importar_inventario(
         let num_lote = record.get(1).unwrap_or("");
         let fecha_venc_str = record.get(2).unwrap_or("");
         let area_nombre = record.get(3).unwrap_or("");
-        let cantidad_str = record.get(4).unwrap_or("");
+        let cantidad_str = record.get(cantidad_idx).unwrap_or("");
         let costo_str = record.get(5).unwrap_or("");
 
         if prod_ref.is_empty() || num_lote.is_empty() || area_nombre.is_empty() {
@@ -620,6 +640,40 @@ pub async fn importar_inventario(
                 errores.push(serde_json::json!({ "fila": fila_num, "error": format!("Producto '{}' no encontrado", prod_ref) }));
                 continue;
             }
+        };
+
+        // Initial imports are replay-safe: one lot/movement per batch+product.
+        if initial_mode {
+            let batch = import_batch_id.ok_or_else(|| {
+                AppError::Validation("import_batch_id requerido en initial_stock".into())
+            })?;
+            let already: Option<uuid::Uuid> = sqlx::query_scalar(
+                "SELECT id FROM lotes WHERE import_batch_id = $1 AND producto_id = $2",
+            )
+            .bind(batch)
+            .bind(p_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+            if already.is_some() {
+                omitidos += 1;
+                continue;
+            }
+        }
+
+        let product_code: String =
+            sqlx::query_scalar("SELECT codigo_interno FROM productos WHERE id=$1")
+                .bind(p_id)
+                .fetch_one(&mut *tx)
+                .await?;
+        let num_lote_owned;
+        let num_lote = if initial_mode {
+            let batch = import_batch_id.ok_or_else(|| {
+                AppError::Validation("import_batch_id requerido en initial_stock".into())
+            })?;
+            num_lote_owned = format!("INI-{}-{}", &batch.to_string()[..8], product_code);
+            &num_lote_owned
+        } else {
+            num_lote
         };
 
         // Do not invoke the lot trigger for products that are still incomplete.
@@ -655,17 +709,27 @@ pub async fn importar_inventario(
             }
         };
 
-        let fecha_venc = match chrono::NaiveDate::parse_from_str(fecha_venc_str, "%Y-%m-%d")
-            .or_else(|_| chrono::NaiveDate::parse_from_str(fecha_venc_str, "%d/%m/%Y"))
-        {
-            Ok(d) => d,
-            Err(_) => {
-                errores.push(serde_json::json!({ "fila": fila_num, "error": format!("Fecha '{}' inválida (usar YYYY-MM-DD o DD/MM/YYYY)", fecha_venc_str) }));
-                continue;
+        let fecha_venc = if fecha_venc_str.trim().is_empty() {
+            None
+        } else {
+            match chrono::NaiveDate::parse_from_str(fecha_venc_str, "%Y-%m-%d")
+                .or_else(|_| chrono::NaiveDate::parse_from_str(fecha_venc_str, "%d/%m/%Y"))
+            {
+                Ok(d) => Some(d),
+                Err(_) => {
+                    errores.push(serde_json::json!({ "fila": fila_num, "error": format!("Fecha '{}' inválida", fecha_venc_str) }));
+                    continue;
+                }
             }
         };
 
-        let cantidad = Decimal::from_str(cantidad_str).unwrap_or(Decimal::ZERO);
+        let cantidad = match Decimal::from_str(cantidad_str.trim()) {
+            Ok(value) if value > Decimal::ZERO => value,
+            _ => {
+                errores.push(serde_json::json!({"fila": fila_num, "codigo": "INVALID_QUANTITY", "error": format!("Cantidad '{}' inválida; debe ser mayor que cero", cantidad_str)}));
+                continue;
+            }
+        };
         let costo = Decimal::from_str(costo_str).ok();
 
         let lote_id: uuid::Uuid = match sqlx::query_scalar(
@@ -679,8 +743,8 @@ pub async fn importar_inventario(
             Some(id) => id,
             None => {
                 sqlx::query_scalar(
-                    "INSERT INTO lotes (producto_id, numero_lote, fecha_vencimiento, costo_unitario) VALUES ($1, $2, $3, $4) RETURNING id"
-                ).bind(p_id).bind(num_lote).bind(fecha_venc).bind(costo).fetch_one(&mut *tx).await?
+                    "INSERT INTO lotes (producto_id, numero_lote, fecha_vencimiento, costo_unitario, import_batch_id) VALUES ($1, $2, $3, $4, $5) RETURNING id"
+                ).bind(p_id).bind(num_lote).bind(fecha_venc).bind(costo).bind(if initial_mode { import_batch_id } else { None }).fetch_one(&mut *tx).await?
             }
         };
 
@@ -720,6 +784,7 @@ pub async fn importar_inventario(
     Ok(serde_json::json!({
         "total_filas": total_filas,
         "importados": importados,
+        "omitidos": omitidos,
         "errores": errores.len(),
         "detalle_errores": errores
     }))

@@ -116,7 +116,9 @@ async fn main() {
             .ok()
             .as_deref(),
     );
-    migration_recovery::run_startup_migrations(&pool, migration_recovery_enabled)
+    let disposable_reset = std::env::var("DISPOSABLE_DB_RESET").ok().as_deref() == Some("true")
+        && std::env::var("APP_ENV").ok().as_deref() != Some("production");
+    migration_recovery::run_startup_migrations(&pool, migration_recovery_enabled, disposable_reset)
         .await
         .expect("Error ejecutando migraciones");
 

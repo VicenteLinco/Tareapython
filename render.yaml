@@ -25,5 +25,3 @@ services:
         value: false
       - key: LOGIN_RATE_LIMIT_PER_MINUTE
         value: 10
-      - key: LEGACY_MIGRATION_RESET_TOKEN
-        value: legacy-001-019

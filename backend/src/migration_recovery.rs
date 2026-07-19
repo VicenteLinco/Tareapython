@@ -54,6 +54,7 @@ async fn reset_public_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
 pub async fn run_startup_migrations(
     pool: &PgPool,
     legacy_reset_authorized: bool,
+    disposable_reset_authorized: bool,
 ) -> Result<(), MigrateError> {
     match MIGRATOR.run(pool).await {
         Ok(()) => Ok(()),
@@ -66,9 +67,10 @@ pub async fn run_startup_migrations(
             } else {
                 false
             };
-            if recovery_decision(&error, legacy_reset_authorized, exact_legacy)
-                != RecoveryDecision::ResetPublicSchema
-            {
+            let decision = recovery_decision(&error, legacy_reset_authorized, exact_legacy);
+            let checksum_reset =
+                disposable_reset_authorized && matches!(error, MigrateError::VersionMismatch(1));
+            if decision != RecoveryDecision::ResetPublicSchema && !checksum_reset {
                 return Err(error);
             }
             tracing::warn!(migration_error = %error, "one-time recovery of exact legacy SQLx history 001-019; resetting disposable public schema");

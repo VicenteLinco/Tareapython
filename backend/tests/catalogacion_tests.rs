@@ -197,7 +197,7 @@ async fn test_api_regulatoria_cascada_y_timeout(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn test_cuarentena_excluye_stock_usable(pool: PgPool) {
+async fn test_stock_lista_productos_activos_sin_importar_estado_catalogo(pool: PgPool) {
     common::seed_base_data(&pool).await;
 
     // Create a ready product so its initial inventory can pass the database gate.
@@ -273,21 +273,22 @@ async fn test_cuarentena_excluye_stock_usable(pool: PgPool) {
         filter: None,
         estado: None,
         custom_filters: None,
+        incluir_pendientes: true,
         limit: 10,
         offset: 0,
     };
 
-    // Test the filtered stock listing
+    // Test the active-product stock listing
     let list = stock_service::listar(&pool, params).await.unwrap();
 
-    // Quarantined product must NOT be in the list (since we filtered it out from the main select!)
+    // Active quarantined products remain visible in the operational inventory.
     let pend_in_list = list
         .rows
         .iter()
         .any(|item| item.codigo_interno == "TEST-PEND");
     assert!(
-        !pend_in_list,
-        "Quarantined product must be hidden from clinical stock list"
+        pend_in_list,
+        "Active quarantined product must be visible in the stock list"
     );
 
     // Approved product must be in the list

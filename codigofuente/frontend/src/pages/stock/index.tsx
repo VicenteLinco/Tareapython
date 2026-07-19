@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
@@ -19,6 +19,7 @@ import { useAuthStore } from "@/hooks/use-auth-store";
 import { exportarStockPDF } from "@/lib/stock-pdf";
 import { notify } from "@/lib/notify";
 import { FilterBar } from "@/components/ui/filter-bar";
+import { Pagination } from "@/components/ui/pagination";
 import {
   useAreas,
   useCategorias,
@@ -39,6 +40,7 @@ export default function StockPage() {
     searchParams.get("select") || null,
   );
   const [showPdfModal, setShowPdfModal] = useState(false);
+  const [page, setPage] = useState(1);
 
   const {
     search,
@@ -68,6 +70,19 @@ export default function StockPage() {
   const showAlertas = searchParams.get("alertas") === "true";
   const areaIdsParam = searchParams.get("area_ids") || undefined;
 
+  useEffect(() => {
+    setPage(1);
+  }, [
+    search,
+    categoriaId,
+    proveedorId,
+    areaId,
+    areaIdsParam,
+    estado,
+    showAlertas,
+    customFilters,
+  ]);
+
   // Queries
   const { data: stockResponse, isLoading } = useQuery({
     queryKey: [
@@ -81,6 +96,7 @@ export default function StockPage() {
         estado,
         showAlertas,
         customFilters,
+        page,
       },
     ],
     queryFn: () =>
@@ -95,7 +111,9 @@ export default function StockPage() {
             estado: estado !== "todos" ? estado : undefined,
             con_alertas: showAlertas || undefined,
             custom_filters: Object.keys(customFilters).length > 0 ? JSON.stringify(customFilters) : undefined,
-            per_page: 100,
+            incluir_pendientes: true,
+            page,
+            per_page: 25,
           },
         })
         .then((r) => r.data),
@@ -106,6 +124,12 @@ export default function StockPage() {
   const { data: areas } = useAreas();
 
   const items = stockResponse?.data ?? [];
+
+  useEffect(() => {
+    if (!stockResponse) return;
+    const lastPage = Math.max(stockResponse.total_pages, 1);
+    if (page > lastPage) setPage(lastPage);
+  }, [page, stockResponse]);
   const selectedItem = items.find((i) => i.producto_id === selectedId);
 
   const activeSecondaryCount = [
@@ -351,6 +375,11 @@ export default function StockPage() {
             view={view}
             selectedId={selectedId}
             onSelect={setSelectedId}
+          />
+          <Pagination
+            page={stockResponse?.page ?? page}
+            totalPages={stockResponse?.total_pages ?? 1}
+            onPageChange={setPage}
           />
         </div>
 

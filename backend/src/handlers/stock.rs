@@ -25,6 +25,7 @@ struct StockQuery {
     filter: Option<String>,
     estado: Option<String>, // nuevo param unificado: todos|normal|bajo|critico|sin_stock
     custom_filters: Option<String>,
+    incluir_pendientes: Option<bool>,
     page: Option<i64>,
     per_page: Option<i64>,
 }
@@ -79,6 +80,7 @@ async fn listar(
             filter: params.filter,
             estado: params.estado,
             custom_filters: params.custom_filters,
+            incluir_pendientes: params.incluir_pendientes == Some(true),
             limit,
             offset,
         },

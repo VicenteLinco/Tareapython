@@ -307,6 +307,116 @@ async fn test_listar_stock_envelope_y_resumen(pool: PgPool) {
     assert!(found["estado_alerta"].is_string());
 }
 
+/// La vista de stock es el inventario operativo: debe listar todo producto
+/// activo, incluso si su catalogación todavía está pendiente. Los productos
+/// inactivos siguen fuera del total y de las filas paginadas.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_listar_stock_incluye_pendientes_activos_y_excluye_inactivos(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    let (_, pendiente_id, _) = setup_base(&pool, &token, &app).await;
+    sqlx::query(
+        "UPDATE productos SET estado_catalogo = 'pendiente_aprobacion', unidad_base_id = NULL WHERE id = $1",
+    )
+        .bind(pendiente_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (_, inactivo_id, _) = setup_base(&pool, &token, &app).await;
+    sqlx::query("UPDATE productos SET activo = false WHERE id = $1")
+        .bind(inactivo_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (status, default_json) =
+        common::get_json(&app, "/api/v1/stock?page=1&per_page=1", &token).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "got {:?}: {:?}",
+        status,
+        default_json
+    );
+    assert_eq!(default_json["total"].as_i64(), Some(0));
+
+    let (status, json) = common::get_json(
+        &app,
+        "/api/v1/stock?page=1&per_page=1&incluir_pendientes=true",
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "got {:?}: {:?}", status, json);
+
+    let rows = json["data"].as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(json["total"].as_i64(), Some(1));
+    assert_eq!(json["total_pages"].as_i64(), Some(1));
+    assert_eq!(
+        rows[0]["producto_id"].as_str(),
+        Some(pendiente_id.to_string().as_str())
+    );
+    assert!(
+        rows.iter()
+            .all(|row| row["producto_id"].as_str() != Some(inactivo_id.to_string().as_str()))
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_listar_stock_conserva_total_en_pagina_fuera_de_rango(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    setup_base(&pool, &token, &app).await;
+    setup_base(&pool, &token, &app).await;
+
+    let (status, json) =
+        common::get_json(&app, "/api/v1/stock?q=Prod&page=99&per_page=1", &token).await;
+    assert_eq!(status, StatusCode::OK, "got {:?}: {:?}", status, json);
+    assert_eq!(json["data"].as_array().unwrap().len(), 0);
+    assert_eq!(json["total"].as_i64(), Some(2));
+    assert_eq!(json["total_pages"].as_i64(), Some(2));
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_listar_stock_desempata_nombres_por_producto_id(pool: PgPool) {
+    assert_eq!(
+        inventario_lab_backend::services::stock_service::STOCK_PAGE_ORDER,
+        "f.producto_nombre, f.producto_id"
+    );
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool.clone());
+    let first_id = Uuid::parse_str("ffffffff-ffff-ffff-ffff-ffffffffffff").unwrap();
+    let second_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    sqlx::query(
+        "INSERT INTO productos (id, codigo_interno, nombre, unidad_base_id, estado_catalogo) \
+         VALUES ($1, 'DUP-HIGH', 'Nombre duplicado', 1, 'aprobado'), \
+                ($2, 'DUP-LOW', 'Nombre duplicado', 1, 'aprobado')",
+    )
+    .bind(first_id)
+    .bind(second_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (_, page_one) =
+        common::get_json(&app, "/api/v1/stock?q=Nombre&page=1&per_page=1", &token).await;
+    let (_, page_two) =
+        common::get_json(&app, "/api/v1/stock?q=Nombre&page=2&per_page=1", &token).await;
+    let mut expected = [first_id, second_id];
+    expected.sort();
+
+    assert_eq!(
+        page_one["data"][0]["producto_id"].as_str(),
+        Some(expected[0].to_string().as_str())
+    );
+    assert_eq!(
+        page_two["data"][0]["producto_id"].as_str(),
+        Some(expected[1].to_string().as_str())
+    );
+}
+
 /// Modelo de dos ejes ortogonales (migration 002): un producto cuyo ÚNICO stock
 /// está vencido debe reportar estado_cantidad='agotado' (no hay usable que comprar)
 /// Y estado_vencimiento='vencido' (hay físico que descartar) AL MISMO TIEMPO.

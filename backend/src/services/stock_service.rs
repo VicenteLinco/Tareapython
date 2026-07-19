@@ -177,9 +177,12 @@ pub struct ListarParams {
     pub filter: Option<String>,
     pub estado: Option<String>,
     pub custom_filters: Option<String>,
+    pub incluir_pendientes: bool,
     pub limit: i64,
     pub offset: i64,
 }
+
+pub const STOCK_PAGE_ORDER: &str = "f.producto_nombre, f.producto_id";
 
 pub struct ListarResultado {
     pub rows: Vec<StockItemRow>,
@@ -215,6 +218,11 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
     let filter = params.filter.as_deref().unwrap_or("");
     let tiene_filtro_estado = !estado.is_empty() && estado != "todos";
     let con_alertas = params.con_alertas == Some(true) || tiene_filtro_estado || !filter.is_empty();
+    let catalog_filter = if params.incluir_pendientes {
+        ""
+    } else {
+        "AND p.estado_catalogo = 'aprobado'"
+    };
 
     let mut param_idx = 0;
     let mut binds = Vec::new();
@@ -501,8 +509,8 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                    p.control_lote,
                    p.nombre as producto_nombre,
                    c.nombre as categoria,
-                   um.nombre as unidad,
-                   um.nombre_plural as unidad_plural,
+                   COALESCE(um.nombre, 'Sin unidad') as unidad,
+                   COALESCE(um.nombre_plural, 'Sin unidades') as unidad_plural,
                    COALESCE(ss.total, 0) as stock_total,
                    COALESCE(ss.lotes_con_stock, 0) as lotes_count,
                    CASE WHEN COALESCE(ss.total, 0) > 0
@@ -539,7 +547,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                    pl.min_manual,
                    pl.max_manual
                FROM productos p
-               JOIN unidades_basicas um ON um.id = p.unidad_base_id
+               LEFT JOIN unidades_basicas um ON um.id = p.unidad_base_id
                LEFT JOIN categorias c ON c.id = p.categoria_id
                LEFT JOIN proveedores pv2 ON pv2.id = (SELECT op.proveedor_id FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id WHERE pres.producto_id = p.id LIMIT 1)
                LEFT JOIN stock_stats ss ON ss.producto_id = p.id
@@ -547,7 +555,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                LEFT JOIN fefo_prov fp ON fp.producto_id = p.id
                LEFT JOIN series sr ON sr.producto_id = p.id
                LEFT JOIN par_levels pl ON pl.producto_id = p.id
-               WHERE p.activo = true AND p.estado_catalogo = 'aprobado' {} {} {}
+               WHERE p.activo = true {} {} {} {}
            ),
            enriched AS (
                SELECT
@@ -601,7 +609,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
            )
            SELECT f.*, tc.full_count
            FROM filtered f, total_count tc
-           ORDER BY f.producto_nombre
+           ORDER BY {}
            LIMIT ${} OFFSET ${}"#,
         forecast_cfg.ventana_demanda_dias,
         movement_area_filter,
@@ -616,6 +624,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
         stock_col,
         area_filter2,
         inicializado_expr,
+        catalog_filter,
         q_filter,
         cat_filter,
         prov_filter,
@@ -625,7 +634,8 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
         forecast_cfg.dias_objetivo_cobertura,
         forecast_cfg.vencimiento_riesgo_dias,
         forecast_cfg.vencimiento_proximo_dias,
-        if !con_alertas
+        if !params.incluir_pendientes
+            && !con_alertas
             && params.q.is_none()
             && params.categoria_id.is_none()
             && params.proveedor_id.is_none()
@@ -635,13 +645,14 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
             ""
         },
         filtered_clause,
+        STOCK_PAGE_ORDER,
         param_idx + 1,
         param_idx + 2
     );
 
     let mut query = sqlx::query_as::<_, StockItemRow>(&sql);
-    for b in binds {
-        query = query.bind(b);
+    for b in &binds {
+        query = query.bind(b.as_str());
     }
     query = query.bind(limit).bind(offset);
 
@@ -653,7 +664,23 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
             row
         })
         .collect();
-    let total = rows.first().map(|r| r.full_count).unwrap_or(0);
+    let total = if let Some(row) = rows.first() {
+        row.full_count
+    } else if offset > 0 {
+        let mut probe = sqlx::query_as::<_, StockItemRow>(&sql);
+        for b in &binds {
+            probe = probe.bind(b.as_str());
+        }
+        probe
+            .bind(1_i64)
+            .bind(0_i64)
+            .fetch_optional(pool)
+            .await?
+            .map(|row| row.full_count)
+            .unwrap_or(0)
+    } else {
+        0
+    };
 
     let resumen_area_filter = scoped_area_array
         .as_ref()

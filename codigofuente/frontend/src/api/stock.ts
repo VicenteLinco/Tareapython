@@ -20,6 +20,7 @@ export interface StockQuery {
   con_alertas?: boolean;
   estado?: "todos" | "normal" | "bajo" | "sin_stock" | "vence_pronto";
   area_ids?: string | number[] | null;
+  incluir_pendientes?: boolean;
   page?: number;
   per_page?: number;
 }

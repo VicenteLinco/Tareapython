@@ -426,12 +426,12 @@ async fn listar(
         };
     }
 
-    Ok(Json(PaginatedResponse {
+    Ok(Json(PaginatedResponse::new(
         data,
         total,
-        page: pagination.page(),
-        per_page: limit,
-    }))
+        pagination.page(),
+        limit,
+    )))
 }
 
 /// GET /api/v1/movimientos/:id

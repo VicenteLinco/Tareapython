@@ -2,6 +2,7 @@ mod common;
 
 use axum::http::StatusCode;
 use sqlx::PgPool;
+use uuid::Uuid;
 
 #[sqlx::test(migrations = "./migrations")]
 async fn crear_producto_con_presentaciones(pool: PgPool) {
@@ -80,13 +81,13 @@ async fn producto_control_lote_default_y_set(pool: PgPool) {
 async fn listar_productos_paginado(pool: PgPool) {
     let token = common::admin_access_token(&pool).await;
 
-    // Crear varios productos
-    for i in 1..=5 {
+    // Crear suficientes productos para ocupar una segunda página.
+    for i in (1..=21).rev() {
         sqlx::query(
-            "INSERT INTO productos (codigo_interno, nombre, unidad_base_id) VALUES ($1, $2, 1)",
+            "INSERT INTO productos (id, codigo_interno, nombre, unidad_base_id) VALUES ($1, $2, 'Producto Test', 1)",
         )
+        .bind(Uuid::from_u128(i))
         .bind(format!("PRD-T{:04}", i))
-        .bind(format!("Producto Test {}", i))
         .execute(&pool)
         .await
         .unwrap();
@@ -96,13 +97,40 @@ async fn listar_productos_paginado(pool: PgPool) {
 
     // Página 1
     let (status, json) =
-        common::get_json(&app, "/api/v1/productos?page=1&per_page=2", &token).await;
+        common::get_json(&app, "/api/v1/productos?page=1&per_page=20", &token).await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(json["data"].as_array().unwrap().len(), 2);
-    assert_eq!(json["total"], 5);
+    assert_eq!(json["data"].as_array().unwrap().len(), 20);
+    assert_eq!(json["total"], 21);
     assert_eq!(json["page"], 1);
-    assert_eq!(json["per_page"], 2);
+    assert_eq!(json["per_page"], 20);
+    assert_eq!(json["total_pages"], 2);
+    let first_page_ids: Vec<&str> = json["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["id"].as_str().unwrap())
+        .collect();
+    let expected_first_page_ids: Vec<String> =
+        (1..=20).map(|i| Uuid::from_u128(i).to_string()).collect();
+    assert_eq!(
+        first_page_ids,
+        expected_first_page_ids
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+    );
+
+    // Página 2
+    let (status, json) =
+        common::get_json(&app, "/api/v1/productos?page=2&per_page=20", &token).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["data"].as_array().unwrap().len(), 1);
+    assert_eq!(json["total"], 21);
+    assert_eq!(json["page"], 2);
+    assert_eq!(json["total_pages"], 2);
+    assert_eq!(json["data"][0]["id"], Uuid::from_u128(21).to_string());
 }
 
 #[sqlx::test(migrations = "./migrations")]

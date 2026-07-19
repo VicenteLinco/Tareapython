@@ -149,12 +149,12 @@ async fn listar(
         })
         .collect();
 
-    Ok(Json(PaginatedResponse {
+    Ok(Json(PaginatedResponse::new(
         data,
         total,
-        page: pagination.page(),
-        per_page: limit,
-    }))
+        pagination.page(),
+        limit,
+    )))
 }
 
 async fn obtener(

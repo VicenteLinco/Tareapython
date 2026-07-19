@@ -1216,7 +1216,7 @@ impl ProductoService {
                LEFT JOIN categorias c ON c.id = p.categoria_id
                LEFT JOIN unidades_basicas um ON um.id = p.unidad_base_id
                WHERE {}
-               ORDER BY {} {} NULLS LAST, p.nombre ASC
+               ORDER BY {} {} NULLS LAST, p.nombre ASC, p.id ASC
                LIMIT ${} OFFSET ${}"#,
             where_clause,
             sort_col,

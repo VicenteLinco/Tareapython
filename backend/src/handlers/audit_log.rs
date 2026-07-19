@@ -120,12 +120,12 @@ async fn listar(
     let total = count_query.fetch_one(&state.pool).await?;
     let data = data_query.fetch_all(&state.pool).await?;
 
-    Ok(Json(PaginatedResponse {
+    Ok(Json(PaginatedResponse::new(
         data,
         total,
-        page: pagination.page(),
-        per_page: limit,
-    }))
+        pagination.page(),
+        limit,
+    )))
 }
 
 pub fn routes() -> Router<AppState> {

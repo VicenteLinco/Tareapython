@@ -33,12 +33,7 @@ pub async fn listar(
     .fetch_all(pool)
     .await?;
 
-    Ok(PaginatedResponse {
-        data: rows,
-        total,
-        page,
-        per_page,
-    })
+    Ok(PaginatedResponse::new(rows, total, page, per_page))
 }
 
 /// Obtener el conteo de notificaciones no leídas para un usuario.

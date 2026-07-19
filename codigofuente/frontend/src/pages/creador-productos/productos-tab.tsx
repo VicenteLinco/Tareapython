@@ -187,6 +187,12 @@ export default function ProductosTab() {
         .then((r) => r.data),
   });
 
+  useEffect(() => {
+    if (!data) return;
+    const lastPage = Math.max(1, data.total_pages);
+    if (page > lastPage) setPage(lastPage);
+  }, [data, page]);
+
   const { data: categorias } = useQuery({
     queryKey: ["categorias"],
     queryFn: () => api.get<Categoria[]>("/categorias").then((r) => r.data),

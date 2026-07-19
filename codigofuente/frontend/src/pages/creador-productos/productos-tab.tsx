@@ -91,7 +91,6 @@ interface ProductoDetailResponse {
   stock_minimo_global?: number;
   activo: boolean;
   version: number;
-  es_cenabas?: boolean;
   codigos_barras?: { id: number; codigo: string }[];
 }
 
@@ -1114,7 +1113,6 @@ function CreateProductoDialog({
     stock_minimo_global: "",
     pres_codigo_barras: "",
     imagen_data_url: null as string | null,
-    es_cenabas: false,
     promedio_uso_mensual_inicial: "",
   });
 
@@ -1229,7 +1227,6 @@ function CreateProductoDialog({
         : "",
       pres_codigo_barras: duplicateSource.pres_codigo_barras ?? "",
       imagen_data_url: null,
-      es_cenabas: duplicateSource.es_cenabas ?? false,
       promedio_uso_mensual_inicial: duplicateSource.promedio_uso_mensual_inicial ? String(duplicateSource.promedio_uso_mensual_inicial) : "",
     });
     setTemperaturaAlmacenamiento(
@@ -1267,7 +1264,6 @@ function CreateProductoDialog({
       stock_minimo_global: "",
       pres_codigo_barras: "",
       imagen_data_url: null,
-      es_cenabas: false,
       promedio_uso_mensual_inicial: "",
     });
     setTemperaturaAlmacenamiento(null);
@@ -1320,7 +1316,6 @@ function CreateProductoDialog({
       requiere_cadena_frio: requiereCadenaFrio,
       dias_estabilidad_abierto: diasEstabilidadAbierto,
       clase_riesgo: claseRiesgo,
-      es_cenabas: form.es_cenabas,
     });
   }
 
@@ -1822,17 +1817,6 @@ function CreateProductoDialog({
                     <span className="text-sm font-medium">Es Kit / Compuesto</span>
                   </label>
 
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="checkbox checkbox-sm checkbox-primary"
-                      checked={form.es_cenabas}
-                      onChange={(e) =>
-                        setForm((f) => ({ ...f, es_cenabas: e.target.checked }))
-                      }
-                    />
-                    <span className="text-sm font-medium">Es CENABAST</span>
-                  </label>
                 </div>
 
                 <div className="pt-2 flex items-center gap-3">
@@ -1982,7 +1966,6 @@ function EditProductoDialog({
     stock_minimo_global: "",
     pres_codigo_barras: "",
     imagen_data_url: null as string | null,
-    es_cenabas: false,
     promedio_uso_mensual_inicial: "",
   });
 
@@ -2016,7 +1999,6 @@ function EditProductoDialog({
           : "",
         pres_codigo_barras: producto.pres_codigo_barras ?? "",
         imagen_data_url: null,
-        es_cenabas: producto.es_cenabas ?? false,
       });
       setTemperaturaAlmacenamientoEdit(
         producto.temperatura_almacenamiento ?? null,
@@ -2072,7 +2054,6 @@ function EditProductoDialog({
       dias_estabilidad_abierto: diasEstabilidadAbierto,
       clase_riesgo: claseRiesgo,
       version: producto.version,
-      es_cenabas: form.es_cenabas,
     };
 
     updateMut.mutate(payload);
@@ -2460,17 +2441,6 @@ function EditProductoDialog({
                       <span className="text-sm font-medium">Es Kit / Compuesto</span>
                     </label>
 
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="checkbox checkbox-sm checkbox-primary"
-                        checked={form.es_cenabas}
-                        onChange={(e) =>
-                          setForm((f) => ({ ...f, es_cenabas: e.target.checked }))
-                        }
-                      />
-                      <span className="text-sm font-medium">Es CENABAST</span>
-                    </label>
                   </div>
 
                   <div className="pt-2 flex items-center gap-3">
@@ -2778,7 +2748,6 @@ function ProductoDetail({ id }: { id: string }) {
               }
             />
             <DetailRow label="Es Kit" value={producto.es_kit ? "Sí" : "No"} />
-            <DetailRow label="Es CENABAST" value={producto.es_cenabas ? "Sí" : "No"} />
           </div>
         )}
 

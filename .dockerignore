@@ -1,0 +1,10 @@
+.git
+.codegraph
+.atl
+.env
+**/.env
+backend/target
+codigofuente/frontend/node_modules
+codigofuente/frontend/dist
+inventario-lab-backend
+scratch

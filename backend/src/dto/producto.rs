@@ -83,7 +83,6 @@ pub struct CreateProducto {
     pub area_ids: Option<Vec<i32>>,
     pub estado_catalogo: Option<EstadoCatalogo>,
     pub origen_registro: Option<OrigenRegistro>,
-    pub es_cenabas: Option<bool>,
     pub promedio_uso_mensual_inicial: Option<Decimal>,
 }
 
@@ -108,6 +107,5 @@ pub struct UpdateProducto {
     pub control_lote: Option<ControlLote>,
     pub area_ids: Option<Vec<i32>>,
     pub version: i32,
-    pub es_cenabas: Option<bool>,
     pub promedio_uso_mensual_inicial: Option<Decimal>,
 }

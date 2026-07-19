@@ -177,7 +177,6 @@ pub struct ListarParams {
     pub filter: Option<String>,
     pub estado: Option<String>,
     pub custom_filters: Option<String>,
-    pub es_cenabas: Option<bool>,
     pub limit: i64,
     pub offset: i64,
 }
@@ -280,14 +279,6 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
             "AND EXISTS (SELECT 1 FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id WHERE pres.producto_id = p.id AND op.proveedor_id = ${}::integer)",
             param_idx
         )
-    } else {
-        "".to_string()
-    };
-
-    let cenabas_filter = if let Some(es_cenabas) = params.es_cenabas {
-        param_idx += 1;
-        binds.push(es_cenabas.to_string());
-        format!("AND p.es_cenabas = ${}::boolean", param_idx)
     } else {
         "".to_string()
     };
@@ -556,7 +547,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                LEFT JOIN fefo_prov fp ON fp.producto_id = p.id
                LEFT JOIN series sr ON sr.producto_id = p.id
                LEFT JOIN par_levels pl ON pl.producto_id = p.id
-               WHERE p.activo = true AND p.estado_catalogo = 'aprobado' {} {} {} {}
+               WHERE p.activo = true AND p.estado_catalogo = 'aprobado' {} {} {}
            ),
            enriched AS (
                SELECT
@@ -628,7 +619,6 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
         q_filter,
         cat_filter,
         prov_filter,
-        cenabas_filter,
         forecast_cfg.dias_objetivo_cobertura,
         forecast_cfg.vencimiento_riesgo_dias,
         forecast_cfg.vencimiento_proximo_dias,
@@ -639,7 +629,6 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
             && params.q.is_none()
             && params.categoria_id.is_none()
             && params.proveedor_id.is_none()
-            && params.es_cenabas.is_none()
         {
             "AND estado_cantidad <> 'no_gestionado'"
         } else {

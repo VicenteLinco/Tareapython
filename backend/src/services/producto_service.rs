@@ -214,7 +214,6 @@ pub struct CrearProductoParams {
     pub usuario_id: Uuid,
     pub estado_catalogo: Option<crate::domain::EstadoCatalogo>,
     pub origen_registro: Option<crate::domain::OrigenRegistro>,
-    pub es_cenabas: bool,
     pub promedio_uso_mensual_inicial: Option<Decimal>,
 }
 
@@ -238,7 +237,6 @@ pub struct ActualizarProductoParams {
     pub area_ids: Option<Vec<i32>>,
     pub version_esperada: i32,
     pub usuario_id: Uuid,
-    pub es_cenabas: Option<bool>,
     pub promedio_uso_mensual_inicial: Option<Decimal>,
 }
 
@@ -326,9 +324,9 @@ impl ProductoService {
                 ubicacion, temperatura_almacenamiento, requiere_cadena_frio, 
                 dias_estabilidad_abierto, clase_riesgo, fabricante,
                 mpn, alias_unidad_clinica, es_kit, stock_minimo_global, codigo_loinc_cpt,
-                control_lote, estado_catalogo, origen_registro, es_cenabas,
+                control_lote, estado_catalogo, origen_registro,
                 promedio_uso_mensual_inicial, promedio_uso_mensual)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
                RETURNING *"#,
         )
         .bind(&codigo)
@@ -350,7 +348,6 @@ impl ProductoService {
         .bind(&params.control_lote)
         .bind(params.estado_catalogo.unwrap_or(crate::domain::EstadoCatalogo::Aprobado))
         .bind(params.origen_registro.unwrap_or(crate::domain::OrigenRegistro::Manual))
-        .bind(params.es_cenabas)
         .bind(params.promedio_uso_mensual_inicial.unwrap_or(Decimal::ZERO))
         .bind(params.promedio_uso_mensual_inicial.unwrap_or(Decimal::ZERO))
         .fetch_one(&mut *tx)
@@ -552,8 +549,7 @@ impl ProductoService {
                    codigo_loinc_cpt = COALESCE($13, codigo_loinc_cpt),
                    control_lote = COALESCE($14, control_lote),
                    fabricante = $15,
-                   es_cenabas = COALESCE($18, es_cenabas),
-                   promedio_uso_mensual_inicial = COALESCE($19, promedio_uso_mensual_inicial),
+                   promedio_uso_mensual_inicial = COALESCE($18, promedio_uso_mensual_inicial),
                    version = version + 1, updated_at = NOW()
                WHERE id = $16 AND version = $17
                RETURNING *"#,
@@ -579,7 +575,6 @@ impl ProductoService {
         .bind(&params.fabricante)
         .bind(params.id)
         .bind(params.version_esperada)
-        .bind(params.es_cenabas)
         .bind(params.promedio_uso_mensual_inicial)
         .fetch_optional(&mut *tx)
         .await?
@@ -1020,7 +1015,6 @@ impl ProductoService {
                     usuario_id,
                     estado_catalogo: Some(crate::domain::EstadoCatalogo::PendienteAprobacion),
                     origen_registro: Some(crate::domain::OrigenRegistro::ApiRegulatoria),
-                    es_cenabas: false,
                     promedio_uso_mensual_inicial: None,
                 };
 

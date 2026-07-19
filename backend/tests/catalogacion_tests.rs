@@ -266,7 +266,6 @@ async fn test_cuarentena_excluye_stock_usable(pool: PgPool) {
         filter: None,
         estado: None,
         custom_filters: None,
-        es_cenabas: None,
         limit: 10,
         offset: 0,
     };

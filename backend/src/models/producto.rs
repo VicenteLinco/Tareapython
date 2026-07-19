@@ -34,7 +34,6 @@ pub struct Producto {
     pub es_kit: bool,
     pub stock_minimo_global: Decimal,
     pub codigo_loinc_cpt: Option<String>,
-    pub es_cenabas: bool,
     pub promedio_uso_mensual: Decimal,
     pub promedio_uso_mensual_inicial: Decimal,
 }

@@ -217,16 +217,6 @@ pub static PRODUCT_FIELD_REGISTRY: &[ProductFieldDefinition] = &[
         ["kit", "es kit"]
     ),
     field!(
-        "es_cenabas",
-        "Es CENABAST",
-        Boolean,
-        "classification",
-        170,
-        false,
-        true,
-        ["cenabast", "es cenabast"]
-    ),
-    field!(
         "stock_minimo_global",
         "Stock mínimo global",
         Decimal,

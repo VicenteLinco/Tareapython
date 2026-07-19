@@ -159,11 +159,6 @@ pub async fn importar_catalogo(
         let cod_proveedor = get_val("codigo_proveedor");
         let proveedor_nombre = get_val("proveedor");
         let categoria_nombre = get_val("categoria");
-        let es_cenabas_str = get_val("es_cenabas");
-        let es_cenabas = match es_cenabas_str.to_lowercase().as_str() {
-            "true" | "1" | "si" | "sí" | "yes" => true,
-            _ => false,
-        };
         let promedio_uso_mensual_inicial_str =
             if let Some(&idx) = col_map.get("promedio_uso_mensual_inicial") {
                 record.get(idx).unwrap_or("").trim()
@@ -331,9 +326,9 @@ pub async fn importar_catalogo(
         let p_id = uuid::Uuid::new_v4();
         sqlx::query(
             "INSERT INTO productos
-             (id, codigo_interno, nombre, descripcion, unidad_base_id, categoria_id, es_cenabas, promedio_uso_mensual_inicial, promedio_uso_mensual,
+             (id, codigo_interno, nombre, descripcion, unidad_base_id, categoria_id, promedio_uso_mensual_inicial, promedio_uso_mensual,
               ubicacion, temperatura_almacenamiento, requiere_cadena_frio, dias_estabilidad_abierto, clase_riesgo, fabricante, mpn, alias_unidad_clinica, es_kit, codigo_loinc_cpt, control_lote)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)",
         )
         .bind(p_id)
         .bind(codigo_interno)
@@ -345,7 +340,6 @@ pub async fn importar_catalogo(
         })
         .bind(u_id)
         .bind(cat_id)
-        .bind(es_cenabas)
         .bind(promedio_uso_mensual_inicial)
         .bind(promedio_uso_mensual_inicial)
         .bind(if ubicacion.is_empty() { None } else { Some(ubicacion) })

@@ -5,6 +5,8 @@ codigofuente/*
 # Build outputs and dependencies
 backend/target/
 backend/migrations/
+!backend/migrations/
+!backend/migrations/*.sql
 codigofuente/frontend/node_modules/
 codigofuente/frontend/dist/
 codigofuente/frontend/.vite/

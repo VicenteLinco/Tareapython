@@ -294,7 +294,6 @@ export interface CreateProducto {
   codigo_loinc_cpt?: string | null;
   es_kit?: boolean;
   stock_minimo_global?: number;
-  es_cenabas?: boolean;
   promedio_uso_mensual_inicial?: number | null;
 }
 
@@ -318,7 +317,6 @@ export interface UpdateProducto {
   es_kit?: boolean;
   stock_minimo_global?: number;
   version: number;
-  es_cenabas?: boolean;
   promedio_uso_mensual_inicial?: number | null;
 }
 

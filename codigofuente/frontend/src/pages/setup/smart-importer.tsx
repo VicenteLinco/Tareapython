@@ -54,7 +54,6 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
     codigo_proveedor: "",
     proveedor: "",
     categoria: "",
-    es_cenabas: "",
     promedio_uso_mensual_inicial: "",
     control_lote: "",
     ubicacion: "",
@@ -162,13 +161,6 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
       required: false,
       category: "Comercial",
       desc: "Código del ítem para el proveedor",
-    },
-    {
-      key: "es_cenabas",
-      label: "¿Es Cenabas?",
-      required: false,
-      category: "Clínicos",
-      desc: "Indica convenio Cenabas (si/no/true/false)",
     },
     {
       key: "alias_unidad_clinica",
@@ -340,16 +332,6 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
         if (lower.includes("prov")) newMap.proveedor = col;
         if (lower.includes("cod_prov")) newMap.codigo_proveedor = col;
         if (lower.includes("cat") || lower.includes("grupo")) newMap.categoria = col;
-        if (
-          lower.includes("cena") ||
-          lower.includes("cenab") ||
-          lower.includes("cenabast") ||
-          lower.includes("cenabas") ||
-          lower.includes("cenb") ||
-          lower.includes("cnabas")
-        ) {
-          newMap.es_cenabas = col;
-        }
         if (lower.includes("uso") || lower.includes("prom") || lower.includes("demanda")) newMap.promedio_uso_mensual_inicial = col;
         if (lower.includes("ctrl") || lower.includes("traz") || lower.includes("control")) newMap.control_lote = col;
         if (lower.includes("ubica") || lower.includes("estant") || lower.includes("bodeg")) newMap.ubicacion = col;

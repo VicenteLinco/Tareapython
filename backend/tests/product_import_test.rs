@@ -37,7 +37,6 @@ fn product_schema_matches_the_shared_product_contract() {
             "dias_estabilidad_abierto",
             "clase_riesgo",
             "es_kit",
-            "es_cenabas",
             "stock_minimo_global",
             "promedio_uso_mensual_inicial",
             "codigo_barras",

@@ -1,23 +1,34 @@
-FROM debian:bookworm-slim
+FROM node:22-bookworm-slim AS frontend-builder
+WORKDIR /build/frontend
 
-# Instalar ca-certificates para permitir conexiones SSL/TLS seguras (como a neon.tech)
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY codigofuente/frontend/package.json codigofuente/frontend/package-lock.json ./
+RUN npm ci
+COPY codigofuente/frontend/ ./
+RUN npm run build
 
-# Crear un usuario no root por seguridad
-RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
+FROM rust:1-bookworm AS backend-builder
+WORKDIR /build/backend
+
+COPY backend/Cargo.toml backend/Cargo.lock ./
+COPY backend/src ./src
+COPY backend/migrations ./migrations
+COPY backend/.sqlx ./.sqlx
+ENV SQLX_OFFLINE=true
+RUN cargo build --locked --release
+
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system appuser \
+    && useradd --system --gid appuser --home-dir /app --shell /usr/sbin/nologin appuser
+
 WORKDIR /app
+COPY --from=backend-builder /build/backend/target/release/inventario-lab-backend ./inventario-lab-backend
+COPY backend/migrations ./migrations
+COPY --from=frontend-builder /build/frontend/dist ./static
 
-# Copiar el binario precompilado de Linux
-COPY inventario-lab-backend .
-RUN chmod +x inventario-lab-backend
-
-# Copiar las migraciones (requeridas para actualizar la base de datos de Neon al iniciar)
-COPY migrations ./migrations
-
-# Copiar los recursos estáticos del frontend (HTML, JS, CSS)
-COPY static ./static
-
-# Asignar permisos al usuario no root
 RUN mkdir -p /app/uploads && chown -R appuser:appuser /app
 USER appuser
 

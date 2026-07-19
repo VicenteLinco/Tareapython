@@ -27,7 +27,6 @@ struct StockQuery {
     custom_filters: Option<String>,
     page: Option<i64>,
     per_page: Option<i64>,
-    es_cenabas: Option<bool>,
 }
 
 fn parse_area_ids(value: Option<&str>) -> Result<Vec<i32>, AppError> {
@@ -80,7 +79,6 @@ async fn listar(
             filter: params.filter,
             estado: params.estado,
             custom_filters: params.custom_filters,
-            es_cenabas: params.es_cenabas,
             limit,
             offset,
         },

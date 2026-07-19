@@ -227,7 +227,6 @@ async fn crear(
             usuario_id: claims.sub,
             estado_catalogo: req.estado_catalogo,
             origen_registro: req.origen_registro,
-            es_cenabas: req.es_cenabas.unwrap_or(false),
             promedio_uso_mensual_inicial: req.promedio_uso_mensual_inicial,
         },
     )
@@ -280,7 +279,6 @@ async fn actualizar(
             area_ids: req.area_ids,
             version_esperada: req.version,
             usuario_id: claims.sub,
-            es_cenabas: req.es_cenabas,
             promedio_uso_mensual_inicial: req.promedio_uso_mensual_inicial,
         },
     )

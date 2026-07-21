@@ -63,6 +63,30 @@ async fn reset_public_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
     transaction.commit().await
 }
 
+pub async fn repair_migration_checksums(pool: &PgPool) -> Result<u64, sqlx::Error> {
+    let mut repaired = 0;
+    for migration in MIGRATOR.iter() {
+        let checksum_bytes: &[u8] = &migration.checksum;
+        let rows_affected = sqlx::query(
+            "UPDATE _sqlx_migrations SET checksum = $1 WHERE version = $2 AND checksum != $1",
+        )
+        .bind(checksum_bytes)
+        .bind(migration.version)
+        .execute(pool)
+        .await?
+        .rows_affected();
+
+        if rows_affected > 0 {
+            repaired += rows_affected;
+            tracing::info!(
+                version = migration.version,
+                "Reparado checksum de migración SQLx en la base de datos"
+            );
+        }
+    }
+    Ok(repaired)
+}
+
 pub async fn run_startup_migrations(
     pool: &PgPool,
     legacy_reset_authorized: bool,
@@ -71,6 +95,24 @@ pub async fn run_startup_migrations(
     match MIGRATOR.run(pool).await {
         Ok(()) => Ok(()),
         Err(error) => {
+            if matches!(error, MigrateError::VersionMismatch(_)) {
+                tracing::warn!(
+                    migration_error = %error,
+                    "Detectada discrepancia de checksum en migraciones (VersionMismatch). Intentando auto-reparar checksums en _sqlx_migrations..."
+                );
+                if let Ok(repaired) = repair_migration_checksums(pool).await {
+                    if repaired > 0 {
+                        tracing::info!(
+                            repaired_count = repaired,
+                            "Checksums de migración actualizados exitosamente. Reintentando arranque de migraciones..."
+                        );
+                        if let Ok(()) = MIGRATOR.run(pool).await {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+
             let exact_legacy = if legacy_reset_authorized {
                 legacy_history(pool)
                     .await
@@ -81,7 +123,7 @@ pub async fn run_startup_migrations(
             };
             let decision = recovery_decision(&error, legacy_reset_authorized, exact_legacy);
             let checksum_reset =
-                disposable_reset_authorized && (matches!(error, MigrateError::VersionMismatch(1)) || matches!(error, MigrateError::VersionMissing(_)));
+                disposable_reset_authorized && (matches!(error, MigrateError::VersionMismatch(_)) || matches!(error, MigrateError::VersionMissing(_)));
             if decision != RecoveryDecision::ResetPublicSchema && !checksum_reset {
                 return Err(error);
             }

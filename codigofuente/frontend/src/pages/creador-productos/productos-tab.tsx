@@ -374,36 +374,53 @@ export default function ProductosTab() {
     return `"${text.replace(/"/g, '""')}"`;
   }
 
-  function exportCurrentCsv() {
-    const header = [
-      "codigo",
-      "nombre",
-      "categoria",
-      "area",
-      "unidad",
-      "estado",
-    ];
-    const lines = productos.map((p) =>
-      [
-        p.codigo_interno,
-        p.nombre,
-        p.categoria?.nombre,
-        p.area?.nombre,
-        p.unidad_base?.nombre,
-        productoEstadoTexto(p),
-      ]
-        .map(csvEscape)
-        .join(";"),
-    );
-    const blob = new Blob([[header.join(";"), ...lines].join("\n")], {
-      type: "text/csv;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "productos.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+  async function exportCurrentCsv() {
+    try {
+      const response = await api.get<PaginatedResponse<ProductoListItem>>("/productos", {
+        params: {
+          q: search || undefined,
+          categoria_id: categoriaId || undefined,
+          area_id: areaId || undefined,
+          activo: !verInactivos,
+          sort_by: sortBy,
+          sort_dir: sortDir,
+          page: 1,
+          per_page: data?.total ?? 10000,
+        },
+      });
+      const allProducts = response.data.data;
+      const header = [
+        "codigo",
+        "nombre",
+        "categoria",
+        "area",
+        "unidad",
+        "estado",
+      ];
+      const lines = allProducts.map((p) =>
+        [
+          p.codigo_interno,
+          p.nombre,
+          p.categoria?.nombre,
+          p.area?.nombre,
+          p.unidad_base?.nombre,
+          productoEstadoTexto(p),
+        ]
+          .map(csvEscape)
+          .join(";"),
+      );
+      const blob = new Blob([[header.join(";"), ...lines].join("\n")], {
+        type: "text/csv;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "productos.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      notify.error("Error al exportar productos");
+    }
   }
 
   useEffect(() => {

@@ -98,11 +98,25 @@ export interface ParseGuiaResponse {
   items: ParsedItem[];
 }
 
+export interface ParseGuiaResponse {
+  proveedor: string;
+  items: ParsedItem[];
+}
+
 /** POST /recepciones/parse-guia — Parsear texto de guía de despacho */
-export async function parseGuia(raw_text: string): Promise<ParseGuiaResponse> {
+export async function parseGuia(
+  raw_text: string,
+  configuredModelId?: string,
+  instrucciones_adicionales?: string,
+): Promise<ParseGuiaResponse> {
+  const headers: Record<string, string> = {};
+  if (configuredModelId) {
+    headers["X-AI-Model-Config-ID"] = configuredModelId;
+  }
   const { data } = await api.post<ParseGuiaResponse>(
     "/recepciones/parse-guia",
-    { raw_text },
+    { raw_text, instrucciones_adicionales },
+    { headers },
   );
   return data;
 }
@@ -119,9 +133,13 @@ export async function parseGuiaImagen(
   file: File,
   onUploadProgress?: (progress: number) => void,
   configuredModelId?: string,
+  instrucciones_adicionales?: string,
 ): Promise<ParseGuiaImagenResponse> {
   const formData = new FormData();
   formData.append("file", file);
+  if (instrucciones_adicionales) {
+    formData.append("instrucciones_adicionales", instrucciones_adicionales);
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": "multipart/form-data",
@@ -142,3 +160,4 @@ export async function parseGuiaImagen(
 
   return res.data;
 }
+

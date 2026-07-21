@@ -278,6 +278,7 @@ fn normalize_date(date_str: &str) -> Option<String> {
 #[derive(Debug, Deserialize)]
 pub struct ParseGuiaInput {
     pub raw_text: String,
+    pub instrucciones_adicionales: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -383,11 +384,12 @@ pub fn parse_guia_regex(raw_text: &str) -> Option<GuiaParseada> {
         r"(?i)\b(?P<sku>[a-z0-9\-]{3,20})\b\s+(?P<desc>.+?)\s+(?P<qty>\d+(?:\.\d+)?)\s+(?:lote:?\s*)?(?P<lote>[a-z0-9\-]+)\s+(?:vence:?\s*)?(?P<vto>\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4}|\d{2}-\d{2}-\d{4})(?:\s+(?P<price>\d+(?:\.\d+)?))?"
     ).ok()?;
 
-    for line in raw_text.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
+    let non_empty_lines: Vec<&str> = raw_text.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+    if non_empty_lines.is_empty() {
+        return None;
+    }
+
+    for line in &non_empty_lines {
         if let Some(caps) = re.captures(line) {
             let sku = caps
                 .name("sku")
@@ -417,7 +419,9 @@ pub fn parse_guia_regex(raw_text: &str) -> Option<GuiaParseada> {
         }
     }
 
-    if items.is_empty() {
+    // Solo usar el regex si pudo clasificar la mayoría (> 80%) de las líneas no vacías.
+    // Si solo clasificó 1 línea de 10, es un falso positivo y conviene enviar a la IA.
+    if items.len() < (non_empty_lines.len() * 4 / 5).max(1) {
         None
     } else {
         Some(GuiaParseada { proveedor, items })
@@ -427,15 +431,26 @@ pub fn parse_guia_regex(raw_text: &str) -> Option<GuiaParseada> {
 async fn parse_guia(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
+    headers: axum::http::HeaderMap,
     Json(payload): Json<ParseGuiaInput>,
 ) -> Result<Json<GuiaParseada>, AppError> {
     crate::auth::middleware::require_role(&["admin", "tecnologo"])(&claims)?;
+
+    let configured_model_id = headers
+        .get("x-ai-model-config-id")
+        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
 
     if let Some(parsed) = parse_guia_regex(&payload.raw_text) {
         return Ok(Json(parsed));
     }
 
-    let llm_json = crate::services::llm::parse_guia_con_llm(&state.pool, &payload.raw_text).await?;
+    let llm_json = crate::services::llm::parse_guia_con_llm(
+        &state.pool,
+        &payload.raw_text,
+        configured_model_id,
+        payload.instrucciones_adicionales.as_deref(),
+    )
+    .await?;
     let parsed_guia: GuiaParseada = serde_json::from_value(llm_json).map_err(|e| {
         AppError::Internal(format!(
             "LLM response did not match GuiaParseada schema: {}",
@@ -484,6 +499,7 @@ async fn parse_guia_imagen(
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut file_mime: Option<String> = None;
     let mut file_name: Option<String> = None;
+    let mut instrucciones_adicionales: Option<String> = None;
 
     while let Some(field) = multipart
         .next_field()
@@ -501,6 +517,14 @@ async fn parse_guia_imagen(
                     .map_err(|e| AppError::Validation(format!("Error leyendo archivo: {}", e)))?
                     .to_vec(),
             );
+        } else if name == "instrucciones_adicionales" {
+            let text = field
+                .text()
+                .await
+                .map_err(|e| AppError::Validation(format!("Error leyendo campo instrucciones: {}", e)))?;
+            if !text.trim().is_empty() {
+                instrucciones_adicionales = Some(text);
+            }
         }
     }
 
@@ -535,8 +559,14 @@ async fn parse_guia_imagen(
         storage::save_file_bytes(&bytes, extension, "guias", &format!("guia_{}", claims.sub))
             .await?;
 
-    let vision_result =
-        llm::parse_guia_con_vision(&state.pool, &bytes, &mime, configured_model_id).await;
+    let vision_result = llm::parse_guia_con_vision(
+        &state.pool,
+        &bytes,
+        &mime,
+        configured_model_id,
+        instrucciones_adicionales.as_deref(),
+    )
+    .await;
 
     match vision_result {
         Ok(parsed_json) => {

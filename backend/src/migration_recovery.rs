@@ -81,7 +81,7 @@ pub async fn run_startup_migrations(
             };
             let decision = recovery_decision(&error, legacy_reset_authorized, exact_legacy);
             let checksum_reset =
-                disposable_reset_authorized && matches!(error, MigrateError::VersionMismatch(1));
+                disposable_reset_authorized && (matches!(error, MigrateError::VersionMismatch(1)) || matches!(error, MigrateError::VersionMissing(_)));
             if decision != RecoveryDecision::ResetPublicSchema && !checksum_reset {
                 return Err(error);
             }

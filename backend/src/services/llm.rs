@@ -1784,17 +1784,34 @@ pub struct GeminiParseRequest {
 pub async fn parse_guia_con_llm(
     pool: &sqlx::PgPool,
     raw_text: &str,
+    configured_model_id: Option<String>,
+    instrucciones_adicionales: Option<&str>,
 ) -> Result<serde_json::Value, AppError> {
-    let db_config = load_llm_config(pool).await?;
+    let mut db_config = load_llm_config_for_discovery(pool).await?;
+
+    if let Some(configured_id) = configured_model_id.filter(|id| !id.trim().is_empty()) {
+        let raw_models: Option<String> = sqlx::query_scalar(
+            "SELECT valor_texto FROM configuracion WHERE clave = 'ia_modelos_configurados'",
+        )
+        .fetch_optional(pool)
+        .await?;
+        if let Ok(conf) = resolve_configured_vision_model(
+            raw_models.as_deref().unwrap_or("[]"),
+            configured_id.trim(),
+        ) {
+            db_config = conf;
+        }
+    }
+
     let client = reqwest::Client::new();
 
-    let system_prompt = r#"Eres un asistente experto en extracción de datos. Tu tarea es extraer la información de una guía de despacho o factura pegada como texto plano.
+    let mut system_prompt = r#"Eres un asistente experto en extracción de datos. Tu tarea es extraer la información de una guía de despacho o factura pegada como texto plano.
 Debes identificar el proveedor y cada uno de los ítems recibidos.
 Para cada ítem, extrae:
 - nombre_producto (Nombre descriptivo del producto)
 - sku_ref (Código SKU o código de referencia de catálogo del producto/REF)
 - lote (Número de lote si está presente; de lo contrario null)
-- fecha_vencimiento (Fecha de vencimiento en formato YYYY-MM-DD si está presente; de lo contrario null)
+- fecha_vencimiento (Fecha de vencimiento en formato YYYY-MM-DD o DD/MM/YYYY si está presente; de lo contrario null)
 - cantidad (Cantidad física recibida, número positivo)
 - precio_unitario (Precio unitario si está presente; de lo contrario null)
 
@@ -1817,7 +1834,14 @@ Debes retornar obligatoriamente un objeto JSON que cumpla con el siguiente esque
   ]
 }
 
-Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni bloques de código de markdown."#;
+Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni bloques de código de markdown."#.to_string();
+
+    if let Some(inst) = instrucciones_adicionales.filter(|i| !i.trim().is_empty()) {
+        system_prompt.push_str(&format!(
+            "\n\nInstrucciones adicionales del usuario para mejorar la extracción en este documento:\n{}",
+            inst.trim()
+        ));
+    }
 
     if db_config.provider.to_lowercase() == "gemini" {
         let url = format!(
@@ -1840,7 +1864,7 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
             contents,
             system_instruction: GeminiSystemInstruction {
                 parts: vec![GeminiSystemInstructionPart {
-                    text: system_prompt.to_string(),
+                    text: system_prompt,
                 }],
             },
             generation_config: GeminiParseGenerationConfig {
@@ -1910,7 +1934,7 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
         let messages = vec![
             OpenAiMessage {
                 role: "system".to_string(),
-                content: Some(system_prompt.to_string()),
+                content: Some(system_prompt),
                 tool_calls: None,
                 tool_call_id: None,
             },
@@ -1979,6 +2003,7 @@ pub async fn parse_guia_con_vision(
     image_bytes: &[u8],
     mime_type: &str,
     configured_model_id: Option<String>,
+    instrucciones_adicionales: Option<&str>,
 ) -> Result<serde_json::Value, AppError> {
     let mut db_config = load_llm_config_for_discovery(pool).await?;
 
@@ -2002,8 +2027,6 @@ pub async fn parse_guia_con_vision(
     }
 
     if db_config.model.is_empty() || db_config.model.eq_ignore_ascii_case("auto") {
-        // Validate credentials before discovery so a missing key is reported clearly
-        // instead of becoming a provider-specific HTTP error.
         validate_vision_configuration(&db_config.provider, "auto", &db_config.api_key, mime_type)
             .or_else(|error| match error {
             AppError::BusinessLogic(_, ref code) if code == "AI_MODEL_NOT_VISION_CAPABLE" => Ok(()),
@@ -2039,13 +2062,13 @@ pub async fn parse_guia_con_vision(
 
     let client = reqwest::Client::new();
 
-    let system_prompt = r#"Eres un asistente experto en extracción de datos desde imágenes de documentos logísticos.
+    let mut system_prompt = r#"Eres un asistente experto en extracción de datos desde imágenes de documentos logísticos.
 Tu tarea es analizar la imagen de una guía de despacho, factura o documento de entrega y extraer la información de los productos recibidos.
 Para cada ítem, extrae:
 - nombre_producto (Nombre descriptivo del producto)
 - sku_ref (Código SKU o código de referencia de catálogo del producto/REF)
 - lote (Número de lote si está presente; de lo contrario null)
-- fecha_vencimiento (Fecha de vencimiento en formato YYYY-MM-DD si está presente; de lo contrario null)
+- fecha_vencimiento (Fecha de vencimiento en formato YYYY-MM-DD o DD/MM/YYYY si está presente; de lo contrario null)
 - cantidad (Cantidad física recibida, número positivo)
 - precio_unitario (Precio unitario si está presente; de lo contrario null)
 
@@ -2068,7 +2091,14 @@ Debes retornar obligatoriamente un objeto JSON que cumpla con el siguiente esque
   ]
 }
 
-Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni bloques de código de markdown."#;
+Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni bloques de código de markdown."#.to_string();
+
+    if let Some(inst) = instrucciones_adicionales.filter(|i| !i.trim().is_empty()) {
+        system_prompt.push_str(&format!(
+            "\n\nInstrucciones adicionales del usuario para mejorar la extracción en este documento:\n{}",
+            inst.trim()
+        ));
+    }
 
     let base64_data = base64::engine::general_purpose::STANDARD.encode(image_bytes);
 

@@ -187,4 +187,5 @@ pub fn routes() -> Router<AppState> {
             "/import-batches",
             crate::handlers::import_batches::child_routes(),
         )
+        .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
 }

@@ -471,8 +471,12 @@ export default function NuevaRecepcionPage() {
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}
         proveedorId={proveedorId}
-        onImport={(importedItems, detectedProveedorName) => {
+        onImport={(importedItems, detectedProveedorName, archivoUrl) => {
           setDetalles((prev) => [...importedItems, ...prev]);
+          if (archivoUrl) {
+            wizard.setFotoGuia(archivoUrl);
+            notify.success("Documento original vinculado a la recepción");
+          }
           if (!proveedorId && detectedProveedorName && proveedores) {
             const normalizedDetected = detectedProveedorName.toLowerCase().trim();
             const match = proveedores.find((p) => {

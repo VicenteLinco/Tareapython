@@ -4,6 +4,7 @@ use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use http_body_util::BodyExt;
 use sqlx::PgPool;
+use std::str::FromStr;
 use tower::ServiceExt;
 
 #[sqlx::test(migrations = "./migrations")]
@@ -783,3 +784,259 @@ async fn real_csv_fixtures_round_trip_through_multipart_api(pool: PgPool) {
         0
     );
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn setup_import_persists_stock_minimo_global(pool: PgPool) {
+    let result = inventario_lab_backend::services::setup_service::importar_catalogo(
+        &pool,
+        b"nombre,stock_minimo\nReactivo Minimo,15.5\n",
+        inventario_lab_backend::services::setup_service::ImportConfig {
+            mapping: [
+                ("nombre".into(), "nombre".into()),
+                ("stock_minimo".into(), "stock_minimo".into()),
+            ]
+            .into_iter()
+            .collect(),
+            required_fields: vec![],
+            dry_run: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(result.valido, "{result:?}");
+    let min_stock: rust_decimal::Decimal = sqlx::query_scalar(
+        "SELECT stock_minimo_global FROM productos WHERE nombre = 'Reactivo Minimo'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(min_stock, rust_decimal::Decimal::from_str("15.5").unwrap());
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn setup_import_persists_price_without_explicit_provider(pool: PgPool) {
+    let result = inventario_lab_backend::services::setup_service::importar_catalogo(
+        &pool,
+        b"nombre,unidad,precio_unitario\nReactivo Precio,unidad,1250\n",
+        inventario_lab_backend::services::setup_service::ImportConfig {
+            mapping: [
+                ("nombre".into(), "nombre".into()),
+                ("unidad".into(), "unidad".into()),
+                ("precio_unitario".into(), "precio_unitario".into()),
+            ]
+            .into_iter()
+            .collect(),
+            required_fields: vec![],
+            dry_run: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(result.valido, "{result:?}");
+    let offers_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ofertas_proveedor o \
+         JOIN presentaciones pr ON pr.id = o.presentacion_id \
+         JOIN productos p ON p.id = pr.producto_id \
+         WHERE p.nombre = 'Reactivo Precio'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(offers_count, 1, "price must be persisted in ofertas_proveedor");
+
+    let warning_found = result
+        .advertencias
+        .iter()
+        .any(|w| w.codigo.as_deref() == Some("PRICE_DEFAULT_PROVIDER") || w.codigo.as_deref() == Some("COMMERCIAL_DATA_REQUIRES_PROVIDER"));
+    assert!(warning_found, "diagnostic warning must be returned: {:?}", result.advertencias);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn setup_import_enforces_limits_rows_cols_cell_size(pool: PgPool) {
+    let cols_header = (0..65).map(|i| format!("col_{i}")).collect::<Vec<_>>().join(",");
+    let cols_csv = format!("{cols_header}\n");
+    let err_cols = inventario_lab_backend::services::setup_service::importar_catalogo(
+        &pool,
+        cols_csv.as_bytes(),
+        inventario_lab_backend::services::setup_service::ImportConfig {
+            mapping: [("nombre".into(), "col_0".into())].into_iter().collect(),
+            required_fields: vec![],
+            dry_run: true,
+        },
+    )
+    .await;
+    assert!(err_cols.is_err());
+    assert!(err_cols.unwrap_err().to_string().contains("64 columnas"));
+
+    let mut rows_csv = String::from("nombre\n");
+    for i in 0..5001 {
+        rows_csv.push_str(&format!("Producto {i}\n"));
+    }
+    let err_rows = inventario_lab_backend::services::setup_service::importar_catalogo(
+        &pool,
+        rows_csv.as_bytes(),
+        inventario_lab_backend::services::setup_service::ImportConfig {
+            mapping: [("nombre".into(), "nombre".into())].into_iter().collect(),
+            required_fields: vec![],
+            dry_run: true,
+        },
+    )
+    .await;
+    assert!(err_rows.is_err());
+    assert!(err_rows.unwrap_err().to_string().contains("5000 filas"));
+
+    let long_cell = "a".repeat(4097);
+    let cell_csv = format!("nombre,descripcion\nProd1,{long_cell}\n");
+    let err_cell = inventario_lab_backend::services::setup_service::importar_catalogo(
+        &pool,
+        cell_csv.as_bytes(),
+        inventario_lab_backend::services::setup_service::ImportConfig {
+            mapping: [("nombre".into(), "nombre".into()), ("descripcion".into(), "descripcion".into())].into_iter().collect(),
+            required_fields: vec![],
+            dry_run: true,
+        },
+    )
+    .await;
+    assert!(err_cell.is_err());
+    assert!(err_cell.unwrap_err().to_string().contains("4 KB"));
+
+    let large_bytes = vec![b'a'; 5 * 1024 * 1024 + 1];
+    let err_size = inventario_lab_backend::services::setup_service::importar_catalogo(
+        &pool,
+        &large_bytes,
+        inventario_lab_backend::services::setup_service::ImportConfig {
+            mapping: std::collections::HashMap::new(),
+            required_fields: vec![],
+            dry_run: true,
+        },
+    )
+    .await;
+    assert!(err_size.is_err());
+    assert!(err_size.unwrap_err().to_string().contains("5 MB"));
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn setup_import_rejects_unknown_boolean_and_control_lote_tokens(pool: PgPool) {
+    let csv = "nombre,frio,kit,control\nReactivo Malo,quiza,talvez,invalido_mode\n";
+    let result = inventario_lab_backend::services::setup_service::importar_catalogo(
+        &pool,
+        csv.as_bytes(),
+        inventario_lab_backend::services::setup_service::ImportConfig {
+            mapping: [
+                ("nombre".into(), "nombre".into()),
+                ("requiere_cadena_frio".into(), "frio".into()),
+                ("es_kit".into(), "kit".into()),
+                ("control_lote".into(), "control".into()),
+            ]
+            .into_iter()
+            .collect(),
+            required_fields: vec![],
+            dry_run: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(!result.valido, "{result:?}");
+    let codes = result
+        .errores
+        .iter()
+        .filter_map(|e| e.codigo.as_deref())
+        .collect::<Vec<_>>();
+    assert!(codes.contains(&"INVALID_BOOLEAN"), "must contain INVALID_BOOLEAN: {result:?}");
+    assert!(codes.contains(&"INVALID_CONTROL_LOTE"), "must contain INVALID_CONTROL_LOTE: {result:?}");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn setup_import_parses_semicolon_delimited_csv_and_bom(pool: PgPool) {
+    let csv = "\u{FEFF}nombre;unidad;stock_minimo\nReactivo PuntoyComa;ml;10\n";
+    let result = inventario_lab_backend::services::setup_service::importar_catalogo(
+        &pool,
+        csv.as_bytes(),
+        inventario_lab_backend::services::setup_service::ImportConfig {
+            mapping: [
+                ("nombre".into(), "nombre".into()),
+                ("unidad".into(), "unidad".into()),
+                ("stock_minimo".into(), "stock_minimo".into()),
+            ]
+            .into_iter()
+            .collect(),
+            required_fields: vec![],
+            dry_run: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(result.valido, "{result:?}");
+    assert_eq!(result.importados, 1);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn setup_import_parses_real_prueba_vicente_csv(pool: PgPool) {
+    let bytes = include_bytes!("../../prueba vicente.csv");
+    let result = inventario_lab_backend::services::setup_service::importar_catalogo(
+        &pool,
+        bytes,
+        inventario_lab_backend::services::setup_service::ImportConfig {
+            mapping: [
+                ("nombre".into(), "PRODUCTO".into()),
+                ("unidad".into(), "presentacion".into()),
+                ("unidad_plural".into(), "plural presentacion".into()),
+                ("contenido".into(), "unidades por presentacion".into()),
+                ("fabricante".into(), "MARCA APROBADA".into()),
+                ("ubicacion".into(), "LUGAR FISICO".into()),
+            ]
+            .into_iter()
+            .collect(),
+            required_fields: vec![],
+            dry_run: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(result.valido, "{result:?}");
+    assert!(result.importados > 0, "{result:?}");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn setup_import_persists_initial_stock_quantity(pool: PgPool) {
+    let csv = "nombre,unidad,cantidad_inicial\nReactivo A,unidad,10\n";
+    let result = inventario_lab_backend::services::setup_service::importar_catalogo(
+        &pool,
+        csv.as_bytes(),
+        inventario_lab_backend::services::setup_service::ImportConfig {
+            mapping: [
+                ("nombre".into(), "nombre".into()),
+                ("unidad".into(), "unidad".into()),
+                ("cantidad_inicial".into(), "cantidad_inicial".into()),
+            ]
+            .into_iter()
+            .collect(),
+            required_fields: vec![],
+            dry_run: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(result.valido, "{result:?}");
+    assert_eq!(result.importados, 1);
+
+    let stock_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stock")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stock_count, 1);
+
+    let stock_qty: rust_decimal::Decimal = sqlx::query_scalar("SELECT cantidad FROM stock LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stock_qty, rust_decimal::Decimal::from(10));
+}
+
+

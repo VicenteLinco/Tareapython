@@ -112,12 +112,18 @@ describe("SmartImporter upload step", () => {
       opciones_lista: null,
     };
     const template = buildProductImportTemplate([customField]);
-    const [headerLine] = template.split("\n");
+    const lines = template.split("\n");
+    expect(lines).toHaveLength(2);
+    const [headerLine, exampleLine] = lines;
     expect(headerLine).toContain("nombre [tipo=texto; requerido=si]");
+    expect(headerLine).toContain("stock_minimo [tipo=decimal; requerido=no]");
+    expect(headerLine).toContain("precio_unitario [tipo=decimal; requerido=no]");
+    expect(headerLine).toContain("codigo_loinc_cpt [tipo=texto; requerido=no]");
     expect(headerLine).toContain(
       `lab_${fieldId} [nombre=Registro sanitario; tipo=entero; requerido=si]`,
     );
-    expect(template.split("\n")).toHaveLength(1);
+    expect(exampleLine).toContain("Reactivo de ejemplo");
+    expect(exampleLine).toContain("42");
 
     apiGet.mockResolvedValueOnce({ data: [customField] });
     apiPost.mockResolvedValueOnce({
@@ -135,7 +141,7 @@ describe("SmartImporter upload step", () => {
     render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Seleccionar archivo CSV"), {
       target: {
-        files: [new File([`${template}\nReactivo A,,,,,,,no-es-entero`], "plantilla-productos.csv", { type: "text/csv" })],
+        files: [new File([`${template}\nReactivo A${",".repeat(24)}no-es-entero`], "plantilla-productos.csv", { type: "text/csv" })],
       },
     });
     const customMapping = await screen.findByLabelText("Columna CSV para Registro sanitario");
@@ -216,5 +222,48 @@ describe("SmartImporter upload step", () => {
       ),
     ).toBe(false);
     expect(apiGet).toHaveBeenCalledTimes(2);
+  });
+
+  it("prevents automapping collisions between provider/codigo_proveedor, unidad/unidad_plural, and unidad/alias_unidad_clinica", async () => {
+    apiGet.mockResolvedValueOnce({ data: [] });
+    render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Seleccionar archivo CSV"), {
+      target: {
+        files: [
+          new File(
+            ["nombre,unidad,unidad_plural,alias_unidad_clinica,proveedor,codigo_proveedor\nReactivo A,unidad,unidades,Alias1,Prov1,CodProv1"],
+            "productos.csv",
+            { type: "text/csv" },
+          ),
+        ],
+      },
+    });
+
+    expect((await screen.findByLabelText("Columna CSV para Unidad de Medida") as HTMLSelectElement).value).toBe("unidad");
+    expect((screen.getByLabelText("Columna CSV para Proveedor") as HTMLSelectElement).value).toBe("proveedor");
+    expect((screen.getByLabelText("Columna CSV para Código Proveedor") as HTMLSelectElement).value).toBe("codigo_proveedor");
+    expect((screen.getByLabelText("Columna CSV para Alias Unidad Clínica") as HTMLSelectElement).value).toBe("alias_unidad_clinica");
+  });
+
+  it("supports upper-case .CSV extension and semicolon delimiter in CSV parsing", async () => {
+    apiGet.mockResolvedValueOnce({ data: [] });
+    render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Seleccionar archivo CSV"), {
+      target: {
+        files: [
+          new File(
+            ["\uFEFFnombre;unidad;stock_minimo\nReactivo B;ml;20"],
+            "PRODUCTOS.CSV",
+            { type: "text/csv" },
+          ),
+        ],
+      },
+    });
+
+    expect(await screen.findByText("Relaciona las columnas de tu archivo con los campos de diseño de producto y almacén.")).toBeTruthy();
+    expect((screen.getByLabelText("Columna CSV para Nombre del Producto") as HTMLSelectElement).value).toBe("nombre");
+    expect((screen.getByLabelText("Columna CSV para Unidad de Medida") as HTMLSelectElement).value).toBe("unidad");
   });
 });

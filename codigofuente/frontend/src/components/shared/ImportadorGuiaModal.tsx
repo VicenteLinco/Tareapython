@@ -24,10 +24,14 @@ import {
   useCrearCategoria,
   useCrearUnidad,
 } from "@/hooks/dominio";
-import { parseGuiaImagen } from "@/api/recepciones";
+import { parseGuiaImagen, parseGuia } from "@/api/recepciones";
 import { APP_LOCALE } from "@/lib/utils";
 import { parseConfiguredAiModels } from "./ai-model-options";
-import { validateImportedGuideItem } from "./importador-guia-validation";
+import {
+  validateImportedGuideItem,
+  normalizeImportedDate,
+  parseCurrencyInput,
+} from "./importador-guia-validation";
 
 export interface ParsedItem {
   nombre_producto: string;
@@ -50,7 +54,7 @@ interface ImportadorGuiaModalProps {
   onClose: () => void;
   proveedorId: number | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onImport: (itemsToAdd: any[], proveedorDetectado?: string) => void;
+  onImport: (itemsToAdd: any[], proveedorDetectado?: string, archivoUrl?: string | null) => void;
 }
 
 export default function ImportadorGuiaModal({
@@ -123,6 +127,7 @@ export default function ImportadorGuiaModal({
   const [isParsing, setIsParsing] = useState(false);
   const [proveedorDetectado, setProveedorDetectado] = useState("");
   const [items, setItems] = useState<ParsedItem[]>([]);
+  const [instruccionesAdicionales, setInstruccionesAdicionales] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
 
   // Tab y upload de imagen
@@ -198,11 +203,19 @@ export default function ImportadorGuiaModal({
 
   const initializeParsedItems = (parsedItems: ParsedItem[]): ParsedItem[] => {
     return parsedItems.map((item) => {
+      const normalizedVto = normalizeImportedDate(item.fecha_vencimiento);
       let control_lote: "trazable" | "con_vto" | "simple" = "con_vto";
-      control_lote = item.fecha_vencimiento ? "con_vto" : "simple";
 
-      let lote = item.lote;
-      let fecha_vencimiento = item.fecha_vencimiento;
+      if (normalizedVto) {
+        control_lote = "con_vto";
+      } else if (item.lote && item.lote.trim()) {
+        control_lote = "trazable";
+      } else {
+        control_lote = "simple";
+      }
+
+      let lote = item.lote ? item.lote.trim() : null;
+      let fecha_vencimiento = normalizedVto;
       if (control_lote === "simple") {
         lote = null;
         fecha_vencimiento = null;
@@ -223,15 +236,20 @@ export default function ImportadorGuiaModal({
       return;
     }
     setIsParsing(true);
+    setLastParseError("");
     try {
-      const res = await api.post("/recepciones/parse-guia", {
-        raw_text: rawText,
-      });
-      setProveedorDetectado(res.data.proveedor);
-      setItems(initializeParsedItems(res.data.items || []));
+      const res = await parseGuia(
+        rawText,
+        selectedModelId || undefined,
+        instruccionesAdicionales || undefined,
+      );
+      setProveedorDetectado(res.proveedor);
+      setItems(initializeParsedItems(res.items || []));
       notify.success("Guía parseada con éxito");
     } catch (err) {
-      notify.error(parseApiError(err));
+      const errMsg = parseApiError(err) || String(err);
+      setLastParseError(errMsg);
+      notify.error(errMsg);
     } finally {
       setIsParsing(false);
     }
@@ -296,6 +314,7 @@ export default function ImportadorGuiaModal({
           setUploadProgress(progress);
         },
         selectedModelId || undefined,
+        instruccionesAdicionales || undefined,
       );
       setProveedorDetectado(res.proveedor);
       setItems(initializeParsedItems(res.items || []));
@@ -487,7 +506,7 @@ export default function ImportadorGuiaModal({
         finalItemsList.push(line);
       }
 
-      onImport(finalItemsList, proveedorDetectado);
+      onImport(finalItemsList, proveedorDetectado, archivoUrl);
       queryClient.invalidateQueries({ queryKey: ["productos"] });
       notify.success("Ítems cargados en la recepción");
       onClose();
@@ -557,6 +576,52 @@ export default function ImportadorGuiaModal({
                     value={rawText}
                     onChange={(e) => setRawText(e.target.value)}
                   />
+                </div>
+
+                <div className="bg-base-200/50 p-2.5 rounded-lg border border-base-300 space-y-2 mb-3 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-base-content/85 text-[10px]">Modelo de IA (Opcional)</span>
+                    {selectedModelId && (
+                      <button
+                        type="button"
+                        className="text-[10px] text-error font-medium hover:underline"
+                        onClick={() => {
+                          setSelectedModelId("");
+                        }}
+                      >
+                        Limpiar
+                      </button>
+                    )}
+                  </div>
+                  <div>
+                    <select
+                      className="select select-xs select-bordered w-full text-[11px]"
+                      value={selectedModelId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        setSelectedModelId(id);
+                      }}
+                    >
+                      <option value="">Por defecto (Guardado)</option>
+                      {configuredModelOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="pt-1 border-t border-base-300/60">
+                    <span className="font-semibold text-base-content/85 text-[10px] block mb-1">
+                      Instrucciones para IA (Opcional):
+                    </span>
+                    <input
+                      type="text"
+                      className="input input-xs input-bordered w-full text-[11px]"
+                      placeholder="Ej: La col 3 es precio, SKUs con REF-"
+                      value={instruccionesAdicionales}
+                      onChange={(e) => setInstruccionesAdicionales(e.target.value)}
+                    />
+                  </div>
                 </div>
 
                 <button
@@ -721,6 +786,18 @@ export default function ImportadorGuiaModal({
                           </option>
                         ))}
                       </select>
+                  </div>
+                  <div className="pt-1 border-t border-base-300/60">
+                    <span className="font-semibold text-base-content/85 text-[10px] block mb-1">
+                      Instrucciones para IA (Opcional):
+                    </span>
+                    <input
+                      type="text"
+                      className="input input-xs input-bordered w-full text-[11px]"
+                      placeholder="Ej: La col 3 es precio, SKUs con REF-"
+                      value={instruccionesAdicionales}
+                      onChange={(e) => setInstruccionesAdicionales(e.target.value)}
+                    />
                   </div>
                 </div>
 
@@ -1056,11 +1133,11 @@ export default function ImportadorGuiaModal({
                               onFocus={() => setFocusedPriceIndex(index)}
                               onBlur={() => setFocusedPriceIndex(null)}
                               onChange={(e) => {
-                                const digits = e.target.value.replace(/\D/g, "");
+                                const parsedVal = parseCurrencyInput(e.target.value);
                                 handleUpdateItem(
                                   index,
                                   "precio_unitario",
-                                  digits ? Number(digits) : null,
+                                  parsedVal,
                                 );
                               }}
                               placeholder="0"

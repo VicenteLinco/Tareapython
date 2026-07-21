@@ -166,6 +166,55 @@ fn parse_optional_i32(
     }
 }
 
+fn parse_optional_boolean(
+    value: &str,
+    fila: usize,
+    campo: &str,
+    errors: &mut Vec<ImportError>,
+) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    match value.to_lowercase().as_str() {
+        "true" | "1" | "si" | "sí" | "yes" => true,
+        "false" | "0" | "no" => false,
+        _ => {
+            errors.push(diagnostic(
+                fila,
+                campo,
+                "INVALID_BOOLEAN",
+                format!("{campo} debe ser un valor booleano (si/no, true/false); se recibió '{value}'"),
+            ));
+            false
+        }
+    }
+}
+
+fn parse_optional_control_lote<'a>(
+    value: &'a str,
+    fila: usize,
+    campo: &str,
+    errors: &mut Vec<ImportError>,
+) -> &'a str {
+    if value.is_empty() {
+        return "con_vto";
+    }
+    match value.to_lowercase().as_str() {
+        "con_vto" | "vto" | "vencimiento" | "lote_y_vto" | "completo" | "trazable" => "con_vto",
+        "solo_lote" | "lote" => "solo_lote",
+        "sin_control" | "simple" | "no" | "false" | "ninguno" => "sin_control",
+        _ => {
+            errors.push(diagnostic(
+                fila,
+                campo,
+                "INVALID_CONTROL_LOTE",
+                format!("{campo} debe ser uno de: sin_control, solo_lote, con_vto; se recibió '{value}'"),
+            ));
+            "con_vto"
+        }
+    }
+}
+
 pub async fn importar_catalogo(
     pool: &PgPool,
     bytes: &[u8],
@@ -195,17 +244,59 @@ pub(crate) async fn importar_catalogo_en_tx(
     bytes: &[u8],
     config: ImportConfig,
 ) -> Result<ImportResult, AppError> {
+    if bytes.len() > 5 * 1024 * 1024 {
+        return Err(AppError::Validation(
+            "El archivo excede el tamaño máximo permitido de 5 MB".into(),
+        ));
+    }
+
+    let clean_bytes = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        &bytes[3..]
+    } else {
+        bytes
+    };
+
+    let first_line = clean_bytes
+        .split(|&b| b == b'\n' || b == b'\r')
+        .next()
+        .unwrap_or(&[]);
+    let first_line_str = String::from_utf8_lossy(first_line);
+    let line_for_detection = regex::Regex::new(r"\[[^\]]*\]")
+        .map(|re| re.replace_all(&first_line_str, "").to_string())
+        .unwrap_or_else(|_| first_line_str.to_string());
+    let semicolon_count = line_for_detection.chars().filter(|&c| c == ';').count();
+    let comma_count = line_for_detection.chars().filter(|&c| c == ',').count();
+    let delimiter = if semicolon_count > comma_count { b';' } else { b',' };
+
     let mut reader = csv::ReaderBuilder::new()
         .trim(csv::Trim::All)
-        .from_reader(bytes);
+        .delimiter(delimiter)
+        .from_reader(clean_bytes);
 
     let headers = reader
         .headers()
         .map_err(|e| AppError::Validation(format!("Error en cabeceras CSV: {}", e)))?
         .clone();
 
+    if headers.len() > 64 {
+        return Err(AppError::Validation(
+            "El archivo excede el límite de 64 columnas".into(),
+        ));
+    }
+
+    for col in headers.iter() {
+        if col.len() > 4096 {
+            return Err(AppError::Validation(
+                "Una celda excede el tamaño máximo permitido de 4 KB".into(),
+            ));
+        }
+    }
+
     let mut col_map = HashMap::new();
     for (name, target) in &config.mapping {
+        if target.trim().is_empty() {
+            continue;
+        }
         if let Some(idx) = headers.iter().position(|h| h == target) {
             col_map.insert(name.as_str(), idx);
         }
@@ -240,6 +331,11 @@ pub(crate) async fn importar_catalogo_en_tx(
 
     for (idx, result) in reader.records().enumerate() {
         total_filas += 1;
+        if total_filas > 5000 {
+            return Err(AppError::Validation(
+                "El archivo excede el límite de 5000 filas".into(),
+            ));
+        }
         let fila_num = idx + 2;
         let record = match result {
             Ok(r) => r,
@@ -253,6 +349,12 @@ pub(crate) async fn importar_catalogo_en_tx(
                 continue;
             }
         };
+
+        if record.iter().any(|cell| cell.len() > 4096) {
+            return Err(AppError::Validation(
+                "Una celda excede el tamaño máximo permitido de 4 KB".into(),
+            ));
+        }
 
         let get_val = |key: &str| {
             col_map
@@ -276,6 +378,13 @@ pub(crate) async fn importar_catalogo_en_tx(
         let stock_minimo_str = get_first_val(&["stock_seguridad", "stock_minimo"]);
         let precio_str = get_first_val(&["precio_unitario", "precio_unidad"]);
         let contenido_str = get_first_val(&["contenido", "factor_conversion"]);
+        let cantidad_inicial_str = get_first_val(&["cantidad_inicial", "stock_inicial", "cantidad"]);
+        let cantidad_inicial = parse_optional_decimal(
+            cantidad_inicial_str,
+            fila_num,
+            "cantidad_inicial",
+            &mut errores,
+        );
         let cod_proveedor = get_val("codigo_proveedor");
         let proveedor_nombre = get_val("proveedor");
         let categoria_nombre = get_val("categoria");
@@ -299,10 +408,12 @@ pub(crate) async fn importar_catalogo_en_tx(
         let ubicacion = get_val("ubicacion");
         let temp_almacenamiento = get_val("temperatura_almacenamiento");
         let requiere_cadena_frio_str = get_val("requiere_cadena_frio");
-        let requiere_cadena_frio = match requiere_cadena_frio_str.to_lowercase().as_str() {
-            "true" | "1" | "si" | "sí" | "yes" => true,
-            _ => false,
-        };
+        let requiere_cadena_frio = parse_optional_boolean(
+            requiere_cadena_frio_str,
+            fila_num,
+            "requiere_cadena_frio",
+            &mut errores,
+        );
         let dias_estabilidad_str = get_val("dias_estabilidad_abierto");
         let dias_estabilidad = parse_optional_i32(
             dias_estabilidad_str,
@@ -315,17 +426,20 @@ pub(crate) async fn importar_catalogo_en_tx(
         let mpn = get_val("mpn");
         let alias_clinica = get_val("alias_unidad_clinica");
         let es_kit_str = get_val("es_kit");
-        let es_kit = match es_kit_str.to_lowercase().as_str() {
-            "true" | "1" | "si" | "sí" | "yes" => true,
-            _ => false,
-        };
+        let es_kit = parse_optional_boolean(
+            es_kit_str,
+            fila_num,
+            "es_kit",
+            &mut errores,
+        );
         let codigo_loinc = get_val("codigo_loinc_cpt");
         let control_lote_str = get_val("control_lote");
-        let control_lote = match control_lote_str.to_lowercase().as_str() {
-            "simple" | "no" | "false" => "simple",
-            "trazable" | "completo" => "trazable",
-            _ => "con_vto",
-        };
+        let control_lote = parse_optional_control_lote(
+            control_lote_str,
+            fila_num,
+            "control_lote",
+            &mut errores,
+        );
         let mut custom_values = Vec::new();
         for field in &custom_fields {
             let key = format!("lab_{}", field.id);
@@ -409,7 +523,7 @@ pub(crate) async fn importar_catalogo_en_tx(
             }
             custom_values.push(value);
         }
-        let _stock_minimo =
+        let stock_minimo =
             parse_optional_decimal(stock_minimo_str, fila_num, "stock_minimo", &mut errores);
         let precio = parse_optional_decimal(precio_str, fila_num, "precio_unitario", &mut errores);
         let factor_conversion =
@@ -566,17 +680,29 @@ pub(crate) async fn importar_catalogo_en_tx(
             None
         };
 
-        let prov_id: Option<i32> = if !proveedor_nombre.is_empty() && !unidad_nombre.is_empty() {
+        let prov_name_to_use = if proveedor_nombre.is_empty() && precio.is_some() && !unidad_nombre.is_empty() {
+            advertencias.push(diagnostic(
+                fila_num,
+                "proveedor",
+                "PRICE_DEFAULT_PROVIDER",
+                "Se registró el precio unitario asociándolo al proveedor por defecto 'Proveedor General'.",
+            ));
+            "Proveedor General"
+        } else {
+            proveedor_nombre
+        };
+
+        let prov_id: Option<i32> = if !prov_name_to_use.is_empty() && !unidad_nombre.is_empty() {
             let id: Option<i32> =
                 sqlx::query_scalar("SELECT id FROM proveedores WHERE nombre = $1")
-                    .bind(proveedor_nombre)
+                    .bind(prov_name_to_use)
                     .fetch_optional(&mut *conn)
                     .await?;
             match id {
                 Some(id) => Some(id),
                 None => Some(
                     sqlx::query_scalar("INSERT INTO proveedores (nombre) VALUES ($1) RETURNING id")
-                        .bind(proveedor_nombre)
+                        .bind(prov_name_to_use)
                         .fetch_one(&mut *conn)
                         .await?,
                 ),
@@ -589,8 +715,8 @@ pub(crate) async fn importar_catalogo_en_tx(
         sqlx::query(
             "INSERT INTO productos
              (id, codigo_interno, nombre, descripcion, unidad_base_id, categoria_id, promedio_uso_mensual_inicial, promedio_uso_mensual,
-              ubicacion, temperatura_almacenamiento, requiere_cadena_frio, dias_estabilidad_abierto, clase_riesgo, fabricante, mpn, alias_unidad_clinica, es_kit, codigo_loinc_cpt, control_lote, estado_catalogo, origen_registro)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 'importacion_csv')",
+              ubicacion, temperatura_almacenamiento, requiere_cadena_frio, dias_estabilidad_abierto, clase_riesgo, fabricante, mpn, alias_unidad_clinica, es_kit, codigo_loinc_cpt, control_lote, estado_catalogo, origen_registro, stock_minimo_global)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 'importacion_csv', $21)",
         )
         .bind(p_id)
         .bind(codigo_interno)
@@ -616,6 +742,7 @@ pub(crate) async fn importar_catalogo_en_tx(
         .bind(if codigo_loinc.is_empty() { None } else { Some(codigo_loinc) })
         .bind(control_lote)
         .bind(if u_id.is_some() { "pendiente_aprobacion" } else { "incompleto" })
+        .bind(stock_minimo.unwrap_or(Decimal::ZERO))
         .execute(&mut *conn)
         .await?;
 
@@ -673,6 +800,69 @@ pub(crate) async fn importar_catalogo_en_tx(
             })
             .execute(&mut *conn)
             .await?;
+        }
+
+        if let Some(cant) = cantidad_inicial {
+            if cant > Decimal::ZERO && u_id.is_some() {
+                let area_id: i32 = match sqlx::query_scalar::<_, i32>(
+                    "SELECT id FROM areas WHERE es_bodega = true AND activa = true ORDER BY id LIMIT 1",
+                )
+                .fetch_optional(&mut *conn)
+                .await?
+                {
+                    Some(id) => id,
+                    None => {
+                        sqlx::query_scalar(
+                            "INSERT INTO areas (nombre, es_bodega, activa) VALUES ('Bodega Principal', true, true) RETURNING id",
+                        )
+                        .fetch_one(&mut *conn)
+                        .await?
+                    }
+                };
+
+                sqlx::query("UPDATE productos SET estado_catalogo = 'aprobado' WHERE id = $1")
+                    .bind(p_id)
+                    .execute(&mut *conn)
+                    .await?;
+
+                let lote_id = uuid::Uuid::new_v4();
+                let lote_codigo = format!("LOT-INI-{}", &codigo_interno);
+                sqlx::query(
+                    "INSERT INTO lotes (id, producto_id, numero_lote, presentacion_id) VALUES ($1, $2, $3, $4)",
+                )
+                .bind(lote_id)
+                .bind(p_id)
+                .bind(lote_codigo)
+                .bind(pres_id)
+                .execute(&mut *conn)
+                .await?;
+
+                let sys_user_id: Option<uuid::Uuid> = sqlx::query_scalar("SELECT id FROM usuarios LIMIT 1")
+                    .fetch_optional(&mut *conn)
+                    .await?;
+
+                if let Some(user_id) = sys_user_id {
+                    sqlx::query(
+                        "INSERT INTO movimientos (lote_id, area_id, tipo, cantidad, cantidad_resultante, usuario_id, origen, nota) \
+                         VALUES ($1, $2, 'CARGA_INICIAL', $3, $3, $4, 'importacion_csv', 'Carga inicial masiva de stock')",
+                    )
+                    .bind(lote_id)
+                    .bind(area_id)
+                    .bind(cant)
+                    .bind(user_id)
+                    .execute(&mut *conn)
+                    .await?;
+                } else {
+                    sqlx::query(
+                        "INSERT INTO stock (lote_id, area_id, cantidad, updated_at) VALUES ($1, $2, $3, NOW())",
+                    )
+                    .bind(lote_id)
+                    .bind(area_id)
+                    .bind(cant)
+                    .execute(&mut *conn)
+                    .await?;
+                }
+            }
         }
 
         importados += 1;

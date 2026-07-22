@@ -929,6 +929,68 @@ export default function ImportadorGuiaModal({
                   />
                 </div>
 
+                {/* Batch default actions bar */}
+                <div className="flex flex-wrap items-center justify-between shrink-0 bg-base-200/40 px-3 py-2 rounded-lg border text-xs gap-2">
+                  <span className="font-semibold text-base-content/75">
+                    Asignar por lote a ítems sin definir:
+                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <select
+                      className="select select-xs select-bordered text-[11px]"
+                      defaultValue=""
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          const id = Number(e.target.value);
+                          setItems((prev) => prev.map((item) => ({ ...item, area_id: item.area_id || id })));
+                          notify.success("Área aplicada a ítems sin área");
+                          e.target.value = "";
+                        }
+                      }}
+                    >
+                      <option value="" disabled>Aplicar Área a todos</option>
+                      {areas?.map((a) => (
+                        <option key={a.id} value={a.id}>{a.nombre}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      className="select select-xs select-bordered text-[11px]"
+                      defaultValue=""
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          const id = Number(e.target.value);
+                          setItems((prev) => prev.map((item) => ({ ...item, categoria_id: item.categoria_id || id })));
+                          notify.success("Categoría aplicada a ítems sin categoría");
+                          e.target.value = "";
+                        }
+                      }}
+                    >
+                      <option value="" disabled>Aplicar Categoría a todos</option>
+                      {categorias?.map((c) => (
+                        <option key={c.id} value={c.id}>{c.nombre}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      className="select select-xs select-bordered text-[11px]"
+                      defaultValue=""
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          const id = Number(e.target.value);
+                          setItems((prev) => prev.map((item) => ({ ...item, unidad_base_id: item.unidad_base_id || id })));
+                          notify.success("Unidad aplicada a ítems sin unidad");
+                          e.target.value = "";
+                        }
+                      }}
+                    >
+                      <option value="" disabled>Aplicar Unidad a todos</option>
+                      {unidades?.map((u) => (
+                        <option key={u.id} value={u.id}>{u.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
                 {/* Scrollable list of items */}
                 <div className="flex-1 overflow-y-auto flex flex-col gap-3 pr-1">
                   {items.map((item, index) => {

@@ -37,6 +37,7 @@ import type {
   Categoria,
   UnidadBasica,
   Area,
+  Proveedor,
   CreateProducto,
   UpdateProducto,
   ControlLote,
@@ -51,6 +52,7 @@ interface ProductoListItem {
   categoria: { id: number; nombre: string } | null;
   unidad_base: { id: number; nombre: string; nombre_plural: string } | null;
   area: { id: number; nombre: string } | null;
+  proveedor?: { id: number; nombre: string; icono?: string | null } | null;
   lead_time_propio: number | null;
   activo: boolean;
   estado_stock?: "activo" | "inactivo" | "pendiente_inicializar" | "sin_stock";
@@ -138,6 +140,7 @@ export default function ProductosTab() {
   const searchItemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [categoriaId, setCategoriaId] = useState("");
   const [areaId, setAreaId] = useState("");
+  const [proveedorId, setProveedorId] = useState(() => searchParams.get("proveedor_id") || searchParams.get("proveedorId") || "");
   const [verInactivos, setVerInactivos] = useState(false);
   const [sortBy, setSortBy] = useState("nombre");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -165,6 +168,7 @@ export default function ProductosTab() {
         search,
         categoriaId,
         areaId,
+        proveedorId,
         page,
         activo: !verInactivos,
         sortBy,
@@ -179,6 +183,7 @@ export default function ProductosTab() {
             q: search || undefined,
             categoria_id: categoriaId || undefined,
             area_id: areaId || undefined,
+            proveedor_id: proveedorId ? Number(proveedorId) : undefined,
             activo: !verInactivos,
             sort_by: sortBy,
             sort_dir: sortDir,
@@ -211,6 +216,12 @@ export default function ProductosTab() {
   const { data: areas } = useQuery({
     queryKey: ["areas"],
     queryFn: () => api.get<Area[]>("/areas").then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: proveedores } = useQuery({
+    queryKey: ["proveedores"],
+    queryFn: () => api.get<Proveedor[]>("/proveedores").then((r) => r.data),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -280,6 +291,19 @@ export default function ProductosTab() {
           </Badge>
         ) : (
           <span className="text-sm opacity-30">--</span>
+        ),
+    },
+    {
+      key: "proveedor",
+      header: "Proveedor",
+      className: "hidden xl:table-cell",
+      render: (item: ProductoListItem) =>
+        item.proveedor ? (
+          <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded truncate max-w-[150px] inline-block">
+            {item.proveedor.nombre}
+          </span>
+        ) : (
+          <span className="text-xs opacity-30">--</span>
         ),
     },
     {
@@ -601,6 +625,21 @@ export default function ProductosTab() {
               </option>
             ))}
           </select>
+          <select
+            className="select select-bordered select-sm h-9 w-44 text-sm"
+            value={proveedorId}
+            onChange={(e) => {
+              setProveedorId(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">Proveedor</option>
+            {proveedores?.map((p) => (
+              <option key={p.id} value={String(p.id)}>
+                {p.nombre}
+              </option>
+            ))}
+          </select>
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -624,6 +663,7 @@ export default function ProductosTab() {
             <option value="nombre">Nombre</option>
             <option value="codigo">Código</option>
             <option value="categoria">Categoría</option>
+            <option value="proveedor">Proveedor</option>
             <option value="estado">Estado</option>
           </select>
           <button

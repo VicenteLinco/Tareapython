@@ -1170,7 +1170,7 @@ impl ProductoService {
         }
         if params.proveedor_id.is_some() {
             conditions.push(format!(
-                "EXISTS (SELECT 1 FROM lotes l WHERE l.producto_id = p.id AND l.proveedor_id = ${})",
+                "(EXISTS (SELECT 1 FROM lotes l WHERE l.producto_id = p.id AND l.proveedor_id = ${0}) OR EXISTS (SELECT 1 FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id WHERE pres.producto_id = p.id AND op.proveedor_id = ${0}))",
                 param_idx
             ));
             param_idx += 1;
@@ -1215,9 +1215,9 @@ impl ProductoService {
                       p.codigo_loinc_cpt,
                       p.promedio_uso_mensual,
                       p.promedio_uso_mensual_inicial,
-                      (SELECT pr.id FROM lotes l JOIN proveedores pr ON pr.id = l.proveedor_id WHERE l.producto_id = p.id AND l.proveedor_id IS NOT NULL LIMIT 1) as prov_id,
-                      (SELECT pr.nombre FROM lotes l JOIN proveedores pr ON pr.id = l.proveedor_id WHERE l.producto_id = p.id AND l.proveedor_id IS NOT NULL LIMIT 1) as prov_nombre,
-                      (SELECT pr.icono FROM lotes l JOIN proveedores pr ON pr.id = l.proveedor_id WHERE l.producto_id = p.id AND l.proveedor_id IS NOT NULL LIMIT 1) as prov_icono
+                      COALESCE((SELECT pr.id FROM lotes l JOIN proveedores pr ON pr.id = l.proveedor_id WHERE l.producto_id = p.id AND l.proveedor_id IS NOT NULL LIMIT 1), (SELECT pr.id FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id JOIN proveedores pr ON pr.id = op.proveedor_id WHERE pres.producto_id = p.id LIMIT 1)) as prov_id,
+                      COALESCE((SELECT pr.nombre FROM lotes l JOIN proveedores pr ON pr.id = l.proveedor_id WHERE l.producto_id = p.id AND l.proveedor_id IS NOT NULL LIMIT 1), (SELECT pr.nombre FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id JOIN proveedores pr ON pr.id = op.proveedor_id WHERE pres.producto_id = p.id LIMIT 1)) as prov_nombre,
+                      COALESCE((SELECT pr.icono FROM lotes l JOIN proveedores pr ON pr.id = l.proveedor_id WHERE l.producto_id = p.id AND l.proveedor_id IS NOT NULL LIMIT 1), (SELECT pr.icono FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id JOIN proveedores pr ON pr.id = op.proveedor_id WHERE pres.producto_id = p.id LIMIT 1)) as prov_icono
                FROM productos p
                LEFT JOIN categorias c ON c.id = p.categoria_id
                LEFT JOIN unidades_basicas um ON um.id = p.unidad_base_id

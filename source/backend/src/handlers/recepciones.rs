@@ -287,7 +287,8 @@ pub struct ItemGuiaParseado {
         default = "default_product_name",
         deserialize_with = "deserialize_product_name",
         alias = "nombreProducto",
-        alias = "nombre"
+        alias = "nombre",
+        alias = "descripcion"
     )]
     pub nombre_producto: String,
     #[serde(
@@ -295,19 +296,42 @@ pub struct ItemGuiaParseado {
         deserialize_with = "deserialize_nullable_string",
         alias = "skuRef",
         alias = "sku",
-        alias = "referencia"
+        alias = "referencia",
+        alias = "codigo"
     )]
     pub sku_ref: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_flexible_string",
+        alias = "numeroLote",
+        alias = "batch"
+    )]
     pub lote: Option<String>,
     #[serde(
+        default,
+        deserialize_with = "deserialize_flexible_string",
         alias = "fechaVencimiento",
         alias = "fechaVto",
         alias = "vencimiento",
-        alias = "fecha_vencimiento"
+        alias = "fecha_vencimiento",
+        alias = "expiracion"
     )]
     pub fecha_vencimiento: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_flexible_f64",
+        alias = "cant",
+        alias = "quantity"
+    )]
     pub cantidad: f64,
-    #[serde(alias = "precioUnitario", alias = "precio", alias = "precio_unitario")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_flexible_optional_f64",
+        alias = "precioUnitario",
+        alias = "precio",
+        alias = "precio_unitario",
+        alias = "valor_unitario"
+    )]
     pub precio_unitario: Option<f64>,
 }
 
@@ -363,6 +387,103 @@ where
         .unwrap_or_default()
         .trim()
         .to_string())
+}
+
+fn deserialize_flexible_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrNum {
+        String(String),
+        Int(i64),
+        Float(f64),
+    }
+
+    let val = Option::<StringOrNum>::deserialize(deserializer)?;
+    Ok(match val {
+        Some(StringOrNum::String(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        Some(StringOrNum::Int(i)) => Some(i.to_string()),
+        Some(StringOrNum::Float(f)) => Some(f.to_string()),
+        None => None,
+    })
+}
+
+fn parse_currency_str(s: &str) -> Option<f64> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let clean = trimmed.replace('$', "").trim().to_string();
+    if clean.is_empty() {
+        return None;
+    }
+    // Formats like "25.000" or "1.250.000" (thousands separators in LatAm/Chile)
+    if clean.contains('.') && !clean.contains(',') {
+        let parts: Vec<&str> = clean.split('.').collect();
+        if parts.len() > 1 && parts.iter().skip(1).all(|p| p.len() == 3) {
+            let no_dots = clean.replace('.', "");
+            if let Ok(val) = no_dots.parse::<f64>() {
+                return Some(val);
+            }
+        }
+    }
+    // Standard float parse (e.g. "25000" or "25000.5")
+    if let Ok(val) = clean.parse::<f64>() {
+        return Some(val);
+    }
+    let normalized = clean.replace('.', "").replace(',', ".");
+    normalized.parse::<f64>().ok()
+}
+
+fn deserialize_flexible_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum FloatOrString {
+        Float(f64),
+        Int(i64),
+        String(String),
+    }
+
+    let val = Option::<FloatOrString>::deserialize(deserializer)?;
+    Ok(match val {
+        Some(FloatOrString::Float(f)) => f,
+        Some(FloatOrString::Int(i)) => i as f64,
+        Some(FloatOrString::String(s)) => parse_currency_str(&s).unwrap_or(0.0),
+        None => 0.0,
+    })
+}
+
+fn deserialize_flexible_optional_f64<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum FloatOrString {
+        Float(f64),
+        Int(i64),
+        String(String),
+    }
+
+    let val = Option::<FloatOrString>::deserialize(deserializer)?;
+    Ok(match val {
+        Some(FloatOrString::Float(f)) => Some(f),
+        Some(FloatOrString::Int(i)) => Some(i as f64),
+        Some(FloatOrString::String(s)) => parse_currency_str(&s),
+        None => None,
+    })
 }
 
 pub fn parse_guia_regex(raw_text: &str) -> Option<GuiaParseada> {
@@ -432,6 +553,54 @@ pub fn parse_guia_regex(raw_text: &str) -> Option<GuiaParseada> {
     }
 }
 
+fn normalize_llm_guia_json(mut val: serde_json::Value) -> serde_json::Value {
+    if val.is_array() {
+        return serde_json::json!({
+            "proveedor": "Proveedor no identificado",
+            "items": val
+        });
+    }
+
+    if let Some(obj) = val.as_object_mut() {
+        if !obj.contains_key("items") {
+            if let Some(arr) = obj
+                .remove("productos")
+                .or_else(|| obj.remove("data"))
+                .or_else(|| obj.remove("detalles"))
+                .or_else(|| obj.remove("lineas"))
+            {
+                obj.insert("items".to_string(), arr);
+            }
+        }
+        if !obj.contains_key("proveedor") {
+            if let Some(prov) = obj
+                .remove("supplier")
+                .or_else(|| obj.remove("distribuidor"))
+                .or_else(|| obj.remove("vendor"))
+            {
+                obj.insert("proveedor".to_string(), prov);
+            }
+        }
+    }
+
+    val
+}
+
+fn sanitize_guia_parseada(mut guia: GuiaParseada) -> GuiaParseada {
+    if guia.proveedor.trim().is_empty() {
+        guia.proveedor = "Proveedor no identificado".to_string();
+    }
+    for item in &mut guia.items {
+        if item.nombre_producto.trim().is_empty() {
+            item.nombre_producto = "Producto sin nombre".to_string();
+        }
+        if item.cantidad <= 0.0 {
+            item.cantidad = 1.0;
+        }
+    }
+    guia
+}
+
 async fn parse_guia(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -445,7 +614,7 @@ async fn parse_guia(
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
 
     if let Some(parsed) = parse_guia_regex(&payload.raw_text) {
-        return Ok(Json(parsed));
+        return Ok(Json(sanitize_guia_parseada(parsed)));
     }
 
     let llm_json = crate::services::llm::parse_guia_con_llm(
@@ -455,14 +624,16 @@ async fn parse_guia(
         payload.instrucciones_adicionales.as_deref(),
     )
     .await?;
-    let parsed_guia: GuiaParseada = serde_json::from_value(llm_json).map_err(|e| {
+
+    let normalized_json = normalize_llm_guia_json(llm_json);
+    let parsed_guia: GuiaParseada = serde_json::from_value(normalized_json).map_err(|e| {
         AppError::Internal(format!(
             "LLM response did not match GuiaParseada schema: {}",
             e
         ))
     })?;
 
-    Ok(Json(parsed_guia))
+    Ok(Json(sanitize_guia_parseada(parsed_guia)))
 }
 
 pub fn routes() -> Router<AppState> {
@@ -573,16 +744,19 @@ async fn parse_guia_imagen(
 
     match vision_result {
         Ok(parsed_json) => {
-            let parsed_guia: GuiaParseada = serde_json::from_value(parsed_json).map_err(|e| {
+            let normalized_json = normalize_llm_guia_json(parsed_json);
+            let parsed_guia: GuiaParseada = serde_json::from_value(normalized_json).map_err(|e| {
                 AppError::Internal(format!(
                     "La respuesta de Vision no coincide con el esquema GuiaParseada: {}",
                     e
                 ))
             })?;
 
+            let sanitized = sanitize_guia_parseada(parsed_guia);
+
             Ok(Json(GuiaParseadaConArchivo {
-                proveedor: parsed_guia.proveedor,
-                items: parsed_guia.items,
+                proveedor: sanitized.proveedor,
+                items: sanitized.items,
                 archivo_url,
                 source: "vision".to_string(),
             }))
@@ -653,17 +827,26 @@ mod vision_schema_tests {
     }
 
     #[test]
-    fn normalizes_missing_and_blank_required_strings() {
+    fn deserializes_flexible_llm_json_types() {
         let parsed: GuiaParseada = serde_json::from_value(serde_json::json!({
+            "proveedor": "Biomerieux Chile",
             "items": [{
-                "nombre_producto": "   ",
-                "cantidad": 1
+                "nombre_producto": "Kit BacT/ALERT",
+                "sku_ref": "BMX-101",
+                "lote": 88291,
+                "fecha_vencimiento": "2027-12-31",
+                "cantidad": "10",
+                "precio_unitario": "$25.000"
             }]
         }))
-        .expect("missing provider strings should be normalized");
+        .expect("flexible LLM types should be deserialized properly");
 
-        assert_eq!(parsed.proveedor, "Proveedor no identificado");
-        assert_eq!(parsed.items[0].nombre_producto, "");
-        assert_eq!(parsed.items[0].sku_ref, "");
+        assert_eq!(parsed.proveedor, "Biomerieux Chile");
+        assert_eq!(parsed.items[0].nombre_producto, "Kit BacT/ALERT");
+        assert_eq!(parsed.items[0].sku_ref, "BMX-101");
+        assert_eq!(parsed.items[0].lote, Some("88291".to_string()));
+        assert_eq!(parsed.items[0].fecha_vencimiento, Some("2027-12-31".to_string()));
+        assert_eq!(parsed.items[0].cantidad, 10.0);
+        assert_eq!(parsed.items[0].precio_unitario, Some(25000.0));
     }
 }

@@ -13,6 +13,8 @@ import {
   RefreshCw,
   Lock,
   FileUp,
+  FlaskConical,
+  AlertCircle,
 } from "lucide-react";
 import { notify } from "@/lib/notify";
 import api from "@/lib/api";
@@ -474,13 +476,54 @@ export default function SetupPage() {
               cantidad, costo_unitario
             </div>
 
-            <button
-              className="btn btn-ghost btn-sm gap-2 w-fit"
-              onClick={() => descargarCsv(CSV_STOCK, "plantilla-stock.csv")}
-            >
-              <Download className="w-4 h-4" />
-              Descargar plantilla
-            </button>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                className="btn btn-ghost btn-sm gap-2"
+                onClick={() => descargarCsv(CSV_STOCK, "plantilla-stock.csv")}
+              >
+                <Download className="w-4 h-4" />
+                Descargar plantilla
+              </button>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="btn btn-outline btn-secondary btn-sm gap-2 font-bold"
+                  onClick={() => {
+                    const csvContent = `producto_nombre_o_codigo,numero_lote,fecha_vencimiento,area,cantidad,costo_unitario
+Reactivo Hemoglobina A1c,LOT-HBA1C-2026,2027-12-31,Hematología,15,45000
+Tubo Vacutainer EDTA 3mL,LOT-EDTA-9982,2026-10-30,Toma de Muestras,40,12500
+Guantes de Nitrilo Talla M,LOT-NIT-2025,2028-05-15,Bodega Central,80,8900
+Solución Salina 0.9% 500mL,LOT-SAL-0012,2027-04-20,Urgencias,25,3200
+Reactivo Glucosa Oxidasa 100mL,LOT-GLU-8871,2026-11-15,Bioquímica,10,28000`;
+                    const f = new File([csvContent], "stock-prueba.csv", {
+                      type: "text/csv;charset=utf-8",
+                    });
+                    importarStockMut.mutate(f);
+                    notify.success("🧪 Importando stock de prueba válido...");
+                  }}
+                >
+                  <FlaskConical className="w-4 h-4 text-secondary" />
+                  Cargar Stock Válido (100%)
+                </button>
+
+                <button
+                  className="btn btn-outline btn-warning btn-sm gap-2 font-bold"
+                  onClick={() => {
+                    const csvContent = `producto_nombre_o_codigo,numero_lote,fecha_vencimiento,area,cantidad,costo_unitario
+Insumo Inexistente XYZ,LOT-INVAL-001,2027-12-31,Hematología,15,45000
+Tubo Vacutainer EDTA 3mL,,fecha_no_valida,Toma de Muestras,-10,12500`;
+                    const f = new File([csvContent], "stock-errores-prueba.csv", {
+                      type: "text/csv;charset=utf-8",
+                    });
+                    importarStockMut.mutate(f);
+                    notify.warning("⚠️ Probando importación de stock con datos erróneos...");
+                  }}
+                >
+                  <AlertCircle className="w-4 h-4 text-warning" />
+                  Probar Stock con Errores (QA)
+                </button>
+              </div>
+            </div>
 
             <UploadZone
               label="Arrastra o haz clic para seleccionar el CSV"

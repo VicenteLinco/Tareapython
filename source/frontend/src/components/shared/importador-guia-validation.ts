@@ -20,22 +20,8 @@ export function normalizeImportedDate(rawDate: string | null | undefined): strin
     if (/^\d{4}-\d{2}-\d{2}$/.test(part)) return part;
   }
 
-  // YYYY-MM-DD estándar
-  if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) {
-    return cleaned;
-  }
-
-  // DD/MM/YYYY o DD-MM-YYYY
-  const ddmmyyyy = cleaned.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-  if (ddmmyyyy) {
-    const day = ddmmyyyy[1].padStart(2, "0");
-    const month = ddmmyyyy[2].padStart(2, "0");
-    const year = ddmmyyyy[3];
-    return `${year}-${month}-${day}`;
-  }
-
-  // YYYY/MM/DD
-  const yyyymmdd = cleaned.match(/^(\d{4})[\/](\d{1,2})[\/](\d{1,2})$/);
+  // YYYY/MM/DD, YYYY-MM-DD, YYYY.MM.DD
+  const yyyymmdd = cleaned.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
   if (yyyymmdd) {
     const year = yyyymmdd[1];
     const month = yyyymmdd[2].padStart(2, "0");
@@ -43,11 +29,31 @@ export function normalizeImportedDate(rawDate: string | null | undefined): strin
     return `${year}-${month}-${day}`;
   }
 
-  // YYYY-MM -> default al último día del mes o día 01
-  const yyyymm = cleaned.match(/^(\d{4})[\/\-](\d{1,2})$/);
+  // DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, DD/MM/YY, DD-MM-YY
+  const ddmmyyyy = cleaned.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2}|\d{4})$/);
+  if (ddmmyyyy) {
+    const day = ddmmyyyy[1].padStart(2, "0");
+    const month = ddmmyyyy[2].padStart(2, "0");
+    let year = ddmmyyyy[3];
+    if (year.length === 2) {
+      year = `20${year}`;
+    }
+    return `${year}-${month}-${day}`;
+  }
+
+  // YYYY-MM
+  const yyyymm = cleaned.match(/^(\d{4})[\/\-\.](\d{1,2})$/);
   if (yyyymm) {
     const year = yyyymm[1];
     const month = yyyymm[2].padStart(2, "0");
+    return `${year}-${month}-28`;
+  }
+
+  // MM/YYYY o MM-YYYY
+  const mmyyyy = cleaned.match(/^(\d{1,2})[\/\-\.](\d{4})$/);
+  if (mmyyyy) {
+    const month = mmyyyy[1].padStart(2, "0");
+    const year = mmyyyy[2];
     return `${year}-${month}-28`;
   }
 
@@ -112,4 +118,33 @@ export function validateImportedGuideItem(
   // mode === "simple" no requiere lote ni vencimiento
 
   return errors;
+}
+
+export function autoFixGuideItem<T extends GuideItemForValidation & { cantidad?: number }>(
+  item: T,
+  idx: number,
+): T {
+  const name = item.nombre_producto?.trim() || `Producto Ítem ${idx + 1}`;
+  const qty = item.cantidad && !isNaN(item.cantidad) && item.cantidad > 0 ? item.cantidad : 1;
+  let control_lote = item.control_lote || "simple";
+  let lote = item.lote;
+  let vto = item.fecha_vencimiento;
+
+  if (control_lote === "con_vto" && (!lote?.trim() || !normalizeImportedDate(vto))) {
+    control_lote = "simple";
+    lote = null;
+    vto = null;
+  } else if (control_lote === "trazable" && !lote?.trim()) {
+    control_lote = "simple";
+    lote = null;
+  }
+
+  return {
+    ...item,
+    nombre_producto: name,
+    cantidad: qty,
+    control_lote,
+    lote,
+    fecha_vencimiento: vto,
+  };
 }

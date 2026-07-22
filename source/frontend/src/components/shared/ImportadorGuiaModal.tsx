@@ -10,6 +10,9 @@ import {
   Camera,
   Image as ImageIcon,
   Eye,
+  CheckCircle2,
+  Wand2,
+  Eraser,
 } from "lucide-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { v4 as uuidv4 } from "uuid";
@@ -31,6 +34,7 @@ import {
   validateImportedGuideItem,
   normalizeImportedDate,
   parseCurrencyInput,
+  autoFixGuideItem,
 } from "./importador-guia-validation";
 
 export interface ParsedItem {
@@ -163,24 +167,43 @@ export default function ImportadorGuiaModal({
   const [skuToPresentationMap, setSkuToPresentationMap] = useState<Map<string, any>>(
     new Map(),
   );
+  const [nameToPresentationMap, setNameToPresentationMap] = useState<Map<string, any>>(
+    new Map(),
+  );
 
   useEffect(() => {
     if (open) {
-      // Fetch presentations to build the SKU match set
+      // Fetch presentations to build SKU & Name match sets
       api
         .get<any[]>("/presentaciones")
         .then((res) => {
           const skus = new Set<string>();
-          const map = new Map<string, any>();
+          const skuMap = new Map<string, any>();
+          const nameMap = new Map<string, any>();
           res.data.forEach((pres) => {
             if (pres.sku) {
-              const cleaned = pres.sku.trim().toLowerCase();
-              skus.add(cleaned);
-              map.set(cleaned, pres);
+              const cleanedSku = pres.sku.trim().toLowerCase();
+              skus.add(cleanedSku);
+              skuMap.set(cleanedSku, pres);
+              const strippedSku = cleanedSku.replace(/[\-\s]/g, "");
+              if (strippedSku) skuMap.set(strippedSku, pres);
+            }
+            if (pres.producto_nombre) {
+              const cleanedProd = pres.producto_nombre.trim().toLowerCase();
+              nameMap.set(cleanedProd, pres);
+            }
+            if (pres.nombre && pres.nombre !== "Unidad") {
+              const cleanedPres = pres.nombre.trim().toLowerCase();
+              nameMap.set(cleanedPres, pres);
+            }
+            if (pres.producto_nombre && pres.nombre && pres.nombre !== "Unidad") {
+              const combined = `${pres.producto_nombre} ${pres.nombre}`.trim().toLowerCase();
+              nameMap.set(combined, pres);
             }
           });
           setExistingSkus(skus);
-          setSkuToPresentationMap(map);
+          setSkuToPresentationMap(skuMap);
+          setNameToPresentationMap(nameMap);
         })
         .catch((err) => {
           console.error("Error fetching presentations catalog for validation:", err);
@@ -201,31 +224,70 @@ export default function ImportadorGuiaModal({
     };
   }, [filePreviewUrl]);
 
+  // Find matching presentation in catalog by SKU or Product Name
+  const findCatalogMatch = (sku?: string, name?: string) => {
+    if (sku && sku.trim()) {
+      const cleaned = sku.trim().toLowerCase();
+      if (skuToPresentationMap.has(cleaned)) {
+        return skuToPresentationMap.get(cleaned);
+      }
+      const stripped = cleaned.replace(/[\-\s]/g, "");
+      if (stripped && skuToPresentationMap.has(stripped)) {
+        return skuToPresentationMap.get(stripped);
+      }
+    }
+    if (name && name.trim()) {
+      const cleanedName = name.trim().toLowerCase();
+      if (nameToPresentationMap.has(cleanedName)) {
+        return nameToPresentationMap.get(cleanedName);
+      }
+      for (const [catName, pres] of nameToPresentationMap.entries()) {
+        if (
+          catName.length >= 4 &&
+          (cleanedName.includes(catName) || catName.includes(cleanedName))
+        ) {
+          return pres;
+        }
+      }
+    }
+    return null;
+  };
+
   const initializeParsedItems = (parsedItems: ParsedItem[]): ParsedItem[] => {
+    const defaultAreaId = areas && areas.length === 1 ? areas[0].id : undefined;
+    const defaultUnidadId = unidades && unidades.length === 1 ? unidades[0].id : undefined;
+
     return parsedItems.map((item) => {
       const normalizedVto = normalizeImportedDate(item.fecha_vencimiento);
       let control_lote: "trazable" | "con_vto" | "simple" = "con_vto";
 
       if (normalizedVto) {
         control_lote = "con_vto";
-      } else if (item.lote && item.lote.trim()) {
+      } else if (item.lote && String(item.lote).trim()) {
         control_lote = "trazable";
       } else {
         control_lote = "simple";
       }
 
-      let lote = item.lote ? item.lote.trim() : null;
+      let lote = item.lote ? String(item.lote).trim() : null;
       let fecha_vencimiento = normalizedVto;
       if (control_lote === "simple") {
         lote = null;
         fecha_vencimiento = null;
       }
 
+      const match = findCatalogMatch(item.sku_ref, item.nombre_producto);
+      const sku_ref = item.sku_ref?.trim() || match?.sku || "";
+
       return {
         ...item,
+        nombre_producto: item.nombre_producto?.trim() || "Producto sin nombre",
+        sku_ref,
         control_lote,
         lote,
         fecha_vencimiento,
+        area_id: item.area_id || defaultAreaId,
+        unidad_base_id: item.unidad_base_id || defaultUnidadId,
       };
     });
   };
@@ -329,25 +391,44 @@ export default function ImportadorGuiaModal({
     }
   };
 
-  // Check if a parsed item's SKU exists in the local catalog
-  const doesSkuExist = (sku: string) => {
-    if (!sku) return false;
-    return existingSkus.has(sku.trim().toLowerCase());
-  };
 
   // Row validation rules
   const validateItem = validateImportedGuideItem;
 
   // Check if any item in the grid has errors
-  const hasErrors = useMemo(() => {
-    return items.some((item) => {
+  const validationState = useMemo(() => {
+    let hasRowErrors = false;
+    let hasMissingNewProductFields = false;
+
+    for (const item of items) {
       const errs = validateItem(item);
-      if (Object.keys(errs).length > 0) return true;
-      const skuExists = existingSkus.has(item.sku_ref?.trim().toLowerCase() || "");
-      if (!skuExists && (!item.area_id || !item.unidad_base_id)) return true;
-      return false;
-    });
-  }, [items, existingSkus]);
+      if (Object.keys(errs).length > 0) {
+        hasRowErrors = true;
+      }
+      const catalogMatch = findCatalogMatch(item.sku_ref, item.nombre_producto);
+      if (!catalogMatch && (!item.area_id || !item.unidad_base_id)) {
+        hasMissingNewProductFields = true;
+      }
+    }
+
+    return {
+      hasRowErrors,
+      hasMissingNewProductFields,
+      hasErrors: hasRowErrors || hasMissingNewProductFields,
+    };
+  }, [items, skuToPresentationMap, nameToPresentationMap]);
+
+  const hasErrors = validationState.hasErrors;
+
+  const handleAutoFixErrors = () => {
+    setItems((prev) => prev.map((item, idx) => autoFixGuideItem(item, idx)));
+    notify.success("Auto-corrección aplicada a la grilla");
+  };
+
+  const handleRemoveErrorItems = () => {
+    setItems((prev) => prev.filter((item) => Object.keys(validateItem(item)).length === 0));
+    notify.info("Ítems con error eliminados de la lista");
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleUpdateItem = (
@@ -388,7 +469,7 @@ export default function ImportadorGuiaModal({
     }
     // Pre-validate all new products have required fields
     const missingFields = items.filter(
-      (item) => !doesSkuExist(item.sku_ref) && (!item.area_id || !item.unidad_base_id),
+      (item) => !findCatalogMatch(item.sku_ref, item.nombre_producto) && (!item.area_id || !item.unidad_base_id),
     );
     if (missingFields.length > 0) {
       notify.error(
@@ -408,13 +489,14 @@ export default function ImportadorGuiaModal({
         let product: any;
         let selectedPres: any = null;
 
-        if (doesSkuExist(item.sku_ref)) {
-          const presMatch = skuToPresentationMap.get(cleanedSku)!;
-          const fullProductRes = await api.get(`/productos/${presMatch.producto_id}`);
+        const catalogMatch = findCatalogMatch(item.sku_ref, item.nombre_producto);
+
+        if (catalogMatch) {
+          const fullProductRes = await api.get(`/productos/${catalogMatch.producto_id}`);
           product = fullProductRes.data;
 
           const activePresentaciones = product.presentaciones || [];
-          selectedPres = activePresentaciones.find((p: any) => p.id === presMatch.id) || activePresentaciones[0] || null;
+          selectedPres = activePresentaciones.find((p: any) => p.id === catalogMatch.id) || activePresentaciones[0] || null;
         } else {
           const effectiveQuarantine =
             item.quarantine_override !== null && item.quarantine_override !== undefined
@@ -451,12 +533,22 @@ export default function ImportadorGuiaModal({
           const activePresentaciones = product.presentaciones || [];
           selectedPres = activePresentaciones[0] || null;
 
-          existingSkus.add(cleanedSku);
-          skuToPresentationMap.set(cleanedSku, {
-            id: selectedPres?.id,
-            producto_id: product.id,
-            producto_nombre: product.nombre,
-          });
+          if (cleanedSku) {
+            existingSkus.add(cleanedSku);
+            skuToPresentationMap.set(cleanedSku, {
+              id: selectedPres?.id,
+              producto_id: product.id,
+              producto_nombre: product.nombre,
+            });
+          }
+          const cleanedName = item.nombre_producto.trim().toLowerCase();
+          if (cleanedName) {
+            nameToPresentationMap.set(cleanedName, {
+              id: selectedPres?.id,
+              producto_id: product.id,
+              producto_nombre: product.nombre,
+            });
+          }
         }
 
         const activePresentaciones = product.presentaciones || [];
@@ -988,6 +1080,29 @@ export default function ImportadorGuiaModal({
                         <option key={u.id} value={u.id}>{u.nombre}</option>
                       ))}
                     </select>
+
+                    {validationState.hasRowErrors && (
+                      <div className="flex items-center gap-1 shrink-0 ml-auto">
+                        <button
+                          type="button"
+                          className="btn btn-xs btn-warning btn-outline gap-1 text-[11px]"
+                          onClick={handleAutoFixErrors}
+                          title="Auto-completar datos vacíos con valores seguros"
+                        >
+                          <Wand2 className="h-3 w-3" />
+                          Autocorregir
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-xs btn-error btn-outline gap-1 text-[11px]"
+                          onClick={handleRemoveErrorItems}
+                          title="Eliminar únicamente las filas que contienen errores"
+                        >
+                          <Eraser className="h-3 w-3" />
+                          Eliminar inválidos
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -995,9 +1110,8 @@ export default function ImportadorGuiaModal({
                 <div className="flex-1 overflow-y-auto flex flex-col gap-3 pr-1">
                   {items.map((item, index) => {
                     const itemErrors = validateItem(item);
-                    const isNewProduct = !doesSkuExist(item.sku_ref);
-                    const cleanedSku = item.sku_ref?.trim().toLowerCase();
-                    const product = skuToPresentationMap.get(cleanedSku);
+                    const catalogMatch = findCatalogMatch(item.sku_ref, item.nombre_producto);
+                    const isNewProduct = !catalogMatch;
                     const isSimple = item.control_lote === "simple";
                     const itemQuarantine =
                       item.quarantine_override !== null && item.quarantine_override !== undefined
@@ -1033,12 +1147,17 @@ export default function ImportadorGuiaModal({
                               </p>
                             )}
                           </div>
-                          {isNewProduct && (
+                          {catalogMatch ? (
+                            <span className="badge badge-xs badge-success gap-1 py-2 px-2 shrink-0 select-none" title={`Coincide con producto en catálogo/stock: ${catalogMatch.producto_nombre}`}>
+                              <CheckCircle2 className="h-3 w-3" />
+                              En Catálogo ({catalogMatch.sku || catalogMatch.producto_nombre})
+                            </span>
+                          ) : isNewProduct ? (
                             <span className={`badge badge-xs gap-1 py-2 px-2 shrink-0 select-none ${itemQuarantine ? "badge-warning" : "badge-success"}`}>
                               <AlertTriangle className="h-3 w-3" />
                               {itemQuarantine ? "Nuevo (Cuarentena)" : "Nuevo (Activo)"}
                             </span>
-                          )}
+                          ) : null}
                           <button
                             className="btn btn-ghost btn-xs text-error btn-circle shrink-0"
                             onClick={() => handleRemoveItem(index)}
@@ -1097,11 +1216,11 @@ export default function ImportadorGuiaModal({
                               </select>
                             ) : (
                               <div className="h-8 flex items-center bg-base-200 border border-base-300 rounded px-2 text-xs font-semibold text-base-content/60 capitalize select-none">
-                                {product?.control_lote === "con_vto"
+                                {catalogMatch?.control_lote === "con_vto"
                                   ? "Con Vto"
-                                  : product?.control_lote === "trazable"
+                                  : catalogMatch?.control_lote === "trazable"
                                     ? "Trazable"
-                                    : product?.control_lote === "simple"
+                                    : catalogMatch?.control_lote === "simple"
                                       ? "Simple"
                                       : "Con Vto"}
                               </div>
@@ -1353,8 +1472,11 @@ export default function ImportadorGuiaModal({
         {/* Footer */}
         <div className="flex items-center justify-between border-t px-6 py-4 bg-base-100 shrink-0">
           <div className="text-xs text-error font-semibold">
-            {hasErrors &&
-              "⚠ Corrige los campos vacíos o malformados en la grilla."}
+            {validationState.hasRowErrors
+              ? "⚠ Corrige los campos vacíos o malformados en la grilla (nombre, lote o fecha)."
+              : validationState.hasMissingNewProductFields
+                ? "⚠ Asigna Área y Unidad base a los productos nuevos para poder importar."
+                : null}
           </div>
           <div className="flex gap-2">
             <button

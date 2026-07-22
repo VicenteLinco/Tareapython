@@ -873,6 +873,16 @@ function LoteRow({
       : null;
   const ajusteNegativo = diferencia !== null && diferencia < -0.0001;
 
+  // Filtrar presentaciones verdaderamente empaquetadas (factor > 1 y nombre distinto a unidad base)
+  const customPresentaciones = useMemo(() => {
+    return presentaciones.filter(
+      (p) =>
+        Number(p.factor_conversion) > 1 &&
+        p.nombre.trim().toLowerCase() !== item.unidad_base_nombre.trim().toLowerCase() &&
+        p.nombre.trim().toLowerCase() !== "unidad",
+    );
+  }, [presentaciones, item.unidad_base_nombre]);
+
   // Estado local para los inputs
   const [presCounts, setPresCounts] = useState<Record<number, string>>({});
   const [unidadesSueltas, setUnidadesSueltas] = useState("");
@@ -881,11 +891,11 @@ function LoteRow({
     if (
       contado &&
       item.cantidad_contada !== null &&
-      presentaciones.length > 0
+      customPresentaciones.length > 0
     ) {
       const total = Number(item.cantidad_contada);
       const newPres: Record<number, string> = {};
-      const p = presentaciones[0];
+      const p = customPresentaciones[0];
       const factorConversion = Number(p.factor_conversion);
       const cantPres = Math.floor(total / factorConversion);
       const resto = total % factorConversion;
@@ -893,14 +903,14 @@ function LoteRow({
       setPresCounts(newPres);
       setUnidadesSueltas(resto > 0 ? String(resto) : "");
     }
-  }, [contado, item.cantidad_contada, presentaciones]);
+  }, [contado, item.cantidad_contada, customPresentaciones]);
 
   const updateTotal = (
     newPresCounts: Record<number, string>,
     newSueltas: string,
   ) => {
     let total = parseFloat(newSueltas) || 0;
-    presentaciones.forEach((p) => {
+    customPresentaciones.forEach((p) => {
       total +=
         (parseFloat(newPresCounts[p.id]) || 0) * Number(p.factor_conversion);
     });
@@ -920,14 +930,14 @@ function LoteRow({
 
   // Stock formateado humano (ej: 1 Caja + 10 Reacciones)
   const stockSisHumano =
-    presentaciones.length > 0
+    customPresentaciones.length > 0
       ? formatStockHumano(
           Number(item.stock_sistema),
-          Number(presentaciones[0].factor_conversion),
+          Number(customPresentaciones[0].factor_conversion),
           item.unidad_base_nombre,
           item.unidad_base_nombre_plural,
-          presentaciones[0].nombre,
-          presentaciones[0].nombre_plural,
+          customPresentaciones[0].nombre,
+          customPresentaciones[0].nombre_plural,
         )
       : formatCantidad(
           Number(item.stock_sistema),
@@ -997,9 +1007,9 @@ function LoteRow({
       {/* Fila 2: Inputs Compactos */}
       {editable && !esNoContado && (
         <div className="flex items-center gap-2">
-          {presentaciones.length > 0 ? (
+          {customPresentaciones.length > 0 ? (
             <div className="flex-1 flex items-center gap-2 bg-base-200/40 p-1.5 rounded-xl border border-base-200/50">
-              {presentaciones.map((p) => (
+              {customPresentaciones.map((p) => (
                 <div key={p.id} className="flex items-center gap-1.5">
                   <input
                     type="number"
@@ -1010,7 +1020,7 @@ function LoteRow({
                     onChange={(e) => handlePresChange(p.id, e.target.value)}
                     onKeyDown={handleQtyKeyDown}
                   />
-                  <span className="text-[10px] font-bold opacity-40 uppercase truncate max-w-[40px]">
+                  <span className="text-[10px] font-bold opacity-40 uppercase truncate max-w-[50px]">
                     {p.nombre_plural || p.nombre}
                   </span>
                 </div>
@@ -1031,7 +1041,7 @@ function LoteRow({
               </div>
             </div>
           ) : (
-            <div className="flex-1">
+            <div className="flex-1 flex items-center gap-2">
               <input
                 type="number"
                 inputMode="decimal"
@@ -1041,7 +1051,7 @@ function LoteRow({
                 onChange={(e) => onCantidadChange(e.target.value)}
                 onKeyDown={handleQtyKeyDown}
               />
-              <span className="text-[10px] font-bold opacity-40 uppercase ml-2">
+              <span className="text-[10px] font-bold opacity-40 uppercase">
                 {item.unidad_base_nombre_plural}
               </span>
             </div>
@@ -1049,7 +1059,7 @@ function LoteRow({
 
           {/* Mini Indicador de Total e Impacto */}
           <div className="flex flex-col items-end min-w-[60px] leading-tight">
-            {presentaciones.length > 0 && (
+            {customPresentaciones.length > 0 && (
               <>
                 <span className="text-[9px] font-black opacity-30 uppercase tracking-tighter">
                   Total

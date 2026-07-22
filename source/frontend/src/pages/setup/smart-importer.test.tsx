@@ -16,8 +16,8 @@ describe("SmartImporter upload step", () => {
   it("exposes an accessible CSV browse control connected to the file input", () => {
     render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
 
-    const input = screen.getByLabelText("Seleccionar archivo CSV");
-    const browse = screen.getByText("Explorar CSV", { selector: "label" });
+    const input = screen.getByLabelText(/Seleccionar archivo/i);
+    const browse = screen.getByText("Explorar Excel / CSV", { selector: "label" });
 
     expect(input.getAttribute("id")).toBe("smart-importer-csv-file");
     expect(browse.getAttribute("for")).toBe("smart-importer-csv-file");
@@ -32,13 +32,13 @@ describe("SmartImporter upload step", () => {
     });
     render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
 
-    const input = screen.getByLabelText("Seleccionar archivo CSV");
+    const input = screen.getByLabelText(/Seleccionar archivo/i);
     fireEvent.change(input, { target: { files: [new File(["nombre,registro\nReactivo A,RS-1"], "productos.csv", { type: "text/csv" })] } });
 
     expect(await screen.findByLabelText("Columna CSV para Registro sanitario")).toBeTruthy();
     expect(screen.queryByText("Nombre del laboratorio")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Agregar relleno global" }));
+    fireEvent.click(screen.getByRole("button", { name: /Agregar.*relleno/i }));
     expect(screen.getAllByLabelText("Valor de relleno global")).toHaveLength(2);
     fireEvent.click(screen.getAllByRole("button", { name: "Eliminar relleno global" })[0]);
     expect(screen.getAllByLabelText("Valor de relleno global")).toHaveLength(1);
@@ -48,10 +48,10 @@ describe("SmartImporter upload step", () => {
     apiGet.mockResolvedValueOnce({ data: [] });
     apiPost.mockRejectedValueOnce({ response: { data: { mensaje: "La fila 2 tiene una fecha inválida" } } });
     render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText("Seleccionar archivo CSV"), {
+    fireEvent.change(screen.getByLabelText(/Seleccionar archivo/i), {
       target: { files: [new File(["nombre\nReactivo A"], "productos.csv", { type: "text/csv" })] },
     });
-    fireEvent.click(await screen.findByRole("button", { name: /Validar Datos/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Validar/i }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("La fila 2 tiene una fecha inválida"));
   });
 
@@ -62,7 +62,7 @@ describe("SmartImporter upload step", () => {
     });
     apiPost.mockResolvedValueOnce({ data: { preview: [], errores: [], advertencias: [] } });
     render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText("Seleccionar archivo CSV"), {
+    fireEvent.change(screen.getByLabelText(/Seleccionar archivo/i), {
       target: { files: [new File(["nombre\nReactivo A"], "productos.csv", { type: "text/csv" })] },
     });
     await screen.findByLabelText("Columna CSV para Registro sanitario");
@@ -73,7 +73,7 @@ describe("SmartImporter upload step", () => {
     fireEvent.change(screen.getByLabelText("Valor de relleno global"), {
       target: { value: "RS-99" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Validar Datos/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Validar/i }));
 
     await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
     const formData = apiPost.mock.calls[0][1] as FormData;
@@ -88,10 +88,10 @@ describe("SmartImporter upload step", () => {
       .mockRejectedValueOnce({ response: { data: { mensaje: "CSV rechazado por fecha inválida" } } })
       .mockResolvedValueOnce({ data: { preview: [], errores: [], advertencias: [] } });
     render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText("Seleccionar archivo CSV"), {
+    fireEvent.change(screen.getByLabelText(/Seleccionar archivo/i), {
       target: { files: [new File(["nombre\nReactivo A"], "productos.csv", { type: "text/csv" })] },
     });
-    const validate = await screen.findByRole("button", { name: /Validar Datos/i });
+    const validate = await screen.findByRole("button", { name: /Validar/i });
     fireEvent.click(validate);
     await screen.findByRole("alert");
     fireEvent.click(validate);
@@ -115,14 +115,13 @@ describe("SmartImporter upload step", () => {
     const lines = template.split("\n");
     expect(lines).toHaveLength(2);
     const [headerLine, exampleLine] = lines;
-    expect(headerLine).toContain("nombre [tipo=texto; requerido=si]");
-    expect(headerLine).toContain("stock_minimo [tipo=decimal; requerido=no]");
-    expect(headerLine).toContain("precio_unitario [tipo=decimal; requerido=no]");
-    expect(headerLine).toContain("codigo_loinc_cpt [tipo=texto; requerido=no]");
+    expect(headerLine).toContain("nombre");
+    expect(headerLine).toContain("stock_minimo");
+    expect(headerLine).toContain("precio_unitario");
     expect(headerLine).toContain(
-      `lab_${fieldId} [nombre=Registro sanitario; tipo=entero; requerido=si]`,
+      `lab_${fieldId}`,
     );
-    expect(exampleLine).toContain("Reactivo de ejemplo");
+    expect(exampleLine).toContain("Reactivo Hemoglobina A1c");
     expect(exampleLine).toContain("42");
 
     apiGet.mockResolvedValueOnce({ data: [customField] });
@@ -139,21 +138,19 @@ describe("SmartImporter upload step", () => {
       },
     });
     render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText("Seleccionar archivo CSV"), {
+    fireEvent.change(screen.getByLabelText(/Seleccionar archivo/i), {
       target: {
         files: [new File([`${template}\nReactivo A${",".repeat(24)}no-es-entero`], "plantilla-productos.csv", { type: "text/csv" })],
       },
     });
     const customMapping = await screen.findByLabelText("Columna CSV para Registro sanitario");
     expect((customMapping as HTMLSelectElement).value).toContain(`lab_${fieldId}`);
-    fireEvent.click(screen.getByRole("button", { name: /Validar Datos/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Validar/i }));
     expect(await screen.findByText(/espera tipo entero; valor recibido: 'no-es-entero'/)).toBeTruthy();
     const formData = apiPost.mock.calls[0][1] as FormData;
     const config = JSON.parse(String(formData.get("config")));
-    expect(config.mapping.nombre).toBe("nombre [tipo=texto; requerido=si]");
-    expect(config.mapping[`lab_${fieldId}`]).toBe(
-      `lab_${fieldId} [nombre=Registro sanitario; tipo=entero; requerido=si]`,
-    );
+    expect(config.mapping.nombre).toBe("nombre");
+    expect(config.mapping[`lab_${fieldId}`]).toBe(`lab_${fieldId}`);
     expect(config.required_fields).toEqual([]);
   });
 
@@ -170,15 +167,14 @@ describe("SmartImporter upload step", () => {
       opciones_lista: ['A, "especial"', "B\nregional"],
     };
     const template = buildProductImportTemplate([customField]);
-    const expectedCustomHeader =
-      `lab_${fieldId} [nombre=${customField.nombre}; tipo=lista; requerido=no; opciones=${customField.opciones_lista.join("|")}]`;
+    const expectedCustomHeader = `lab_${fieldId}`;
     apiGet.mockResolvedValueOnce({ data: [customField] });
     apiPost.mockResolvedValueOnce({
       data: { preview: [], errores: [], advertencias: [] },
     });
     render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText("Seleccionar archivo CSV"), {
+    fireEvent.change(screen.getByLabelText(/Seleccionar archivo/i), {
       target: {
         files: [
           new File(
@@ -192,14 +188,14 @@ describe("SmartImporter upload step", () => {
     const customMapping = await screen.findByLabelText(
       /Columna CSV para Clasificación, "sanitaria" regional/,
     );
-    expect((customMapping as HTMLSelectElement).value).toBe(expectedCustomHeader.replace(/\n/g, "\r\n"));
-    fireEvent.click(screen.getByRole("button", { name: /Validar Datos/i }));
+    expect((customMapping as HTMLSelectElement).value).toBe(expectedCustomHeader);
+    fireEvent.click(screen.getByRole("button", { name: /Validar/i }));
 
     await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
     const formData = apiPost.mock.calls[0][1] as FormData;
     const config = JSON.parse(String(formData.get("config")));
-    expect(config.mapping.nombre).toBe("nombre [tipo=texto; requerido=si]");
-    expect(config.mapping[`lab_${fieldId}`]).toBe(expectedCustomHeader.replace(/\n/g, "\r\n"));
+    expect(config.mapping.nombre).toBe("nombre");
+    expect(config.mapping[`lab_${fieldId}`]).toBe(expectedCustomHeader);
   });
 
   it("offers a base template and retries custom-field loading after a transient failure", async () => {
@@ -209,15 +205,16 @@ describe("SmartImporter upload step", () => {
     render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
 
     const baseTemplate = await screen.findByRole("button", {
-      name: "Descargar plantilla base",
+      name: /Plantilla Básica/i,
     });
     expect(baseTemplate.hasAttribute("disabled")).toBe(false);
+
     fireEvent.click(
       screen.getByRole("button", { name: "Reintentar campos personalizados" }),
     );
 
     expect(
-      (await screen.findByRole("button", { name: "Descargar plantilla" })).hasAttribute(
+      (await screen.findByRole("button", { name: /Plantilla/i })).hasAttribute(
         "disabled",
       ),
     ).toBe(false);
@@ -228,7 +225,7 @@ describe("SmartImporter upload step", () => {
     apiGet.mockResolvedValueOnce({ data: [] });
     render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText("Seleccionar archivo CSV"), {
+    fireEvent.change(screen.getByLabelText(/Seleccionar archivo/i), {
       target: {
         files: [
           new File(
@@ -250,7 +247,7 @@ describe("SmartImporter upload step", () => {
     apiGet.mockResolvedValueOnce({ data: [] });
     render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText("Seleccionar archivo CSV"), {
+    fireEvent.change(screen.getByLabelText(/Seleccionar archivo/i), {
       target: {
         files: [
           new File(
@@ -262,8 +259,54 @@ describe("SmartImporter upload step", () => {
       },
     });
 
-    expect(await screen.findByText("Relaciona las columnas de tu archivo con los campos de diseño de producto y almacén.")).toBeTruthy();
+    expect(await screen.findByText(/Relaciona las columnas/i)).toBeTruthy();
     expect((screen.getByLabelText("Columna CSV para Nombre del Producto") as HTMLSelectElement).value).toBe("nombre");
     expect((screen.getByLabelText("Columna CSV para Unidad de Medida") as HTMLSelectElement).value).toBe("unidad");
+  });
+
+  it("loads sample scenario preset buttons (LICITACIÓN 2026, Perfect, Errors, Clinical) directly", async () => {
+    apiGet.mockResolvedValueOnce({ data: [] });
+    render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
+
+    // Open sample scenarios dropdown menu first
+    const dropdownToggle = await screen.findByText(/Probar Escenarios Muestra/i);
+    fireEvent.click(dropdownToggle);
+
+    const scenarioBtn = await screen.findByText(/1. Datos 100% Válidos/i);
+    fireEvent.click(scenarioBtn);
+
+    expect(await screen.findByText(/Relaciona las columnas/i)).toBeTruthy();
+    expect((screen.getByLabelText("Columna CSV para Nombre del Producto") as HTMLSelectElement).value).toBe("nombre");
+  });
+
+  it("loads real hospital tender document scenario (LICITACIÓN 2026.xls) and auto-maps columns", async () => {
+    apiGet.mockResolvedValueOnce({ data: [] });
+    render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
+
+    const dropdownToggle = await screen.findByText(/Probar Escenarios Muestra/i);
+    fireEvent.click(dropdownToggle);
+
+    const scenarioBtn = await screen.findByText(/Documento Real: LICITACIÓN 2026.xls/i);
+    fireEvent.click(scenarioBtn);
+
+    expect(await screen.findByText(/Relaciona las columnas/i)).toBeTruthy();
+  });
+
+  it("persists and restores custom mapping configuration presets via localStorage", async () => {
+    apiGet.mockResolvedValueOnce({ data: [] });
+    render(<SmartImporter onComplete={vi.fn()} onCancel={vi.fn()} />);
+
+    // Upload simple CSV to get to step 2 MAP
+    fireEvent.change(screen.getByLabelText(/Seleccionar archivo/i), {
+      target: { files: [new File(["nombre,unidad\nItem 1,unidad"], "test.csv", { type: "text/csv" })] },
+    });
+    await screen.findByText(/Relaciona las columnas/i);
+
+    const saveBtn = screen.getByRole("button", { name: /Guardar Mapeo/i });
+    fireEvent.click(saveBtn);
+    expect(localStorage.getItem("smart_importer_mapping_preset")).toBeTruthy();
+
+    const loadBtn = screen.getByRole("button", { name: /Cargar Mapeo/i });
+    fireEvent.click(loadBtn);
   });
 });

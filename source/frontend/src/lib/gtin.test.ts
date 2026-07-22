@@ -60,4 +60,13 @@ describe("extractGtinFromScan", () => {
   it("returns null when no GTIN-shaped value can be found", () => {
     expect(extractGtinFromScan("LOTE-ABC")).toBeNull();
   });
+
+  it("extracts unbracketed GS1 GTIN AI(01) from raw scanner input", () => {
+    const r = extractGtinFromScan("01000123456789051726081510LOTE1");
+    expect(r).toBe("00012345678905");
+  });
+
+  it("normalizes GTIN-13 to 14 digits with leading zero when required", () => {
+    expect(extractGtinFromScan("(01)04006381333931")).toBe("04006381333931");
+  });
 });

@@ -1922,8 +1922,15 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                     </div>
                   )}
                   {customFieldsLoadFailed && (
-                    <div className="mt-3 text-[11px] text-error font-semibold">
-                      ⚠️ No se pudieron cargar los campos de lab personalizados.
+                    <div className="mt-3 text-[11px] text-error font-semibold flex items-center justify-center gap-2">
+                      <span>⚠️ No se pudieron cargar los campos de lab personalizados.</span>
+                      <button
+                        type="button"
+                        onClick={() => fetchCustomFields()}
+                        className="btn btn-ghost btn-xs text-error underline hover:bg-error/10"
+                      >
+                        Reintentar campos personalizados
+                      </button>
                     </div>
                   )}
                 </div>

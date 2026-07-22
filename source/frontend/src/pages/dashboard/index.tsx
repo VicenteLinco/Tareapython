@@ -15,6 +15,8 @@ import {
   Users,
   X,
   Zap,
+  QrCode,
+  Tag,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
@@ -404,7 +406,7 @@ export default function DashboardPage() {
             <h2 className="t-h2 text-base-content">Acciones frecuentes</h2>
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <QuickAction
             label="Registrar consumo"
             description="Salida por uso"
@@ -428,6 +430,18 @@ export default function DashboardPage() {
             description="Pedido a proveedor"
             icon={<ClipboardList className="h-5 w-5" />}
             onClick={() => navigate("/solicitudes-compra")}
+          />
+          <QuickAction
+            label="Escanear QR"
+            description="Escáner o cámara"
+            icon={<QrCode className="h-5 w-5" />}
+            onClick={() => navigate("/scan")}
+          />
+          <QuickAction
+            label="Etiquetas QR"
+            description="Imprimir etiquetas"
+            icon={<Tag className="h-5 w-5" />}
+            onClick={() => navigate("/etiquetas")}
           />
         </div>
       </section>

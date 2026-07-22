@@ -79,7 +79,7 @@ describe("StockPage pagination", () => {
   it("requests and displays each selected page", async () => {
     renderPage();
 
-    await screen.findByText("Página 1 de 3");
+    await screen.findByText("Mostrando 1-25 de 75 resultados");
     expect(api.get).toHaveBeenCalledWith(
       "/stock",
       expect.objectContaining({
@@ -91,11 +91,10 @@ describe("StockPage pagination", () => {
       }),
     );
 
-    const nextButton = screen.getByText("Página 1 de 3").parentElement!
-      .querySelectorAll("button")[2];
+    const nextButton = screen.getByRole("button", { name: "Página siguiente" });
     fireEvent.click(nextButton);
 
-    await screen.findByText("Página 2 de 3");
+    await screen.findByText("Mostrando 26-50 de 75 resultados");
     expect(api.get).toHaveBeenCalledWith(
       "/stock",
       expect.objectContaining({
@@ -106,12 +105,11 @@ describe("StockPage pagination", () => {
 
   it("returns to the first page when a filter changes", async () => {
     renderPage();
-    await screen.findByText("Página 1 de 3");
+    await screen.findByText("Mostrando 1-25 de 75 resultados");
 
-    const nextButton = screen.getByText("Página 1 de 3").parentElement!
-      .querySelectorAll("button")[2];
+    const nextButton = screen.getByRole("button", { name: "Página siguiente" });
     fireEvent.click(nextButton);
-    await screen.findByText("Página 2 de 3");
+    await screen.findByText("Mostrando 26-50 de 75 resultados");
 
     fireEvent.change(screen.getByPlaceholderText("Buscar por nombre o código..."), {
       target: { value: "reactivo" },
@@ -125,7 +123,7 @@ describe("StockPage pagination", () => {
         }),
       );
     });
-    expect(await screen.findByText("Página 1 de 3")).toBeDefined();
+    expect(await screen.findByText("Mostrando 1-25 de 75 resultados")).toBeDefined();
   });
 
   it("recovers automatically when the selected page is no longer valid", async () => {
@@ -143,11 +141,10 @@ describe("StockPage pagination", () => {
       });
     });
     renderPage();
-    await screen.findByText("Página 1 de 3");
+    await screen.findByText("Mostrando 1-10 de 10 resultados");
     vi.mocked(api.get).mockClear();
 
-    const nextButton = screen.getByText("Página 1 de 3").parentElement!
-      .querySelectorAll("button")[2];
+    const nextButton = screen.getByRole("button", { name: "Página siguiente" });
     fireEvent.click(nextButton);
 
     await waitFor(() => {
@@ -166,6 +163,6 @@ describe("StockPage pagination", () => {
         }),
       );
     });
-    expect(await screen.findByText("Página 1 de 3")).toBeDefined();
+    expect(await screen.findByText("Mostrando 1-10 de 10 resultados")).toBeDefined();
   });
 });

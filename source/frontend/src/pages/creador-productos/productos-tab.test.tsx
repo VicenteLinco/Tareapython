@@ -71,13 +71,13 @@ describe("ProductosTab pagination", () => {
   it("shows controls for 21 products and requests the second page", async () => {
     renderTab();
 
-    const pageLabel = await screen.findByText("Página 1 de 2");
+    await screen.findByText("Mostrando 1-20 de 21 resultados");
     expect(screen.getByText("Producto 01")).toBeInTheDocument();
 
-    const nextButton = pageLabel.parentElement!.querySelectorAll("button")[2];
+    const nextButton = screen.getByRole("button", { name: "Página siguiente" });
     fireEvent.click(nextButton);
 
-    expect(await screen.findByText("Página 2 de 2")).toBeInTheDocument();
+    expect(await screen.findByText("Mostrando 21-21 de 21 resultados")).toBeInTheDocument();
     expect(await screen.findByText("Producto 21")).toBeInTheDocument();
     expect(api.get).toHaveBeenCalledWith(
       "/productos",
@@ -90,9 +90,10 @@ describe("ProductosTab pagination", () => {
   it("returns to page one when a filter changes", async () => {
     renderTab();
 
-    const pageLabel = await screen.findByText("Página 1 de 2");
-    fireEvent.click(pageLabel.parentElement!.querySelectorAll("button")[2]);
-    await screen.findByText("Página 2 de 2");
+    await screen.findByText("Mostrando 1-20 de 21 resultados");
+    const nextButton = screen.getByRole("button", { name: "Página siguiente" });
+    fireEvent.click(nextButton);
+    await screen.findByText("Mostrando 21-21 de 21 resultados");
 
     fireEvent.change(screen.getByPlaceholderText("Buscar producto..."), {
       target: { value: "reactivo" },
@@ -106,7 +107,7 @@ describe("ProductosTab pagination", () => {
         }),
       );
     });
-    expect(await screen.findByText("Página 1 de 2")).toBeInTheDocument();
+    expect(await screen.findByText("Mostrando 1-20 de 21 resultados")).toBeInTheDocument();
   });
 
   it("recovers when the selected page is no longer valid", async () => {
@@ -130,8 +131,9 @@ describe("ProductosTab pagination", () => {
     });
     renderTab();
 
-    const pageLabel = await screen.findByText("Página 1 de 2");
-    fireEvent.click(pageLabel.parentElement!.querySelectorAll("button")[2]);
+    await screen.findByText("Mostrando 1-20 de 21 resultados");
+    const nextButton = screen.getByRole("button", { name: "Página siguiente" });
+    fireEvent.click(nextButton);
 
     await waitFor(() => {
       expect(api.get).toHaveBeenCalledWith(

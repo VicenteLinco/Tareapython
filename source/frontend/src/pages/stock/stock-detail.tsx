@@ -28,6 +28,7 @@ import {
   User,
   TrendingUp,
   Info,
+  QrCode,
 } from "lucide-react";
 import { MetricTooltip } from "@/components/ui/metric-tooltip";
 import { ProductoImage } from "@/components/ui/producto-image";
@@ -447,7 +448,20 @@ export function StockDetail({
                     </div>
 
                     {canOperate && (
-                      <div className="mt-3 flex justify-end gap-2">
+                      <div className="mt-3 flex flex-wrap items-center justify-end gap-1.5">
+                        <button
+                          onClick={() =>
+                            navigate(
+                              `/etiquetas?lote_id=${lote.id}&numero_lote=${encodeURIComponent(lote.numero_lote)}&producto=${encodeURIComponent(item.producto_nombre)}`,
+                            )
+                          }
+                          className="btn btn-xs gap-1 h-7 btn-ghost text-base-content/70 hover:bg-base-200 hover:text-base-content"
+                          title="Imprimir etiqueta QR de este lote"
+                        >
+                          <QrCode className="w-3 h-3 text-primary/80" />
+                          Etiqueta
+                        </button>
+
                         <button
                           onClick={() =>
                             navigate(

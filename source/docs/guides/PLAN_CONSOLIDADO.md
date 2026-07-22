@@ -1,4 +1,4 @@
-﻿# Plan consolidado del repositorio
+# Plan consolidado del repositorio
 
 Ultima revision: 2026-05-23
 
@@ -92,6 +92,21 @@ Origen: `diseÃ±o/PLAN_MEJORAS.md` E5.
 - No implementar sin decision de roadmap.
 - Antes de tocar codigo, definir si el modelo debe soportar multi-tenant, multiples bodegas o multiples laboratorios.
 - Si no hay expansion prevista, mantener como idea archivada.
+
+### P8. Creador de etiquetas automático propio
+
+Origen: Requerimiento de roadmap / Pendientes de UI & Almacén.
+
+- Diseñador e impresor nativo de etiquetas para insumos, reactivos, cajas y ubicaciones de estantes.
+- Generación dinámica de códigos QR, GTIN/GS1-128, lote y vencimiento.
+- Vista previa interactiva, exportación a SVG/PDF y soporte directo para impresoras térmicas/Zebra.
+
+### P9. Creador de productos automático mediante escaneo de códigos
+
+Origen: Requerimiento de roadmap / Alta Express de Insumos.
+
+- Creación express de productos en el catálogo al escanear el código de barras (EAN-13, GTIN-14, GS1-128 o DataMatrix).
+- Auto-completado inteligente mediante integración con catálogos regulatorios (FDA GUDID / GS1) y extracción por IA Visión del empaque (nombre, laboratorio, presentación y unidad).
 
 ## Pendiente de QA
 

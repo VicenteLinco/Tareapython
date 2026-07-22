@@ -232,7 +232,7 @@ export function MobileConteoView({
               {item.numero_lote}
             </p>
             <p className="text-[10px] opacity-30 mt-0.5">
-              {item.fecha_vencimiento.slice(0, 10)}
+              {item.fecha_vencimiento ? item.fecha_vencimiento.slice(0, 10) : "Sin vencimiento"}
             </p>
           </div>
 

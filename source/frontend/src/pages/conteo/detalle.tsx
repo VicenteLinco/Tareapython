@@ -957,7 +957,7 @@ function LoteRow({
             {item.numero_lote}
           </span>
           <span className="text-[10px] opacity-40 font-bold bg-base-200 px-1 rounded">
-            {item.fecha_vencimiento.slice(2, 10)}
+            {item.fecha_vencimiento ? item.fecha_vencimiento.slice(2, 10) : "S/V"}
           </span>
           {!conteoCiego && (
             <span className="text-[10px] text-primary/60 font-black uppercase ml-1">

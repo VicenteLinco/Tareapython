@@ -414,7 +414,7 @@ export interface ConteoItem {
   id: string;
   lote_id: string;
   numero_lote: string;
-  fecha_vencimiento: string;
+  fecha_vencimiento: string | null;
   producto_id: string;
   producto_nombre: string;
   unidad_base_nombre: string;

@@ -51,7 +51,7 @@ struct ConteoItemRow {
     id: Uuid,
     lote_id: Uuid,
     numero_lote: String,
-    fecha_vencimiento: chrono::NaiveDate,
+    fecha_vencimiento: Option<chrono::NaiveDate>,
     producto_id: Uuid,
     producto_nombre: String,
     unidad_base_nombre: String,
@@ -208,7 +208,7 @@ async fn obtener(
            JOIN productos p ON p.id = l.producto_id
            JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
            WHERE ci.sesion_id = $1
-           ORDER BY p.nombre ASC, l.fecha_vencimiento ASC"#,
+           ORDER BY p.nombre ASC, l.fecha_vencimiento ASC NULLS LAST"#,
     )
     .bind(id)
     .fetch_all(&state.pool)

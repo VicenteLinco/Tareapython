@@ -883,6 +883,7 @@ pub(crate) async fn importar_catalogo_en_tx(
     })
 }
 
+#[allow(dead_code)]
 pub async fn importar_inventario(
     pool: &PgPool,
     bytes: &[u8],

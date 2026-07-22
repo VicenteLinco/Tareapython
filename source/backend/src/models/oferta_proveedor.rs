@@ -3,6 +3,7 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 use specta::Type;
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, sqlx::FromRow, Type)]
 pub struct OfertaProveedor {
     pub id: i32,

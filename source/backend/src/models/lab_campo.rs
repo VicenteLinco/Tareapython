@@ -16,6 +16,7 @@ pub struct LabCampoDefinicion {
     pub updated_at: DateTime<Utc>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct LabCampoValor {
     pub id: uuid::Uuid,
@@ -28,6 +29,7 @@ pub struct LabCampoValor {
     pub updated_at: DateTime<Utc>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct LabCampoProductoValor {
     pub id: uuid::Uuid,

@@ -143,6 +143,7 @@ export default function ProductosTab() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [viewMode, setViewMode] = useState<"tabla" | "tarjetas">("tabla");
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
 
   const [createOpen, setCreateOpen] = useState(
     () => searchParams.get("nuevo") === "true",
@@ -168,6 +169,7 @@ export default function ProductosTab() {
         activo: !verInactivos,
         sortBy,
         sortDir,
+        perPage,
       },
     ],
     queryFn: () =>
@@ -181,7 +183,7 @@ export default function ProductosTab() {
             sort_by: sortBy,
             sort_dir: sortDir,
             page,
-            per_page: 20,
+            per_page: perPage,
           },
         })
         .then((r) => r.data),
@@ -714,7 +716,13 @@ export default function ProductosTab() {
           <Pagination
             page={data?.page ?? 1}
             totalPages={data?.total_pages ?? 1}
+            total={data?.total ?? 0}
+            perPage={perPage}
             onPageChange={setPage}
+            onPerPageChange={(newPerPage) => {
+              setPerPage(newPerPage);
+              setPage(1);
+            }}
           />
         </>
       )}

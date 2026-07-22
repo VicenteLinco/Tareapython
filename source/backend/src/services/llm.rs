@@ -120,6 +120,7 @@ pub(crate) fn is_vision_capable_model(provider: &str, model: &str) -> bool {
     vision_model_rank(provider, model).is_some()
 }
 
+#[allow(dead_code)]
 fn select_best_vision_model(provider: &str, models: &[String]) -> Option<String> {
     select_best_model(provider, models, ModelCapability::Vision)
 }
@@ -1493,6 +1494,7 @@ struct OpenAiModelsResponse {
     data: Vec<OpenAiModelEntry>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct OpenAiModelEntry {
     id: String,

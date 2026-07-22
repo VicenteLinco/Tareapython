@@ -3,6 +3,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct WhatsappSettings {
     pub api_url: String,

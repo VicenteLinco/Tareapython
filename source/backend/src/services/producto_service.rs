@@ -276,6 +276,9 @@ pub struct ProductoRow {
     pub codigo_loinc_cpt: Option<String>,
     pub promedio_uso_mensual: Decimal,
     pub promedio_uso_mensual_inicial: Decimal,
+    pub prov_id: Option<i32>,
+    pub prov_nombre: Option<String>,
+    pub prov_icono: Option<String>,
 }
 
 /// A secondary barcode alias attached to a product (`producto_codigos_barras`).
@@ -1167,7 +1170,7 @@ impl ProductoService {
         }
         if params.proveedor_id.is_some() {
             conditions.push(format!(
-                "EXISTS (SELECT 1 FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id WHERE pres.producto_id = p.id AND op.proveedor_id = ${})",
+                "EXISTS (SELECT 1 FROM lotes l WHERE l.producto_id = p.id AND l.proveedor_id = ${})",
                 param_idx
             ));
             param_idx += 1;
@@ -1177,7 +1180,7 @@ impl ProductoService {
         let sort_col = match params.sort_by.as_deref() {
             Some("codigo") => "p.codigo_interno",
             Some("categoria") => "c.nombre",
-            Some("proveedor") => "pr.nombre",
+            Some("proveedor") => "prov_nombre",
             Some("estado") => "p.activo",
             _ => "p.nombre",
         };
@@ -1211,7 +1214,10 @@ impl ProductoService {
                       p.stock_minimo_global,
                       p.codigo_loinc_cpt,
                       p.promedio_uso_mensual,
-                      p.promedio_uso_mensual_inicial
+                      p.promedio_uso_mensual_inicial,
+                      (SELECT pr.id FROM lotes l JOIN proveedores pr ON pr.id = l.proveedor_id WHERE l.producto_id = p.id AND l.proveedor_id IS NOT NULL LIMIT 1) as prov_id,
+                      (SELECT pr.nombre FROM lotes l JOIN proveedores pr ON pr.id = l.proveedor_id WHERE l.producto_id = p.id AND l.proveedor_id IS NOT NULL LIMIT 1) as prov_nombre,
+                      (SELECT pr.icono FROM lotes l JOIN proveedores pr ON pr.id = l.proveedor_id WHERE l.producto_id = p.id AND l.proveedor_id IS NOT NULL LIMIT 1) as prov_icono
                FROM productos p
                LEFT JOIN categorias c ON c.id = p.categoria_id
                LEFT JOIN unidades_basicas um ON um.id = p.unidad_base_id

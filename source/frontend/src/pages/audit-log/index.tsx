@@ -246,6 +246,7 @@ const AL_DEFAULTS = { tabla: "", accion: "", desde: "", hasta: "" };
 
 export default function AuditLogPage() {
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(25);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { filters: alf, setFilters: setAlf } = useFilterStorage(
     "audit-log",
@@ -255,13 +256,13 @@ export default function AuditLogPage() {
   const hasFilters = alf.tabla || alf.accion || alf.desde || alf.hasta;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["audit-log", { page, ...alf }],
+    queryKey: ["audit-log", { page, perPage, ...alf }],
     queryFn: () =>
       api
         .get<PaginatedResponse<AuditLogItem>>("/audit-log", {
           params: {
             page,
-            per_page: 25,
+            per_page: perPage,
             tabla: alf.tabla || undefined,
             accion: alf.accion || undefined,
             desde: alf.desde || undefined,
@@ -498,7 +499,13 @@ export default function AuditLogPage() {
         <Pagination
           page={page}
           totalPages={data?.total_pages || 1}
+          total={data?.total ?? 0}
+          perPage={perPage}
           onPageChange={setPage}
+          onPerPageChange={(newPerPage) => {
+            setPerPage(newPerPage);
+            setPage(1);
+          }}
         />
       </div>
     </div>

@@ -3,6 +3,7 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 use uuid::Uuid;
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, sqlx::FromRow, specta::Type)]
 pub struct StockSnapshot {
     pub lote_id: Uuid,

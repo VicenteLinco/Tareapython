@@ -26,6 +26,7 @@ pub async fn start_auto_descarte_job(pool: PgPool) {
     }
 }
 
+#[allow(dead_code)]
 #[derive(sqlx::FromRow)]
 struct VencidoRecord {
     stock_id: i32,

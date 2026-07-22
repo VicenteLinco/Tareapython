@@ -185,6 +185,7 @@ export default function MovimientosPage() {
     selectedAreaId ? String(selectedAreaId) : "",
   );
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(30);
 
   const currentYear = new Date().getFullYear();
   const currentQuarter = Math.ceil((new Date().getMonth() + 1) / 3);
@@ -284,7 +285,7 @@ export default function MovimientosPage() {
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["movimientos", { tipo, desde, hasta, areaId, page }],
+    queryKey: ["movimientos", { tipo, desde, hasta, areaId, page, perPage }],
     queryFn: () =>
       api
         .get<PaginatedResponse<Movimiento>>("/movimientos", {
@@ -294,7 +295,7 @@ export default function MovimientosPage() {
             hasta: hasta || undefined,
             area_id: areaId || undefined,
             page,
-            per_page: 30,
+            per_page: perPage,
           },
         })
         .then((r) => r.data),
@@ -743,7 +744,13 @@ export default function MovimientosPage() {
                 <Pagination
                   page={data?.page ?? 1}
                   totalPages={data?.total_pages ?? 1}
+                  total={data?.total ?? 0}
+                  perPage={perPage}
                   onPageChange={setPage}
+                  onPerPageChange={(newPerPage) => {
+                    setPerPage(newPerPage);
+                    setPage(1);
+                  }}
                 />
               </>
             )

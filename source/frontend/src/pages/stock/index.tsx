@@ -41,6 +41,7 @@ export default function StockPage() {
   );
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(25);
 
   const {
     search,
@@ -97,6 +98,7 @@ export default function StockPage() {
         showAlertas,
         customFilters,
         page,
+        perPage,
       },
     ],
     queryFn: () =>
@@ -113,7 +115,7 @@ export default function StockPage() {
             custom_filters: Object.keys(customFilters).length > 0 ? JSON.stringify(customFilters) : undefined,
             incluir_pendientes: true,
             page,
-            per_page: 25,
+            per_page: perPage,
           },
         })
         .then((r) => r.data),
@@ -379,7 +381,13 @@ export default function StockPage() {
           <Pagination
             page={stockResponse?.page ?? page}
             totalPages={stockResponse?.total_pages ?? 1}
+            total={stockResponse?.total ?? 0}
+            perPage={perPage}
             onPageChange={setPage}
+            onPerPageChange={(newPerPage) => {
+              setPerPage(newPerPage);
+              setPage(1);
+            }}
           />
         </div>
 

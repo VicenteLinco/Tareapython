@@ -37,6 +37,7 @@ struct ProductoListItem {
     categoria: Option<CategoriaRef>,
     unidad_base: Option<UnidadRef>,
     area: Option<AreaRef>,
+    proveedor: Option<ProveedorRef>,
     lead_time_propio: Option<i32>,
     activo: bool,
     estado_stock: String,
@@ -68,6 +69,13 @@ pub struct UnidadRef {
 pub struct AreaRef {
     pub id: i32,
     pub nombre: String,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow, specta::Type)]
+pub struct ProveedorRef {
+    pub id: i32,
+    pub nombre: String,
+    pub icono: Option<String>,
 }
 
 // === Barcode alias structs ===
@@ -133,6 +141,11 @@ async fn listar(
             area: r.area_id.map(|id| AreaRef {
                 id,
                 nombre: r.area_nombre.unwrap_or_default(),
+            }),
+            proveedor: r.prov_id.map(|id| ProveedorRef {
+                id,
+                nombre: r.prov_nombre.unwrap_or_default(),
+                icono: r.prov_icono,
             }),
             lead_time_propio: r.lead_time_propio,
             activo: r.activo,

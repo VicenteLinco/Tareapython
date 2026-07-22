@@ -1,1 +1,0 @@
-function c(a){return!!a&&a.startsWith("data:image")}function d(a,n,t){if(!c(n))return 0;try{const e=a.getImageProperties(n);if(!e.width||!e.height)return 0;const f=e.width/e.height;let r=t.maxW,i=r/f;i>t.maxH&&(i=t.maxH,r=i*f);const s=t.x+(t.maxW-r)/2,h=t.y+(t.maxH-i)/2,m=e.fileType||"PNG";return a.addImage(n,m,s,h,r,i),r}catch{return 0}}export{d,c as h};

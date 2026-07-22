@@ -1,22 +1,22 @@
-# =============================================================================
-# Render Blueprint Specification (sin base de datos interna)
-# Este archivo despliega el Web Service en Render y usa una DB externa de Neon.
-# =============================================================================
-
 services:
   - type: web
     name: inventario-laboratorio
-    env: docker
-    dockerfilePath: dockerfile
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: free
     numInstances: 1
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
     envVars:
       - key: PORT
         value: 8080
       - key: RUST_LOG
         value: info
       - key: JWT_SECRET
-        generateValue: true
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
       - key: DATABASE_URL
         sync: false
       - key: CORS_ORIGIN
@@ -25,3 +25,9 @@ services:
         value: false
       - key: LOGIN_RATE_LIMIT_PER_MINUTE
         value: 10
+      - key: MUTATION_RATE_LIMIT_PER_MINUTE
+        value: 120
+      - key: READ_RATE_LIMIT_PER_MINUTE
+        value: 600
+      - key: ALLOW_BOOTSTRAP_ADMIN
+        value: false

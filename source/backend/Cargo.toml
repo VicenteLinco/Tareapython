@@ -1,0 +1,57 @@
+[package]
+name = "inventario-lab-backend"
+version = "0.1.0"
+edition = "2024"
+default-run = "inventario-lab-backend"
+
+[dependencies]
+# Web framework
+axum = { version = "0.8", features = ["macros", "multipart"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "fs", "normalize-path"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "rust_decimal", "migrate"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Auth
+jsonwebtoken = "9"
+argon2 = "0.5"
+
+# Types
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1", features = ["db-postgres", "serde-with-str"] }
+
+# Config & logging
+dotenvy = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Utilities
+thiserror = "2"
+validator = { version = "0.18", features = ["derive"] }
+csv = "1"
+base64 = "0.22"
+sha2 = "0.10"
+sha1 = "0.10"
+hmac = "0.12"
+regex = "1"
+constant_time_eq = "0.3"
+specta = { version = "2.0.0-rc.20", features = ["uuid", "chrono", "rust_decimal", "serde_json", "derive"] }
+specta-typescript = "0.0.7"
+utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono", "decimal"] }
+utoipa-swagger-ui = { version = "9", features = ["axum", "vendored"] }
+reqwest = { version = "0.12", features = ["json"] }
+serde_urlencoded = "0.7"
+async-trait = "0.1"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+tokio = { version = "1", features = ["full", "macros"] }
+rust_decimal_macros = "1"

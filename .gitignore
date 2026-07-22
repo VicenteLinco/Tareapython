@@ -1,17 +1,12 @@
-# Active source code
-codigofuente/*
-!codigofuente/frontend/
-
-# Build outputs and dependencies
-backend/target/
-backend/migrations/
-!backend/migrations/
-!backend/migrations/*.sql
-codigofuente/frontend/node_modules/
-codigofuente/frontend/dist/
-codigofuente/frontend/.vite/
+# Generated build and dependency state
+/build/*
+!/build/.gitignore
+/source/backend/target/
+/source/frontend/node_modules/
+/source/frontend/dist/
+/source/frontend/.vite/
+/source/frontend/coverage/
 *.log
-.codegraph/
 
 # Secrets and local credentials
 .env
@@ -28,17 +23,16 @@ codigofuente/frontend/.vite/
 **/.aws/credentials
 **/.ssh/
 
-# Local agent artifacts
-.atl/
-openspec/
-openspec
+# Runtime and local data
+/uploads/
+*.dump
+*.bak
+
+# Checkout-local tooling and editor state
+/.codegraph/
+/.atl/
 AGENTS.md
 CLAUDE.md
-crear-accesos-directos.bat
-crear-accesos-directos.ps1
-database_erd_diagram.jpg
-detener-laboratorio.bat
-detener.ps1
-detener.sh
-docker-compose.yml
-dockerfile.dev
+.DS_Store
+.idea/
+.vscode/

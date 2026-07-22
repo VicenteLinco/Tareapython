@@ -1,0 +1,52 @@
+schema: spec-driven
+
+context: |
+  Tech Stack: Rust + Axum 0.8 backend, React 19 + TypeScript + Vite + Tailwind CSS v4 frontend, PostgreSQL 16 DB.
+  Architecture: Ledger inmutable (movimientos de stock), FEFO automático por lote + área, draft mode en recepciones y solicitudes, trigger de stock en DB, roles fijos, español para nombres de dominio (tablas, campos, rutas API), inglés para código Rust/TS.
+  Testing: Integration suite with sqlx::test for backend, vitest for frontend GS1 utility / page-specific logic.
+
+strict_tdd: true
+
+testing:
+  strict_tdd: true
+  test_runner:
+    backend: "cargo test"
+    frontend: "npm run test"
+  test_layers:
+    unit: true
+    integration: true
+    e2e: false
+  coverage:
+    available: false
+    command: ""
+  quality_tools:
+    linter: "cargo clippy / npm run lint"
+    type_checker: "cargo check / npx tsc -b"
+    formatter: "cargo fmt --check"
+
+rules:
+  proposal:
+    - Include rollback plan for risky database or API changes
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include DB schema changes, TypeScript mappings, and Axum handlers/services definitions
+    - Document architecture decisions with rationale
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+  apply:
+    guidelines:
+      - Follow handler/service layer separation in backend (Delgado handler, logic/SQL in service)
+      - Use formatCantidad helper in frontend for showing quantities with units
+      - Ensure searchable select inputs support keyboard navigation (autocomplete dropdown)
+      - Avoid shadcn/ui tokens (use DaisyUI equivalents BG base-100, border-base-300, etc.)
+    tdd: true
+    test_command: "cd backend && cargo test && cd ../codigofuente/frontend && npm run test"
+  verify:
+    test_command: "cd backend && cargo test && cd ../codigofuente/frontend && npm run test"
+    build_command: "cd backend && cargo build && cd ../codigofuente/frontend && npm run build"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas

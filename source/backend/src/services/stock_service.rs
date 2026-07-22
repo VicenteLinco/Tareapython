@@ -284,7 +284,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
         param_idx += 1;
         binds.push(prov_id.to_string());
         format!(
-            "AND EXISTS (SELECT 1 FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id WHERE pres.producto_id = p.id AND op.proveedor_id = ${}::integer)",
+            "AND (EXISTS (SELECT 1 FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id WHERE pres.producto_id = p.id AND op.proveedor_id = ${0}::integer) OR EXISTS (SELECT 1 FROM lotes l WHERE l.producto_id = p.id AND l.proveedor_id = ${0}::integer) OR EXISTS (SELECT 1 FROM recepciones r JOIN recepcion_detalle rd ON rd.recepcion_id = r.id WHERE rd.producto_id = p.id AND r.proveedor_id = ${0}::integer))",
             param_idx
         )
     } else {
@@ -549,7 +549,11 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                FROM productos p
                LEFT JOIN unidades_basicas um ON um.id = p.unidad_base_id
                LEFT JOIN categorias c ON c.id = p.categoria_id
-               LEFT JOIN proveedores pv2 ON pv2.id = (SELECT op.proveedor_id FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id WHERE pres.producto_id = p.id LIMIT 1)
+                LEFT JOIN proveedores pv2 ON pv2.id = COALESCE(
+                    (SELECT op.proveedor_id FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id WHERE pres.producto_id = p.id LIMIT 1),
+                    (SELECT l.proveedor_id FROM lotes l WHERE l.producto_id = p.id AND l.proveedor_id IS NOT NULL ORDER BY l.created_at DESC LIMIT 1),
+                    (SELECT r.proveedor_id FROM recepciones r JOIN recepcion_detalle rd ON rd.recepcion_id = r.id WHERE rd.producto_id = p.id ORDER BY r.created_at DESC LIMIT 1)
+                )
                LEFT JOIN stock_stats ss ON ss.producto_id = p.id
                LEFT JOIN movimiento_stats ms ON ms.producto_id = p.id
                LEFT JOIN fefo_prov fp ON fp.producto_id = p.id
@@ -797,7 +801,11 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                 {3}, true, par.min_manual, par.max_manual, 3
             ) AS est
             FROM productos p
-            LEFT JOIN proveedores pv ON pv.id = (SELECT op.proveedor_id FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id WHERE pres.producto_id = p.id LIMIT 1)
+            LEFT JOIN proveedores pv ON pv.id = COALESCE(
+                (SELECT op.proveedor_id FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id WHERE pres.producto_id = p.id LIMIT 1),
+                (SELECT l.proveedor_id FROM lotes l WHERE l.producto_id = p.id AND l.proveedor_id IS NOT NULL ORDER BY l.created_at DESC LIMIT 1),
+                (SELECT r.proveedor_id FROM recepciones r JOIN recepcion_detalle rd ON rd.recepcion_id = r.id WHERE rd.producto_id = p.id ORDER BY r.created_at DESC LIMIT 1)
+            )
             LEFT JOIN stock_stats ss ON ss.producto_id = p.id
             LEFT JOIN par ON par.producto_id = p.id
             LEFT JOIN mov mv ON mv.producto_id = p.id
@@ -1168,7 +1176,11 @@ pub async fn alertas(
                    p.control_lote,
                    p.lead_time_propio,
                    p.created_at,
-                   (SELECT op.proveedor_id FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id WHERE pres.producto_id = p.id LIMIT 1) AS proveedor_id,
+                   COALESCE(
+                        (SELECT op.proveedor_id FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id WHERE pres.producto_id = p.id LIMIT 1),
+                        (SELECT l.proveedor_id FROM lotes l WHERE l.producto_id = p.id AND l.proveedor_id IS NOT NULL ORDER BY l.created_at DESC LIMIT 1),
+                        (SELECT r.proveedor_id FROM recepciones r JOIN recepcion_detalle rd ON rd.recepcion_id = r.id WHERE rd.producto_id = p.id ORDER BY r.created_at DESC LIMIT 1)
+                    ) AS proveedor_id,
                    pv.nombre AS proveedor_nombre,
                    COALESCE(p.lead_time_propio, pv.dias_despacho_tierra, pv.dias_despacho_aereo, 7) AS dias_despacho,
                    ub.nombre AS unidad,
@@ -1201,7 +1213,11 @@ pub async fn alertas(
                    (ms.consumo_7d > ms.consumo_diario_ponderado * 3 AND ms.dias_con_consumo > 5) AS es_anomalia
                FROM productos p
                JOIN unidades_basicas ub ON ub.id = p.unidad_base_id
-               LEFT JOIN proveedores pv ON pv.id = (SELECT op.proveedor_id FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id WHERE pres.producto_id = p.id LIMIT 1)
+               LEFT JOIN proveedores pv ON pv.id = COALESCE(
+                    (SELECT op.proveedor_id FROM ofertas_proveedor op JOIN presentaciones pres ON pres.id = op.presentacion_id WHERE pres.producto_id = p.id LIMIT 1),
+                    (SELECT l.proveedor_id FROM lotes l WHERE l.producto_id = p.id AND l.proveedor_id IS NOT NULL ORDER BY l.created_at DESC LIMIT 1),
+                    (SELECT r.proveedor_id FROM recepciones r JOIN recepcion_detalle rd ON rd.recepcion_id = r.id WHERE rd.producto_id = p.id ORDER BY r.created_at DESC LIMIT 1)
+                )
                LEFT JOIN stock_stats ss ON ss.producto_id = p.id
                LEFT JOIN par_levels pl ON pl.producto_id = p.id
                LEFT JOIN prox_venc pvenc ON pvenc.producto_id = p.id

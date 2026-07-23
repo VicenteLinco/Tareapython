@@ -67,8 +67,8 @@ export function normalizeImportedDate(rawDate: string | null | undefined): strin
 export function parseCurrencyInput(inputVal: string): number | null {
   if (!inputVal || !inputVal.trim()) return null;
   let s = inputVal.trim();
-  // Remover símbolo de moneda
-  s = s.replace(/[$]/g, "").trim();
+  // Remover prefijos de moneda (CLP, USD, etc) y símbolo de moneda $
+  s = s.replace(/^(clp|usd|cl|\$)\s*/i, "").replace(/[$]/g, "").trim();
   if (!s) return null;
 
   // Si contiene solo dígitos
@@ -76,18 +76,19 @@ export function parseCurrencyInput(inputVal: string): number | null {
     return Number(s);
   }
 
-  // Si tiene formato chileno tipo "12.500" o "12.500,50"
-  if (s.includes(".")) {
-    const parts = s.split(".");
-    // Caso "12.500" (puntos como separadores de miles)
-    if (parts.length > 1 && parts.every((p, idx) => idx === 0 || p.length === 3)) {
-      s = s.replace(/\./g, "").replace(",", ".");
-    } else if (parts.length === 2 && parts[1].length <= 2) {
-      // Caso decimal estándar "12500.50"
-      s = s.replace(",", "");
-    } else {
-      s = s.replace(/\./g, "").replace(",", ".");
-    }
+  // Caso comas como separadores de miles en inglés ("1,250,000" o "1,250,000.50")
+  if (/^\d{1,3}(,\d{3})+(?:\.\d+)?$/.test(s)) {
+    s = s.replace(/,/g, "");
+  }
+  // Caso puntos como separadores de miles en español/CLP ("12.500", "1.250.000", "12.500,50")
+  else if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  }
+  // Caso decimal simple con punto ("12500.50")
+  else if (/^\d+\.\d{1,2}$/.test(s)) {
+    // mantener punto
+  } else if (s.includes(".")) {
+    s = s.replace(/\./g, "");
   } else if (s.includes(",")) {
     s = s.replace(",", ".");
   }

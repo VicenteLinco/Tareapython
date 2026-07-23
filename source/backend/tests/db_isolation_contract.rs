@@ -1,5 +1,6 @@
 use sqlx::PgPool;
 
+#[allow(dead_code)]
 fn repository_root() -> std::path::PathBuf {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
         .map(std::path::PathBuf::from)

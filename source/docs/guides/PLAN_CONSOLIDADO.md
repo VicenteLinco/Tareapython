@@ -93,13 +93,14 @@ Origen: `diseÃ±o/PLAN_MEJORAS.md` E5.
 - Antes de tocar codigo, definir si el modelo debe soportar multi-tenant, multiples bodegas o multiples laboratorios.
 - Si no hay expansion prevista, mantener como idea archivada.
 
-### P8. Creador de etiquetas automático propio
+### P8. Creador e impresor automático de etiquetas propio
 
 Origen: Requerimiento de roadmap / Pendientes de UI & Almacén.
 
-- Diseñador e impresor nativo de etiquetas para insumos, reactivos, cajas y ubicaciones de estantes.
-- Generación dinámica de códigos QR, GTIN/GS1-128, lote y vencimiento.
-- Vista previa interactiva, exportación a SVG/PDF y soporte directo para impresoras térmicas/Zebra.
+- Diseñador e impresor nativo de etiquetas con **Selector de Modo de Impresión**:
+  1. **Impresora Térmica Chica Blanco/Negro (Zebra/TSC/Dymo)**: optimizada en monocromo de alto contraste con iconos vectoriales legibles (`[2-8°C]`, `[INFLAMABLE]`, `[VENC-PRÓX]`).
+  2. **Impresora a Color / PDF en Hojas Adhesivas**: para impresión en hojas A4/Carta con grilla multi-etiqueta.
+- Generación dinámica de códigos QR, GTIN/GS1-128, lote, fecha de caducidad y área asignada.
 
 ### P9. Creador de productos automático mediante escaneo de códigos
 
@@ -144,6 +145,19 @@ Origen: Análisis de Competencia e Innovación 2026.
 
 - Soporte nativo para lectura de matriz de datos 2D de alta densidad en envases pequeños de biología molecular y reactivos.
 - Parseo automático de GTIN + Lote + Expiración + Número de Serie en un solo escaneo.
+
+### P15. Auto-Detección de Ficha de Seguridad Química (FDS / MSDS & GHS)
+
+Origen: Análisis de Competencia e Innovación 2026.
+
+- Descarga/asignación automática de Hoja de Datos de Seguridad y pictogramas de riesgo GHS al escanear o crear un insumo.
+- Advertencias de incompatibilidad de almacenamiento seguro entre sustancias químicas.
+
+### P16. Filtro Guarda-Vencimiento en Recepción (Resting Shelf-Life Guard)
+
+Origen: Análisis de Competencia e Innovación 2026.
+
+- Alerta roja inmediata en la recepción si la mercadería entregada por el proveedor tiene una vida útil menor a 90 días o menos del 30% del total.
 
 ## Pendiente de QA
 

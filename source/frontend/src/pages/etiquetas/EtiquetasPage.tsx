@@ -251,9 +251,29 @@ export function EtiquetasPage() {
           </div>
 
           <div>
-            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-base-content/40">
-              Lotes en stock
-            </p>
+            <div className="mb-2 flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-base-content/50">
+                Lotes en stock ({lotes.length})
+              </p>
+              {lotes.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-ghost text-xs text-primary font-bold hover:bg-primary/10 rounded-lg"
+                    onClick={() => setSelectedLoteIds(lotes.map((l) => l.id))}
+                  >
+                    Seleccionar Todos ({lotes.length})
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-ghost text-xs text-base-content/50 hover:bg-base-200 rounded-lg"
+                    onClick={() => setSelectedLoteIds([])}
+                  >
+                    Desmarcar
+                  </button>
+                </div>
+              )}
+            </div>
             {cargandoLotes && (
               <p className="text-sm text-base-content/50">Cargando lotes…</p>
             )}

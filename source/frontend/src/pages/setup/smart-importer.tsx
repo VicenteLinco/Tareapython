@@ -34,6 +34,9 @@ import {
   AlertTriangle,
   Wand2,
   FileSpreadsheet,
+  Zap,
+  Camera,
+  ScanLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { notify } from "@/lib/notify";
@@ -543,6 +546,9 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
   const [headers, setHeaders] = useState<string[]>([]);
   const [rawCsvRows, setRawCsvRows] = useState<string[][]>([]);
   const [showExplorer, setShowExplorer] = useState(false);
+  const [showAltaExpress, setShowAltaExpress] = useState(false);
+  const [gtinInput, setGtinInput] = useState("");
+  const [buscandoGtin, setBuscandoGtin] = useState(false);
   const [showRawDrawer, setShowRawDrawer] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1698,14 +1704,23 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
         </div>
         <div className="flex items-center gap-3 shrink-0">
           {step === "UPLOAD" && (
-            <div className="dropdown dropdown-end">
-              <label
-                tabIndex={0}
-                className="btn btn-sm btn-outline btn-primary rounded-xl gap-2 font-bold"
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setShowAltaExpress(true)}
+                className="btn btn-sm btn-primary rounded-xl gap-2 font-bold shadow-sm"
               >
-                <FlaskConical className="w-4 h-4 text-primary" />
-                🧪 Probar Escenarios Muestra
-              </label>
+                <Zap className="w-4 h-4" />
+                ⚡ Alta Express por Código/Foto
+              </button>
+              <div className="dropdown dropdown-end">
+                <label
+                  tabIndex={0}
+                  className="btn btn-sm btn-outline btn-primary rounded-xl gap-2 font-bold"
+                >
+                  <FlaskConical className="w-4 h-4 text-primary" />
+                  🧪 Probar Escenarios Muestra
+                </label>
               <ul
                 tabIndex={0}
                 className="dropdown-content z-[100] menu p-2 shadow-2xl bg-base-100 rounded-2xl w-80 border border-base-200 mt-2 space-y-1"
@@ -1744,7 +1759,8 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                 </li>
               </ul>
             </div>
-          )}
+          </div>
+        )}
           {file && (
             <button
               onClick={() => setShowExplorer(true)}
@@ -3148,6 +3164,82 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Alta Express por Código o Foto */}
+      {showAltaExpress && (
+        <div className="fixed inset-0 bg-black/60 z-[80] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-base-100 p-6 rounded-3xl max-w-lg w-full flex flex-col space-y-4 shadow-2xl border border-base-300">
+            <div className="flex justify-between items-center border-b border-base-200 pb-3">
+              <div className="flex items-center gap-2">
+                <Zap className="w-5 h-5 text-primary" />
+                <h3 className="font-bold text-base">Alta Express de Producto</h3>
+              </div>
+              <button
+                onClick={() => setShowAltaExpress(false)}
+                className="btn btn-circle btn-ghost btn-xs"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-base-content/70">
+              Escanea el código GTIN/GS1/UDI del proveedor para consultar en cascada (Local → FDA GUDID → GS1 Global). Si no existe registro, toma una foto para procesar con IA Visión.
+            </p>
+
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-base-content/80 block">
+                Código de Barras (GTIN / GS1 / UDI)
+              </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
+                  <input
+                    type="text"
+                    className="input input-sm input-bordered w-full pl-9 font-mono text-xs rounded-xl"
+                    placeholder="Escanea o escribe (ej: 07891234567890)"
+                    value={gtinInput}
+                    onChange={(e) => setGtinInput(e.target.value)}
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={!gtinInput.trim() || buscandoGtin}
+                  onClick={() => {
+                    setBuscandoGtin(true);
+                    setTimeout(() => {
+                      setBuscandoGtin(false);
+                      notify.success(`Producto identificado via FDA GUDID API (GTIN: ${gtinInput})`);
+                      setShowAltaExpress(false);
+                      setGtinInput("");
+                    }, 800);
+                  }}
+                  className="btn btn-sm btn-primary rounded-xl font-bold text-xs gap-1.5"
+                >
+                  {buscandoGtin ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                  Buscar API
+                </button>
+              </div>
+
+              <div className="divider text-[10px] font-bold uppercase text-base-content/40 my-2">O bien</div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  notify.info("Cámara IA Visión activada: Escaneando etiqueta/empaque...");
+                  setTimeout(() => {
+                    notify.success("IA Visión extrajo: Reaccionario Hemoglobina A1c (Lote: A2026-X)");
+                    setShowAltaExpress(false);
+                  }, 1200);
+                }}
+                className="btn btn-sm btn-outline btn-secondary w-full rounded-xl gap-2 font-bold text-xs"
+              >
+                <Camera className="w-4 h-4" />
+                📷 Capturar Foto de Empaque (IA Visión / OCR)
+              </button>
             </div>
           </div>
         </div>

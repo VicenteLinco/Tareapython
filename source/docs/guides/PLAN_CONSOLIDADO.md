@@ -108,6 +108,43 @@ Origen: Requerimiento de roadmap / Alta Express de Insumos.
 - Creación express de productos en el catálogo al escanear el código de barras (EAN-13, GTIN-14, GS1-128 o DataMatrix).
 - Auto-completado inteligente mediante integración con catálogos regulatorios (FDA GUDID / GS1) y extracción por IA Visión del empaque (nombre, laboratorio, presentación y unidad).
 
+### P10. Alta Express Fotográfica "Cam-to-Stock" (AI Vision + OCR)
+
+Origen: Análisis de Competencia e Innovación 2026.
+
+- Reconocimiento fotográfico de cajas/frascos de reactivos mediante IA multimodal.
+- Extracción automática de marca, producto, lote, fecha de vencimiento, temperatura de conservación (2-8°C, -20°C) y pictogramas de seguridad GHS.
+- Creación y actualización express en catálogo y stock sin tipeo manual.
+
+### P11. Asistente de Voz "Hands-Free" para Modo Kiosk / Cabina de Flujo
+
+Origen: Análisis de Competencia e Innovación 2026.
+
+- Dictado por voz para tecnólogos operando con guantes estériles o en cabinas de seguridad biológica.
+- Reconocimiento de intenciones (e.g., "Consumir 3 viales de Hemoglobina A1c de Refrigerador 2").
+- Ejecución automática de bajas FEFO y confirmación por audio sintetizado.
+
+### P12. Redistribución Inteligente Inter-Áreas por Vencimiento Próximo
+
+Origen: Análisis de Competencia e Innovación 2026.
+
+- Algoritmo de prevención de mermas y desperdicios por caducidad de reactivos.
+- Detección de lotes próximos a vencer en áreas de bajo consumo y sugerencia automática de transferencia hacia áreas de alto volumen (e.g. Laboratorio Central).
+
+### P13. Alertas Proactivas por WhatsApp / Push de Stock Crítico y Cadena de Frío
+
+Origen: Análisis de Competencia e Innovación 2026.
+
+- Integración de notificaciones instantáneas para jefes de laboratorio y bodegueros.
+- Avisos cuando un insumo crítico cae por debajo del punto de reorden o cuando un sensor de temperatura detecta anomalías en refrigeradores (2-8°C).
+
+### P14. Matriz de Trazabilidad GS1 2D DataMatrix para Viales y Micro-tubos
+
+Origen: Análisis de Competencia e Innovación 2026.
+
+- Soporte nativo para lectura de matriz de datos 2D de alta densidad en envases pequeños de biología molecular y reactivos.
+- Parseo automático de GTIN + Lote + Expiración + Número de Serie en un solo escaneo.
+
 ## Pendiente de QA
 
 ### QA1. Solicitudes multi-proveedor

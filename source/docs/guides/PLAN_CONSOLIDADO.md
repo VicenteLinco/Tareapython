@@ -54,12 +54,12 @@ Origen: `diseÃ±o/PLAN_MEJORAS.md` B9.
 Origen: `diseÃ±o/PLAN_MEJORAS.md` C4.
 
 - Activar tema oscuro usando DaisyUI.
-- Validar especialmente modo kiosk y pantallas de baja luz.
+- Validar pantallas de baja luz y visibilidad en mesada.
 - Mantenerlo como opcional si no hay necesidad operativa.
 
 ### P4. Notificaciones por email
 
-Origen: `diseÃ±o/PLAN_MEJORAS.md` E2.
+Origen: `diseño/PLAN_MEJORAS.md` E2.
 
 - Enviar digest diario de items criticos a admin/jefe de bodega.
 - Usar proveedor externo tipo SendGrid o Resend.
@@ -67,7 +67,7 @@ Origen: `diseÃ±o/PLAN_MEJORAS.md` E2.
 
 ### P5. Importacion masiva mejorada / Setup
 
-Origen: `CLAUDE.md` y `diseÃ±o/PLAN_MEJORAS.md` E3.
+Origen: `CLAUDE.md` y `diseño/PLAN_MEJORAS.md` E3.
 
 Hay contradiccion entre documentos: `CLAUDE.md` dice que falta finalizar Setup, mientras `PLAN_MEJORAS.md` dice que Setup ya importa CSV y que falta mejorar la UX.
 
@@ -78,7 +78,7 @@ Hay contradiccion entre documentos: `CLAUDE.md` dice que falta finalizar Setup, 
 
 ### P6. Anomalias de consumo y precio
 
-Origen: `diseÃ±o/PLAN_MEJORAS.md` E4.
+Origen: `diseño/PLAN_MEJORAS.md` E4.
 
 - Detectar consumo fuera de patron.
 - Mostrar confianza y razon.
@@ -87,7 +87,7 @@ Origen: `diseÃ±o/PLAN_MEJORAS.md` E4.
 
 ### P7. Multi-bodega / multi-laboratorio
 
-Origen: `diseÃ±o/PLAN_MEJORAS.md` E5.
+Origen: `diseño/PLAN_MEJORAS.md` E5.
 
 - No implementar sin decision de roadmap.
 - Antes de tocar codigo, definir si el modelo debe soportar multi-tenant, multiples bodegas o multiples laboratorios.
@@ -114,46 +114,17 @@ Origen: Requerimiento de roadmap / Alta Express de Insumos.
 Origen: Análisis de Competencia e Innovación 2026.
 
 - Reconocimiento fotográfico de cajas/frascos de reactivos mediante IA multimodal.
-- Extracción automática de marca, producto, lote, fecha de vencimiento, temperatura de conservación (2-8°C, -20°C) y pictogramas de seguridad GHS.
+- Extracción automática de marca, producto, lote, fecha de vencimiento y temperatura de conservación (2-8°C, -20°C).
 - Creación y actualización express en catálogo y stock sin tipeo manual.
 
-### P11. Asistente de Voz "Hands-Free" para Modo Kiosk / Cabina de Flujo
-
-Origen: Análisis de Competencia e Innovación 2026.
-
-- Dictado por voz para tecnólogos operando con guantes estériles o en cabinas de seguridad biológica.
-- Reconocimiento de intenciones (e.g., "Consumir 3 viales de Hemoglobina A1c de Refrigerador 2").
-- Ejecución automática de bajas FEFO y confirmación por audio sintetizado.
-
-### P12. Redistribución Inteligente Inter-Áreas por Vencimiento Próximo
-
-Origen: Análisis de Competencia e Innovación 2026.
-
-- Algoritmo de prevención de mermas y desperdicios por caducidad de reactivos.
-- Detección de lotes próximos a vencer en áreas de bajo consumo y sugerencia automática de transferencia hacia áreas de alto volumen (e.g. Laboratorio Central).
-
-### P13. Alertas Proactivas por WhatsApp / Push de Stock Crítico y Cadena de Frío
-
-Origen: Análisis de Competencia e Innovación 2026.
-
-- Integración de notificaciones instantáneas para jefes de laboratorio y bodegueros.
-- Avisos cuando un insumo crítico cae por debajo del punto de reorden o cuando un sensor de temperatura detecta anomalías en refrigeradores (2-8°C).
-
-### P14. Matriz de Trazabilidad GS1 2D DataMatrix para Viales y Micro-tubos
+### P11. Matriz de Trazabilidad GS1 2D DataMatrix para Viales y Micro-tubos
 
 Origen: Análisis de Competencia e Innovación 2026.
 
 - Soporte nativo para lectura de matriz de datos 2D de alta densidad en envases pequeños de biología molecular y reactivos.
 - Parseo automático de GTIN + Lote + Expiración + Número de Serie en un solo escaneo.
 
-### P15. Auto-Detección de Ficha de Seguridad Química (FDS / MSDS & GHS)
-
-Origen: Análisis de Competencia e Innovación 2026.
-
-- Descarga/asignación automática de Hoja de Datos de Seguridad y pictogramas de riesgo GHS al escanear o crear un insumo.
-- Advertencias de incompatibilidad de almacenamiento seguro entre sustancias químicas.
-
-### P16. Filtro Guarda-Vencimiento en Recepción (Resting Shelf-Life Guard)
+### P12. Filtro Guarda-Vencimiento en Recepción (Resting Shelf-Life Guard)
 
 Origen: Análisis de Competencia e Innovación 2026.
 

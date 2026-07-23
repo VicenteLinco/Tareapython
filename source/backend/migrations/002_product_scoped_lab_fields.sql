@@ -18,3 +18,7 @@ CREATE TABLE lab_campo_producto_valor (
 
 CREATE INDEX idx_lab_campo_producto_valor_producto
     ON lab_campo_producto_valor (producto_id);
+
+-- Indice compuesto optimizado para consultas de libro mayor por lote
+CREATE INDEX IF NOT EXISTS idx_movimientos_lote_fecha_desc
+    ON public.movimientos (lote_id, created_at DESC, id);

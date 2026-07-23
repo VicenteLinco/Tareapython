@@ -384,3 +384,42 @@ ${bodyContent}
   // Limpiar después de imprimir
   setTimeout(() => document.body.removeChild(iframe), 2000);
 }
+
+/**
+ * Genera código ZPL (Zebra Programming Language) para impresión térmica directa.
+ */
+export function generarComandoZPL(lotes: LoteParaEtiqueta[]): string {
+  let zpl = "";
+  for (const lote of lotes) {
+    const copias = Math.max(1, lote.cantidad_etiquetas || 1);
+    const nombre = lote.producto_nombre.slice(0, 32);
+    const fecha = lote.fecha_vencimiento || "N/A";
+    const area = lote.area_nombre || "";
+    zpl += `^XA\n` +
+      `^FO40,25^A0N,24,24^FD${nombre}^FS\n` +
+      `^FO40,55^A0N,20,20^FDLote: ${lote.numero_lote} | Venc: ${fecha}^FS\n` +
+      `^FO40,85^BQN,2,4^FDMM,A${lote.lote_id}^FS\n` +
+      `^FO170,95^A0N,18,18^FDArea: ${area}^FS\n` +
+      `^PQ${copias}\n` +
+      `^XZ\n`;
+  }
+  return zpl;
+}
+
+/**
+ * Genera código TSPL (TSC Printer Language) para impresoras térmicas TSC.
+ */
+export function generarComandoTSPL(lotes: LoteParaEtiqueta[]): string {
+  let tspl = "SIZE 50 mm,25 mm\nGAP 2 mm,0 mm\nDIRECTION 1\nCLS\n";
+  for (const lote of lotes) {
+    const copias = Math.max(1, lote.cantidad_etiquetas || 1);
+    const nombre = lote.producto_nombre.slice(0, 32);
+    const fecha = lote.fecha_vencimiento || "N/A";
+    tspl += `TEXT 30,20,"3",0,1,1,"${nombre}"\n` +
+      `TEXT 30,50,"2",0,1,1,"Lote: ${lote.numero_lote} Vence: ${fecha}"\n` +
+      `QRCODE 30,85,M,4,A,0,"${lote.lote_id}"\n` +
+      `PRINT ${copias},1\n`;
+  }
+  return tspl;
+}
+

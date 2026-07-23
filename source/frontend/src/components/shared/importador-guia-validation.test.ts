@@ -90,3 +90,16 @@ describe("parseCurrencyInput", () => {
     expect(parseCurrencyInput("2500.50")).toBe(2500.5);
   });
 });
+
+describe("matchClinicalSynonym & calculateLevenshteinSimilarity", () => {
+  it("matches clinical synonyms with high confidence score", () => {
+    const score = matchClinicalSynonym("Suero Fisiologico 500ml", "Cloruro de Sodio 0.9%");
+    expect(score).toBeGreaterThanOrEqual(0.85);
+  });
+
+  it("calculates Levenshtein similarity for fuzzy strings", () => {
+    const score = calculateLevenshteinSimilarity("Alcohol Gel 70%", "Alcohol Gel 70% 500ml");
+    expect(score).toBeGreaterThan(0.6);
+  });
+});
+

@@ -15,10 +15,22 @@ use crate::{
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar))
+        .route("/stream", get(stream_notificaciones))
         .route("/conteo", get(obtener_conteo))
         .route("/{id}/leer", post(marcar_leida))
         .route("/leer-todas", post(marcar_todas_leidas))
         .route("/clear", axum::routing::delete(limpiar_todas))
+}
+
+async fn stream_notificaciones() -> impl IntoResponse {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use std::convert::Infallible;
+
+    let stream = futures_util::stream::iter(vec![
+        Ok::<_, Infallible>(Event::default().event("connected").data(r#"{"status":"connected"}"#)),
+    ]);
+
+    Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
 async fn listar(

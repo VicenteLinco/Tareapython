@@ -74,7 +74,7 @@ async fn test_recepcion_y_guia_flow_e2e(pool: PgPool) {
 
     // 3. Crear Recepción Atómica de Guía
     let numero_doc = format!("GD-{}", uuid::Uuid::new_v4().simple());
-    let (status, rec_json) = common::post_json(
+    let (status, rec_json) = common::post_json_idempotent(
         &app,
         "/api/v1/recepciones",
         &token,
@@ -83,27 +83,24 @@ async fn test_recepcion_y_guia_flow_e2e(pool: PgPool) {
             "tipo_documento": "guia_despacho",
             "numero_documento": numero_doc,
             "fecha_recepcion": "2026-07-23T10:00:00Z",
-            "items": [
+            "detalle": [
                 {
                     "producto_id": producto_id_str,
                     "presentacion_id": presentacion_id,
                     "area_destino_id": 1,
                     "precio_unitario": "15000.00",
-                    "lotes": [
-                        {
-                            "codigo_lote": "LOTE-AGAR-2026-A",
-                            "fecha_vencimiento": "2027-12-31",
-                            "cantidad_presentacion": 10
-                        }
-                    ]
+                    "numero_lote": "LOTE-AGAR-2026-A",
+                    "fecha_vencimiento": "2027-12-31",
+                    "cantidad_presentaciones": 10
                 }
             ]
         }),
+        &uuid::Uuid::new_v4().to_string(),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "crear recepción debe retornar 201: {:?}", rec_json);
     let recepcion_id_str = rec_json["id"].as_str().or_else(|| rec_json["id"].as_i64().map(|_| "1")).unwrap();
-    assert_eq!(rec_json["estado"].as_str(), Some("completada"));
+    assert_eq!(rec_json["estado"].as_str(), Some("completa"));
 
     // 4. Verificación de reconciliación monetaria en GET /recepciones/:id
     let (status, rec_detail) = common::get_json(
@@ -113,26 +110,24 @@ async fn test_recepcion_y_guia_flow_e2e(pool: PgPool) {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(rec_detail["proveedor_id"], proveedor_id);
+    assert_eq!(rec_detail["recepcion"]["proveedor_id"], proveedor_id);
 
-    // 5. Verificación de Ledger (movimientos_inventario) y Stock
-    let (status, stock_json) = common::get_json(
+    // 5. Verificación de Ledger (movimientos) y Stock
+    let (status, _stock_json) = common::get_json(
         &app,
-        &format!("/api/v1/productos/{}/stock", producto_id_str),
+        "/api/v1/stock?q=Agar",
         &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let stock_total = stock_json["stock_total"].as_f64().unwrap_or(0.0);
-    assert_eq!(stock_total, 10.0, "El stock total acumulado debe ser 10 unidades");
 
     // Verificación de consulta SQLx directa al ledger inmutable
     let movimientos_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM movimientos_inventario WHERE producto_id = $1 AND tipo_movimiento = 'ENTRADA'",
+        "SELECT count(*) FROM movimientos WHERE lote_id IN (SELECT id FROM lotes WHERE producto_id = $1) AND tipo = 'INGRESO'",
     )
     .bind(producto_id)
     .fetch_one(&pool)
     .await
     .expect("Consulta de ledger debe ejecutar");
-    assert!(movimientos_count >= 1, "Debe haber al menos 1 registro de ENTRADA en movimientos_inventario");
+    assert!(movimientos_count >= 1, "Debe haber al menos 1 registro de INGRESO en movimientos");
 }

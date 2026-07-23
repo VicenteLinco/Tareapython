@@ -149,3 +149,74 @@ export function autoFixGuideItem<T extends GuideItemForValidation & { cantidad?:
     fecha_vencimiento: vto,
   };
 }
+
+/**
+ * Diccionario de sinonimia clínica y equivalencias de insumos médicos.
+ */
+const CLINICAL_SYNONYMS: Record<string, string[]> = {
+  "cloruro de sodio": ["suero fisiologico", "nacl 0.9%", "solucion fisiologica"],
+  "alcohol etilico": ["alcohol gel", "alcohol 70", "alcohol desnaturalizado"],
+  "agua inyectable": ["agua destilada", "agua bidestilada", "agua para inyeccion"],
+  "paracetamol": ["acetaminofen", "panadol", "tylenol"],
+  "povidona yodada": ["betadine", "yodopovidona", "desinfectante yodado"],
+};
+
+/**
+ * Calcula la similitud de Levenshtein entre dos cadenas de texto (retorna entre 0.0 y 1.0).
+ */
+export function calculateLevenshteinSimilarity(str1: string, str2: string): number {
+  const s1 = str1.toLowerCase().trim();
+  const s2 = str2.toLowerCase().trim();
+  if (s1 === s2) return 1.0;
+  if (!s1 || !s2) return 0.0;
+
+  const len1 = s1.length;
+  const len2 = s2.length;
+  const matrix: number[][] = Array.from({ length: len1 + 1 }, () => Array(len2 + 1).fill(0));
+
+  for (let i = 0; i <= len1; i++) matrix[i][0] = i;
+  for (let j = 0; j <= len2; j++) matrix[0][j] = j;
+
+  for (let i = 1; i <= len1; i++) {
+    for (let j = 1; j <= len2; j++) {
+      const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost,
+      );
+    }
+  }
+
+  const distance = matrix[len1][len2];
+  const maxLen = Math.max(len1, len2);
+  return Number((1 - distance / maxLen).toFixed(2));
+}
+
+/**
+ * Calcula el puntaje de coincidencia clínica considerando sinonimia y Levenshtein.
+ */
+export function matchClinicalSynonym(query: string, candidate: string): number {
+  const q = query.toLowerCase().trim();
+  const c = candidate.toLowerCase().trim();
+
+  if (q === c) return 1.0;
+  if (c.includes(q) || q.includes(c)) return 0.85;
+
+  for (const [key, synonyms] of Object.entries(CLINICAL_SYNONYMS)) {
+    const keyMatchesQ = q.includes(key) || key.includes(q);
+    const keyMatchesC = c.includes(key) || key.includes(c);
+
+    for (const syn of synonyms) {
+      const synMatchesQ = q.includes(syn) || syn.includes(q);
+      const synMatchesC = c.includes(syn) || syn.includes(c);
+
+      if ((keyMatchesQ && synMatchesC) || (synMatchesQ && keyMatchesC)) {
+        return 0.9;
+      }
+    }
+  }
+
+  return calculateLevenshteinSimilarity(q, c);
+}
+

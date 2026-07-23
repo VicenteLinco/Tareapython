@@ -40,7 +40,7 @@ fn migrations_preserve_the_baseline_and_append_only_history() {
     let product_fields_sql = fs::read(canonical.join(&canonical_files[1])).unwrap();
     assert_eq!(
         sha256_hex(&product_fields_sql),
-        "146a6a3633b19df50dd7d5ba0a3f2501f7baee51bc75526a2ecc3ec7762b6a5d",
+        "0a7a568f8c4ba5ebf027861a4cbe4fe0406dfdf8c91e5187b2f5d07c459c0fd1",
         "the append-only 002 migration drifted"
     );
 

@@ -525,7 +525,7 @@ export default function ConfiguracionPage() {
   if (isLoading) return <PageLoading label="Cargando configuración..." />;
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-5xl">
       <div className="mb-8">
         <h1 className="t-h1 tracking-tight">Configuración</h1>
         <p className="text-sm text-base-content/50 mt-1">
@@ -533,28 +533,27 @@ export default function ConfiguracionPage() {
         </p>
       </div>
 
-      <div className="bg-base-200 p-1 rounded-xl mb-6 flex overflow-x-auto gap-1 scrollbar-hide">
+      <div className="bg-base-200 p-1.5 rounded-xl mb-6 flex overflow-x-auto gap-1 scrollbar-hide">
         {([
-          { key: "general" as const, icon: Building2, full: "Laboratorio y Marca", short: "Marca" },
-          { key: "operaciones" as const, icon: Sliders, full: "Inventario y Demanda", short: "Operaciones" },
-          { key: "vencimientos" as const, icon: Bell, full: "Vencimientos", short: "Alertas" },
-          { key: "integraciones" as const, icon: Cpu, full: "Modelos de IA", short: "IA" },
-          { key: "campos" as const, icon: Database, full: "Campos del Laboratorio", short: "Campos" },
-        ]).map(({ key, icon: Icon, full, short }) => (
+          { key: "general" as const, icon: Building2, label: "Laboratorio y Marca" },
+          { key: "operaciones" as const, icon: Sliders, label: "Inventario y Demanda" },
+          { key: "vencimientos" as const, icon: Bell, label: "Vencimientos" },
+          { key: "integraciones" as const, icon: Cpu, label: "Modelos de IA" },
+          { key: "campos" as const, icon: Database, label: "Campos Personalizados" },
+        ]).map(({ key, icon: Icon, label }) => (
           <button
             key={key}
             type="button"
             onClick={() => setActiveTab(key)}
             className={cn(
-              "shrink-0 flex items-center justify-center gap-2 rounded-lg font-medium transition-all py-2 px-3 md:py-2.5 md:px-4 text-xs md:text-sm",
+              "shrink-0 flex-1 flex items-center justify-center gap-2 rounded-lg font-medium transition-all py-2.5 px-3 md:px-4 text-xs md:text-sm whitespace-nowrap min-w-max",
               activeTab === key
                 ? "bg-base-100 text-primary shadow-sm"
-                : "text-base-content/60 hover:text-base-content"
+                : "text-base-content/60 hover:text-base-content hover:bg-base-100/50"
             )}
           >
             <Icon className="h-4 w-4 shrink-0" />
-            <span className="hidden sm:inline whitespace-nowrap">{full}</span>
-            <span className="sm:hidden">{short}</span>
+            <span>{label}</span>
           </button>
         ))}
       </div>

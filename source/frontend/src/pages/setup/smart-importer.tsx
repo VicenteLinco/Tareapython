@@ -59,7 +59,7 @@ type CategoryFilter =
   | "Clínicos"
   | "Trazabilidad"
   | "Fabricante"
-  | "Campos del Laboratorio";
+  | "Campos Personalizados";
 
 type ImportCellValue = string | number | boolean | null | undefined;
 type ImportPreviewRow = Record<string, ImportCellValue>;
@@ -1644,7 +1644,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
       key: `lab_${field.id}`,
       label: field.nombre,
       required: field.requerido,
-      category: "Campos del Laboratorio" as const,
+      category: "Campos Personalizados" as const,
       desc: `Campo personalizado (${field.tipo_dato})`,
       typeLabel,
       allowedHint,
@@ -2107,7 +2107,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                       "Comercial",
                       "Almacén",
                       "Clínicos",
-                      "Campos del Laboratorio",
+                      "Campos Personalizados",
                     ] as CategoryFilter[]
                   ).map((cat) => (
                     <button

@@ -61,6 +61,7 @@ export function LabelsSection({
   const [hojaFilas, setHojaFilas] = useState(10);
   const [posicionInicial, setPosicionInicial] = useState(1);
 
+  const [modoColor, setModoColor] = useState<"bn_termica" | "color">("bn_termica");
   const [mostrarBordes, setMostrarBordes] = useState(true);
   const [configAvanzada, setConfigAvanzada] = useState(false);
 
@@ -114,6 +115,7 @@ export function LabelsSection({
             hojaColumnas,
             hojaFilas,
             posicionInicial,
+            modoColor,
             mostrarBordes,
             margenY,
             margenX,
@@ -201,6 +203,27 @@ export function LabelsSection({
             <FileText className="h-3.5 w-3.5" />
             Hoja común
           </button>
+        </div>
+
+        {/* Selector de Modo de Impresora (B/N vs Color) */}
+        <div className="flex items-center justify-between gap-2 p-2.5 bg-base-200/60 rounded-xl border border-base-200">
+          <span className="text-xs font-bold text-base-content/80">Modo de Tinta / Impresora:</span>
+          <div className="join">
+            <button
+              type="button"
+              className={`join-item btn btn-xs font-bold ${modoColor === "bn_termica" ? "btn-primary" : "btn-ghost"}`}
+              onClick={() => setModoColor("bn_termica")}
+            >
+              🖨️ B/N Térmica Chica (Alto Contraste)
+            </button>
+            <button
+              type="button"
+              className={`join-item btn btn-xs font-bold ${modoColor === "color" ? "btn-primary" : "btn-ghost"}`}
+              onClick={() => setModoColor("color")}
+            >
+              🎨 Color Hojas PDF
+            </button>
+          </div>
         </div>
 
         {/* Panel de Configuración */}

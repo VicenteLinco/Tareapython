@@ -121,6 +121,14 @@ function LoteRow({
     }
   };
 
+  const diasRestantes = lote.fecha_vencimiento
+    ? Math.ceil(
+        (new Date(lote.fecha_vencimiento + "T00:00:00").getTime() - Date.now()) /
+          (1000 * 60 * 60 * 24),
+      )
+    : null;
+  const esVidaUtilCorta = diasRestantes !== null && diasRestantes < 90;
+
   const fechaDisplayValue = modoMes
     ? lote.fecha_vencimiento
       ? lote.fecha_vencimiento.slice(0, 7)
@@ -174,6 +182,11 @@ function LoteRow({
               </button>
             </div>
           </>
+        )}
+        {esVidaUtilCorta && (
+          <div className="text-[11px] font-bold text-error bg-error/10 border border-error/20 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
+            🚨 Vida útil corta ({diasRestantes} días)
+          </div>
         )}
         <input
           type="number"

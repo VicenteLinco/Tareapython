@@ -28,6 +28,7 @@ export interface OpcionesImprenta {
 
   // General
   mostrarBordes?: boolean;
+  modoColor?: "bn_termica" | "color"; // "bn_termica" = Impresora chica B/N Zebra/TSC con alto contraste vector; "color" = Hoja PDF adhesiva
 
   // Márgenes avanzados para hojas (mm)
   margenY?: number; // superior/inferior
@@ -159,11 +160,14 @@ export async function imprimirEtiquetas(
         ? lote.producto_nombre.slice(0, maxChars - 2) + "…"
         : lote.producto_nombre;
 
+    const isBnTermica = opciones.modoColor === "bn_termica";
+    const badgeBn = isBnTermica ? `<span class="badge-bn font-mono">[B/N]</span> ` : "";
+
     const labelHtml = `
-      <div class="label-cell">
+      <div class="label-cell ${isBnTermica ? "label-bn-termica" : ""}">
         <img class="qr" src="${qrDataUrl}" alt="QR ${lote.numero_lote}" />
         <div class="info">
-          <div class="nombre">${nombreCorto}</div>
+          <div class="nombre">${badgeBn}${nombreCorto}</div>
           <div class="sub">${unidad ? unidad + " · " : ""}${lote.area_nombre}</div>
           <div class="lote">Lote: ${lote.numero_lote}</div>
           <div class="vence">Vence: ${fechaCorta}</div>

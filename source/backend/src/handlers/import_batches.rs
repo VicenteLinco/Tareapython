@@ -238,13 +238,12 @@ fn validate_typed(field: &str, value: &Value) -> Result<(), AppError> {
                 return Err(AppError::Validation("Se esperaba un booleano".into()));
             }
         }
-        Enum => {
-            if !d.allowed_values.contains(&text) {
+        Enum
+            if !d.allowed_values.contains(&text) => {
                 return Err(AppError::Validation(
                     "Valor fuera del catálogo permitido".into(),
                 ));
             }
-        }
         _ => {}
     }
     Ok(())

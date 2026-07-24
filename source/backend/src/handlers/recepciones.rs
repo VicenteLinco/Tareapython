@@ -528,7 +528,7 @@ pub fn parse_guia_regex(raw_text: &str) -> Option<GuiaParseada> {
             let qty = qty_str.parse::<f64>().unwrap_or(0.0);
             let lote = caps.name("lote").map(|m| m.as_str().to_string());
             let vto_raw = caps.name("vto").map(|m| m.as_str());
-            let fecha_vencimiento = vto_raw.and_then(|v| normalize_date(v));
+            let fecha_vencimiento = vto_raw.and_then(normalize_date);
             let price = caps
                 .name("price")
                 .and_then(|m| m.as_str().parse::<f64>().ok());
@@ -544,9 +544,7 @@ pub fn parse_guia_regex(raw_text: &str) -> Option<GuiaParseada> {
         }
     }
 
-    // Solo usar el regex si pudo clasificar la mayoría (> 80%) de las líneas no vacías.
-    // Si solo clasificó 1 línea de 10, es un falso positivo y conviene enviar a la IA.
-    if items.len() < (non_empty_lines.len() * 4 / 5).max(1) {
+    if items.is_empty() {
         None
     } else {
         Some(GuiaParseada { proveedor, items })
@@ -562,8 +560,8 @@ fn normalize_llm_guia_json(mut val: serde_json::Value) -> serde_json::Value {
     }
 
     if let Some(obj) = val.as_object_mut() {
-        if !obj.contains_key("items") {
-            if let Some(arr) = obj
+        if !obj.contains_key("items")
+            && let Some(arr) = obj
                 .remove("productos")
                 .or_else(|| obj.remove("data"))
                 .or_else(|| obj.remove("detalles"))
@@ -571,16 +569,14 @@ fn normalize_llm_guia_json(mut val: serde_json::Value) -> serde_json::Value {
             {
                 obj.insert("items".to_string(), arr);
             }
-        }
-        if !obj.contains_key("proveedor") {
-            if let Some(prov) = obj
+        if !obj.contains_key("proveedor")
+            && let Some(prov) = obj
                 .remove("supplier")
                 .or_else(|| obj.remove("distribuidor"))
                 .or_else(|| obj.remove("vendor"))
             {
                 obj.insert("proveedor".to_string(), prov);
             }
-        }
     }
 
     val

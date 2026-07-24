@@ -134,13 +134,13 @@ impl PresentacionService {
         }
 
         // No permitir cambiar factor_conversion si hay recepciones que la usaron
-        if let Some(new_factor) = params.factor_conversion {
-            if new_factor != anterior.factor_conversion {
+        if let Some(new_factor) = params.factor_conversion
+            && new_factor != anterior.factor_conversion {
                 // DOM-FREEZE-001: No permitir cambiar factor si está aprobado
                 let product_state: String = sqlx::query_scalar(
                     "SELECT estado_catalogo FROM productos WHERE id = $1",
                 )
-                .bind(&anterior.producto_id)
+                .bind(anterior.producto_id)
                 .fetch_one(pool)
                 .await?;
 
@@ -165,7 +165,6 @@ impl PresentacionService {
                     ));
                 }
             }
-        }
 
         let nombre = params
             .nombre
@@ -181,11 +180,10 @@ impl PresentacionService {
             .factor_conversion
             .unwrap_or(anterior.factor_conversion);
         let gtin = params.gtin.as_deref().or(anterior.gtin.as_deref());
-        if let Some(gtin) = gtin {
-            if !gtin.chars().all(|c| c.is_ascii_digit()) || gtin.len() != 14 {
+        if let Some(gtin) = gtin
+            && (!gtin.chars().all(|c| c.is_ascii_digit()) || gtin.len() != 14) {
                 return Err(AppError::Validation("GTIN debe tener 14 digitos".into()));
             }
-        }
 
         let presentacion = sqlx::query_as::<_, Presentacion>(
             "UPDATE presentaciones SET nombre = $1, nombre_plural = $2, factor_conversion = $3, codigo_barras = $4, gtin = $5, gs1_habilitado = $6, sku = $7, version = version + 1 WHERE id = $8 AND version = $9 RETURNING *",

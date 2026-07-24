@@ -100,8 +100,8 @@ pub async fn run_startup_migrations(
                     migration_error = %error,
                     "Detectada discrepancia de checksum en migraciones (VersionMismatch). Intentando auto-reparar checksums en _sqlx_migrations..."
                 );
-                if let Ok(repaired) = repair_migration_checksums(pool).await {
-                    if repaired > 0 {
+                if let Ok(repaired) = repair_migration_checksums(pool).await
+                    && repaired > 0 {
                         tracing::info!(
                             repaired_count = repaired,
                             "Checksums de migración actualizados exitosamente. Reintentando arranque de migraciones..."
@@ -110,7 +110,6 @@ pub async fn run_startup_migrations(
                             return Ok(());
                         }
                     }
-                }
             }
 
             let exact_legacy = if legacy_reset_authorized {

@@ -118,7 +118,7 @@ export function AsignarCodigoModal({
       setVencimientoValue("");
       fetchFabricante(codigo);
     }
-  }, [codigo, fetchFabricante]);
+  }, [codigo, parsedCode, fetchFabricante]);
 
   // Queries for selectors
   const { data: categorias } = useQuery<Categoria[]>({
@@ -162,13 +162,13 @@ export function AsignarCodigoModal({
         ) || unidades[0];
       setUnidadBaseId(String(u.id));
     }
-  }, [unidades]);
+  }, [unidades, unidadBaseId]);
 
   useEffect(() => {
     if (areas && areas.length > 0 && !areaId) {
       setAreaId(String(areas[0].id));
     }
-  }, [areas]);
+  }, [areas, areaId]);
 
   // Filtering for linking
   const filtered = productos

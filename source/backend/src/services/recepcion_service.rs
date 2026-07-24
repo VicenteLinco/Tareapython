@@ -229,11 +229,10 @@ pub async fn listar(
     if params.proveedor_id.is_some() {
         query = query.bind(pid_val);
     }
-    if let Some(ref estado) = params.estado {
-        if estado != "confirmada" {
+    if let Some(ref estado) = params.estado
+        && estado != "confirmada" {
             query = query.bind(estado_val.clone());
         }
-    }
     if params.desde.is_some() {
         query = query.bind(desde_val.clone());
     }
@@ -263,11 +262,10 @@ pub async fn listar(
     if params.proveedor_id.is_some() {
         count_query = count_query.bind(pid_val);
     }
-    if let Some(ref estado) = params.estado {
-        if estado != "confirmada" {
+    if let Some(ref estado) = params.estado
+        && estado != "confirmada" {
             count_query = count_query.bind(estado_val);
         }
-    }
     if params.desde.is_some() {
         count_query = count_query.bind(desde_val);
     }
@@ -336,27 +334,44 @@ pub async fn crear_recepcion(
 
     // Para rechazada no procesamos ítems
     if estado != "rechazada" {
+        // Pre-fetch all necessary info to avoid N+1 queries
+        let producto_ids: Vec<Uuid> = req.detalle.iter().map(|i| i.producto_id).collect();
+        let area_ids: Vec<i32> = req.detalle.iter().map(|i| i.area_destino_id).collect();
+        let pres_ids: Vec<i32> = req.detalle.iter().filter_map(|i| i.presentacion_id).collect();
+
+        #[derive(sqlx::FromRow)]
+        struct ProdInfo { id: Uuid, nombre: String, control_lote: String }
+        let productos: Vec<ProdInfo> = sqlx::query_as("SELECT id, nombre, control_lote FROM productos WHERE id = ANY($1)")
+            .bind(&producto_ids)
+            .fetch_all(&mut *tx).await?;
+        let prod_map: HashMap<Uuid, (String, String)> = productos.into_iter().map(|p| (p.id, (p.nombre, p.control_lote))).collect();
+
+        #[derive(sqlx::FromRow)]
+        struct AreaInfo { id: i32, nombre: String }
+        let areas: Vec<AreaInfo> = sqlx::query_as("SELECT id, nombre FROM areas WHERE id = ANY($1)")
+            .bind(&area_ids)
+            .fetch_all(&mut *tx).await?;
+        let area_map: HashMap<i32, String> = areas.into_iter().map(|a| (a.id, a.nombre)).collect();
+
+        #[derive(sqlx::FromRow)]
+        struct PresInfo { id: i32, nombre: String, factor_conversion: Decimal }
+        let presentaciones: Vec<PresInfo> = sqlx::query_as("SELECT id, nombre, factor_conversion FROM presentaciones WHERE id = ANY($1)")
+            .bind(&pres_ids)
+            .fetch_all(&mut *tx).await?;
+        let pres_map: HashMap<i32, (String, Decimal)> = presentaciones.into_iter().map(|p| (p.id, (p.nombre, p.factor_conversion))).collect();
+
         for item in &req.detalle {
-            // Obtener nombre del producto y área para el LoteCreado, más la
-            // política de control de lote del producto.
-            let (producto_nombre, presentacion_nombre, area_nombre, control_lote): (
-                String,
-                Option<String>,
-                String,
-                String,
-            ) = sqlx::query_as(
-                r#"SELECT p.nombre,
-                          (SELECT pr.nombre FROM presentaciones pr WHERE pr.id = $2),
-                          a.nombre,
-                          p.control_lote
-                   FROM productos p, areas a
-                   WHERE p.id = $1 AND a.id = $3"#,
-            )
-            .bind(item.producto_id)
-            .bind(item.presentacion_id)
-            .bind(item.area_destino_id)
-            .fetch_one(&mut *tx)
-            .await?;
+            let (producto_nombre, control_lote) = prod_map.get(&item.producto_id)
+                .cloned()
+                .unwrap_or_else(|| ("Desconocido".to_string(), "con_vto".to_string()));
+            let area_nombre = area_map.get(&item.area_destino_id)
+                .cloned()
+                .unwrap_or_else(|| "Desconocido".to_string());
+            let (presentacion_nombre, factor_conversion) = if let Some(pid) = item.presentacion_id {
+                pres_map.get(&pid).map(|(n, f)| (Some(n.clone()), *f)).unwrap_or((None, Decimal::from(1)))
+            } else {
+                (None, Decimal::from(1))
+            };
 
             // Resolver número de lote y vencimiento efectivos según la política:
             //  - trazable: lote y vencimiento OBLIGATORIOS (trazabilidad clínica).
@@ -423,16 +438,7 @@ pub async fn crear_recepcion(
             .fetch_one(&mut *tx)
             .await?;
 
-            let factor = if let Some(pres_id) = item.presentacion_id {
-                sqlx::query_scalar::<_, Decimal>(
-                    "SELECT factor_conversion FROM presentaciones WHERE id = $1 AND activa = true",
-                )
-                .bind(pres_id)
-                .fetch_one(&mut *tx)
-                .await?
-            } else {
-                Decimal::from(1)
-            };
+            let factor = factor_conversion;
 
             let cantidad_base = item.cantidad_presentaciones * factor;
 

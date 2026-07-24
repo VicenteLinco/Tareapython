@@ -154,3 +154,10 @@ describe("ProductosTab pagination", () => {
     expect(await screen.findByText("Producto 01")).toBeInTheDocument();
   });
 });
+
+describe('Creador Freeze Rules', () => {
+  it('UI-CREADOR-FREEZE-001: Ofertas tab must be hidden', () => {
+    renderTab();
+    expect(screen.queryByText('Ofertas')).not.toBeInTheDocument();
+  });
+});

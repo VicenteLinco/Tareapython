@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useFilterStorage } from "@/hooks/use-filter-storage";
+import { useDebounce } from "@/hooks/use-debounce";
 import type { StockItem } from "@/types";
 
 export type EstadoFiltro =
@@ -44,6 +45,7 @@ export function useStockFilters() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [search, setSearch] = useState(searchParams.get("search") || "");
+  const debouncedSearch = useDebounce(search, 300);
   const [searchActiveIndex, setSearchActiveIndex] = useState(-1);
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
   const searchContainerRef = useRef<HTMLDivElement>(null);
@@ -159,6 +161,7 @@ export function useStockFilters() {
 
   return {
     search,
+    debouncedSearch,
     setSearch,
     estado,
     setEstado,

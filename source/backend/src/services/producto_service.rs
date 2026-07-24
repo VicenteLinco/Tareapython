@@ -519,7 +519,6 @@ impl ProductoService {
                             'id', v.id,
                             'definicion_id', v.definicion_id,
                             'campo_nombre', d.nombre,
-                            'campo_key', d.key,
                             'tipo_dato', d.tipo_dato,
                             'valor_texto', v.valor_texto,
                             'valor_entero', v.valor_entero,
@@ -1576,8 +1575,8 @@ impl ProductoService {
             old_factor
         };
 
-        if let Some(new_factor) = input.pres_factor {
-            if new_factor != old_factor {
+        if let Some(new_factor) = input.pres_factor
+            && new_factor != old_factor {
                 let multiplier = new_factor / old_factor;
 
                 // Update stock
@@ -1605,7 +1604,6 @@ impl ProductoService {
                 .await
                 .map_err(|e| AppError::Internal(format!("Error al escalar stock: {}", e)))?;
             }
-        }
 
         // Presentations sync
         if let (Some(pres_nombre), Some(pres_factor)) = (&input.pres_nombre, input.pres_factor) {

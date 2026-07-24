@@ -281,13 +281,24 @@ impl ConsumoService {
         let mut items_fallidos = Vec::new();
         let mut lotes_por_item = Vec::new();
 
+        // Fetch all product states and names at once
+        let product_ids: Vec<Uuid> = item_pairs.iter().map(|(item, _)| item.producto_id).collect();
+        let product_info: Vec<(Uuid, String, String)> = sqlx::query_as(
+            "SELECT id, estado_catalogo, nombre FROM productos WHERE id = ANY($1)"
+        )
+        .bind(&product_ids)
+        .fetch_all(&mut *tx)
+        .await?;
+
+        let mut info_map = std::collections::HashMap::new();
+        for (id, estado, nombre) in product_info {
+            info_map.insert(id, (estado, nombre));
+        }
+
         for (item, cantidad) in &item_pairs {
-            // Check catalog state
-            let estado_catalogo: String =
-                sqlx::query_scalar("SELECT estado_catalogo FROM productos WHERE id = $1")
-                    .bind(item.producto_id)
-                    .fetch_one(&mut *tx)
-                    .await?;
+            let (estado_catalogo, nombre_producto) = info_map.get(&item.producto_id)
+                .map(|(e, n)| (e.as_str(), n.as_str()))
+                .unwrap_or(("", ""));
 
             if estado_catalogo == "pendiente_aprobacion" {
                 tx.rollback().await?;
@@ -351,14 +362,9 @@ impl ConsumoService {
             let disponible = stock_ops::stock_total(&lotes);
 
             if disponible < *cantidad {
-                let nombre: Option<String> =
-                    sqlx::query_scalar("SELECT nombre FROM productos WHERE id = $1")
-                        .bind(item.producto_id)
-                        .fetch_optional(&mut *tx)
-                        .await?;
                 items_fallidos.push(serde_json::json!({
                     "producto_id": item.producto_id,
-                    "producto": nombre.unwrap_or_default(),
+                    "producto": nombre_producto,
                     "stock_disponible": disponible,
                     "cantidad_pedida": cantidad,
                 }));

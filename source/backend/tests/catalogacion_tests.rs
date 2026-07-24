@@ -639,7 +639,7 @@ async fn test_stock_scaling_on_approval_and_lookup(pool: PgPool) {
     // 2. Call lookup endpoint
     let (status_look, res_look) = common::get_json(
         &app,
-        &format!("/api/v1/productos/scan/lookup?codigo=TEST-SCALE-VAL"),
+        &"/api/v1/productos/scan/lookup?codigo=TEST-SCALE-VAL".to_string(),
         &token,
     )
     .await;

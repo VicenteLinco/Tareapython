@@ -54,15 +54,15 @@ export default function CreadorProductosPage() {
 
   return (
     <div className="space-y-0">
-      <div className="mb-4">
-        <h1 className="t-h1 tracking-tight">Creador de Productos</h1>
-        <p className="text-sm opacity-50 mt-0.5">
-          Administra los datos maestros del sistema, catálogos técnicos, ofertas comerciales y presentaciones
+      <div className="mb-4 px-4 sm:px-6 lg:px-8 mt-2 lg:mt-4">
+        <h1 className="t-h1 tracking-tight text-balance">Creador de Productos</h1>
+        <p className="text-sm opacity-60 mt-1 max-w-3xl text-balance leading-relaxed">
+          Administra los datos maestros del sistema, catálogos técnicos, ofertas comerciales y presentaciones.
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-base-200 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pb-0">
+      <div className="flex items-center gap-1 border-b border-base-200 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pb-0 px-4 sm:px-6 lg:px-8">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -86,7 +86,7 @@ export default function CreadorProductosPage() {
       </div>
 
       {/* Contenido del tab activo */}
-      <div className="pt-5">
+      <div className="pt-5 px-4 sm:px-6 lg:px-8">
         {tabActivo === "productos" && <ProductosTab />}
         {tabActivo === "catalogacion" && <BandejaCatalogacionTab />}
         {tabActivo === "categorias" && <CategoriasTab />}

@@ -337,48 +337,42 @@ pub async fn actualizar(
     body: UpdateConfiguracion,
     usuario_id: Uuid,
 ) -> Result<ConfiguracionResponse, AppError> {
-    if let Some(dias) = body.vencimiento_vida_util_minima_dias {
-        if dias < 0 {
+    if let Some(dias) = body.vencimiento_vida_util_minima_dias
+        && dias < 0 {
             return Err(AppError::Validation(
                 "La vida útil mínima debe ser mayor o igual a 0".to_string(),
             ));
         }
-    }
-    if let Some(margen) = body.vencimiento_margen_tolerancia_pct {
-        if margen < 0 || margen > 100 {
+    if let Some(margen) = body.vencimiento_margen_tolerancia_pct
+        && (!(0..=100).contains(&margen)) {
             return Err(AppError::Validation(
                 "El margen de tolerancia debe estar entre 0 y 100".to_string(),
             ));
         }
-    }
-    if let Some(ventana) = body.ventana_consumo_dias {
-        if ventana < 14 {
+    if let Some(ventana) = body.ventana_consumo_dias
+        && ventana < 14 {
             return Err(AppError::Validation(
                 "La ventana de consumo debe ser mayor o igual a 14 días".to_string(),
             ));
         }
-    }
-    if let Some(factor) = body.factor_historial_corto {
-        if factor < 0.0 || factor > 1.0 {
+    if let Some(factor) = body.factor_historial_corto
+        && (!(0.0..=1.0).contains(&factor)) {
             return Err(AppError::Validation(
                 "El factor de historial corto debe estar entre 0.0 y 1.0".to_string(),
             ));
         }
-    }
-    if let Some(periodo) = body.periodo_revision_dias {
-        if periodo < 1 {
+    if let Some(periodo) = body.periodo_revision_dias
+        && periodo < 1 {
             return Err(AppError::Validation(
                 "El período de revisión debe ser mayor o igual a 1 día".to_string(),
             ));
         }
-    }
-    if let Some(ref color) = body.login_bg_color {
-        if !color.is_empty() && !is_valid_hex_color(color) {
+    if let Some(ref color) = body.login_bg_color
+        && !color.is_empty() && !is_valid_hex_color(color) {
             return Err(AppError::Validation(
                 "El color de fondo debe ser un color hex válido (ej: #1a1a2e)".to_string(),
             ));
         }
-    }
 
     let mut log_changes: Vec<(&str, String, String)> = Vec::new();
 
@@ -572,36 +566,31 @@ pub async fn actualizar(
         set_config(pool, "ia_api_url", api_url).await?;
     }
 
-    if let Some(api_key) = &body.ia_api_key {
-        if api_key != "***" {
+    if let Some(api_key) = &body.ia_api_key
+        && api_key != "***" {
             set_config(pool, "ia_api_key", api_key).await?;
             log_changes.push(("ia_api_key", "***".to_string(), "***".to_string()));
         }
-    }
 
-    if let Some(key_gemini) = &body.ia_api_key_gemini {
-        if key_gemini != "***" {
+    if let Some(key_gemini) = &body.ia_api_key_gemini
+        && key_gemini != "***" {
             set_config(pool, "ia_api_key_gemini", key_gemini).await?;
         }
-    }
 
-    if let Some(key_openai) = &body.ia_api_key_openai {
-        if key_openai != "***" {
+    if let Some(key_openai) = &body.ia_api_key_openai
+        && key_openai != "***" {
             set_config(pool, "ia_api_key_openai", key_openai).await?;
         }
-    }
 
-    if let Some(key_deepseek) = &body.ia_api_key_deepseek {
-        if key_deepseek != "***" {
+    if let Some(key_deepseek) = &body.ia_api_key_deepseek
+        && key_deepseek != "***" {
             set_config(pool, "ia_api_key_deepseek", key_deepseek).await?;
         }
-    }
 
-    if let Some(key_github) = &body.ia_api_key_github {
-        if key_github != "***" {
+    if let Some(key_github) = &body.ia_api_key_github
+        && key_github != "***" {
             set_config(pool, "ia_api_key_github", key_github).await?;
         }
-    }
 
     if let Some(url_openai) = &body.ia_api_url_openai {
         set_config(pool, "ia_api_url_openai", url_openai).await?;
@@ -619,17 +608,15 @@ pub async fn actualizar(
         set_config(pool, "ia_api_url_ollama", url_ollama).await?;
     }
 
-    if let Some(key_groq) = &body.ia_api_key_groq {
-        if key_groq != "***" {
+    if let Some(key_groq) = &body.ia_api_key_groq
+        && key_groq != "***" {
             set_config(pool, "ia_api_key_groq", key_groq).await?;
         }
-    }
 
-    if let Some(key_mistral) = &body.ia_api_key_mistral {
-        if key_mistral != "***" {
+    if let Some(key_mistral) = &body.ia_api_key_mistral
+        && key_mistral != "***" {
             set_config(pool, "ia_api_key_mistral", key_mistral).await?;
         }
-    }
 
     if let Some(url_groq) = &body.ia_api_url_groq {
         set_config(pool, "ia_api_url_groq", url_groq).await?;
@@ -907,17 +894,15 @@ pub async fn obtener_ia_modelos(
         };
     }
 
-    if let Some(key) = api_key_query {
-        if !key.is_empty() && key != "***" {
+    if let Some(key) = api_key_query
+        && !key.is_empty() && key != "***" {
             db_config.api_key = key;
         }
-    }
 
-    if let Some(url) = api_url_query {
-        if !url.is_empty() {
+    if let Some(url) = api_url_query
+        && !url.is_empty() {
             db_config.api_url = url;
         }
-    }
 
     let provider = db_config.provider.to_lowercase();
     let api_key = db_config.api_key;

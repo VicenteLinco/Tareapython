@@ -79,8 +79,6 @@ pub struct CreateProducto {
     #[serde(alias = "stock_minimo")]
     pub stock_minimo_global: Option<Decimal>,
     pub codigo_loinc_cpt: Option<String>,
-    pub loinc_code: Option<String>,
-    pub cpt_code: Option<String>,
     pub control_lote: Option<ControlLote>,
     pub presentaciones: Option<Vec<CreatePresentacionInline>>,
     pub area_ids: Option<Vec<i32>>,
@@ -107,8 +105,6 @@ pub struct UpdateProducto {
     #[serde(alias = "stock_minimo")]
     pub stock_minimo_global: Option<Decimal>,
     pub codigo_loinc_cpt: Option<String>,
-    pub loinc_code: Option<String>,
-    pub cpt_code: Option<String>,
     pub control_lote: Option<ControlLote>,
     pub area_ids: Option<Vec<i32>>,
     pub version: i32,

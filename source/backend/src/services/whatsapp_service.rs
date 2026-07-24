@@ -902,7 +902,7 @@ pub async fn registrar_consumo_fefo_tool(
                 .await
                 .map_err(|e| AppError::Internal(e.to_string()))?;
 
-            return Ok(serde_json::json!({
+            Ok(serde_json::json!({
                 "status": "success",
                 "message": format!(
                     "Consumo registrado con éxito: se descontaron {} unidades del Lote {} (vence: {}) en el área {}.",
@@ -911,7 +911,7 @@ pub async fn registrar_consumo_fefo_tool(
                     row.fecha_vencimiento,
                     row.area_nombre
                 )
-            }));
+            }))
         } else {
             let first_row = &rows[0];
             let fefo_lote = LoteSelectionDetail {
@@ -935,13 +935,13 @@ pub async fn registrar_consumo_fefo_tool(
                 })
                 .collect::<Vec<_>>();
 
-            return Ok(serde_json::json!({
+            Ok(serde_json::json!({
                 "status": "needs_lote_selection",
                 "producto_nombre": resolved.producto_nombre,
                 "cantidad": args.cantidad,
                 "fefo_lote": fefo_lote,
                 "alternativas": alternativas
-            }));
+            }))
         }
     } else {
         let lote_str = lote_ident.unwrap();
@@ -1062,7 +1062,7 @@ pub async fn registrar_consumo_fefo_tool(
             .await
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
-        return Ok(serde_json::json!({
+        Ok(serde_json::json!({
             "status": "success",
             "message": format!(
                 "Consumo registrado con éxito: se descontaron {} unidades del Lote {} (vence: {}) en el área {}.",
@@ -1071,6 +1071,6 @@ pub async fn registrar_consumo_fefo_tool(
                 row.fecha_vencimiento,
                 row.area_nombre
             )
-        }));
+        }))
     }
 }

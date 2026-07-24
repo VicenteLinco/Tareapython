@@ -4,6 +4,9 @@ version = "2.2.0"
 edition = "2024"
 default-run = "inventario-lab-backend"
 
+[build-dependencies]
+dotenvy = "0.15"
+
 [dependencies]
 # Web framework
 axum = { version = "0.8", features = ["macros", "multipart"] }

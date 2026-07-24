@@ -46,7 +46,7 @@ jobs:
         env:
           SQLX_OFFLINE: "true"
         run: |
-          ./source/tooling/test-isolated-db.sh --workdir source/backend -- cargo test --locked --test db_isolation_contract -- --nocapture
+          ./source/tooling/test-isolated-db.sh --workdir source/backend -- cargo test --locked -- --nocapture
 
   frontend:
     runs-on: ubuntu-24.04

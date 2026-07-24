@@ -361,7 +361,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
         }
     }
 
-    let filtered_clause = format!("{} {}", type_filter, custom_filters_clause);
+    let filtered_clause = format!("{} ", type_filter);
 
     let (stock_col, stock_table, area_filter2) = if let Some(area_ids) = &scoped_area_array {
         (
@@ -375,8 +375,21 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
 
     // Base query using the already updated 'stock' table
     let sql = format!(
-        r#"WITH ventana AS (
-               SELECT NOW() - ({}::int * INTERVAL '1 day') AS desde
+        r#"WITH base_productos_sin_paginar AS (
+               SELECT p.id, p.codigo_interno, p.nombre, p.categoria_id, p.unidad_base_id, p.lead_time_propio, p.imagen_path, p.control_lote
+               FROM productos p
+               WHERE p.activo = true {13} {14} {15} {16} {17}
+           ),
+           total_count AS (
+               SELECT COUNT(*) as full_count FROM base_productos_sin_paginar
+           ),
+           base_productos AS (
+               SELECT * FROM base_productos_sin_paginar
+               ORDER BY nombre, id
+               LIMIT ${25} OFFSET ${26}
+           ),
+           ventana AS (
+               SELECT NOW() - ({0}::int * INTERVAL '1 day') AS desde
            ),
            dias AS (
                SELECT generate_series(
@@ -392,36 +405,37 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                    SUM(m.cantidad)::FLOAT8 AS cantidad
                FROM movimientos m
                JOIN lotes l ON l.id = m.lote_id
+               JOIN base_productos bp ON bp.id = l.producto_id
                WHERE m.tipo = 'CONSUMO'
                  AND m.created_at >= (SELECT desde FROM ventana)
-                 {}
+                 {1}
                GROUP BY l.producto_id, m.created_at::date
            ),
            series AS (
                SELECT
-                   p.id AS producto_id,
+                   bp.id AS producto_id,
                    array_agg(COALESCE(cd.cantidad, 0) ORDER BY d.dia)::FLOAT8[] AS serie
-               FROM productos p
+               FROM base_productos bp
                CROSS JOIN dias d
-               LEFT JOIN consumo_dia cd ON cd.producto_id = p.id AND cd.dia = d.dia
-               WHERE p.activo = true
-               GROUP BY p.id
+               LEFT JOIN consumo_dia cd ON cd.producto_id = bp.id AND cd.dia = d.dia
+               GROUP BY bp.id
            ),
            stock_lotes AS (
                SELECT
                    l.producto_id,
                    l.id AS lote_id,
                    l.fecha_vencimiento,
-                   {} AS cantidad,
+                   {2} AS cantidad,
                    -- Vencimiento más próximo entre el stock USABLE (no vencido).
                    -- Excluir lo vencido es lo que separa "vence pronto" de "ya venció".
                    MIN(l.fecha_vencimiento) FILTER (
-                       WHERE {} > 0
+                       WHERE {3} > 0
                          AND (l.fecha_vencimiento IS NULL OR l.fecha_vencimiento >= CURRENT_DATE)
                    ) OVER (PARTITION BY l.producto_id) AS prox_fecha
-               FROM {} s
+               FROM {4} s
                JOIN lotes l ON l.id = s.lote_id
-               WHERE 1=1 {}
+               JOIN base_productos bp ON bp.id = l.producto_id
+               WHERE 1=1 {5}
            ),
            stock_stats AS (
                SELECT
@@ -471,12 +485,13 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
            ),
            par_levels AS (
                SELECT
-                   producto_id,
-                   SUM(stock_minimo) AS min_manual,
-                   SUM(stock_maximo) AS max_manual
+                   pl.producto_id,
+                   SUM(pl.stock_minimo) AS min_manual,
+                   SUM(pl.stock_maximo) AS max_manual
                FROM par_level_config pl
-               WHERE 1=1 {}
-               GROUP BY producto_id
+               JOIN base_productos bp ON bp.id = pl.producto_id
+               WHERE 1=1 {6}
+               GROUP BY pl.producto_id
            ),
            movimiento_stats AS (
                SELECT
@@ -489,16 +504,18 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                    COUNT(DISTINCT CASE WHEN m.tipo = 'CONSUMO' THEN m.created_at::date END) AS dias_con_consumo,
                    EXTRACT(DAY FROM (NOW() - MIN(m.created_at)))::INT + 1 AS dias_vida_sistema
                FROM lotes l
-               LEFT JOIN movimientos m ON m.lote_id = l.id AND m.tipo = 'CONSUMO' AND m.created_at >= NOW() - ({}::int * INTERVAL '1 day') {}
+               JOIN base_productos bp ON bp.id = l.producto_id
+               LEFT JOIN movimientos m ON m.lote_id = l.id AND m.tipo = 'CONSUMO' AND m.created_at >= NOW() - ({7}::int * INTERVAL '1 day') {8}
                GROUP BY l.producto_id
            ),
            fefo_prov AS (
                SELECT DISTINCT ON (l2.producto_id)
                    l2.producto_id, pv.nombre, pv.icono
                FROM lotes l2
-               JOIN {} s ON s.lote_id = l2.id
+               JOIN base_productos bp ON bp.id = l2.producto_id
+               JOIN {9} s ON s.lote_id = l2.id
                JOIN proveedores pv ON pv.id = l2.proveedor_id
-               WHERE {} > 0 {}
+               WHERE {10} > 0 {11}
                ORDER BY l2.producto_id, l2.fecha_vencimiento ASC
            ),
            final_stats AS (
@@ -516,7 +533,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                    CASE WHEN COALESCE(ss.total, 0) > 0
                         THEN ROUND(COALESCE(ss.cantidad_por_vencer, 0) / ss.total * 100)::int
                         ELSE NULL END AS pct_por_vencer,
-                   {} AS inicializado,
+                   {12} AS inicializado,
                    p.lead_time_propio,
                    COALESCE(p.lead_time_propio, pv2.dias_despacho_tierra, pv2.dias_despacho_aereo, 7) AS lead_time_efectivo,
                    ss.proxima_fecha_venc as proximo_vencimiento,
@@ -546,7 +563,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                    COALESCE(ss.recientemente_descartado, false) AS recientemente_descartado,
                    pl.min_manual,
                    pl.max_manual
-               FROM productos p
+               FROM base_productos p
                LEFT JOIN unidades_basicas um ON um.id = p.unidad_base_id
                LEFT JOIN categorias c ON c.id = p.categoria_id
                 LEFT JOIN proveedores pv2 ON pv2.id = COALESCE(
@@ -559,7 +576,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                LEFT JOIN fefo_prov fp ON fp.producto_id = p.id
                LEFT JOIN series sr ON sr.producto_id = p.id
                LEFT JOIN par_levels pl ON pl.producto_id = p.id
-               WHERE p.activo = true {} {} {} {}
+               WHERE 1=1
            ),
            enriched AS (
                SELECT
@@ -574,12 +591,12 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                        consumo_base_estimado,
                        dias_con_consumo::int,
                        lead_time_efectivo::int,
-                       {},   -- dias_objetivo_cobertura
+                       {18},   -- dias_objetivo_cobertura
                        proximo_vencimiento,
                        inicializado,
                        3,    -- dias_min_historia para estimar autonomía
-                       {},   -- vencimiento_riesgo_dias
-                       {}    -- vencimiento_proximo_dias
+                       {19},   -- vencimiento_riesgo_dias
+                       {20}    -- vencimiento_proximo_dias
                    ) AS estado_alerta,
                    -- Eje cantidad: sobre stock USABLE; el mínimo manual sólo respalda
                    -- el caso sin historia de consumo.
@@ -588,7 +605,7 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                        consumo_base_estimado,
                        dias_con_consumo::int,
                        lead_time_efectivo::int,
-                       {},   -- dias_objetivo_cobertura
+                       {21},   -- dias_objetivo_cobertura
                        inicializado,
                        min_manual,
                        max_manual,
@@ -599,45 +616,40 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
                        tiene_vencido,
                        prox_venc_usable,
                        control_lote <> 'simple',   -- 'simple' no rastrea vencimiento
-                       {},   -- vencimiento_riesgo_dias
-                       {},   -- vencimiento_proximo_dias
+                       {19},   -- vencimiento_riesgo_dias
+                       {20},    -- vencimiento_proximo_dias
                        recientemente_descartado
                    ) AS estado_vencimiento
                FROM final_stats
            ),
            filtered AS (
-               SELECT * FROM enriched WHERE 1=1 {} {}
-           ),
-           total_count AS (
-               SELECT COUNT(*) as full_count FROM filtered
+               SELECT * FROM enriched WHERE 1=1 {22} {23}
            )
            SELECT f.*, tc.full_count
            FROM filtered f, total_count tc
-           ORDER BY {}
-           LIMIT ${} OFFSET ${}"#,
-        forecast_cfg.ventana_demanda_dias,
-        movement_area_filter,
-        stock_col,
-        stock_col,
-        stock_table,
-        area_filter,
-        par_area_filter,
-        forecast_cfg.ventana_demanda_dias,
-        movement_area_filter,
-        stock_table,
-        stock_col,
-        area_filter2,
-        inicializado_expr,
-        catalog_filter,
-        q_filter,
-        cat_filter,
-        prov_filter,
-        forecast_cfg.dias_objetivo_cobertura,
-        forecast_cfg.vencimiento_riesgo_dias,
-        forecast_cfg.vencimiento_proximo_dias,
-        forecast_cfg.dias_objetivo_cobertura,
-        forecast_cfg.vencimiento_riesgo_dias,
-        forecast_cfg.vencimiento_proximo_dias,
+           ORDER BY {24}"#,
+        forecast_cfg.ventana_demanda_dias, // 0
+        movement_area_filter,              // 1
+        stock_col,                         // 2
+        stock_col,                         // 3
+        stock_table,                       // 4
+        area_filter,                       // 5
+        par_area_filter,                   // 6
+        forecast_cfg.ventana_demanda_dias, // 7
+        movement_area_filter,              // 8
+        stock_table,                       // 9
+        stock_col,                         // 10
+        area_filter2,                      // 11
+        inicializado_expr,                 // 12
+        catalog_filter,                    // 13
+        q_filter,                          // 14
+        cat_filter,                        // 15
+        prov_filter,                       // 16
+        custom_filters_clause,             // 17
+        forecast_cfg.dias_objetivo_cobertura, // 18
+        forecast_cfg.vencimiento_riesgo_dias, // 19
+        forecast_cfg.vencimiento_proximo_dias, // 20
+        forecast_cfg.dias_objetivo_cobertura,  // 21
         if !params.incluir_pendientes
             && !con_alertas
             && params.q.is_none()
@@ -647,11 +659,11 @@ pub async fn listar(pool: &PgPool, params: ListarParams) -> Result<ListarResulta
             "AND estado_cantidad <> 'no_gestionado'"
         } else {
             ""
-        },
-        filtered_clause,
-        STOCK_PAGE_ORDER,
-        param_idx + 1,
-        param_idx + 2
+        }, // 22
+        filtered_clause, // 23
+        STOCK_PAGE_ORDER, // 24
+        param_idx + 1, // 25
+        param_idx + 2  // 26
     );
 
     let mut query = sqlx::query_as::<_, StockItemRow>(&sql);

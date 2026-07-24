@@ -52,7 +52,7 @@ async fn test_integridad_stock_y_servicios_refactorizados(pool: sqlx::PgPool) {
     .bind(producto_id)
     .bind(format!(
         "TEST-{}",
-        Uuid::new_v4().to_string()[..8].to_string()
+        &Uuid::new_v4().to_string()[..8]
     ))
     .bind("Producto Test Refactor")
     .bind(categoria_id)
@@ -79,7 +79,7 @@ async fn test_integridad_stock_y_servicios_refactorizados(pool: sqlx::PgPool) {
 
     // 3. Realizar Recepción (Ingreso de Stock)
     let fecha = chrono::Utc::now();
-    let num_lote = format!("LOTE-{}", Uuid::new_v4().to_string()[..8].to_string());
+    let num_lote = format!("LOTE-{}", &Uuid::new_v4().to_string()[..8]);
 
     let req_recepcion = CreateRecepcion {
         proveedor_id,

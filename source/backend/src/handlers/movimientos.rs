@@ -226,11 +226,10 @@ async fn tendencias_consumo(
     if let Some(v) = params.area_id {
         query = query.bind(v);
     }
-    if let Some((_, allowed_area_ids)) = area_scope {
-        if !allowed_area_ids.is_empty() {
+    if let Some((_, allowed_area_ids)) = area_scope
+        && !allowed_area_ids.is_empty() {
             query = query.bind(allowed_area_ids);
         }
-    }
     if !producto_ids.is_empty() {
         query = query.bind(producto_ids);
     }
@@ -369,12 +368,11 @@ async fn listar(
         count_query = count_query.bind(v);
         data_query = data_query.bind(v);
     }
-    if let Some((_, allowed_area_ids)) = area_scope {
-        if !allowed_area_ids.is_empty() {
+    if let Some((_, allowed_area_ids)) = area_scope
+        && !allowed_area_ids.is_empty() {
             count_query = count_query.bind(allowed_area_ids.clone());
             data_query = data_query.bind(allowed_area_ids);
         }
-    }
     if let Some(v) = params.producto_id {
         count_query = count_query.bind(v);
         data_query = data_query.bind(v);

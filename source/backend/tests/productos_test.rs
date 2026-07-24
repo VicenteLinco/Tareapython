@@ -63,7 +63,7 @@ async fn producto_control_lote_default_y_set(pool: PgPool) {
         serde_json::json!({
             "nombre": "Reactivo critico",
             "unidad_base_id": 1,
-            "control_lote": "trazable"
+            "control_lote": "trazable", "es_kit": false, "stock_minimo": 100, "area_ids": [1]
         }),
     )
     .await;
@@ -208,7 +208,7 @@ async fn actualizar_producto_optimistic_locking(pool: PgPool) {
     let id = json["id"].as_str().unwrap();
 
     // Actualizar con version correcta
-    let (status, json) = common::put_json(
+    let (status, json) = common::patch_json(
         &app,
         &format!("/api/v1/productos/{}", id),
         &token,
@@ -223,7 +223,7 @@ async fn actualizar_producto_optimistic_locking(pool: PgPool) {
     assert_eq!(json["version"], 2);
 
     // Actualizar con version incorrecta → 409
-    let (status, _) = common::put_json(
+    let (status, _) = common::patch_json(
         &app,
         &format!("/api/v1/productos/{}", id),
         &token,
@@ -454,7 +454,7 @@ async fn test_promedio_uso_mensual_completo(pool: PgPool) {
     assert_eq!(p_db.promedio_uso_mensual, rust_decimal_macros::dec!(12.50));
 
     // 2. Update the initial value via PUT
-    let (status_put, _json_put) = common::put_json(
+    let (status_put, _json_put) = common::patch_json(
         &app,
         &format!("/api/v1/productos/{}", prod_id),
         &token,
@@ -582,4 +582,71 @@ async fn test_promedio_uso_mensual_completo(pool: PgPool) {
         p_db_recalculated.promedio_uso_mensual,
         rust_decimal_macros::dec!(25.0)
     );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_wu00_api_freeze_001_put_method_forbidden(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    let app = common::test_app(pool);
+
+    let (status, _json) = common::put_json(
+        &app,
+        "/api/v1/productos/00000000-0000-0000-0000-000000000000",
+        &token,
+        serde_json::json!({
+            "nombre": "Test PUT",
+            "categoria_id": 1,
+            "unidad_base_id": 1,
+            "version": 1
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_wu00_dom_freeze_001_factor_change_on_approved_product(pool: PgPool) {
+    let token = common::admin_access_token(&pool).await;
+    common::seed_base_data(&pool).await;
+    let app = common::test_app(pool.clone());
+
+    // 1. Create a product with a presentation
+    let (status, json) = common::post_json(
+        &app,
+        "/api/v1/productos",
+        &token,
+        serde_json::json!({
+            "nombre": "Test Factor Freeze",
+            "descripcion": "Product for DOM-FREEZE-001",
+            "categoria_id": 1,
+            "unidad_base_id": 1,
+            "stock_minimo": 500,
+            "presentaciones": [
+                { "nombre": "Box", "nombre_plural": "Boxes", "factor_conversion": 10 }
+            ],
+            "area_ids": [1, 2]
+        }),
+    )
+    .await;
+    println!("JSON: {:?}", json); assert_eq!(status, StatusCode::CREATED, "Product creation failed");
+    let prod_id = json["id"].as_str().unwrap();
+    let presentation_id: i32 = sqlx::query_scalar("SELECT id FROM presentaciones WHERE producto_id = $1").bind(uuid::Uuid::parse_str(prod_id).unwrap()).fetch_one(&pool).await.unwrap();
+
+
+    // 3. Try to change factor -> should fail with DOM-FREEZE-001 error
+    let (status_patch, err_json) = common::put_json(
+        &app,
+        &format!("/api/v1/presentaciones/{}", presentation_id),
+        &token,
+        serde_json::json!({
+            "factor_conversion": 20,
+            "version": 1
+        }),
+    )
+    .await;
+
+    assert_eq!(status_patch, StatusCode::UNPROCESSABLE_ENTITY);
+    let err_msg = err_json["message"].as_str().unwrap();
+    assert!(err_msg.contains("DOM-FREEZE-001"));
 }

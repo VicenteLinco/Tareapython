@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useAuthStore } from "@/hooks/use-auth-store";
-import { exportarStockPDF } from "@/lib/stock-pdf";
 import { notify } from "@/lib/notify";
 import { FilterBar } from "@/components/ui/filter-bar";
 import { Pagination } from "@/components/ui/pagination";
@@ -45,6 +44,7 @@ export default function StockPage() {
 
   const {
     search,
+    debouncedSearch,
     setSearch,
     estado,
     setEstado,
@@ -74,7 +74,7 @@ export default function StockPage() {
   useEffect(() => {
     setPage(1);
   }, [
-    search,
+    debouncedSearch,
     categoriaId,
     proveedorId,
     areaId,
@@ -89,7 +89,7 @@ export default function StockPage() {
     queryKey: [
       "stock",
       {
-        search,
+        search: debouncedSearch,
         categoriaId,
         proveedorId,
         areaId,
@@ -105,7 +105,7 @@ export default function StockPage() {
       api
         .get<PaginatedResponse<StockItem>>("/stock", {
           params: {
-            q: search || undefined,
+            q: debouncedSearch || undefined,
             categoria_id: categoriaId || undefined,
             proveedor_id: proveedorId || undefined,
             area_id: areaIdsParam ? undefined : areaId || undefined,
@@ -421,6 +421,7 @@ export default function StockPage() {
                   moneda_codigo: string;
                 }>("/configuracion")
                 .then((r) => r.data);
+              const { exportarStockPDF } = await import("@/lib/stock-pdf");
               await exportarStockPDF({
                 selectedAreas,
                 incluirResumen,

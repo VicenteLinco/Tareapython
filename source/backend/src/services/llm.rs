@@ -798,8 +798,8 @@ impl LlmClient for GeminiClient {
                         .await
                     {
                         Ok(val) => {
-                            if let Some(status_field) = val.get("status").and_then(|s| s.as_str()) {
-                                if status_field == "error" {
+                            if let Some(status_field) = val.get("status").and_then(|s| s.as_str())
+                                && status_field == "error" {
                                     if let Some(msg) = val.get("message").and_then(|m| m.as_str()) {
                                         if msg.contains("autorización") || msg.contains("rol") {
                                             status = "UNAUTHORIZED".to_string();
@@ -817,7 +817,6 @@ impl LlmClient for GeminiClient {
                                         status = "SYNTAX_ERROR".to_string();
                                     }
                                 }
-                            }
                             val
                         }
                         Err(e) => {
@@ -1196,8 +1195,8 @@ impl LlmClient for OllamaClient {
 
             messages.push(model_message.clone());
 
-            if let Some(ref tool_calls) = model_message.tool_calls {
-                if !tool_calls.is_empty() {
+            if let Some(ref tool_calls) = model_message.tool_calls
+                && !tool_calls.is_empty() {
                     let mut command_types = Vec::new();
 
                     for tool_call in tool_calls {
@@ -1231,8 +1230,7 @@ impl LlmClient for OllamaClient {
                             Ok(val) => {
                                 if let Some(status_field) =
                                     val.get("status").and_then(|s| s.as_str())
-                                {
-                                    if status_field == "error" {
+                                    && status_field == "error" {
                                         if let Some(msg) =
                                             val.get("message").and_then(|m| m.as_str())
                                         {
@@ -1253,7 +1251,6 @@ impl LlmClient for OllamaClient {
                                             status = "SYNTAX_ERROR".to_string();
                                         }
                                     }
-                                }
                                 val
                             }
                             Err(e) => {
@@ -1286,7 +1283,6 @@ impl LlmClient for OllamaClient {
                     }
                     continue;
                 }
-            }
 
             let final_text = model_message.content.clone().unwrap_or_default();
 
@@ -2143,7 +2139,7 @@ Responde exclusivamente con el JSON válido. No incluyas texto explicativo, ni b
             },
         };
 
-        let models_to_try = vec![db_config.model.clone()];
+        let models_to_try = [db_config.model.clone()];
 
         let mut response = None;
         let mut last_status = None;

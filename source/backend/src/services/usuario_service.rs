@@ -156,7 +156,7 @@ pub async fn crear(
     .await
     .map_err(|e| match &e {
         sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
-            AppError::Conflict(format!("El email o número de WhatsApp ya está registrado"))
+            AppError::Conflict("El email o número de WhatsApp ya está registrado".to_string())
         }
         _ => e.into(),
     })?;

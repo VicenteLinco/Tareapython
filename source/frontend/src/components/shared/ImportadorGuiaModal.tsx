@@ -416,7 +416,7 @@ export default function ImportadorGuiaModal({
       hasMissingNewProductFields,
       hasErrors: hasRowErrors || hasMissingNewProductFields,
     };
-  }, [items, skuToPresentationMap, nameToPresentationMap]);
+  }, [items, skuToPresentationMap, nameToPresentationMap, findCatalogMatch, validateItem]);
 
   const hasErrors = validationState.hasErrors;
 

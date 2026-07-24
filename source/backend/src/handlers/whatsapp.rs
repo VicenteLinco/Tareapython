@@ -59,11 +59,10 @@ pub struct WebhookMessage {
 
 /// Verifies pre-shared secret for OpenWA gateway
 pub fn verify_openwa_secret(headers: &HeaderMap, expected_secret: &str) -> bool {
-    if let Some(secret_header) = headers.get("X-Webhook-Secret") {
-        if let Ok(secret_str) = secret_header.to_str() {
+    if let Some(secret_header) = headers.get("X-Webhook-Secret")
+        && let Ok(secret_str) = secret_header.to_str() {
             return constant_time_eq(secret_str.as_bytes(), expected_secret.as_bytes());
         }
-    }
     false
 }
 
@@ -396,7 +395,7 @@ pub async fn process_message_async(state: AppState, msg: WebhookMessage) -> Resu
             )
             .await;
             let _ = send_whatsapp_reply(&state.pool, &state.config, &msg.from, error_msg).await;
-            return Err(e.into());
+            return Err(e);
         }
     };
 
@@ -649,7 +648,7 @@ mod tests {
             rol: "admin".to_string(),
         };
 
-        let provider_id: i32 = sqlx::query_scalar(
+        let _provider_id: i32 = sqlx::query_scalar(
             "INSERT INTO proveedores (nombre) VALUES ('Test Proveedor') RETURNING id",
         )
         .fetch_one(&pool)
@@ -775,7 +774,7 @@ mod tests {
             rol: "admin".to_string(),
         };
 
-        let provider_id: i32 = sqlx::query_scalar(
+        let _provider_id: i32 = sqlx::query_scalar(
             "INSERT INTO proveedores (nombre) VALUES ('Test Proveedor') RETURNING id",
         )
         .fetch_one(&pool)

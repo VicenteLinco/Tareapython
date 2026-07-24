@@ -52,6 +52,13 @@ if $release_mode; then
   failures=()
   [[ $dirty == false ]] || failures+=("working tree/index is not clean")
   [[ -f LICENSE ]] || failures+=("LICENSE is missing; a maintainer must choose the license")
+  # OPS-FREEZE-001: No desplegar mientras exista un P0/P1 abierto o un gate obligatorio rojo.
+  if [[ "${BLOCK_RELEASE_P0_P1:-}" == "true" ]]; then
+    failures+=("OPS-FREEZE-001: Existen P0/P1 abiertos.")
+  fi
+  if [[ "${BLOCK_RELEASE_RED_GATE:-}" == "true" ]]; then
+    failures+=("OPS-FREEZE-001: Gate obligatorio rojo.")
+  fi
   expected_tag="v${cargo_version}"
   exact_tag=$(git describe --tags --exact-match HEAD 2>/dev/null || true)
   [[ $exact_tag == "$expected_tag" ]] || failures+=("annotated tag must be exactly ${expected_tag}; current=${exact_tag:-none}")

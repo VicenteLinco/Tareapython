@@ -4,21 +4,25 @@ use uuid::Uuid;
 
 async fn seed_test_context(pool: &PgPool) -> (Uuid, Uuid, i32, Uuid) {
     // Ensure base category and basic unit exist
-    let categoria_id: i32 = sqlx::query_scalar(
-        "INSERT INTO categorias (nombre) VALUES ('Categoria Test Ledger') ON CONFLICT DO NOTHING RETURNING id",
-    )
-    .fetch_optional(pool)
-    .await
-    .unwrap()
-    .unwrap_or(1);
+    sqlx::query("INSERT INTO categorias (nombre) VALUES ('Categoria Test Ledger') ON CONFLICT DO NOTHING")
+        .execute(pool)
+        .await
+        .unwrap();
 
-    let unidad_base_id: i32 = sqlx::query_scalar(
-        "INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ('Unidad Test', 'Unidades Test') ON CONFLICT DO NOTHING RETURNING id",
-    )
-    .fetch_optional(pool)
-    .await
-    .unwrap()
-    .unwrap_or(1);
+    let categoria_id: i32 = sqlx::query_scalar("SELECT id FROM categorias WHERE nombre = 'Categoria Test Ledger' LIMIT 1")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+
+    sqlx::query("INSERT INTO unidades_basicas (nombre, nombre_plural) VALUES ('Unidad Test', 'Unidades Test') ON CONFLICT DO NOTHING")
+        .execute(pool)
+        .await
+        .unwrap();
+
+    let unidad_base_id: i32 = sqlx::query_scalar("SELECT id FROM unidades_basicas WHERE nombre = 'Unidad Test' LIMIT 1")
+        .fetch_one(pool)
+        .await
+        .unwrap();
 
     let product_id = Uuid::new_v4();
     let codigo = format!("P-LED-{}", &Uuid::new_v4().simple().to_string()[..8]);

@@ -68,8 +68,8 @@ pub async fn lookup_dispositivo(pool: &PgPool, code: &str) -> Result<Dispositivo
     match client.get(&fda_url).send().await {
         Ok(resp) if resp.status().is_success() => match resp.json::<FdaGudidResponse>().await {
             Ok(fda_res) => {
-                if let Some(gudid) = fda_res.gudid {
-                    if let Some(device) = gudid.device {
+                if let Some(gudid) = fda_res.gudid
+                    && let Some(device) = gudid.device {
                         let brand = device.brand_name.clone().unwrap_or_default();
                         let desc = device.device_description.clone().unwrap_or_default();
                         let (name, final_desc) = if brand.is_empty() && desc.is_empty() {
@@ -103,7 +103,6 @@ pub async fn lookup_dispositivo(pool: &PgPool, code: &str) -> Result<Dispositivo
                             descripcion: final_desc,
                         });
                     }
-                }
             }
             Err(err) => {
                 warn!("Failed to parse FDA GUDID response for {}: {}", code, err);

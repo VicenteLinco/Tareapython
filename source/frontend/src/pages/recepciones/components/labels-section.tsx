@@ -206,9 +206,9 @@ export function LabelsSection({
         </div>
 
         {/* Selector de Modo de Impresora (B/N vs Color) */}
-        <div className="flex items-center justify-between gap-2 p-2.5 bg-base-200/60 rounded-xl border border-base-200">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 bg-base-200/60 rounded-xl border border-base-200">
           <span className="text-xs font-bold text-base-content/80">Modo de Tinta / Impresora:</span>
-          <div className="join">
+          <div className="join w-full sm:w-auto flex">
             <button
               type="button"
               className={`join-item btn btn-xs font-bold ${modoColor === "bn_termica" ? "btn-primary" : "btn-ghost"}`}
@@ -360,7 +360,7 @@ export function LabelsSection({
               </div>
 
               {hojaDiseno === "personalizado" && (
-                <div className="grid grid-cols-2 gap-2 bg-base-200/50 p-2 rounded-lg">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-base-200/50 p-2 rounded-lg">
                   <div>
                     <label className="label-text font-semibold text-[10px] text-base-content/70 mb-0.5 block">
                       Columnas
@@ -398,7 +398,7 @@ export function LabelsSection({
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-2 items-end">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:items-end">
                 <div>
                   <label
                     className="label-text font-semibold text-xs text-base-content/80 mb-1 block"
@@ -451,7 +451,7 @@ export function LabelsSection({
                 </button>
 
                 {configAvanzada && (
-                  <div className="grid grid-cols-4 gap-1.5 mt-2 bg-base-200/40 p-2 rounded-lg text-[10px]">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-2 bg-base-200/40 p-2 rounded-lg text-[10px]">
                     <div>
                       <span className="opacity-75 block mb-0.5">
                         Marg. Vert.

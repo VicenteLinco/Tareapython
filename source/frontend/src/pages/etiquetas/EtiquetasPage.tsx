@@ -37,7 +37,7 @@ export function EtiquetasPage() {
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
+    const handler = (e: MouseEvent | TouchEvent) => {
       if (
         containerRef.current &&
         !containerRef.current.contains(e.target as Node)
@@ -45,7 +45,11 @@ export function EtiquetasPage() {
         setDropdownOpen(false);
     };
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler);
+    };
   }, []);
 
   useEffect(() => {
@@ -180,7 +184,7 @@ export function EtiquetasPage() {
         </div>
 
         {dropdownOpen && (
-          <div className="absolute z-20 mt-1 w-full max-h-72 overflow-y-auto rounded-xl border border-base-300 bg-base-100 shadow-lg">
+          <div className="absolute z-[50] mt-1 w-full max-h-72 overflow-y-auto rounded-xl border border-base-300 bg-base-100 shadow-lg">
             {cargandoProductos && (
               <div className="px-4 py-3 text-sm text-base-content/50">
                 Buscando…

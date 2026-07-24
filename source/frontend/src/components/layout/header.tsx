@@ -99,7 +99,7 @@ export function Header({ onOpenSearch, onMenuClick }: HeaderProps) {
 
       <div className="flex items-center gap-2">
         {esAdmin && (
-          <div className="dropdown dropdown-end">
+          <div className="dropdown">
             <div tabIndex={0} role="button" className="btn btn-ghost btn-sm btn-square relative">
               <Bell className="h-4.5 w-4.5" />
               {countData && countData.conteo > 0 && (
@@ -110,7 +110,7 @@ export function Header({ onOpenSearch, onMenuClick }: HeaderProps) {
             </div>
             <div
               tabIndex={0}
-              className="dropdown-content menu p-4 shadow-lg bg-base-100 rounded-xl w-80 border border-base-200 mt-2 z-30"
+              className="dropdown-content menu p-4 shadow-lg bg-base-100 rounded-xl border border-base-200 mt-2 z-30 fixed top-16 left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] max-w-[360px] sm:absolute sm:top-auto sm:left-auto sm:right-0 sm:translate-x-0 sm:w-80"
             >
               <div className="flex items-center justify-between pb-2 border-b border-base-200 mb-2">
                 <span className="font-semibold text-xs text-base-content/80">Notificaciones</span>

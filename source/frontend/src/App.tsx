@@ -121,7 +121,14 @@ export default function App() {
               </Routes>
             </Suspense>
           </BrowserRouter>
-          <Toaster position="top-right" richColors />
+          <Toaster 
+            position="top-right" 
+            richColors 
+            toastOptions={{ 
+              className: "max-w-[calc(100vw-32px)] sm:max-w-[356px] mx-auto",
+              style: { right: '16px', left: 'auto' }
+            }}
+          />
         </QueryClientProvider>
       </AuthInitializer>
       </BrandingProvider>

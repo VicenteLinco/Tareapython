@@ -252,7 +252,7 @@ export function LabelsSection({
               </div>
 
               {rolloTamano === "personalizado" && (
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
                   <div>
                     <label className="label-text font-semibold text-[10px] text-base-content/70 mb-0.5 block">
                       Ancho (mm)
@@ -306,7 +306,7 @@ export function LabelsSection({
                 Configuración de Hoja
               </p>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
                 <div>
                   <label className="label-text font-semibold text-xs text-base-content/80 mb-1 block">
                     Tamaño de papel

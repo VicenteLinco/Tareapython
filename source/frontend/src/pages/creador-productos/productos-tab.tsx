@@ -937,7 +937,7 @@ function QuickCreateUnidad({
         }}
         className="space-y-4"
       >
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           <div className="form-control">
             <label className="label">
               <span className="label-text text-sm font-medium">Singular *</span>
@@ -1420,7 +1420,7 @@ function CreateProductoDialog({
         open={open}
         onClose={handleClose}
         title="Nuevo producto"
-        className="max-w-2xl"
+        className="max-w-4xl"
         closeOnBackdrop={false}
       >
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -1525,7 +1525,7 @@ function CreateProductoDialog({
           <div className="space-y-4 pt-2">
             {activeFormTab === "identificacion" && (
               <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
                   <div className="form-control col-span-2">
                     <label className="label py-0.5">
                       <span className="label-text text-sm font-medium">Nombre</span>
@@ -1569,7 +1569,7 @@ function CreateProductoDialog({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   <div className="form-control">
                     <label className="label py-0.5">
                       <span className="label-text text-sm font-medium">
@@ -1614,7 +1614,7 @@ function CreateProductoDialog({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   <div className="form-control">
                     <label className="label py-0.5">
                       <span className="label-text text-sm font-medium">Área</span>
@@ -1711,7 +1711,7 @@ function CreateProductoDialog({
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   <div className="flex flex-col gap-1">
                     <label className="label py-0.5">
                       <span className="label-text text-sm font-medium">Temperatura</span>
@@ -1787,7 +1787,7 @@ function CreateProductoDialog({
 
             {activeFormTab === "inventario" && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   <div className="form-control">
                     <label className="label py-0.5">
                       <span className="label-text text-sm font-medium">Consumo Mensual Promedio</span>
@@ -2144,7 +2144,7 @@ function EditProductoDialog({
         open={open}
         onClose={onClose}
         title="Editar producto"
-        className="max-w-2xl"
+        className="max-w-4xl"
         closeOnBackdrop={false}
       >
         {isLoading ? (
@@ -2195,7 +2195,7 @@ function EditProductoDialog({
             <div className="space-y-4 pt-2">
               {activeFormTab === "identificacion" && (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
                     <div className="form-control col-span-2">
                       <label className="label py-0.5">
                         <span className="label-text text-sm font-medium">Nombre</span>
@@ -2226,7 +2226,7 @@ function EditProductoDialog({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     <div className="form-control">
                       <label className="label py-0.5">
                         <span className="label-text text-sm font-medium">
@@ -2269,7 +2269,7 @@ function EditProductoDialog({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     <div className="form-control">
                       <label className="label py-0.5">
                         <span className="label-text text-sm font-medium">Área</span>
@@ -2351,7 +2351,7 @@ function EditProductoDialog({
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     <div className="flex flex-col gap-1">
                       <label className="label py-0.5">
                         <span className="label-text text-sm font-medium">Temperatura</span>
@@ -2427,7 +2427,7 @@ function EditProductoDialog({
 
               {activeFormTab === "inventario" && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     <div className="form-control">
                       <label className="label py-0.5">
                         <span className="label-text text-sm font-medium">Consumo Mensual Promedio</span>

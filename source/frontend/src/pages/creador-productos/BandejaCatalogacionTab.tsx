@@ -356,7 +356,7 @@ export default function BandejaCatalogacionTab() {
       {/* Approve and Configure Dialog Modal */}
       {selectedProduct && (
         <div className="modal modal-open">
-          <div className="modal-box max-w-2xl bg-base-100 border border-base-300">
+          <div className="modal-box max-w-4xl bg-base-100 border border-base-300">
             <h3 className="font-bold text-base flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-success" />
               Aprobar Producto en Catalogación
@@ -524,7 +524,7 @@ export default function BandejaCatalogacionTab() {
                       Presentación de Compra (Opcional)
                     </h5>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                       <div className="form-control col-span-2">
                         <label className="label py-0.5">
                           <span className="text-[10px] font-semibold">

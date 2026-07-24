@@ -211,7 +211,7 @@ export function PresentacionesManager({ productoId }: { productoId: string }) {
       >
         <div>
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="form-control">
                 <label className="label">
                   <span className="label-text font-medium">
@@ -284,7 +284,7 @@ export function PresentacionesManager({ productoId }: { productoId: string }) {
               Logística
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="form-control">
                 <label className="label">
                   <span className="label-text font-medium">GTIN</span>

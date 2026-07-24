@@ -99,7 +99,7 @@ export default function PresentacionesFormatosTab() {
         onSubmit={handleAdd}
         className="flex flex-col gap-2 bg-base-200/50 p-3 rounded-lg border border-base-300"
       >
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
           <div className="form-control">
             <label className="label py-0.5">
               <span className="label-text text-[10px] font-semibold uppercase opacity-50">

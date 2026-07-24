@@ -221,7 +221,7 @@ export function DiscardLoteDialog({
               <label className="label text-[10px] font-bold uppercase tracking-wider opacity-50">
                 Motivo del Descarte
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
                 <button
                   type="button"
                   className={cn(

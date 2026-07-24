@@ -2,22 +2,20 @@
 set -eo pipefail
 
 SELF_TEST=0
-if [[ "$1" == "--self-test" ]]; then
-    SELF_TEST=1
+WORKDIR="."
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --self-test) SELF_TEST=1 ;;
+        --workdir) WORKDIR="$2"; shift ;;
+        --) shift; COMMAND="$@"; break ;;
+        *) if [[ -z "$COMMAND" ]]; then COMMAND="$*"; fi; break ;;
+    esac
     shift
-fi
-
-COMMAND=""
-if [[ "$1" == "--" ]]; then
-    shift
-    COMMAND="$@"
-elif [[ -n "$1" ]]; then
-    COMMAND="$@"
-fi
+done
 
 # Elimina DATABASE_URL heredado
 unset DATABASE_URL
-if [[ -f source/backend/.env ]]; then
+if [[ -f "$WORKDIR/.env" ]]; then
     # We must not load .env for tests. 
     # Just in case, ensure no tools do it implicitly.
     :
@@ -74,17 +72,21 @@ until docker exec "$CONTAINER_NAME" pg_isready -U postgres -d "$DB_NAME" > /dev/
     sleep 0.5
 done
 
-echo "Base de datos aislada lista."
-
 # Migraciones
-if [[ -d source/backend/migrations ]]; then
-    echo "Aplicando migraciones..."
-    cd source/backend
-    sqlx migrate run
-    cd ../..
+if [[ -d "$WORKDIR/migrations" ]]; then
+    if command -v sqlx >/dev/null 2>&1; then
+        echo "Aplicando migraciones..."
+        cd "$WORKDIR"
+        sqlx migrate run
+        cd - > /dev/null
+    else
+        echo "sqlx-cli no encontrado. Omitiendo migraciones externas (los tests las ejecutarán)."
+    fi
 fi
 
 if [[ -n "$COMMAND" ]]; then
     echo "Ejecutando: $COMMAND"
+    cd "$WORKDIR"
     eval "$COMMAND"
+    cd - > /dev/null
 fi

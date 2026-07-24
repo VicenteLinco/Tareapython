@@ -145,8 +145,8 @@ impl PresentacionService {
                 .await?;
 
                 if product_state == "Aprobado" || product_state == "aprobado" {
-                    return Err(AppError::BadRequest(
-                        "DOM-FREEZE-001: No se puede cambiar el factor de conversión de un producto aprobado".into(),
+                    return Err(AppError::Validation(
+                        "No se puede modificar el factor de un producto Aprobado (DOM-FREEZE-001)".to_string(),
                     ));
                 }
 

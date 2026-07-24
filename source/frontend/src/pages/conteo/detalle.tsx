@@ -989,7 +989,7 @@ function LoteRow({
             </label>
             <ul
               tabIndex={0}
-              className="dropdown-content menu p-2 rounded-box w-48 text-xs"
+              className="dropdown-content menu p-2 rounded-box w-48 text-xs z-[50] max-h-64 overflow-y-auto"
             >
               <li>
                 <button

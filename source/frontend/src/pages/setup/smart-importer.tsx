@@ -1723,7 +1723,7 @@ export function SmartImporter({ onComplete, onCancel }: SmartImporterProps) {
                 </label>
               <ul
                 tabIndex={0}
-                className="dropdown-content z-[100] menu p-2 shadow-2xl bg-base-100 rounded-2xl w-80 border border-base-200 mt-2 space-y-1"
+                className="dropdown-content z-[100] menu p-2 shadow-2xl bg-base-100 rounded-2xl w-80 border border-base-200 mt-2 space-y-1 max-h-64 overflow-y-auto"
               >
                 <li>
                   <button

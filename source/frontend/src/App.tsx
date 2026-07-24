@@ -59,8 +59,26 @@ export default function App() {
         (document.activeElement as HTMLElement).blur();
       }
     };
+    
+    const handleOutsideDropdownClick = (e: MouseEvent | TouchEvent) => {
+      const activeElement = document.activeElement;
+      if (activeElement && activeElement.closest('.dropdown')) {
+        const target = e.target as Element;
+        if (!target.closest('.dropdown')) {
+          (activeElement as HTMLElement).blur();
+        }
+      }
+    };
+
     window.addEventListener("wheel", handleWheel, { passive: true });
-    return () => window.removeEventListener("wheel", handleWheel);
+    document.addEventListener("click", handleOutsideDropdownClick, { capture: true });
+    document.addEventListener("touchstart", handleOutsideDropdownClick, { capture: true });
+    
+    return () => {
+      window.removeEventListener("wheel", handleWheel);
+      document.removeEventListener("click", handleOutsideDropdownClick, { capture: true });
+      document.removeEventListener("touchstart", handleOutsideDropdownClick, { capture: true });
+    };
   }, []);
 
   return (

@@ -4,6 +4,8 @@ import {
   normalizeImportedDate,
   parseCurrencyInput,
   autoFixGuideItem,
+  matchClinicalSynonym,
+  calculateLevenshteinSimilarity,
 } from "./importador-guia-validation";
 
 describe("validateImportedGuideItem", () => {

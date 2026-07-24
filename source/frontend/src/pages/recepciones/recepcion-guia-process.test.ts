@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   validateImportedGuideItem,
-  normalizeImportedDate,
   parseCurrencyInput,
-  autoFixGuideItem,
 } from "../../components/shared/importador-guia-validation";
 import { parseConfiguredAiModels } from "../../components/shared/ai-model-options";
 

@@ -58,19 +58,24 @@ async fn test_smart_importer_and_quarantine_process_flow(pool: PgPool) {
     assert_eq!(db_estado, "pendiente_aprobacion");
 
     // 4. Proceso de Aprobación de Catálogo (Transición de Estado)
-    let (status, updated_prod) = common::put_json(
+    let (status, updated_prod) = common::post_json(
         &app,
-        &format!("/api/v1/productos/{}", producto_id_str),
+        &format!("/api/v1/productos/{}/approve", producto_id_str),
         &token,
         serde_json::json!({
             "nombre": "Puntas de Pipeta 20uL (Aprobado)",
+            "categoria_id": 1,
             "unidad_base_id": 1,
             "area_ids": [1],
-            "control_lote": "simple",
-            "estado_catalogo": "aprobado"
+            "control_lote": "simple"
         }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "Aprobación debe actualizar producto: {:?}", updated_prod);
-    assert_eq!(updated_prod["estado_catalogo"].as_str(), Some("aprobado"));
+    let db_estado_final: String = sqlx::query_scalar("SELECT estado_catalogo FROM productos WHERE id = $1")
+        .bind(uuid::Uuid::parse_str(producto_id_str).unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(db_estado_final, "aprobado");
 }

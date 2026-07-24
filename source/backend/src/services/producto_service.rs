@@ -418,6 +418,14 @@ impl ProductoService {
                 'requiere_cadena_frio',       p.requiere_cadena_frio,
                 'dias_estabilidad_abierto',   p.dias_estabilidad_abierto,
                 'clase_riesgo',               p.clase_riesgo,
+                'fabricante',                 p.fabricante,
+                'es_kit',                     p.es_kit,
+                'control_lote',               p.control_lote,
+                'estado_catalogo',            p.estado_catalogo,
+                'origen_registro',            p.origen_registro,
+                'motivo_rechazo',             p.motivo_rechazo,
+                'loinc_code',                 p.loinc_code,
+                'cpt_code',                   p.cpt_code,
                 'activo',          p.activo,
                 'imagen_url',      p.imagen_url,
                 'version',         p.version,
@@ -460,11 +468,67 @@ impl ProductoService {
                 ),
                 'areas', COALESCE(
                     (SELECT json_agg(
-                        json_build_object('id', a.id, 'nombre', a.nombre)
+                        json_build_object(
+                            'id', a.id, 
+                            'nombre', a.nombre,
+                            'stock_maximo', pa.stock_maximo,
+                            'punto_reorden', pa.punto_reorden
+                        )
                         ORDER BY a.nombre
                     ) FROM areas a
                     JOIN producto_area pa ON pa.area_id = a.id
                     WHERE pa.producto_id = p.id),
+                    '[]'::json
+                ),
+                'ofertas_proveedores', COALESCE(
+                    (SELECT json_agg(
+                        json_build_object(
+                            'id', pp.id,
+                            'proveedor_id', pp.proveedor_id,
+                            'proveedor_nombre', prv.nombre,
+                            'sku_proveedor', pp.sku_proveedor,
+                            'precio_compra_actual', pp.precio_compra_actual,
+                            'moneda_codigo', pp.moneda_codigo,
+                            'lead_time_dias', pp.lead_time_dias,
+                            'cantidad_minima_compra', pp.cantidad_minima_compra,
+                            'es_preferido', pp.es_preferido
+                        ) ORDER BY pp.es_preferido DESC, prv.nombre
+                    ) FROM proveedor_productos pp
+                    JOIN proveedores prv ON prv.id = pp.proveedor_id
+                    WHERE pp.producto_id = p.id AND pp.activo = true),
+                    '[]'::json
+                ),
+                'kit_componentes', COALESCE(
+                    (SELECT json_agg(
+                        json_build_object(
+                            'id', kc.id,
+                            'producto_hijo_id', kc.producto_hijo_id,
+                            'producto_hijo_nombre', ph.nombre,
+                            'producto_hijo_codigo', ph.codigo_interno,
+                            'cantidad_requerida', kc.cantidad_requerida,
+                            'unidad_medida_id', kc.unidad_medida_id
+                        ) ORDER BY ph.nombre
+                    ) FROM producto_kit_componentes kc
+                    JOIN productos ph ON ph.id = kc.producto_hijo_id
+                    WHERE kc.producto_padre_id = p.id),
+                    '[]'::json
+                ),
+                'campos_laboratorio', COALESCE(
+                    (SELECT json_agg(
+                        json_build_object(
+                            'id', v.id,
+                            'definicion_id', v.definicion_id,
+                            'campo_nombre', d.nombre,
+                            'campo_key', d.key,
+                            'tipo_dato', d.tipo_dato,
+                            'valor_texto', v.valor_texto,
+                            'valor_entero', v.valor_entero,
+                            'valor_booleano', v.valor_booleano,
+                            'valor_fecha', v.valor_fecha
+                        ) ORDER BY d.nombre
+                    ) FROM lab_campo_producto_valor v
+                    JOIN lab_campo_definicion d ON d.id = v.definicion_id
+                    WHERE v.producto_id = p.id),
                     '[]'::json
                 )
             )

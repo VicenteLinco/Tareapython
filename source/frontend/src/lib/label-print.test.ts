@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generarComandoZPL, generarComandoTSPL, LoteParaEtiqueta } from "./label-print";
+import { generarComandoZPL, generarComandoTSPL, type LoteParaEtiqueta } from "./label-print";
 
 describe("Direct Thermal Label Command Generators (ZPL / TSPL)", () => {
   const mockLotes: LoteParaEtiqueta[] = [

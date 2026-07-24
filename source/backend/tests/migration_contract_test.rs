@@ -27,6 +27,7 @@ fn migrations_preserve_the_baseline_and_append_only_history() {
     let canonical_files = vec![
         "001_initial_schema.sql".to_owned(),
         "002_product_scoped_lab_fields.sql".to_owned(),
+        "003_product_commercial_inventory_redesign.sql".to_owned(),
     ];
     assert_eq!(sql_files(&canonical), canonical_files);
 

@@ -8,6 +8,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { useFullWidthPage } from "@/components/layout/page-width";
+import { useProductosQuarantine } from "@/hooks/dominio";
 import { cn } from "@/lib/utils";
 import CategoriasTab from "./categorias-tab";
 import UnidadesTab from "./unidades-tab";
@@ -27,15 +28,18 @@ type TabId =
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: "productos", label: "Productos", icon: Package },
   { id: "catalogacion", label: "Catalogación", icon: ShieldAlert },
+  { id: "proveedores", label: "Ofertas y Proveedores", icon: Truck },
+  { id: "presentaciones", label: "Formatos de Empaque", icon: LayoutList },
   { id: "categorias", label: "Categorías", icon: Tag },
   { id: "unidades", label: "Unidades", icon: Layers },
-  { id: "proveedores", label: "Proveedores", icon: Truck },
-  { id: "presentaciones", label: "Formatos de Empaque", icon: LayoutList },
 ];
 
 export default function CreadorProductosPage() {
   useFullWidthPage();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { data: quarantinedProducts } = useProductosQuarantine();
+  const quarantinedCount = quarantinedProducts?.length ?? 0;
+
   const tabParam = searchParams.get("tab") as TabId | null;
   const tabActivo: TabId = TABS.some((t) => t.id === tabParam)
     ? tabParam!
@@ -53,7 +57,7 @@ export default function CreadorProductosPage() {
       <div className="mb-4">
         <h1 className="t-h1 tracking-tight">Creador de Productos</h1>
         <p className="text-sm opacity-50 mt-0.5">
-          Administra los datos maestros del sistema
+          Administra los datos maestros del sistema, catálogos técnicos, ofertas comerciales y presentaciones
         </p>
       </div>
 
@@ -72,6 +76,11 @@ export default function CreadorProductosPage() {
           >
             <Icon className="h-3.5 w-3.5" />
             {label}
+            {id === "catalogacion" && quarantinedCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold leading-none bg-warning text-warning-content rounded-full">
+                {quarantinedCount}
+              </span>
+            )}
           </button>
         ))}
       </div>

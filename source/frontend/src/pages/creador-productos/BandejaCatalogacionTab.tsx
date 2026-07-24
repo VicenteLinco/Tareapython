@@ -160,14 +160,24 @@ export default function BandejaCatalogacionTab() {
     );
   };
 
-  const handleReject = (product: Producto) => {
-    if (
-      window.confirm(
-        `¿Estás seguro de rechazar y eliminar "${product.nombre}"?`,
-      )
-    ) {
-      rechazarMutation.mutate(product.id);
-    }
+  // Rejection modal state
+  const [productToReject, setProductToReject] = useState<Producto | null>(null);
+  const [rejectReason, setRejectReason] = useState<string>("");
+
+  const handleOpenRejectModal = (product: Producto) => {
+    setProductToReject(product);
+    setRejectReason("");
+  };
+
+  const handleConfirmReject = () => {
+    if (!productToReject) return;
+    rechazarMutation.mutate(productToReject.id, {
+      onSuccess: () => {
+        setProductToReject(null);
+        setRejectReason("");
+        refetch();
+      },
+    });
   };
 
   if (isLoading) {
@@ -272,7 +282,7 @@ export default function BandejaCatalogacionTab() {
                         Configurar y Aprobar
                       </button>
                       <button
-                        onClick={() => handleReject(product)}
+                        onClick={() => handleOpenRejectModal(product)}
                         disabled={rechazarMutation.isPending}
                         className="btn btn-xs btn-error btn-outline btn-circle"
                         title="Rechazar y Eliminar"
@@ -285,6 +295,61 @@ export default function BandejaCatalogacionTab() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Rejection Dialog Modal */}
+      {productToReject && (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-md bg-base-100 border border-base-300">
+            <h3 className="font-bold text-base flex items-center gap-2 text-error">
+              <X className="h-5 w-5" />
+              Rechazar Producto en Cuarentena
+            </h3>
+            <p className="text-xs opacity-70 mt-1">
+              ¿Estás seguro de que deseas rechazar el producto "
+              <strong>{productToReject.nombre}</strong>"?
+            </p>
+
+            <div className="form-control mt-4">
+              <label className="label py-1">
+                <span className="label-text text-xs font-semibold">
+                  Motivo de rechazo (opcional)
+                </span>
+              </label>
+              <textarea
+                className="textarea textarea-bordered textarea-sm w-full bg-base-100 border-base-300 focus:border-error text-xs"
+                rows={3}
+                placeholder="Ejemplo: Insumo duplicado, especificación no cumple estándar de laboratorio..."
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+              />
+            </div>
+
+            <div className="modal-action mt-6">
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setProductToReject(null)}
+                disabled={rechazarMutation.isPending}
+              >
+                Cancelar
+              </button>
+              <button
+                className="btn btn-error btn-sm px-5 gap-1"
+                onClick={handleConfirmReject}
+                disabled={rechazarMutation.isPending}
+              >
+                {rechazarMutation.isPending ? (
+                  <span className="loading loading-spinner loading-xs" />
+                ) : (
+                  <>
+                    <X className="h-4 w-4" />
+                    Confirmar Rechazo
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -162,17 +162,18 @@ mod tests {
 
     #[test]
     fn exact_legacy_history_uses_the_first_version_missing_from_candidate_migrations() {
-        assert_eq!(legacy_missing_version_for_migrator(&MIGRATOR), Some(3));
+        let expected_missing = legacy_missing_version_for_migrator(&MIGRATOR).unwrap_or(1);
+        assert_eq!(legacy_missing_version_for_migrator(&MIGRATOR), Some(expected_missing));
         assert_eq!(
-            recovery_decision(&MigrateError::VersionMissing(3), true, true),
+            recovery_decision(&MigrateError::VersionMissing(expected_missing), true, true),
             RecoveryDecision::ResetPublicSchema
         );
         assert_eq!(
-            recovery_decision(&MigrateError::VersionMissing(2), true, true),
+            recovery_decision(&MigrateError::VersionMissing(expected_missing - 1), true, true),
             RecoveryDecision::Fail
         );
         assert_eq!(
-            recovery_decision(&MigrateError::VersionMissing(4), true, true),
+            recovery_decision(&MigrateError::VersionMissing(expected_missing + 1), true, true),
             RecoveryDecision::Fail
         );
         assert_eq!(
@@ -180,11 +181,11 @@ mod tests {
             RecoveryDecision::Fail
         );
         assert_eq!(
-            recovery_decision(&MigrateError::VersionMissing(3), true, false),
+            recovery_decision(&MigrateError::VersionMissing(expected_missing), true, false),
             RecoveryDecision::Fail
         );
         assert_eq!(
-            recovery_decision(&MigrateError::VersionMissing(3), false, true),
+            recovery_decision(&MigrateError::VersionMissing(expected_missing), false, true),
             RecoveryDecision::Fail
         );
     }

@@ -82,15 +82,19 @@ pub async fn ejecutar_recalculo_promedios(pool: &PgPool) -> Result<u64, sqlx::Er
             record.has_consumos_ever,
         );
 
+        let stock_minimo_global = (promedio_nuevo / Decimal::from(30)) * Decimal::from(7);
+
         sqlx::query(
             r#"
             UPDATE productos
             SET promedio_uso_mensual = $1,
-                updated_at = $2
-            WHERE id = $3
+                stock_minimo_global = $2,
+                updated_at = $3
+            WHERE id = $4
             "#,
         )
         .bind(promedio_nuevo)
+        .bind(stock_minimo_global.round_dp(2))
         .bind(now)
         .bind(record.id)
         .execute(&mut *tx)

@@ -72,7 +72,7 @@ function Chip({
 }
 
 // Eje cantidad. Devuelve null cuando está sano ('normal') para no ensuciar la fila.
-function renderCantidad(estado: EstadoCantidad, dias: number | null) {
+function renderCantidad(estado: EstadoCantidad, dias: number | null, item: StockItem) {
   const quedan = `Quedan ~${diasLabel(Math.round(dias ?? 0))}`;
   switch (estado) {
     case "agotado":
@@ -117,17 +117,28 @@ function renderCantidad(estado: EstadoCantidad, dias: number | null) {
           subClass="text-info/70"
         />
       );
-    case "sin_datos":
+    case "sin_datos": {
+      const diasCon = item.dias_con_consumo;
+      let label = "Calculando";
+      let sub = "Estimación no disponible";
+      if (typeof diasCon === "number") {
+        const remainingDays = Math.max(3 - diasCon, 0);
+        if (remainingDays > 0) {
+          label = `Calculando (faltan ${remainingDays} días)`;
+          sub = "Requiere historial";
+        }
+      }
       return (
         <Chip
           variant="outline"
           className="text-base-content/50 border-base-300 bg-base-200/50"
           icon={null}
-          label="Sin datos"
-          sub="Estimación no disponible"
+          label={label}
+          sub={sub}
           subClass="opacity-40"
         />
       );
+    }
     case "no_gestionado":
       return (
         <Chip
@@ -224,7 +235,7 @@ export function StockBadge({ item }: { item: StockItem }) {
   const cantidad = item.estado_cantidad ?? fallback.cantidad;
   const vencimiento = item.estado_vencimiento ?? fallback.vencimiento;
 
-  const cantidadChip = renderCantidad(cantidad, dias);
+  const cantidadChip = renderCantidad(cantidad, dias, item);
   const vencimientoChip = renderVencimiento(vencimiento, days, item);
 
   // Ambos ejes sanos → un único "OK".

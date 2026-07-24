@@ -805,9 +805,9 @@ pub(crate) async fn importar_catalogo_en_tx(
             .await?;
         }
 
-        if let Some(cant) = cantidad_inicial
-            && cant >= Decimal::ZERO && u_id.is_some() {
-                let area_id: i32 = match sqlx::query_scalar::<_, i32>(
+        let cant = cantidad_inicial.unwrap_or(Decimal::ZERO);
+        if cant >= Decimal::ZERO && u_id.is_some() {
+            let area_id: i32 = match sqlx::query_scalar::<_, i32>(
                     "SELECT id FROM areas WHERE es_bodega = true AND activa = true ORDER BY id LIMIT 1",
                 )
                 .fetch_optional(&mut *conn)

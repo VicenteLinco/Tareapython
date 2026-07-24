@@ -1,0 +1,12 @@
+mode: openspec
+strict_tdd: true
+testing:
+  backend:
+    runner: cargo test
+    linter: cargo clippy
+    formatter: cargo fmt
+  frontend:
+    runner: vitest run
+    watch: vitest
+    linter: eslint .
+    type_checker: tsc -b

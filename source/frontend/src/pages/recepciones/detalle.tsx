@@ -254,6 +254,8 @@ export default function RecepcionDetallePage() {
     );
   })();
 
+  const hasIncompleto = data?.detalle?.some((d: any) => !d.numero_lote || !d.fecha_vencimiento);
+
   return (
     <div className="space-y-5 max-w-5xl">
       {/* ── Cabecera ── */}
@@ -400,8 +402,9 @@ export default function RecepcionDetallePage() {
               </button>
               <button
                 className="btn btn-success btn-sm gap-2"
-                disabled={confirmarMutation.isPending}
+                disabled={confirmarMutation.isPending || hasIncompleto} // UI-RECEPCIONES-FREEZE-001
                 onClick={() => confirmarMutation.mutate()}
+                title={hasIncompleto ? "Hay líneas incompletas (falta lote o vencimiento)" : ""}
               >
                 {confirmarMutation.isPending ? (
                   <span className="loading loading-spinner loading-sm" />

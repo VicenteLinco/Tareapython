@@ -136,6 +136,20 @@ impl PresentacionService {
         // No permitir cambiar factor_conversion si hay recepciones que la usaron
         if let Some(new_factor) = params.factor_conversion {
             if new_factor != anterior.factor_conversion {
+                // DOM-FREEZE-001: No permitir cambiar factor si está aprobado
+                let product_state: String = sqlx::query_scalar(
+                    "SELECT estado_catalogo FROM productos WHERE id = $1",
+                )
+                .bind(&anterior.producto_id)
+                .fetch_one(pool)
+                .await?;
+
+                if product_state == "Aprobado" || product_state == "aprobado" {
+                    return Err(AppError::BadRequest(
+                        "DOM-FREEZE-001: No se puede cambiar el factor de conversión de un producto aprobado".into(),
+                    ));
+                }
+
                 let used: bool = sqlx::query_scalar(
                     "SELECT EXISTS(SELECT 1 FROM recepcion_detalle WHERE presentacion_id = $1)",
                 )

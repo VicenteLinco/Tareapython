@@ -431,11 +431,12 @@ export default function DashboardPage() {
             icon={<ClipboardList className="h-5 w-5" />}
             onClick={() => navigate("/solicitudes-compra")}
           />
+          {/* UI-SCAN-FREEZE-001: Scanner móvil oculto/bloqueado */}
           <QuickAction
             label="Escanear QR"
-            description="Escáner o cámara"
-            icon={<QrCode className="h-5 w-5" />}
-            onClick={() => navigate("/scan")}
+            description="Temporalmente deshabilitado"
+            icon={<QrCode className="h-5 w-5 opacity-50" />}
+            onClick={() => {}}
           />
           <QuickAction
             label="Etiquetas QR"

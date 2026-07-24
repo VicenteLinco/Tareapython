@@ -2732,6 +2732,7 @@ function ProductoDetail({ id }: { id: string }) {
 
   const categoriaNombre =
     producto.categoria?.nombre ?? producto.categoria_nombre ?? "--";
+  const FEATURE_OFERTAS_ENABLED = false; // UI-CREADOR-FREEZE-001
 
   return (
     <div className="space-y-5">
@@ -2761,18 +2762,20 @@ function ProductoDetail({ id }: { id: string }) {
         >
           Empaques
         </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("ofertas")}
-          className={cn(
-            "tab flex-1 py-1.5 text-center text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all",
-            activeTab === "ofertas"
-              ? "bg-primary text-primary-content shadow-sm"
-              : "text-base-content/60 hover:text-base-content/90"
-          )}
-        >
-          Ofertas
-        </button>
+        {FEATURE_OFERTAS_ENABLED && (
+          <button
+            type="button"
+            onClick={() => setActiveTab("ofertas")}
+            className={cn(
+              "tab flex-1 py-1.5 text-center text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all",
+              activeTab === "ofertas"
+                ? "bg-primary text-primary-content shadow-sm"
+                : "text-base-content/60 hover:text-base-content/90"
+            )}
+          >
+            Ofertas
+          </button>
+        )}
       </div>
 
       <div className="space-y-4 pt-2">
@@ -2828,7 +2831,7 @@ function ProductoDetail({ id }: { id: string }) {
           </div>
         )}
 
-        {activeTab === "ofertas" && (
+        {FEATURE_OFERTAS_ENABLED && activeTab === "ofertas" && (
           <div className="space-y-4">
             <OfertasProveedorManager productoId={producto.id} />
           </div>

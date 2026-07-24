@@ -624,6 +624,10 @@ async fn reject_product(
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
+async fn put_forbidden() -> impl axum::response::IntoResponse {
+    (axum::http::StatusCode::METHOD_NOT_ALLOWED, "API-FREEZE-001: PUT method forbidden")
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(listar).post(crear))
@@ -640,7 +644,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/{id}/approve", post(approve_product))
         .route("/{id}/reject", post(reject_product))
-        .route("/{id}", get(obtener).put(actualizar).delete(eliminar))
+        .route("/{id}", get(obtener).patch(actualizar).put(put_forbidden).delete(eliminar))
         .route("/{id}/reactivar", axum::routing::post(reactivar))
         .route(
             "/{id}/imagen",
